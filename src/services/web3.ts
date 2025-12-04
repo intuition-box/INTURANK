@@ -65,7 +65,7 @@ export const getShareBalance = async (account: string, termId: string): Promise<
       abi: MULTI_VAULT_ABI,
       functionName: 'getShares',
       args: [checksumAccount, termIdBytes32, 1n]
-    } as any);
+    } as unknown as any);
     return formatEther(shares as unknown as bigint);
   } catch (e) { return "0"; }
 };
@@ -113,7 +113,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
     value: assets,
   });
   
-  const hash = await walletClient.writeContract(request);
+  const hash = await walletClient.writeContract(request as any);
   // result is shares[] (uint256[])
   const shares = (result as unknown as bigint[])[0]; 
   
@@ -141,7 +141,7 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
     args: [checksumReceiver, [termIdBytes32], [1n], [shares], [0n]],
   });
   
-  const hash = await walletClient.writeContract(request);
+  const hash = await walletClient.writeContract(request as any);
   // result is assets[] (uint256[])
   const assets = (result as unknown as bigint[])[0];
   
@@ -178,7 +178,7 @@ export const publishOpinion = async (
     abi: MULTI_VAULT_ABI,
     functionName: 'isTermCreated',
     args: [commentAtomId]
-  }) as boolean;
+  } as unknown as any) as boolean;
 
   // 4. Create Atom if needed (Idempotent)
   if (!exists) {
@@ -191,7 +191,7 @@ export const publishOpinion = async (
         args: [[textHex], [atomFee]],
         value: atomFee
       });
-      const atomTx = await walletClient.writeContract(atomReq);
+      const atomTx = await walletClient.writeContract(atomReq as any);
       await publicClient.waitForTransactionReceipt({ hash: atomTx });
     } catch (e: any) {
       console.warn("Atom creation skipped or failed (likely exists):", e);
@@ -210,7 +210,7 @@ export const publishOpinion = async (
       abi: MULTI_VAULT_ABI,
       functionName: 'isTermCreated',
       args: [predicateId]
-  }) as boolean;
+  } as unknown as any) as boolean;
 
   if (!predExists) {
       try {
@@ -222,7 +222,7 @@ export const publishOpinion = async (
             args: [[genericPredHex], [atomFee]],
             value: atomFee
         });
-        const predTx = await walletClient.writeContract(predReq);
+        const predTx = await walletClient.writeContract(predReq as any);
         await publicClient.waitForTransactionReceipt({ hash: predTx });
       } catch (e) { console.warn("Predicate creation skipped"); }
   }
@@ -242,5 +242,5 @@ export const publishOpinion = async (
     value: tripleFee
   });
   
-  return await walletClient.writeContract(tripleReq);
+  return await walletClient.writeContract(tripleReq as any);
 };
