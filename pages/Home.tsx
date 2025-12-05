@@ -77,7 +77,7 @@ const Home: React.FC = () => {
         <div className="relative z-10 text-center max-w-5xl px-4 mt-10">
           <div 
             onMouseEnter={playHover}
-            className="inline-flex items-center gap-3 px-6 py-2 mb-10 border border-intuition-primary/50 bg-black/80 backdrop-blur-md rounded-none text-intuition-primary font-mono text-xs tracking-[0.3em] uppercase hover-glow cursor-help clip-path-slant"
+            className="inline-flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 mb-8 md:mb-10 border border-intuition-primary/50 bg-black/80 backdrop-blur-md rounded-none text-intuition-primary font-mono text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] uppercase hover-glow cursor-help clip-path-slant"
           >
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-intuition-primary opacity-75"></span>
@@ -86,22 +86,22 @@ const Home: React.FC = () => {
             INTUITION MAINNET ACTIVE
           </div>
 
-          <h1 className="text-6xl md:text-9xl font-black tracking-tighter text-white mb-8 leading-[0.85] font-display drop-shadow-[0_0_25px_rgba(0,243,255,0.3)]">
+          <h1 className="text-4xl sm:text-6xl md:text-9xl font-black tracking-tighter text-white mb-6 md:mb-8 leading-[0.9] font-display drop-shadow-[0_0_25px_rgba(0,243,255,0.3)]">
             SEMANTIC <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-intuition-primary via-white to-intuition-secondary hover-glitch">CAPITALISM</span>
           </h1>
 
-          <p className="max-w-2xl mx-auto text-lg md:text-xl text-slate-400 mb-12 font-mono leading-relaxed">
+          <p className="max-w-2xl mx-auto text-base md:text-xl text-slate-400 mb-10 md:mb-12 font-mono leading-relaxed px-4">
             <span className="text-intuition-primary">&gt;&gt;</span> The intelligence layer of the open web.<br/>
             <span className="text-intuition-primary">&gt;&gt;</span> Stake on identity. Short the noise. Profit from truth.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-24">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-6 mb-24 w-full px-4">
             <Link
               to="/markets"
               onClick={playClick}
               onMouseEnter={playHover}
-              className="group relative w-64 py-5 bg-intuition-primary text-black font-black text-lg tracking-widest font-display overflow-hidden clip-path-slant hover-glow transition-all hover:-translate-y-1"
+              className="group relative w-full sm:w-64 py-4 md:py-5 bg-intuition-primary text-black font-black text-lg tracking-widest font-display overflow-hidden clip-path-slant hover-glow transition-all hover:-translate-y-1"
             >
               <div className="absolute inset-0 bg-white/40 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
               <span className="relative flex items-center justify-center gap-2">
@@ -113,7 +113,7 @@ const Home: React.FC = () => {
               to="/stats"
               onClick={playClick}
               onMouseEnter={playHover}
-              className="group w-64 py-5 border border-intuition-primary/50 text-intuition-primary font-bold text-lg tracking-widest font-display bg-black/50 hover:bg-intuition-primary/10 transition-all clip-path-slant hover-glow hover:-translate-y-1 flex items-center justify-center"
+              className="group w-full sm:w-64 py-4 md:py-5 border border-intuition-primary/50 text-intuition-primary font-bold text-lg tracking-widest font-display bg-black/50 hover:bg-intuition-primary/10 transition-all clip-path-slant hover-glow hover:-translate-y-1 flex items-center justify-center"
             >
               LEADERBOARD
             </Link>
@@ -171,15 +171,15 @@ const Home: React.FC = () => {
       </div>
 
       {/* --- NETWORK TELEMETRY --- */}
-      <div className="py-24 bg-[#03050a] relative overflow-hidden">
+      <div className="py-16 md:py-24 bg-[#03050a] relative overflow-hidden">
         <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-intuition-primary/5 to-transparent pointer-events-none"></div>
         <div className="w-full max-w-[95%] mx-auto px-4 relative z-10">
-          <div className="flex items-center gap-4 mb-12">
-            <Activity className="text-intuition-primary animate-pulse" size={32} />
-            <h2 className="text-3xl font-display font-bold text-white tracking-wide">NETWORK_TELEMETRY</h2>
+          <div className="flex items-center gap-4 mb-8 md:mb-12">
+            <Activity className="text-intuition-primary animate-pulse" size={24} />
+            <h2 className="text-2xl md:text-3xl font-display font-bold text-white tracking-wide">NETWORK_TELEMETRY</h2>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             <StatBox label="Total Value Locked" value={`${formattedTVL} TRUST`} sub="On-Chain Assets" delay="0" loading={loading} />
             <StatBox label="Active Signals" value={stats.signals.toLocaleString()} sub="Semantic Triples" delay="100" loading={loading} />
             <StatBox label="Identity Nodes" value={stats.atoms.toLocaleString()} sub="Verified Atoms" delay="200" loading={loading} />
@@ -189,16 +189,16 @@ const Home: React.FC = () => {
       </div>
 
       {/* --- HOW IT WORKS --- */}
-      <div className="py-32 border-t border-intuition-primary/10 relative overflow-hidden">
+      <div className="py-20 md:py-32 border-t border-intuition-primary/10 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-intuition-secondary/5 rounded-full blur-[100px] pointer-events-none"></div>
         
         <div className="w-full max-w-[95%] mx-auto px-4 relative z-10">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-black font-display text-white mb-6">THE PROTOCOL</h2>
-            <p className="text-slate-400 font-mono text-sm tracking-widest uppercase">Initializing Trust Algorithm...</p>
+          <div className="text-center mb-12 md:mb-20">
+            <h2 className="text-3xl md:text-5xl font-black font-display text-white mb-4 md:mb-6">THE PROTOCOL</h2>
+            <p className="text-slate-400 font-mono text-xs md:text-sm tracking-widest uppercase">Initializing Trust Algorithm...</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
             <StepCard 
               num="01" 
               icon={<Shield className="text-intuition-primary" size={48} />}
@@ -222,7 +222,7 @@ const Home: React.FC = () => {
       </div>
 
       {/* --- THE MANIFESTO (TERMINAL) --- */}
-      <div className="py-24 bg-black border-y border-intuition-primary/20 relative">
+      <div className="py-16 md:py-24 bg-black border-y border-intuition-primary/20 relative">
         <div className="max-w-4xl mx-auto px-4">
           <div className="w-full bg-[#0a0f1a] border border-intuition-border rounded-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] transform hover:scale-[1.01] transition-transform duration-500">
             <div className="bg-[#1f2937] px-4 py-2 flex items-center gap-2 border-b border-black">
@@ -231,7 +231,7 @@ const Home: React.FC = () => {
               <div className="w-3 h-3 rounded-full bg-green-500"></div>
               <div className="ml-4 text-[10px] font-mono text-slate-400">mission_log.txt</div>
             </div>
-            <div className="p-8 font-mono text-sm md:text-base leading-relaxed text-slate-300 relative">
+            <div className="p-6 md:p-8 font-mono text-sm md:text-base leading-relaxed text-slate-300 relative">
               <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
               <p className="mb-4 text-intuition-primary">&gt;&gt; SYSTEM BOOT SEQUENCE INITIATED...</p>
               <p className="mb-4">
@@ -253,17 +253,17 @@ const Home: React.FC = () => {
       </div>
 
       {/* --- CTA FOOTER --- */}
-      <div className="py-32 text-center relative overflow-hidden">
+      <div className="py-20 md:py-32 text-center relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
-        <div className="relative z-10">
-          <h2 className="text-5xl md:text-7xl font-black font-display text-white mb-8 tracking-tighter">
+        <div className="relative z-10 px-4">
+          <h2 className="text-4xl md:text-7xl font-black font-display text-white mb-8 tracking-tighter">
             JOIN THE <span className="text-intuition-primary">VANGUARD</span>
           </h2>
           <div className="flex justify-center">
             <Link 
               to="/markets" 
               onClick={playClick}
-              className="px-12 py-6 bg-white text-black font-black font-display text-xl tracking-widest clip-path-slant hover:bg-intuition-primary transition-colors shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(0,243,255,0.6)]"
+              className="w-full sm:w-auto px-12 py-6 bg-white text-black font-black font-display text-xl tracking-widest clip-path-slant hover:bg-intuition-primary transition-colors shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(0,243,255,0.6)]"
             >
               INITIALIZE_LINK
             </Link>
@@ -287,7 +287,7 @@ const StatBox = ({ label, value, sub, delay, loading }: any) => (
     {loading ? (
         <div className="h-8 w-24 bg-white/10 animate-pulse rounded mb-1"></div>
     ) : (
-        <div className="text-3xl md:text-4xl font-black text-white font-display mb-1 group-hover:text-intuition-primary transition-colors relative z-10">{value}</div>
+        <div className="text-2xl md:text-4xl font-black text-white font-display mb-1 group-hover:text-intuition-primary transition-colors relative z-10">{value}</div>
     )}
     <div className="text-intuition-success font-mono text-xs relative z-10">{sub}</div>
   </div>

@@ -136,7 +136,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link to="/" onClick={playClick} className="text-xl font-black tracking-wider text-white font-display group-hover:text-intuition-primary transition-colors">
                   INTU<span className="text-intuition-primary group-hover:text-white transition-colors">RANK</span>
                 </Link>
-                <span className="text-[10px] text-intuition-primary/70 font-mono tracking-[0.2em] group-hover:tracking-[0.3em] transition-all">V.1.0.4 ALPHA</span>
+                <span className="hidden md:block text-[10px] text-intuition-primary/70 font-mono tracking-[0.2em] group-hover:tracking-[0.3em] transition-all">V.1.0.4 ALPHA</span>
               </div>
             </div>
 
@@ -256,7 +256,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Mobile Menu */}
         {isMenuOpen && (
-          <div className="md:hidden bg-intuition-dark border-b border-intuition-primary/30">
+          <div className="md:hidden bg-intuition-dark/95 backdrop-blur-xl border-b border-intuition-primary/30 absolute w-full z-[100] animate-in slide-in-from-top-2">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
               {navItems.map((item) => (
                 <Link
@@ -309,7 +309,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   onClick={() => {
                     playClick();
                     setIsMenuOpen(false);
-                    openModal();
+                    // Use connectWallet directly for mobile functionality instead of opening modal
+                    connectWallet();
                   }}
                   className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 border border-intuition-primary text-intuition-primary font-mono font-bold bg-intuition-primary/10 clip-path-slant hover-glow group relative overflow-hidden"
                 >
@@ -329,11 +330,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-intuition-primary/20 bg-intuition-dark py-12 mt-auto z-20 relative">
-        <div className="w-full px-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-8">
+      <footer className="border-t border-intuition-primary/20 bg-intuition-dark py-8 md:py-12 mt-auto z-20 relative">
+        <div className="w-full px-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-8 text-center md:text-left">
           
           {/* System Status */}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 items-center md:items-start">
              <div className="flex items-center gap-2 text-[10px] font-mono text-intuition-primary/60 uppercase tracking-widest hover-glitch cursor-help" onMouseEnter={playHover}>
                  <div className="w-2 h-2 bg-intuition-success animate-pulse shadow-[0_0_8px_rgba(0,255,157,0.6)]"></div>
                  System Online
@@ -358,7 +359,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <circle cx="50" cy="50" r="10" fill="currentColor" />
                 </svg>
                 {/* Intuition Text Logo */}
-                <div className="flex flex-col">
+                <div className="flex flex-col text-left">
                     <span className="text-3xl font-display font-bold tracking-[0.25em] text-white group-hover:text-intuition-primary transition-colors drop-shadow-lg leading-none">
                         INTUITION
                     </span>

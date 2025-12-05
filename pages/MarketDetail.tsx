@@ -378,18 +378,18 @@ const MarketDetail: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-2xl font-black text-white font-display tracking-wide">{agent.label}</h1>
+                <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-wide truncate max-w-[200px] md:max-w-md">{agent.label}</h1>
                 <span className="px-2 py-0.5 bg-intuition-primary/10 border border-intuition-primary/30 text-[10px] font-mono text-intuition-primary rounded uppercase">{agent.type || 'ATOM'}</span>
               </div>
-              <div className="text-xs font-mono text-slate-400">ID: {agent.id}</div>
+              <div className="text-xs font-mono text-slate-400 break-all">ID: {agent.id}</div>
             </div>
           </div>
 
-          <div className="bg-black border border-intuition-border h-[500px] relative clip-path-slant group flex flex-col">
-            <div className="p-6 border-b border-white/5 flex justify-between items-end">
+          <div className="bg-black border border-intuition-border h-[350px] md:h-[500px] relative clip-path-slant group flex flex-col">
+            <div className="p-4 md:p-6 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
               <div>
                 <div className="flex items-baseline gap-3">
-                  <span className="text-4xl font-black text-white font-display tracking-tight">{displayPrice} <span className="text-lg text-slate-500 font-mono">{CURRENCY_SYMBOL}</span></span>
+                  <span className="text-3xl md:text-4xl font-black text-white font-display tracking-tight">{displayPrice} <span className="text-lg text-slate-500 font-mono">{CURRENCY_SYMBOL}</span></span>
                   <span className={`text-sm font-mono font-bold ${displayTrust > 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {displayTrust > 50 ? `+${(displayTrust - 50).toFixed(1)}%` : `-${(50 - displayTrust).toFixed(1)}%`}
                   </span>
@@ -397,20 +397,20 @@ const MarketDetail: React.FC = () => {
                 <div className="text-xs font-mono text-slate-500 mt-1">{displayDate}</div>
               </div>
 
-              <div className="flex gap-8 text-right">
+              <div className="flex gap-8 text-right w-full md:w-auto justify-between md:justify-end">
                 <div>
                   <div className="flex items-center gap-2 justify-end">
                     <div className="w-2 h-2 rounded-full bg-intuition-primary"></div>
                     <span className="text-intuition-primary font-bold font-display text-xl">{displayTrust}%</span>
                   </div>
-                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">TRUST PROBABILITY</div>
+                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">TRUST</div>
                 </div>
                 <div>
                   <div className="flex items-center gap-2 justify-end">
                     <div className="w-2 h-2 rounded-full bg-intuition-danger"></div>
                     <span className="text-intuition-danger font-bold font-display text-xl">{displayDistrust}%</span>
                   </div>
-                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">DISTRUST PROBABILITY</div>
+                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">DISTRUST</div>
                 </div>
               </div>
             </div>
@@ -447,9 +447,9 @@ const MarketDetail: React.FC = () => {
           </div>
 
           <div>
-            <div className="flex border-b border-intuition-border mb-4">
+            <div className="flex border-b border-intuition-border mb-4 overflow-x-auto">
               {['opinions', 'activity', 'rules'].map(t => (
-                <button key={t} onClick={() => setActiveTab(t as any)} className={`px-6 py-3 font-mono text-xs font-bold uppercase border-b-2 transition-colors ${activeTab === t ? 'border-intuition-primary text-intuition-primary' : 'border-transparent text-slate-500'}`}>{t}</button>
+                <button key={t} onClick={() => setActiveTab(t as any)} className={`px-6 py-3 font-mono text-xs font-bold uppercase border-b-2 transition-colors whitespace-nowrap ${activeTab === t ? 'border-intuition-primary text-intuition-primary' : 'border-transparent text-slate-500'}`}>{t}</button>
               ))}
             </div>
 
@@ -457,12 +457,12 @@ const MarketDetail: React.FC = () => {
               <div className="space-y-4">
                 <div className="p-4 bg-intuition-card border border-intuition-border clip-path-slant">
                   <textarea value={newComment} onChange={e => setNewComment(e.target.value)} className="w-full bg-black border border-slate-800 p-3 text-white text-sm font-mono focus:border-intuition-primary outline-none" placeholder="TRANSMIT_OPINION..." />
-                  <div className="flex justify-between mt-2">
-                    <div className="flex gap-2">
-                      <button onClick={() => setSelectedSide('TRUST')} className={`px-3 py-1 text-[10px] border font-bold ${selectedSide === 'TRUST' ? 'bg-intuition-success/20 border-intuition-success text-intuition-success' : 'border-slate-700 text-slate-500'}`}>BULLISH</button>
-                      <button onClick={() => setSelectedSide('DISTRUST')} className={`px-3 py-1 text-[10px] border font-bold ${selectedSide === 'DISTRUST' ? 'bg-intuition-danger/20 border-intuition-danger text-intuition-danger' : 'border-slate-700 text-slate-500'}`}>BEARISH</button>
+                  <div className="flex flex-col sm:flex-row justify-between mt-2 gap-2">
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button onClick={() => setSelectedSide('TRUST')} className={`flex-1 sm:flex-none px-3 py-1 text-[10px] border font-bold ${selectedSide === 'TRUST' ? 'bg-intuition-success/20 border-intuition-success text-intuition-success' : 'border-slate-700 text-slate-500'}`}>BULLISH</button>
+                      <button onClick={() => setSelectedSide('DISTRUST')} className={`flex-1 sm:flex-none px-3 py-1 text-[10px] border font-bold ${selectedSide === 'DISTRUST' ? 'bg-intuition-danger/20 border-intuition-danger text-intuition-danger' : 'border-slate-700 text-slate-500'}`}>BEARISH</button>
                     </div>
-                    <button onClick={handleTransmit} disabled={isTransmitting} className="px-4 py-1 bg-intuition-primary text-black font-bold text-xs font-mono clip-path-slant hover-glow">{isTransmitting ? 'SIGNING...' : 'TRANSMIT (ON-CHAIN)'}</button>
+                    <button onClick={handleTransmit} disabled={isTransmitting} className="w-full sm:w-auto px-4 py-2 bg-intuition-primary text-black font-bold text-xs font-mono clip-path-slant hover-glow">{isTransmitting ? 'SIGNING...' : 'TRANSMIT (ON-CHAIN)'}</button>
                   </div>
                 </div>
 
@@ -509,7 +509,7 @@ const MarketDetail: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-6">
-          <div className="sticky top-24 border border-intuition-primary bg-black p-1 clip-path-slant hover-glow">
+          <div className="lg:sticky lg:top-24 border border-intuition-primary bg-black p-1 clip-path-slant hover-glow">
             <div className="border border-intuition-primary/30 p-6">
               <div className="flex justify-between items-center mb-6 border-b border-intuition-border pb-2">
                 <h2 className="font-bold text-intuition-primary font-display tracking-widest">EXECUTION_DECK</h2>

@@ -154,20 +154,20 @@ const Markets: React.FC = () => {
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20">
       {/* Arcade Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 border-b border-intuition-primary/20 pb-8">
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 md:mb-12 gap-6 border-b border-intuition-primary/20 pb-8">
         <div>
-          <h1 className="text-4xl font-black text-white flex items-center gap-3 font-display tracking-wide text-glow">
+          <h1 className="text-3xl md:text-4xl font-black text-white flex items-center gap-3 font-display tracking-wide text-glow">
             <Activity className="text-intuition-primary animate-pulse" size={32} />
             MARKET_EXPLORER
           </h1>
-          <p className="text-intuition-primary/60 mt-2 font-mono text-sm">
+          <p className="text-intuition-primary/60 mt-2 font-mono text-xs md:text-sm">
             &gt;&gt; SELECT_AGENT_TO_TRADE
           </p>
         </div>
         
-        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+        <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center w-full md:w-auto">
             {/* Search Bar */}
-            <div className="relative group flex-1">
+            <div className="relative group flex-1 w-full md:w-auto">
               <input 
                   type="text" 
                   placeholder="SEARCH NAME OR 0x..." 
@@ -189,7 +189,7 @@ const Markets: React.FC = () => {
             <div className="relative" ref={sortRef}>
                 <button 
                     onClick={() => { setIsSortOpen(!isSortOpen); playClick(); }}
-                    className={`flex items-center justify-between gap-2 px-4 py-3 min-w-[180px] bg-intuition-dark border border-intuition-border text-xs font-mono font-bold text-intuition-primary clip-path-slant hover:bg-intuition-primary/10 hover:border-intuition-primary transition-all ${isSortOpen ? 'border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.2)]' : ''}`}
+                    className={`flex items-center justify-between gap-2 px-4 py-3 w-full md:min-w-[180px] bg-intuition-dark border border-intuition-border text-xs font-mono font-bold text-intuition-primary clip-path-slant hover:bg-intuition-primary/10 hover:border-intuition-primary transition-all ${isSortOpen ? 'border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.2)]' : ''}`}
                 >
                     <div className="flex items-center gap-2">
                         <Filter size={14} />
@@ -200,7 +200,7 @@ const Markets: React.FC = () => {
 
                 {/* Sort Matrix Dropdown */}
                 {isSortOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.15)] z-50 clip-path-slant p-1 animate-in slide-in-from-top-2 fade-in duration-200">
+                    <div className="absolute right-0 top-full mt-2 w-full md:w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.15)] z-50 clip-path-slant p-1 animate-in slide-in-from-top-2 fade-in duration-200">
                         <div className="bg-intuition-dark/90 p-2 space-y-1">
                             <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest px-2 py-1 mb-1 border-b border-white/5">Sort Matrix</div>
                             
