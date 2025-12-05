@@ -1,12 +1,12 @@
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, isAddress, getAddress, type Hex, stringToHex, keccak256, encodePacked } from 'viem';
-import { CHAIN_ID, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS } from '../constants';
+import { CHAIN_ID, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL } from '../constants';
 import { Transaction } from '../types';
 
 export const intuitionTestnet = {
   id: CHAIN_ID,
-  name: 'Intuition Testnet',
-  network: 'intuition-testnet',
-  nativeCurrency: { decimals: 18, name: 'tTRUST', symbol: 'tTRUST' },
+  name: 'Intuition Mainnet',
+  network: 'intuition',
+  nativeCurrency: { decimals: 18, name: 'ETH', symbol: 'ETH' }, // Updated to ETH as standard for L2s usually
   rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } },
 } as const;
 
@@ -56,6 +56,25 @@ export const getClientChainId = async (): Promise<number> => {
   return 0;
 };
 
+export const addNetwork = async () => {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+        try {
+            await (window as any).ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                    chainId: `0x${CHAIN_ID.toString(16)}`,
+                    chainName: 'Intuition Mainnet',
+                    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                    rpcUrls: [RPC_URL],
+                    blockExplorerUrls: [EXPLORER_URL || 'https://explorer.intuition.systems'],
+                }],
+            });
+        } catch (error) {
+            console.error("Failed to add network:", error);
+        }
+    }
+};
+
 export const switchNetwork = async () => {
     if (typeof window !== 'undefined' && (window as any).ethereum) {
         try {
@@ -64,22 +83,19 @@ export const switchNetwork = async () => {
                 params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
             });
         } catch (switchError: any) {
-            // This error code indicates that the chain has not been added to MetaMask.
-            if (switchError.code === 4902) {
-                try {
-                    await (window as any).ethereum.request({
-                        method: 'wallet_addEthereumChain',
-                        params: [{
-                            chainId: `0x${CHAIN_ID.toString(16)}`,
-                            chainName: 'Intuition Mainnet',
-                            nativeCurrency: { name: 'TRUST', symbol: 'TRUST', decimals: 18 },
-                            rpcUrls: [RPC_URL],
-                            blockExplorerUrls: ['https://explorer.intuition.systems'],
-                        }],
-                    });
-                } catch (addError) {
-                    console.error(addError);
-                }
+            // Mobile wallets might return different error codes or messages for "chain not found"
+            // We try to add the chain if switching fails for *any* reason that suggests it's missing
+            if (
+                switchError.code === 4902 || 
+                switchError.data?.originalError?.code === 4902 ||
+                switchError.message?.toLowerCase().includes('unrecognized') ||
+                switchError.message?.toLowerCase().includes('unknown')
+            ) {
+                await addNetwork();
+            } else {
+                console.error("Switch network error:", switchError);
+                // Fallback attempt to add anyway
+                await addNetwork();
             }
         }
     }
@@ -114,7 +130,7 @@ export const getProtocolConfig = async () => {
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
             abi: MULTI_VAULT_ABI,
             functionName: 'getGeneralConfig',
-        });
+        } as any);
         
         return {
             minDeposit: formatEther(config.minDeposit),
@@ -137,7 +153,7 @@ export const getQuoteRedeem = async (sharesAmount: string, termId: string, accou
             abi: MULTI_VAULT_ABI,
             functionName: 'previewRedeem',
             args: [termIdBytes32, BigInt(curveId), sharesWei]
-        }) as [bigint, bigint]; // [assetsAfterFees, sharesUsed]
+        } as any) as [bigint, bigint]; // [assetsAfterFees, sharesUsed]
 
         return formatEther(result[0]);
     } catch (e) {
@@ -155,8 +171,15 @@ export const connectWallet = async (): Promise<string | null> => {
           transport: custom((window as any).ethereum),
         });
         const [address] = await walletClient.requestAddresses();
-        try { await walletClient.switchChain({ id: intuitionTestnet.id }); } 
-        catch (e) { await walletClient.addChain({ chain: intuitionTestnet }); }
+        
+        // Attempt switch quietly
+        try { 
+            await walletClient.switchChain({ id: intuitionTestnet.id }); 
+        } catch (e) { 
+            // If simple switch fails, try the robust switch/add logic
+            try { await switchNetwork(); } catch (e2) { console.warn("Auto-switch failed", e2); }
+        }
+        
         return address ? getAddress(address) : null;
       } catch (error) {
         console.error("Wallet connection failed:", error);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle } from 'lucide-react';
 import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
@@ -174,10 +174,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           playClick();
                           await switchNetwork();
                       }}
-                      className="hidden md:flex items-center gap-2 px-4 py-2 bg-intuition-danger text-black font-bold font-mono text-xs clip-path-slant hover:bg-white transition-colors animate-pulse"
+                      className="flex items-center gap-2 px-3 md:px-4 py-2 bg-intuition-danger text-black font-bold font-mono text-xs clip-path-slant hover:bg-white transition-colors animate-pulse"
                   >
                       <AlertTriangle size={14} />
-                      SWITCH TO MAINNET
+                      <span className="hidden md:inline">SWITCH TO MAINNET</span>
+                      <span className="md:hidden">WRONG NET</span>
                   </button>
               )}
 
@@ -294,7 +295,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                           }}
                           className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-intuition-danger text-black font-mono font-bold clip-path-slant hover-glow animate-pulse"
                       >
-                          <AlertTriangle size={14} /> SWITCH TO MAINNET
+                          <PlusCircle size={14} /> ADD/SWITCH TO MAINNET
                       </button>
                     )}
                     <button
