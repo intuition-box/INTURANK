@@ -54,6 +54,7 @@ export const getWalletBalance = async (address: string): Promise<string> => {
 
 export const getShareBalance = async (account: string, termId: string, curveId: number = 0): Promise<string> => {
   try {
+    // Ensure termId is properly formatted 32-byte hex
     const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
     const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
     const checksumAccount = getAddress(account);
@@ -64,24 +65,56 @@ export const getShareBalance = async (account: string, termId: string, curveId: 
       abi: MULTI_VAULT_ABI,
       functionName: 'getShares',
       args: [checksumAccount, termIdBytes32, curveIdBigInt]
-    } as unknown as any);
+    } as any);
     return formatEther(shares as unknown as bigint);
-  } catch (e) { return "0"; }
+  } catch (e) { 
+    console.warn(`Error fetching shares for ${termId}:`, e);
+    return "0"; 
+  }
 };
 
-// --- NEW: Fetch Protocol Config (Min Deposit) ---
+// --- Quote Redeem (Get Real-time Value) ---
+export const getQuoteRedeem = async (sharesAmount: string, termId: string, holder: string, curveId: number = 0): Promise<string> => {
+    try {
+        const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
+        const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+        const checksumHolder = getAddress(holder);
+        const sharesWei = parseEther(sharesAmount);
+        const curveIdBigInt = BigInt(curveId);
+
+        // We use simulateContract to call 'redeemBatch' as if we were selling.
+        // This returns the asset amount we WOULD get.
+        const { result } = await publicClient.simulateContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'redeemBatch',
+            account: checksumHolder,
+            args: [checksumHolder, [termIdBytes32], [curveIdBigInt], [sharesWei], [0n]],
+        } as any);
+
+        const assets = (result as unknown as bigint[])[0];
+        return formatEther(assets);
+    } catch (e) {
+        // If simulation fails (e.g., balance check fails or insufficient liquidity), return 0
+        return "0";
+    }
+};
+
+// --- Fetch Protocol Config (Min Deposit) ---
 export const getProtocolConfig = async () => {
   try {
     const config = await publicClient.readContract({
       address: MULTI_VAULT_ADDRESS as `0x${string}`,
       abi: MULTI_VAULT_ABI,
       functionName: 'generalConfig',
+      args: [], // Explicit args required for viem strict overload resolution
     } as any) as any;
     
     // Config struct from ABI: 
     // [admin, protocolMultisig, feeDenominator, trustBonding, minDeposit, minShare, atomDataMaxLength, feeThreshold]
-    // minDeposit is at index 4
-    const minDeposit = config[4] || config.minDeposit;
+    // minDeposit is at index 4 if returned as array, or 'minDeposit' key if object
+    const minDeposit = config[4] !== undefined ? config[4] : config.minDeposit;
+    
     return {
       minDeposit: formatEther(minDeposit),
       minDepositWei: minDeposit
@@ -127,7 +160,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   const assets = parseEther(amount);
   const curveIdBigInt = BigInt(curveId);
   
-  // Simulate to catch errors like DepositBelowMinimum
+  // Simulate to catch errors like MultiVault_DepositBelowMinimumDeposit
   const { request, result } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
@@ -135,7 +168,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
     account: checksumReceiver,
     args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [assets], [0n]],
     value: assets,
-  });
+  } as any);
   
   const hash = await walletClient.writeContract(request as any);
   const shares = (result as unknown as bigint[])[0]; 
@@ -162,7 +195,7 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
     functionName: 'redeemBatch',
     account: checksumReceiver,
     args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [shares], [0n]],
-  });
+  } as any);
   
   const hash = await walletClient.writeContract(request as any);
   const assets = (result as unknown as bigint[])[0];
@@ -229,7 +262,7 @@ export const publishOpinion = async (
     abi: MULTI_VAULT_ABI,
     functionName: 'isTermCreated',
     args: [commentAtomId]
-  } as unknown as any) as boolean;
+  } as any) as boolean;
 
   // 5. Create Atom if needed (Idempotent)
   if (!exists) {
@@ -241,7 +274,7 @@ export const publishOpinion = async (
         account: checksumAddress,
         args: [[textHex], [baseFee]],
         value: baseFee // Send minDeposit
-      });
+      } as any);
       const atomTx = await walletClient.writeContract(atomReq as any);
       await publicClient.waitForTransactionReceipt({ hash: atomTx });
     } catch (e: any) {
@@ -260,7 +293,7 @@ export const publishOpinion = async (
       abi: MULTI_VAULT_ABI,
       functionName: 'isTermCreated',
       args: [predicateId]
-  } as unknown as any) as boolean;
+  } as any) as boolean;
 
   if (!predExists) {
       try {
@@ -271,14 +304,13 @@ export const publishOpinion = async (
             account: checksumAddress,
             args: [[genericPredHex], [baseFee]],
             value: baseFee
-        });
+        } as any);
         const predTx = await walletClient.writeContract(predReq as any);
         await publicClient.waitForTransactionReceipt({ hash: predTx });
       } catch (e) { console.warn("Predicate creation skipped"); }
   }
 
   // Finally create the Triple link
-  // The 'InsufficientBalance' error happened here previously because value < minDeposit
   const { request: tripleReq } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
@@ -291,7 +323,7 @@ export const publishOpinion = async (
       [baseFee]        
     ],
     value: baseFee // Must match minDeposit
-  });
+  } as any);
   
   return await walletClient.writeContract(tripleReq as any);
 };

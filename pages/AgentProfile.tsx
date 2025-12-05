@@ -86,7 +86,10 @@ const AgentProfile: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       let msg = 'Transaction failed.';
-      if (e.message?.includes('DepositBelowMinimum')) msg = `Deposit amount too low. Minimum is ${minDeposit} ${CURRENCY_SYMBOL}.`;
+      // Check for specific custom errors from updated ABI
+      if (e.message?.includes('MultiVault_DepositBelowMinimumDeposit')) msg = `Deposit amount too low. Minimum is ${minDeposit} ${CURRENCY_SYMBOL}.`;
+      else if (e.message?.includes('MultiVault_InsufficientBalance') || e.message?.includes('InsufficientBalance')) msg = `Insufficient balance to cover trade + gas.`;
+      
       setTxModal({ isOpen: true, status: 'error', title: 'TRANSACTION FAILED', message: msg });
     }
   };

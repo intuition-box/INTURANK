@@ -1,7 +1,7 @@
 // src/pages/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance } from '../services/web3';
+import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
 import { Wallet, User, Zap, Activity, Clock, AlertTriangle, RefreshCw, Loader2, ExternalLink } from 'lucide-react';
 import { formatEther } from 'viem';
@@ -37,7 +37,8 @@ const Dashboard: React.FC = () => {
       const bal = await getWalletBalance(address);
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      const chainHistory = await getUserHistory(address);
+      // 1. Fetch History (Safely)
+      const chainHistory = await getUserHistory(address).catch(e => []);
       const localHistory = getLocalTransactions(address);
 
       const pendingTxs = localHistory.filter(localTx =>
@@ -46,82 +47,94 @@ const Dashboard: React.FC = () => {
       const mergedHistory = [...pendingTxs, ...chainHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       setHistory(mergedHistory);
 
+      // 2. Identify Vaults to Scan
       const uniqueVaultIds = new Set<string>();
-
-      const graphPositions = await getUserPositions(address);
+      
+      // Add from graph positions (might be empty if graph is down)
+      const graphPositions = await getUserPositions(address).catch(e => []);
       graphPositions.forEach((p: any) => p?.vault?.term_id && uniqueVaultIds.add(p.vault.term_id.toLowerCase()));
 
+      // Add from local history (CRITICAL fallback)
       localHistory.forEach(tx => tx.vaultId && uniqueVaultIds.add(tx.vaultId.toLowerCase()));
+      // Add from chain history
       chainHistory.forEach(tx => tx.vaultId && uniqueVaultIds.add(tx.vaultId.toLowerCase()));
 
       const vaultIdsArray = Array.from(uniqueVaultIds);
 
-      const liveBalances = await Promise.all(
+      // 3. Fetch Metadata (Safely)
+      let metadata: any[] = [];
+      if (vaultIdsArray.length > 0) {
+        metadata = await getVaultsByIds(vaultIdsArray).catch(e => []);
+      }
+
+      // 4. Check Live On-Chain Balances & VALUES
+      // This is the source of truth, regardless of the Graph
+      const livePositionsData = await Promise.all(
         vaultIdsArray.map(async (id) => {
           try {
-            const shares = await getShareBalance(address, id);
-            return { id, shares };
-          } catch {
-            return { id, shares: '0' };
+            const meta = metadata.find(m => (m.id || '').toLowerCase() === (id || '').toLowerCase());
+            // Default to 0 if meta missing. This assumes curveId 0 (Standard), which is a safe default for most atoms.
+            const curveId = meta?.curveId ? Number(meta.curveId) : 0; 
+            
+            // Get Shares
+            const sharesStr = await getShareBalance(address, id, curveId);
+            const shares = parseFloat(sharesStr || '0');
+            
+            // Get Value (On-Chain Simulation)
+            let valueStr = "0";
+            if (shares > 0) {
+                // If graph is down, quoteRedeem calculates value directly from contract
+                valueStr = await getQuoteRedeem(sharesStr, id, address, curveId);
+            }
+
+            return { id, shares, meta, sharesStr, valueStr };
+          } catch (e) {
+            console.warn(`Failed to process ${id}`, e);
+            return { id, shares: 0, meta: undefined, sharesStr: '0', valueStr: '0' };
           }
         })
       );
 
-      const activeIds = liveBalances.filter(b => parseFloat(b.shares || '0') > 0.000001);
+      // 5. Construct Final List
+      const activePositions = livePositionsData.filter(p => p.shares > 0.000001);
 
-      let finalPositions: any[] = [];
-
-      if (activeIds.length > 0) {
-        const metadata = await getVaultsByIds(activeIds.map(b => b.id));
-        finalPositions = activeIds.map(item => {
-          const meta = metadata.find(m => (m.id || '').toLowerCase() === (item.id || '').toLowerCase());
-          const userShares = parseFloat(item.shares || '0');
-          const totalShares = meta?.totalShares ? parseFloat(formatEther(BigInt(meta.totalShares))) : 0;
-          const totalAssets = meta?.totalAssets ? parseFloat(formatEther(BigInt(meta.totalAssets))) : 0;
-          
-          let val = 0;
-          if (totalShares > 0) {
-              const price = totalAssets / totalShares;
-              val = userShares * price;
-          }
+      const finalPositions = activePositions.map(item => {
+          const val = parseFloat(item.valueStr);
           
           return {
             id: item.id,
-            shares: item.shares,
+            shares: item.sharesStr,
             value: val,
-            atom: { label: meta?.label || `Agent ${item.id.slice(0, 6)}...`, image: meta?.image },
+            // Fallback label if metadata missing (e.g. fresh mint or graph offline)
+            atom: { 
+                label: item.meta?.label || `Agent ${item.id.slice(0, 6)}...`, 
+                image: item.meta?.image 
+            },
             isPending: false,
           };
-        });
-      }
+      });
 
       setPositions(finalPositions);
 
+      // 6. Calculate PnL
       const totalVal = finalPositions.reduce((acc, cur) => acc + (cur.value || 0), 0);
-
       let totalCost = 0;
       mergedHistory.forEach(tx => {
         try {
-          // Robust Asset Conversion
           let val = 0;
           const rawAssets = tx.assets ?? '0';
-          
-          if (rawAssets.includes('.')) {
-              val = parseFloat(rawAssets);
-          } else {
-              val = parseFloat(formatEther(BigInt(rawAssets)));
-          }
-
+          val = rawAssets.includes('.') ? parseFloat(rawAssets) : parseFloat(formatEther(BigInt(rawAssets)));
           if (tx.type === 'DEPOSIT') totalCost += val;
           else if (tx.type === 'REDEEM') totalCost -= val;
-        } catch (e) { console.error("PnL Calc Error for tx", tx, e); }
+        } catch {}
       });
 
       setPortfolioValue(totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
       setNetPnL(totalVal - Math.max(0, totalCost));
+
     } catch (e) {
       console.error('Dashboard Sync Error:', e);
-      toast.error('SYNC FAILED');
+      // We don't show a toast error anymore because we want the UI to persist even if partial fail
     } finally {
       setLoading(false);
     }
@@ -274,14 +287,14 @@ const Dashboard: React.FC = () => {
               >
                 {!tx.id?.startsWith?.('0x') && <div className="absolute left-0 top-0 h-full w-1 bg-yellow-500 animate-pulse"></div>}
                 <div className="flex flex-col pl-2">
-                  <span className={`font-bold ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRED' : 'LIQUIDATED'} {tx.assetLabel}</span>
+                  <span className={`font-bold ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRED' : 'LIQUIDATED'} {tx.assetLabel || 'Unknown'}</span>
                   <span className="text-slate-600">ID: {tx.vaultId?.slice(0, 8)}...</span>
                 </div>
                 <div className="text-right">
                   <div className="text-white font-bold">
                     {(() => {
                         try {
-                            const raw = tx.assets || '0';
+                            const raw = tx.assets ?? '0';
                             const val = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw)));
                             return val.toFixed(4);
                         } catch { return '0.0000'; }

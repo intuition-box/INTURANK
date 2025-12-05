@@ -15,18 +15,20 @@ const fetchGraphQL = async (query: string, variables: any = {}) => {
     const result = await response.json();
 
     if (result.errors) {
-      console.error("GraphQL Errors:", result.errors);
-      throw new Error("Failed to fetch data from Intuition GraphQL");
+      console.warn("GraphQL Query Error:", result.errors);
+      // Don't throw here for the app to survive, just return null data
+      return { data: null };
     }
 
     return result.data;
   } catch (error) {
-    console.error("Network Error:", error);
-    throw error;
+    console.warn("GraphQL Network Error:", error);
+    // Return empty data structure to prevent destructuring errors
+    return { data: null };
   }
 };
 
-const normalize = (x: string) => x.toLowerCase();
+const normalize = (x: string) => x ? x.toLowerCase() : '';
 
 // -------------------------------------------------------
 // 1. GET ALL AGENTS
@@ -43,40 +45,46 @@ export const getAllAgents = async () => {
     }
   `;
 
-  const vaultData = await fetchGraphQL(query);
-  const vaults = vaultData.vaults ?? [];
-  if (vaults.length === 0) return [];
+  try {
+    const vaultData = await fetchGraphQL(query);
+    const vaults = vaultData?.vaults ?? [];
+    if (vaults.length === 0) return [];
 
-  const termIds = vaults.map((v: any) => v.term_id);
+    const termIds = vaults.map((v: any) => v.term_id);
 
-  const atomQuery = `
-    query ($ids: [String!]!) {
-      atoms(where: { term_id: { _in: $ids } }) {
-        term_id
-        label
-        image
-        type
-        creator { id label }
+    const atomQuery = `
+      query ($ids: [String!]!) {
+        atoms(where: { term_id: { _in: $ids } }) {
+          term_id
+          label
+          image
+          type
+          creator { id label }
+        }
       }
-    }
-  `;
+    `;
 
-  const atomData = await fetchGraphQL(atomQuery, { ids: termIds });
+    const atomData = await fetchGraphQL(atomQuery, { ids: termIds });
+    const atoms = atomData?.atoms ?? [];
 
-  return vaults.map((v: any) => {
-    const a = atomData.atoms.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+    return vaults.map((v: any) => {
+      const a = atoms.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
 
-    return {
-      id: v.term_id,
-      label: a?.label || `Agent ${v.term_id.slice(0, 6)}...`,
-      image: a?.image,
-      type: a?.type || "ATOM",
-      creator: a?.creator,
-      totalAssets: v.total_assets,
-      totalShares: v.total_shares,
-      curveId: v.curve_id
-    };
-  });
+      return {
+        id: v.term_id,
+        label: a?.label || `Agent ${v.term_id.slice(0, 6)}...`,
+        image: a?.image,
+        type: a?.type || "ATOM",
+        creator: a?.creator,
+        totalAssets: v.total_assets,
+        totalShares: v.total_shares,
+        curveId: v.curve_id
+      };
+    });
+  } catch (e) {
+    console.warn("getAllAgents failed:", e);
+    return [];
+  }
 };
 
 // -------------------------------------------------------
@@ -108,26 +116,51 @@ export const getAgentById = async (termId: string) => {
     }
   `;
 
-  const [atomRes, vaultRes] = await Promise.all([
-    fetchGraphQL(atomQ, { id }),
-    fetchGraphQL(vaultQ, { id })
-  ]);
+  try {
+    const [atomRes, vaultRes] = await Promise.all([
+      fetchGraphQL(atomQ, { id }),
+      fetchGraphQL(vaultQ, { id })
+    ]);
 
-  const atom = atomRes.atoms?.[0];
-  const vault = vaultRes.vaults?.[0];
+    const atom = atomRes?.atoms?.[0];
+    const vault = vaultRes?.vaults?.[0];
 
-  if (!atom && !vault) return null;
+    // Fallback if both missing (likely not indexed yet), but return structure so app doesn't break
+    if (!atom && !vault) {
+       return {
+          id: termId,
+          label: 'Unknown Agent',
+          image: null,
+          type: 'ATOM',
+          totalAssets: "0",
+          totalShares: "0",
+          curveId: "0"
+       };
+    }
 
-  return {
-    id: termId,
-    label: atom?.label || `Agent ${termId.slice(0, 6)}...`,
-    image: atom?.image,
-    type: atom?.type || "ATOM",
-    creator: atom?.creator,
-    totalAssets: vault?.total_assets ?? "0",
-    totalShares: vault?.total_shares ?? "0",
-    curveId: vault?.curve_id
-  };
+    return {
+      id: termId,
+      label: atom?.label || `Agent ${termId.slice(0, 6)}...`,
+      image: atom?.image,
+      type: atom?.type || "ATOM",
+      creator: atom?.creator,
+      totalAssets: vault?.total_assets ?? "0",
+      totalShares: vault?.total_shares ?? "0",
+      curveId: vault?.curve_id ?? "0"
+    };
+  } catch (e) {
+    console.warn("getAgentById failed:", e);
+    // Return a minimal safe object to prevent UI crashes
+    return {
+       id: termId,
+       label: 'Agent (Offline)',
+       image: null,
+       type: 'ATOM',
+       totalAssets: "0",
+       totalShares: "0",
+       curveId: "0"
+    };
+  }
 };
 
 // -------------------------------------------------------
@@ -143,9 +176,12 @@ export const getAgentTriples = async (termId: string) => {
       }
     }
   `;
-
-  const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
-  return data.triples ?? [];
+  try {
+    const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
+    return data?.triples ?? [];
+  } catch (e) {
+    return [];
+  }
 };
 
 // -------------------------------------------------------
@@ -166,16 +202,20 @@ export const getAgentOpinions = async (termId: string) => {
     }
   `;
 
-  const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
+  try {
+    const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
 
-  return (data.triples ?? []).map((t: any) => ({
-    id: Math.random(),
-    text: t.object?.label,
-    isBullish:
-      t.predicate?.label?.toLowerCase().includes("trust") ||
-      t.predicate?.label?.toLowerCase().includes("bull"),
-    timestamp: Date.now()
-  }));
+    return (data?.triples ?? []).map((t: any) => ({
+      id: Math.random(),
+      text: t.object?.label,
+      isBullish:
+        t.predicate?.label?.toLowerCase().includes("trust") ||
+        t.predicate?.label?.toLowerCase().includes("bull"),
+      timestamp: Date.now()
+    }));
+  } catch (e) {
+    return [];
+  }
 };
 
 // -------------------------------------------------------
@@ -186,13 +226,18 @@ export const getUserPositions = async (address: string) => {
     query ($id: String!) {
       positions(where: { account_id: { _eq: $id } }) {
         shares
-        vault { term_id total_assets total_shares }
+        vault { term_id total_assets total_shares curve_id }
       }
     }
   `;
 
-  const data = await fetchGraphQL(query, { id: address.toLowerCase() });
-  return data.positions ?? [];
+  try {
+    const data = await fetchGraphQL(query, { id: address.toLowerCase() });
+    return data?.positions ?? [];
+  } catch (e) {
+    console.warn("getUserPositions failed:", e);
+    return [];
+  }
 };
 
 // -------------------------------------------------------
@@ -213,6 +258,7 @@ export const getUserHistory = async (
       ) {
         id
         shares
+        assets
         created_at
         sender_id
         vault { term_id }
@@ -225,6 +271,7 @@ export const getUserHistory = async (
       ) {
         id
         shares
+        assets
         created_at
         receiver_id
         vault { term_id }
@@ -235,24 +282,24 @@ export const getUserHistory = async (
   try {
     const data = await fetchGraphQL(query, { account });
 
-    const deposits = (data.deposits ?? []).map((d: any) => ({
+    const deposits = (data?.deposits ?? []).map((d: any) => ({
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0",
+      assets: d.assets || "0",
       timestamp: new Date(d.created_at).getTime(),
-      vaultId: d.vault.term_id,
-      assetLabel: d.vault.term_id.slice(0, 6)
+      vaultId: d.vault?.term_id,
+      assetLabel: d.vault?.term_id?.slice(0, 6)
     }));
 
-    const redeems = (data.redemptions ?? []).map((r: any) => ({
+    const redeems = (data?.redemptions ?? []).map((r: any) => ({
       id: r.id,
       type: "REDEEM",
       shares: r.shares,
-      assets: "0",
+      assets: r.assets || "0",
       timestamp: new Date(r.created_at).getTime(),
-      vaultId: r.vault.term_id,
-      assetLabel: r.vault.term_id.slice(0, 6)
+      vaultId: r.vault?.term_id,
+      assetLabel: r.vault?.term_id?.slice(0, 6)
     }));
 
     return [...deposits, ...redeems].sort((a, b) => b.timestamp - a.timestamp);
@@ -275,6 +322,7 @@ export const getVaultsByIds = async (ids: string[]) => {
         term_id
         total_assets
         total_shares
+        curve_id
       }
     }
   `;
@@ -289,20 +337,33 @@ export const getVaultsByIds = async (ids: string[]) => {
     }
   `;
 
-  const vaultData = await fetchGraphQL(qVaults, { ids });
-  const atomData = await fetchGraphQL(qAtoms, { ids });
+  try {
+    const [vaultData, atomData] = await Promise.all([
+       fetchGraphQL(qVaults, { ids }),
+       fetchGraphQL(qAtoms, { ids })
+    ]);
 
-  return vaultData.vaults.map((v: any) => {
-    const atom = atomData.atoms.find((a: any) => normalize(a.term_id) === normalize(v.term_id));
+    const vaults = vaultData?.vaults ?? [];
+    const atoms = atomData?.atoms ?? [];
 
-    return {
-      id: v.term_id,
-      totalAssets: v.total_assets,
-      totalShares: v.total_shares,
-      label: atom?.label || `Agent ${v.term_id.slice(0, 6)}`,
-      image: atom?.image
-    };
-  });
+    // Return vaults found, but we might also want to return entries for IDs that exist but weren't in vaults (if we want to be safe)
+    // For now, map the vaults we found.
+    return vaults.map((v: any) => {
+      const atom = atoms.find((a: any) => normalize(a.term_id) === normalize(v.term_id));
+
+      return {
+        id: v.term_id,
+        totalAssets: v.total_assets,
+        totalShares: v.total_shares,
+        curveId: v.curve_id,
+        label: atom?.label || `Agent ${v.term_id.slice(0, 6)}`,
+        image: atom?.image
+      };
+    });
+  } catch (e) {
+    console.warn("getVaultsByIds failed:", e);
+    return [];
+  }
 };
 
 // -------------------------------------------------------
@@ -337,29 +398,33 @@ export const getMarketActivity = async (termId: string) => {
     }
   `;
 
-  const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
+  try {
+    const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
 
-  const depositActivity = (data.deposits ?? []).map((d: any) => ({
-    id: d.id,
-    type: "DEPOSIT",
-    shares: d.shares,
-    assets: "0",
-    vaultId: d.vault.term_id,
-    timestamp: new Date(d.created_at).getTime(),
-    assetLabel: d.sender_id?.slice(0, 6) ?? "User"
-  }));
+    const depositActivity = (data?.deposits ?? []).map((d: any) => ({
+      id: d.id,
+      type: "DEPOSIT",
+      shares: d.shares,
+      assets: "0",
+      vaultId: d.vault?.term_id,
+      timestamp: new Date(d.created_at).getTime(),
+      assetLabel: d.sender_id?.slice(0, 6) ?? "User"
+    }));
 
-  const redeemActivity = (data.redemptions ?? []).map((r: any) => ({
-    id: r.id,
-    type: "REDEEM",
-    shares: r.shares,
-    assets: "0",
-    vaultId: r.vault.term_id,
-    timestamp: new Date(r.created_at).getTime(),
-    assetLabel: r.receiver_id?.slice(0, 6) ?? "User"
-  }));
+    const redeemActivity = (data?.redemptions ?? []).map((r: any) => ({
+      id: r.id,
+      type: "REDEEM",
+      shares: r.shares,
+      assets: "0",
+      vaultId: r.vault?.term_id,
+      timestamp: new Date(r.created_at).getTime(),
+      assetLabel: r.receiver_id?.slice(0, 6) ?? "User"
+    }));
 
-  return [...depositActivity, ...redeemActivity];
+    return [...depositActivity, ...redeemActivity];
+  } catch (e) {
+    return [];
+  }
 };
 
 // -------------------------------------------------------
@@ -385,11 +450,11 @@ export const getTopPositions = async (): Promise<any[]> => {
 
   try {
     const data = await fetchGraphQL(query);
-    const positions = data.positions ?? [];
+    const positions = data?.positions ?? [];
 
     if (positions.length === 0) return [];
 
-    const termIds = [...new Set(positions.map((p: any) => p.vault.term_id))];
+    const termIds = [...new Set(positions.map((p: any) => p.vault?.term_id).filter(Boolean))];
 
     const atomQuery = `
       query ($ids: [String!]!) {
@@ -402,26 +467,29 @@ export const getTopPositions = async (): Promise<any[]> => {
     `;
 
     const atomData = await fetchGraphQL(atomQuery, { ids: termIds });
-
+    
     const atomMap = new Map<string, AtomMeta>(
-      atomData.atoms.map((a: any) => [a.term_id.toLowerCase(), a])
+      (atomData?.atoms ?? []).map((a: any) => [a.term_id.toLowerCase(), a])
     );
 
     return positions.map((pos: any) => {
-      const atom = atomMap.get(pos.vault.term_id.toLowerCase());
+      const vid = pos.vault?.term_id;
+      if (!vid) return null;
+      
+      const atom = atomMap.get(vid.toLowerCase());
 
       return {
         id: pos.id,
         shares: pos.shares,
         account: pos.account,
         vault: {
-          term_id: pos.vault.term_id,
+          term_id: vid,
           atom: atom
             ? { label: atom.label, image: atom.image }
             : { label: "Unknown Asset", image: null }
         }
       };
-    });
+    }).filter(Boolean);
 
   } catch (e) {
     console.warn("Failed to fetch leaderboard:", e);
@@ -443,7 +511,7 @@ export const getAtom = async (termId: string): Promise<boolean> => {
 
   try {
     const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
-    return (data.atoms?.length ?? 0) > 0;
+    return (data?.atoms?.length ?? 0) > 0;
   } catch {
     return false;
   }
@@ -483,10 +551,10 @@ export const getNetworkStats = async () => {
   try {
     const data = await fetchGraphQL(query);
     return {
-      tvl: data.vaults_aggregate?.aggregate?.sum?.total_assets || "0",
-      atoms: data.atoms_aggregate?.aggregate?.count || 0,
-      signals: data.triples_aggregate?.aggregate?.count || 0,
-      positions: data.positions_aggregate?.aggregate?.count || 0,
+      tvl: data?.vaults_aggregate?.aggregate?.sum?.total_assets || "0",
+      atoms: data?.atoms_aggregate?.aggregate?.count || 0,
+      signals: data?.triples_aggregate?.aggregate?.count || 0,
+      positions: data?.positions_aggregate?.aggregate?.count || 0,
     };
   } catch (e) {
     console.error("Failed to fetch network stats:", e);

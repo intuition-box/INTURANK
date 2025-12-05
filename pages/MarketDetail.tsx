@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, MessageSquare, FileText, Shield, DollarSign, Zap, RefreshCw, Info, Download, AlertCircle } from 'lucide-react';
+import { Activity, MessageSquare, FileText, Shield, DollarSign, Zap, RefreshCw, Info, Download } from 'lucide-react';
 import { getAgentById, getAgentTriples, getMarketActivity, getAgentOpinions } from '../services/graphql';
-import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, saveLocalTransaction, publishOpinion, getLocalTransactions, getProtocolConfig } from '../services/web3';
+import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, saveLocalTransaction, publishOpinion, getLocalTransactions } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { parseEther, formatEther } from 'viem';
 import { toast } from '../components/Toast';
 import ShareCard from '../components/ShareCard';
-import TransactionModal from '../components/TransactionModal';
-import { playClick, playSuccess } from '../services/audio';
-import { CURRENCY_SYMBOL } from '../constants';
 
 const calculateTrustScore = (assetsWei: string, sharesWei: string) => {
   try {
@@ -70,35 +67,22 @@ const MarketDetail: React.FC = () => {
   const [userPosition, setUserPosition] = useState<{ shares: string; value: string; pnl: string; entry: string; exit: string } | null>(null);
   const [showShareCard, setShowShareCard] = useState(false);
   const [hoverData, setHoverData] = useState<any>(null);
-  
-  // Protocol Params
-  const [minDeposit, setMinDeposit] = useState<string>('0.001');
-
-  // New Modal State
-  const [txModal, setTxModal] = useState<{ isOpen: boolean; status: 'idle' | 'processing' | 'success' | 'error'; title: string; message: string; hash?: string }>({
-    isOpen: false,
-    status: 'idle',
-    title: '',
-    message: ''
-  });
 
   const fetchData = async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [agentData, triplesData, opinionsData, activityData, config] = await Promise.all([
+      const [agentData, triplesData, opinionsData, activityData] = await Promise.all([
         getAgentById(id),
         getAgentTriples(id),
         getAgentOpinions(id),
         getMarketActivity(id),
-        getProtocolConfig()
       ]);
 
       setAgent(agentData);
       setTriples(triplesData || []);
       setComments(opinionsData || []);
       setActivityLog(activityData || []);
-      setMinDeposit(config.minDeposit);
 
       if (agentData) {
         const score = calculateTrustScore(agentData.totalAssets || '0', agentData.totalShares || '0');
@@ -107,7 +91,7 @@ const MarketDetail: React.FC = () => {
 
       const acc = await getConnectedAccount();
       setWallet(acc);
-      if (acc) await refreshBalances(acc, agentData?.curveId);
+      if (acc) await refreshBalances(acc);
     } catch (e) {
       console.error('MarketDetail fetch error:', e);
     } finally {
@@ -115,14 +99,12 @@ const MarketDetail: React.FC = () => {
     }
   };
 
-  const refreshBalances = async (account: string, curveId?: any) => {
+  const refreshBalances = async (account: string) => {
     if (!id) return;
     try {
       const bal = await getWalletBalance(account);
       setWalletBalance(bal);
-      
-      const targetCurveId = curveId ?? agent?.curveId ?? 0;
-      const shares = await getShareBalance(account, id, Number(targetCurveId));
+      const shares = await getShareBalance(account, id);
       setShareBalance(shares || '0');
 
       const sharesNum = parseFloat(shares || '0');
@@ -190,30 +172,10 @@ const MarketDetail: React.FC = () => {
       toast.error('MISSING_INPUT_OR_WALLET');
       return;
     }
-
-    if (tradeMode === 'Buy') {
-        if (parseFloat(inputAmount) < parseFloat(minDeposit)) {
-            toast.error(`MINIMUM DEPOSIT IS ${minDeposit} ${CURRENCY_SYMBOL}`);
-            setTxModal({ isOpen: true, status: 'error', title: 'INVALID AMOUNT', message: `The protocol requires a minimum deposit of ${minDeposit} ${CURRENCY_SYMBOL}.` });
-            return;
-        }
-        if (parseFloat(inputAmount) >= parseFloat(walletBalance)) {
-            toast.error("INSUFFICIENT FUNDS");
-            setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus gas fees.` });
-            return;
-        }
-    }
-    
-    playClick();
-    setTxModal({ isOpen: true, status: 'processing', title: 'PROCESSING TRADE', message: 'Please confirm the transaction in your wallet...' });
-
     try {
-      const curveId = agent?.curveId ? Number(agent.curveId) : 0;
-      let txHash = '';
-      
       if (tradeMode === 'Buy') {
-        const { hash, shares } = await depositToVault(inputAmount, id, wallet, curveId);
-        txHash = hash;
+        // use destructured hash and shares from the updated web3 service
+        const { hash, shares } = await depositToVault(inputAmount, id, wallet);
         saveLocalTransaction({
           id: hash,
           type: 'DEPOSIT',
@@ -225,8 +187,8 @@ const MarketDetail: React.FC = () => {
         }, wallet);
         toast.success('ACQUIRED POSITION SUCCESSFULLY');
       } else {
-        const { hash, assets } = await redeemFromVault(inputAmount, id, wallet, curveId);
-        txHash = hash;
+        // use destructured hash and assets from the updated web3 service
+        const { hash, assets } = await redeemFromVault(inputAmount, id, wallet);
         saveLocalTransaction({
           id: hash,
           type: 'REDEEM',
@@ -237,63 +199,31 @@ const MarketDetail: React.FC = () => {
           assetLabel: agent?.label,
         }, wallet);
         toast.success('POSITION LIQUIDATED');
+        setTimeout(async () => { await refreshBalances(wallet); setShowShareCard(true); }, 2000);
+        return;
       }
-
-      playSuccess();
-      setTxModal({ 
-        isOpen: true, 
-        status: 'success', 
-        title: 'TRANSACTION CONFIRMED', 
-        message: tradeMode === 'Buy' ? `Successfully acquired shares in ${agent?.label}` : `Successfully liquidated position in ${agent?.label}`,
-        hash: txHash 
-      });
-
       setInputAmount('');
-      setTimeout(() => {
-          refreshBalances(wallet, curveId);
-      }, 2000);
-
+      setTimeout(() => refreshBalances(wallet), 2000);
     } catch (e: any) {
       console.error('trade failed:', e);
-      let msg = 'The blockchain transaction failed to execute.';
-      
-      // Decoded error handling from viem
-      if (e.message?.includes('User rejected')) msg = 'User rejected the request.';
-      else if (e.message?.includes('DepositBelowMinimum')) msg = `Deposit amount is too low. Minimum is ${minDeposit} ${CURRENCY_SYMBOL}.`;
-      else if (e.message?.includes('InsufficientBalance')) msg = `Insufficient balance to cover trade + gas.`;
-      
-      setTxModal({ isOpen: true, status: 'error', title: 'TRANSACTION FAILED', message: msg });
+      toast.error('TRANSACTION FAILED');
     }
   };
 
   const handleTransmit = async () => {
     if (!wallet || !id || !newComment) return;
-    
-    playClick();
-    setTxModal({ isOpen: true, status: 'processing', title: 'TRANSMITTING SIGNAL', message: 'Encrypting and signing your opinion on-chain...' });
     setIsTransmitting(true);
-    
     try {
+      toast.info("PREPARING ON-CHAIN OPINION...");
       const hash = await publishOpinion(newComment, id, selectedSide, wallet);
       if (hash) {
-          playSuccess();
-          setTxModal({ 
-            isOpen: true, 
-            status: 'success', 
-            title: 'SIGNAL TRANSMITTED', 
-            message: 'Your opinion has been cryptographically verified and stored.',
-            hash: typeof hash === 'string' ? hash : ''
-          });
+          toast.success(`OPINION ON-CHAIN: ${hash.slice(0, 10)}...`);
           setNewComment('');
           setTimeout(fetchData, 8000);
       }
-    } catch (e: any) {
+    } catch (e) {
       console.error('transmit failed', e);
-      let msg = 'Failed to publish opinion.';
-      if (e.message?.includes('InsufficientBalance')) {
-         msg = `Insufficient balance to cover the signal fee (Min: ${minDeposit} ${CURRENCY_SYMBOL}).`;
-      }
-      setTxModal({ isOpen: true, status: 'error', title: 'TRANSMISSION FAILED', message: msg });
+      toast.error('TRANSMISSION FAILED');
     } finally {
       setIsTransmitting(false);
     }
@@ -314,18 +244,6 @@ const MarketDetail: React.FC = () => {
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 py-6">
-      <TransactionModal 
-         isOpen={txModal.isOpen} 
-         status={txModal.status} 
-         title={txModal.title} 
-         message={txModal.message} 
-         hash={txModal.hash} 
-         onClose={() => {
-             setTxModal(prev => ({ ...prev, isOpen: false }));
-             if (txModal.status === 'success' && tradeMode === 'Sell') setShowShareCard(true);
-         }} 
-      />
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 space-y-6">
           <div className="flex items-center gap-4 p-6 bg-intuition-card border border-intuition-primary/30 clip-path-slant hover-glow relative overflow-hidden">
@@ -346,7 +264,7 @@ const MarketDetail: React.FC = () => {
             <div className="p-6 border-b border-white/5 flex justify-between items-end">
               <div>
                 <div className="flex items-baseline gap-3">
-                  <span className="text-4xl font-black text-white font-display tracking-tight">{displayPrice} <span className="text-lg text-slate-500 font-mono">{CURRENCY_SYMBOL}</span></span>
+                  <span className="text-4xl font-black text-white font-display tracking-tight">{displayPrice} <span className="text-lg text-slate-500 font-mono">tTRUST</span></span>
                   <span className={`text-sm font-mono font-bold ${displayTrust > 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {displayTrust > 50 ? `+${(displayTrust - 50).toFixed(1)}%` : `-${(50 - displayTrust).toFixed(1)}%`}
                   </span>
@@ -458,7 +376,6 @@ const MarketDetail: React.FC = () => {
                   <li>Pricing follows a <strong>Progressive Bonding Curve</strong>.</li>
                   <li>Opinions are stored as <strong>Semantic Triples</strong> on-chain.</li>
                   <li>0.1% Protocol Fee applies to all trades.</li>
-                  <li className="text-intuition-warning"><strong>Minimum Deposit: {minDeposit} {CURRENCY_SYMBOL}</strong></li>
                 </ul>
               </div>
             )}
@@ -494,18 +411,13 @@ const MarketDetail: React.FC = () => {
 
               <div className="space-y-2 mb-6">
                 <div className="flex justify-between text-[10px] font-mono text-intuition-primary/70">
-                  <span>{tradeMode === 'Buy' ? `INPUT (${CURRENCY_SYMBOL})` : 'INPUT (SHARES)'}</span>
+                  <span>{tradeMode === 'Buy' ? 'INPUT (tTRUST)' : 'INPUT (SHARES)'}</span>
                   <span>BAL: {tradeMode === 'Buy' ? walletBalance : shareBalance}</span>
                 </div>
                 <div className="relative">
                   <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className={`w-full bg-black border p-3 text-right text-white font-mono text-lg focus:outline-none clip-path-slant ${tradeMode === 'Buy' ? 'border-intuition-primary' : 'border-intuition-danger'}`} placeholder="0.00" />
                   <button onClick={() => setInputAmount(tradeMode === 'Buy' ? walletBalance : shareBalance)} className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] bg-slate-800 text-white px-2 py-1 rounded hover:bg-white hover:text-black font-bold">MAX</button>
                 </div>
-                {tradeMode === 'Buy' && (
-                    <div className="flex items-center gap-1 text-[10px] text-intuition-warning/80 font-mono">
-                        <AlertCircle size={10} /> Min Deposit: {minDeposit} {CURRENCY_SYMBOL}
-                    </div>
-                )}
               </div>
 
               <button onClick={handleTrade} className={`w-full py-3 font-bold font-display text-sm tracking-widest clip-path-slant hover-glow ${tradeMode === 'Buy' ? 'bg-intuition-success text-black' : 'bg-intuition-danger text-black'}`}>{tradeMode === 'Buy' ? 'CONFIRM_ACQUISITION' : 'CONFIRM_LIQUIDATION'}</button>
