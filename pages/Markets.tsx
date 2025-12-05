@@ -161,7 +161,7 @@ const Markets: React.FC = () => {
             MARKET_EXPLORER
           </h1>
           <p className="text-intuition-primary/60 mt-2 font-mono text-sm">
-            >> SELECT_AGENT_TO_TRADE
+            &gt;&gt; SELECT_AGENT_TO_TRADE
           </p>
         </div>
         
