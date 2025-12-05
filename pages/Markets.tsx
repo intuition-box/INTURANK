@@ -161,7 +161,7 @@ const Markets: React.FC = () => {
             MARKET_EXPLORER
           </h1>
           <p className="text-intuition-primary/60 mt-2 font-mono text-sm">
-            &gt;&gt; SELECT_AGENT_TO_TRADE
+            >> SELECT_AGENT_TO_TRADE
           </p>
         </div>
         
@@ -389,13 +389,14 @@ const Markets: React.FC = () => {
                       </div>
                    </div>
 
+                   {/* Fixed: Replaced nested buttons with divs to allow Link to function */}
                    <div className="grid grid-cols-2 gap-2 mb-4 opacity-60 group-hover:opacity-100 transition-opacity duration-300">
-                      <button className="py-1.5 bg-intuition-success/10 border border-intuition-success/30 text-intuition-success text-xs font-bold font-mono hover:bg-intuition-success hover:text-black transition-colors clip-path-slant">
+                      <div className="py-1.5 bg-intuition-success/10 border border-intuition-success/30 text-intuition-success text-xs font-bold font-mono text-center clip-path-slant">
                          TRUST
-                      </button>
-                      <button className="py-1.5 bg-intuition-danger/10 border border-intuition-danger/30 text-intuition-danger text-xs font-bold font-mono hover:bg-intuition-danger hover:text-black transition-colors clip-path-slant">
+                      </div>
+                      <div className="py-1.5 bg-intuition-danger/10 border border-intuition-danger/30 text-intuition-danger text-xs font-bold font-mono text-center clip-path-slant">
                          DISTRUST
-                      </button>
+                      </div>
                    </div>
 
                    <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500 group-hover:text-intuition-primary/70 transition-colors">
