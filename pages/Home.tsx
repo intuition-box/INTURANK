@@ -88,8 +88,8 @@ const Home: React.FC = () => {
           </h1>
 
           <p className="max-w-2xl mx-auto text-lg md:text-xl text-slate-400 mb-12 font-mono leading-relaxed">
-            <span className="text-intuition-primary">>></span> The intelligence layer of the open web.<br/>
-            <span className="text-intuition-primary">>></span> Stake on identity. Short the noise. Profit from truth.
+            <span className="text-intuition-primary">&gt;&gt;</span> The intelligence layer of the open web.<br/>
+            <span className="text-intuition-primary">&gt;&gt;</span> Stake on identity. Short the noise. Profit from truth.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-24">
@@ -229,7 +229,7 @@ const Home: React.FC = () => {
             </div>
             <div className="p-8 font-mono text-sm md:text-base leading-relaxed text-slate-300 relative">
               <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-              <p className="mb-4 text-intuition-primary">>> SYSTEM BOOT SEQUENCE INITIATED...</p>
+              <p className="mb-4 text-intuition-primary">&gt;&gt; SYSTEM BOOT SEQUENCE INITIATED...</p>
               <p className="mb-4">
                 The internet is broken. Information is abundant, but <span className="text-white font-bold">trust</span> is scarce. 
                 We are drowning in noise, deepfakes, and sybil attacks.
@@ -242,7 +242,7 @@ const Home: React.FC = () => {
                 <span className="text-intuition-success">We are building the credit score for everything.</span> Not controlled by a bank, 
                 but by you. The market decides what is true.
               </p>
-              <p className="animate-pulse text-intuition-primary">>> AWAITING INPUT_</p>
+              <p className="animate-pulse text-intuition-primary">&gt;&gt; AWAITING INPUT_</p>
             </div>
           </div>
         </div>
