@@ -12,7 +12,7 @@ const initAudio = () => {
       if (Ctx) {
         audioCtx = new Ctx();
         masterGain = audioCtx.createGain();
-        masterGain.gain.value = 0.6; // Global volume trim to prevent clipping
+        masterGain.gain.value = 0.25; // Reduced global volume to 25% to prevent loudness issues
         masterGain.connect(audioCtx.destination);
       }
     }
