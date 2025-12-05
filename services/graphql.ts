@@ -417,6 +417,7 @@ export const getNetworkStats = async () => {
 // 9. GET TOP POSITIONS (LEADERBOARD)
 // -------------------------------------------------------
 export const getTopPositions = async () => {
+   // Removed the nested 'atom { label }' request inside vault which caused the schema error
    const query = `
      query {
        positions(limit: 100, order_by: { shares: desc }, where: { shares: { _gt: "0" } }) {
@@ -424,7 +425,6 @@ export const getTopPositions = async () => {
          shares
          vault { 
            term_id 
-           atom { label }
          }
        }
      }
@@ -432,8 +432,42 @@ export const getTopPositions = async () => {
 
    try {
      const data = await fetchGraphQL(query);
-     return data?.positions ?? [];
+     const positions = data?.positions ?? [];
+     
+     if (positions.length === 0) return [];
+
+     // Extract vault IDs to fetch atom labels in a separate query
+     const termIds = Array.from(new Set(positions.map((p: any) => p.vault?.term_id).filter(Boolean)));
+
+     // Only fetch atoms if we have term IDs
+     let atoms: any[] = [];
+     if (termIds.length > 0) {
+         const atomQuery = `
+            query ($ids: [String!]!) {
+                atoms(where: { term_id: { _in: $ids } }) {
+                    term_id
+                    label
+                }
+            }
+         `;
+         const atomData = await fetchGraphQL(atomQuery, { ids: termIds });
+         atoms = atomData?.atoms ?? [];
+     }
+
+     // Map atoms back to positions structure expected by UI
+     return positions.map((p: any) => {
+         const atom = atoms.find((a: any) => a.term_id === p.vault?.term_id);
+         return {
+             ...p,
+             vault: {
+                 ...p.vault,
+                 atom: atom ? { label: atom.label } : null
+             }
+         };
+     });
+
    } catch (e) {
+     console.warn("getTopPositions failed:", e);
      return [];
    }
 };

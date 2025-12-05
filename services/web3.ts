@@ -92,9 +92,15 @@ export const getWalletBalance = async (address: string): Promise<string> => {
 
 export const getShareBalance = async (account: string, termId: string, curveId: number = 0): Promise<string> => {
   try {
-    // Ensure termId is properly formatted 32-byte hex
+    // Robust hex padding
     const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-    const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+    let termIdBytes32: Hex;
+    try {
+       termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+    } catch {
+       return "0";
+    }
+
     const checksumAccount = getAddress(account);
     const curveIdBigInt = BigInt(curveId);
 
