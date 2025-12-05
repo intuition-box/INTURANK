@@ -1,420 +1,422 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle } from 'lucide-react';
-import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork } from '../services/web3';
-import { CHAIN_ID } from '../constants';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { Search, TrendingUp, Filter, DollarSign, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowDown } from 'lucide-react';
+import { formatEther } from 'viem';
+import { getAllAgents, searchGlobalAgents } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
-import Logo from './Logo';
-import WalletModal from './WalletModal';
+import { Account } from '../types';
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
+type SortOption = 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
-  const [chainId, setChainId] = useState<number>(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const location = useLocation();
+const Markets: React.FC = () => {
+  const [agents, setAgents] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [serverResults, setServerResults] = useState<Account[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Sorting State
+  const [sortOption, setSortOption] = useState<SortOption>('VOL_DESC');
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+  
+  // Debounce ref
+  const searchTimeout = useRef<any>(null);
 
-  // Check for existing connection on load
   useEffect(() => {
-    const checkConnection = async () => {
-      // Only auto-connect if user has previously connected (optional: check localStorage)
-      // For now, we check if authorized
-      const account = await getConnectedAccount();
-      if (account) setWalletAddress(account);
-      const cId = await getClientChainId();
-      setChainId(cId);
+    const fetchData = async () => {
+      try {
+        const data = await getAllAgents();
+        setAgents(data);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
     };
-    checkConnection();
+    fetchData();
 
-    if ((window as any).ethereum) {
-        (window as any).ethereum.on('chainChanged', (chainIdHex: string) => {
-            setChainId(parseInt(chainIdHex, 16));
-        });
-        (window as any).ethereum.on('accountsChanged', (accounts: string[]) => {
-             if (accounts.length > 0) setWalletAddress(accounts[0]);
-             else setWalletAddress(null);
-        });
-    }
-  }, []);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
+    // Close sort dropdown on click outside
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsWalletDropdownOpen(false);
+      if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
+        setIsSortOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleConnect = async () => {
-    playClick();
-    // This is now passed to the modal, which awaits it.
-    const address = await connectWallet();
-    if (address) {
-        setWalletAddress(address);
-        setIsWalletModalOpen(false); // Close modal on success inside Layout too as backup
-        const cId = await getClientChainId();
-        setChainId(cId);
+  // Handle Server-Side Search Debounce
+  useEffect(() => {
+     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+     const term = searchTerm.trim();
+     
+     // Reset server results if empty
+     if (term.length < 2) {
+         setServerResults([]);
+         setIsSearching(false);
+         return;
+     }
+
+     setIsSearching(true);
+     searchTimeout.current = setTimeout(async () => {
+        try {
+            const results = await searchGlobalAgents(term);
+            setServerResults(results);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsSearching(false);
+        }
+     }, 600); // 600ms debounce
+
+     return () => clearTimeout(searchTimeout.current);
+  }, [searchTerm]);
+
+  const filteredAgents = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    
+    // Combine local agents and server results
+    const combinedMap = new Map<string, Account>();
+    agents.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
+    serverResults.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
+    
+    let candidates = Array.from(combinedMap.values());
+
+    // 1. STRICT SEARCH FILTERING
+    if (term) {
+        candidates = candidates.filter(agent => {
+            const label = (agent.label || '').toLowerCase();
+            const id = agent.id.toLowerCase();
+            
+            // If user explicitly types '0x', assume they are looking for an ID
+            if (term.startsWith('0x')) {
+                return id.includes(term);
+            }
+            
+            // Otherwise, prioritize Name/Label matching
+            if (label.includes(term)) return true;
+
+            // Only match ID if the search term is significantly unique (avoid matching "a", "b", "c" to hex chars)
+            // Or if it matches the EXACT ID
+            if (term.length > 5 && id.includes(term)) return true;
+            if (id === term) return true;
+
+            return false;
+        });
     }
-  };
 
-  const handleDisconnect = (e: React.MouseEvent) => {
-    playClick();
-    e.stopPropagation();
-    setWalletAddress(null);
-    setIsWalletDropdownOpen(false);
-    // Optionally clear localStorage if you implement persistence later
-  };
+    // 2. SORTING MATRIX
+    return candidates.sort((a, b) => {
+        const getAssets = (x: Account) => parseFloat(formatEther(BigInt(x.totalAssets || '0')));
+        const getShares = (x: Account) => parseFloat(formatEther(BigInt(x.totalShares || '0')));
+        const getPrice = (x: Account) => {
+             const s = getShares(x);
+             return s > 0 ? getAssets(x) / s : 0;
+        };
 
-  const handleCopyAddress = (e: React.MouseEvent) => {
-    playClick();
-    e.stopPropagation();
-    if (walletAddress) {
-      navigator.clipboard.writeText(walletAddress);
-      setIsWalletDropdownOpen(false);
-    }
-  };
+        // Trust Score is derived from Price in this demo logic
+        const getTrust = (x: Account) => {
+             const p = getPrice(x);
+             return Math.min(99, Math.max(1, Math.log10(p * 10 + 1) * 50));
+        };
 
-  const toggleDropdown = () => {
+        switch (sortOption) {
+            case 'VOL_DESC': return getAssets(b) - getAssets(a);
+            case 'VOL_ASC': return getAssets(a) - getAssets(b);
+            case 'PRICE_DESC': return getPrice(b) - getPrice(a);
+            case 'PRICE_ASC': return getPrice(a) - getPrice(b);
+            case 'TRUST_DESC': return getTrust(b) - getTrust(a);
+            case 'TRUST_ASC': return getTrust(a) - getTrust(b);
+            default: return 0;
+        }
+    });
+  }, [agents, searchTerm, serverResults, sortOption]);
+
+  const toggleSort = (option: SortOption) => {
+      setSortOption(option);
+      setIsSortOpen(false);
       playClick();
-      setIsWalletDropdownOpen(prev => !prev);
   };
 
-  const openModal = () => {
-    playClick();
-    setIsWalletModalOpen(true);
-  }
-
-  const navItems = [
-    { label: 'SYSTEM_ROOT', path: '/', icon: <HomeIcon size={16} /> },
-    { label: 'MKTS_EXPLORER', path: '/markets', icon: <TrendingUp size={16} /> },
-    { label: 'PLAYER_STATS', path: '/dashboard', icon: <Users size={16} /> },
-    { label: 'HIGH_SCORES', path: '/stats', icon: <BarChart2 size={16} /> },
-  ];
-
-  const isActive = (path: string) => {
-    if (path === '/' && location.pathname !== '/') return false;
-    return location.pathname.startsWith(path);
+  const getSortLabel = (opt: SortOption) => {
+      switch(opt) {
+          case 'VOL_DESC': return 'VOLUME (HIGH)';
+          case 'VOL_ASC': return 'VOLUME (LOW)';
+          case 'PRICE_DESC': return 'PRICE (HIGH)';
+          case 'PRICE_ASC': return 'PRICE (LOW)';
+          case 'TRUST_DESC': return 'TRUST (HIGH)';
+          case 'TRUST_ASC': return 'TRUST (LOW)';
+      }
   };
 
   return (
-    <div className="min-h-screen bg-intuition-dark text-slate-300 flex flex-col font-sans selection:bg-intuition-primary selection:text-black">
-      
-      <WalletModal 
-        isOpen={isWalletModalOpen} 
-        onClose={() => setIsWalletModalOpen(false)} 
-        onConnect={handleConnect} 
-      />
-
-      {/* HUD Top Bar */}
-      <nav className="fixed top-0 w-full z-50 border-b border-intuition-primary/30 bg-intuition-dark/90 backdrop-blur-md shadow-[0_0_20px_rgba(0,243,255,0.1)]">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            
-            {/* Logo */}
-            <div 
-              className="flex items-center flex-shrink-0 gap-3 group cursor-pointer hover-glitch"
-              onMouseEnter={playHover}
-            >
-              <div className="relative">
-                <div className="w-10 h-10 rounded bg-intuition-dark border border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_10px_rgba(0,243,255,0.4)] group-hover:shadow-[0_0_20px_rgba(0,243,255,0.6)] transition-all duration-500 group-hover:rotate-180 clip-path-slant">
-                  <Logo />
-                </div>
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-intuition-primary rounded-full animate-pulse"></div>
-              </div>
-              <div className="flex flex-col">
-                <Link to="/" onClick={playClick} className="text-xl font-black tracking-wider text-white font-display group-hover:text-intuition-primary transition-colors">
-                  INTU<span className="text-intuition-primary group-hover:text-white transition-colors">RANK</span>
-                </Link>
-                <span className="text-[10px] text-intuition-primary/70 font-mono tracking-[0.2em] group-hover:tracking-[0.3em] transition-all">V.1.0.4 ALPHA</span>
-              </div>
-            </div>
-
-            {/* Desktop Nav */}
-            <div className="hidden md:flex items-center gap-2">
-              {navItems.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onMouseEnter={playHover}
-                  onClick={playClick}
-                  className={`group relative flex items-center gap-2 px-4 py-2 text-xs font-bold tracking-wider font-mono transition-all duration-300 clip-path-slant border overflow-hidden ${
-                    isActive(item.path)
-                      ? 'text-intuition-dark bg-intuition-primary border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.4)]'
-                      : 'text-slate-400 border-transparent bg-white/5 hover:bg-intuition-primary/10 hover:text-intuition-primary hover:border-intuition-primary/50'
-                  }`}
-                >
-                  <div className="transition-transform duration-300 group-hover:-rotate-12 group-hover:scale-110 group-hover:text-intuition-primary">
-                    {item.icon}
-                  </div>
-                  {item.label}
-                  
-                  {!isActive(item.path) && (
-                    <div className="absolute bottom-0 left-0 h-[2px] w-full bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
-                  )}
-                </Link>
-              ))}
-            </div>
-
-            {/* Wallet Button & Dropdown */}
-            <div className="flex items-center gap-3">
-              {walletAddress && chainId !== CHAIN_ID && (
-                  <button 
-                      onClick={async () => {
-                          playClick();
-                          await switchNetwork();
-                      }}
-                      className="hidden md:flex items-center gap-2 px-4 py-2 bg-intuition-danger text-black font-bold font-mono text-xs clip-path-slant hover:bg-white transition-colors animate-pulse"
-                  >
-                      <AlertTriangle size={14} />
-                      SWITCH TO MAINNET
-                  </button>
-              )}
-
-              <div className="hidden md:block relative" ref={dropdownRef}>
-                <button
-                  onClick={walletAddress ? toggleDropdown : openModal}
-                  onMouseEnter={playHover}
-                  className={`group relative flex items-center gap-2 px-6 py-2 font-mono text-xs font-bold tracking-wide transition-all duration-300 clip-path-slant border cursor-pointer z-50 ${
-                    walletAddress
-                      ? 'bg-intuition-success/10 border-intuition-success text-intuition-success shadow-[0_0_10px_rgba(0,255,157,0.2)]'
-                      : 'bg-intuition-primary/10 border-intuition-primary text-intuition-primary hover:bg-intuition-primary/20'
-                  }`}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-[200%] group-hover:translate-x-[200%] transition-transform duration-1000 ease-in-out"></div>
-                  
-                  <div className="transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110 relative z-10">
-                    <Wallet size={14} />
-                  </div>
-                  <span className="relative z-10">
-                    {walletAddress ? (
-                      <span className="flex items-center gap-2">
-                        {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                        <ChevronDown size={12} className={`transition-transform duration-300 ${isWalletDropdownOpen ? 'rotate-180' : ''}`}/>
-                      </span>
-                    ) : (
-                      <span>CONNECT_WALLET</span>
-                    )}
-                  </span>
-                </button>
-
-                {/* Dropdown Menu */}
-                {isWalletDropdownOpen && walletAddress && (
-                  <div className="absolute top-full right-0 mt-2 w-56 bg-black border border-intuition-primary/50 shadow-[0_0_20px_rgba(0,243,255,0.2)] z-[60] clip-path-slant animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-1 space-y-1">
-                        <div className="px-4 py-2 border-b border-white/10 text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">
-                          System Access
-                        </div>
-                        <button 
-                          onClick={handleCopyAddress}
-                          onMouseEnter={playHover}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-mono text-slate-300 hover:bg-intuition-primary/10 hover:text-intuition-primary transition-colors group"
-                        >
-                          <Copy size={14} className="group-hover:scale-110 transition-transform"/> 
-                          COPY_ADDRESS
-                        </button>
-                        <button 
-                          onClick={handleDisconnect}
-                          onMouseEnter={playHover}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors group border-t border-white/5"
-                        >
-                          <LogOut size={14} className="group-hover:translate-x-1 transition-transform"/> 
-                          DISCONNECT_SYSTEM
-                        </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Mobile menu button */}
-            <div className="md:hidden">
-              <button
-                onClick={() => {
-                    playClick();
-                    setIsMenuOpen(!isMenuOpen);
-                }}
-                className="text-intuition-primary hover:text-white p-2 border border-intuition-primary/30 rounded bg-intuition-primary/10 hover-glow clip-path-slant group"
-              >
-                <div className="group-hover:rotate-180 transition-transform duration-500">
-                   {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                </div>
-              </button>
-            </div>
-          </div>
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20">
+      {/* Arcade Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 border-b border-intuition-primary/20 pb-8">
+        <div>
+          <h1 className="text-4xl font-black text-white flex items-center gap-3 font-display tracking-wide text-glow">
+            <Activity className="text-intuition-primary animate-pulse" size={32} />
+            MARKET_EXPLORER
+          </h1>
+          <p className="text-intuition-primary/60 mt-2 font-mono text-sm">
+            &gt;&gt; SELECT_AGENT_TO_TRADE
+          </p>
         </div>
-
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <div className="md:hidden bg-intuition-dark border-b border-intuition-primary/30">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-              {navItems.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => {
-                      playClick();
-                      setIsMenuOpen(false);
-                  }}
-                  className={`group relative block px-3 py-3 rounded border text-sm font-bold font-mono clip-path-slant transition-all hover-glow overflow-hidden ${
-                    isActive(item.path)
-                      ? 'text-intuition-dark bg-intuition-primary border-intuition-primary shadow-[0_0_10px_rgba(0,243,255,0.2)]'
-                      : 'text-slate-400 border-transparent hover:text-intuition-primary hover:border-intuition-primary/30 bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="group-hover:rotate-12 transition-transform duration-300">
-                        {item.icon}
-                    </div>
-                    {item.label}
-                  </div>
-                  <div className="absolute bottom-0 left-0 h-[2px] w-full bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
-                </Link>
-              ))}
+        
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+            {/* Search Bar */}
+            <div className="relative group flex-1">
+              <input 
+                  type="text" 
+                  placeholder="SEARCH NAME OR 0x..." 
+                  className="w-full md:w-72 bg-intuition-dark border border-intuition-border rounded-none py-3 pl-10 pr-10 text-intuition-primary font-mono text-sm focus:outline-none focus:border-intuition-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all placeholder-intuition-primary/30 uppercase clip-path-slant"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onFocus={playHover}
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-intuition-primary/50 group-hover:text-intuition-primary transition-colors" size={16} />
               
-              {walletAddress ? (
-                 <div className="space-y-2 mt-4 pt-4 border-t border-white/10">
-                    <div className="px-3 text-[10px] font-mono text-slate-500 uppercase">Connected: {walletAddress.slice(0,6)}...</div>
-                    {chainId !== CHAIN_ID && (
-                      <button 
-                          onClick={async () => {
-                              playClick();
-                              await switchNetwork();
-                              setIsMenuOpen(false);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-intuition-danger text-black font-mono font-bold clip-path-slant hover-glow animate-pulse"
-                      >
-                          <AlertTriangle size={14} /> SWITCH TO MAINNET
-                      </button>
-                    )}
-                    <button
-                      onClick={handleDisconnect}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-intuition-danger text-intuition-danger font-mono font-bold bg-intuition-danger/10 clip-path-slant hover-glow"
-                    >
-                      DISCONNECT
-                    </button>
+              {isSearching && (
+                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 size={16} className="text-intuition-primary animate-spin" />
                  </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    playClick();
-                    setIsMenuOpen(false);
-                    openModal();
-                  }}
-                  className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 border border-intuition-primary text-intuition-primary font-mono font-bold bg-intuition-primary/10 clip-path-slant hover-glow group relative overflow-hidden"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[200%] group-hover:translate-x-[200%] transition-transform duration-1000 ease-in-out"></div>
-                  <Wallet size={16} className="group-hover:rotate-12 transition-transform" />
-                  CONNECT_WALLET
-                </button>
               )}
             </div>
-          </div>
-        )}
-      </nav>
 
-      {/* Main Content */}
-      <main className="flex-grow pt-16 retro-grid relative z-10">
-        {children}
-      </main>
+            {/* Sort Matrix Button */}
+            <div className="relative" ref={sortRef}>
+                <button 
+                    onClick={() => { setIsSortOpen(!isSortOpen); playClick(); }}
+                    className={`flex items-center justify-between gap-2 px-4 py-3 min-w-[180px] bg-intuition-dark border border-intuition-border text-xs font-mono font-bold text-intuition-primary clip-path-slant hover:bg-intuition-primary/10 hover:border-intuition-primary transition-all ${isSortOpen ? 'border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.2)]' : ''}`}
+                >
+                    <div className="flex items-center gap-2">
+                        <Filter size={14} />
+                        {getSortLabel(sortOption)}
+                    </div>
+                    <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
+                </button>
 
-      {/* Footer */}
-      <footer className="border-t border-intuition-primary/20 bg-intuition-dark py-12 mt-auto z-20 relative">
-        <div className="w-full px-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-8">
-          
-          {/* System Status */}
-          <div className="flex flex-col gap-2">
-             <div className="flex items-center gap-2 text-[10px] font-mono text-intuition-primary/60 uppercase tracking-widest hover-glitch cursor-help" onMouseEnter={playHover}>
-                 <div className="w-2 h-2 bg-intuition-success animate-pulse shadow-[0_0_8px_rgba(0,255,157,0.6)]"></div>
-                 System Online
-             </div>
-             <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">
-                 Chain_ID [{CHAIN_ID}] :: v.1.0.4
-             </div>
-          </div>
+                {/* Sort Matrix Dropdown */}
+                {isSortOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.15)] z-50 clip-path-slant p-1 animate-in slide-in-from-top-2 fade-in duration-200">
+                        <div className="bg-intuition-dark/90 p-2 space-y-1">
+                            <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest px-2 py-1 mb-1 border-b border-white/5">Sort Matrix</div>
+                            
+                            <button onClick={() => toggleSort('VOL_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>VOLUME (HIGH)</span> <TrendingUp size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('PRICE_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>PRICE (HIGH)</span> <DollarSign size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('TRUST_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'TRUST_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>TRUST (HIGH)</span> <ShieldCheck size={12} className="group-hover:scale-110" />
+                            </button>
+                            
+                            <div className="h-px bg-white/10 my-1"></div>
 
-          {/* Powered By Badge - CENTERPIECE */}
-          <div className="flex flex-col items-center justify-center gap-4 group cursor-pointer" onMouseEnter={playHover}>
-             <div className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em] group-hover:text-intuition-primary transition-colors">
-                Powered By
-             </div>
-             <a href="https://intuition.systems" target="_blank" rel="noreferrer" onClick={playClick} className="flex items-center gap-4">
-                {/* Intuition Icon SVG - Custom Recreation of the Logo */}
-                <svg width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white group-hover:text-intuition-primary transition-all duration-500 drop-shadow-[0_0_10px_rgba(255,255,255,0.2)] group-hover:drop-shadow-[0_0_20px_rgba(0,243,255,0.6)] group-hover:rotate-180">
-                    <circle cx="50" cy="50" r="45" stroke="currentColor" strokeWidth="4" strokeOpacity="0.3" strokeLinecap="round" strokeDasharray="10 5" />
-                    <path d="M50 10 A40 40 0 0 1 90 50" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-                    <path d="M50 90 A40 40 0 0 1 10 50" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-                    <circle cx="50" cy="50" r="25" stroke="currentColor" strokeWidth="4" />
-                    <circle cx="50" cy="50" r="10" fill="currentColor" />
-                </svg>
-                {/* Intuition Text Logo */}
-                <div className="flex flex-col">
-                    <span className="text-3xl font-display font-bold tracking-[0.25em] text-white group-hover:text-intuition-primary transition-colors drop-shadow-lg leading-none">
-                        INTUITION
-                    </span>
-                    <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
-                </div>
-             </a>
-          </div>
-
-          {/* Social Links */}
-          <div className="flex gap-4">
-             <a 
-               href="https://github.com/0xdopewilly/INTURANK" 
-               target="_blank" 
-               rel="noreferrer" 
-               onMouseEnter={playHover} 
-               onClick={playClick}
-               className="group p-2 bg-white/5 border border-white/10 hover:border-intuition-primary/50 hover:bg-intuition-primary/10 rounded transition-all hover:scale-110"
-               title="Github"
-             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 group-hover:text-intuition-primary transition-colors">
-                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-                </svg>
-             </a>
-             <a 
-               href="https://x.com/inturank" 
-               target="_blank" 
-               rel="noreferrer" 
-               onMouseEnter={playHover} 
-               onClick={playClick}
-               className="group p-2 bg-white/5 border border-white/10 hover:border-intuition-primary/50 hover:bg-intuition-primary/10 rounded transition-all hover:scale-110"
-               title="Twitter / X"
-             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 group-hover:text-intuition-primary transition-colors">
-                  <path d="M4 4l11.733 16h4.267l-11.733 -16z" />
-                  <path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772" />
-                </svg>
-             </a>
-             <a 
-               href="https://t.me/inturank" 
-               target="_blank" 
-               rel="noreferrer" 
-               onMouseEnter={playHover} 
-               onClick={playClick}
-               className="group p-2 bg-white/5 border border-white/10 hover:border-intuition-primary/50 hover:bg-intuition-primary/10 rounded transition-all hover:scale-110"
-               title="Telegram"
-             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 group-hover:text-intuition-primary transition-colors">
-                  <path d="M22 2L11 13"></path>
-                  <path d="M22 2l-7 20-4-9-9-4 20-7z"></path>
-                </svg>
-             </a>
-          </div>
+                            <button onClick={() => toggleSort('VOL_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>VOLUME (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('PRICE_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>PRICE (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
-      </footer>
+      </div>
+
+      {/* Market Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+           {[...Array(10)].map((_, i) => (
+             <div key={i} className="h-[320px] bg-intuition-card/50 animate-pulse border border-intuition-border/50 relative overflow-hidden clip-path-slant">
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-intuition-primary/5 to-transparent -translate-y-full animate-[shimmer_1.5s_infinite]"></div>
+             </div>
+           ))}
+        </div>
+      ) : filteredAgents.length === 0 ? (
+        <div className="text-center py-20 border border-dashed border-intuition-border bg-intuition-card/30 clip-path-slant flex flex-col items-center justify-center gap-4">
+            <Database size={48} className="text-intuition-border" />
+            <p className="text-intuition-primary/50 text-lg font-mono">
+               {isSearching ? 'SEARCHING GLOBAL MATRIX...' : 'NO_DATA_FOUND_ON_NETWORK'}
+            </p>
+            {searchTerm && !isSearching && (
+                <p className="text-xs text-slate-500 max-w-md">
+                    We scanned the entire Intuition graph for "{searchTerm}" but found no matching Agents.
+                    <br/>Try searching by exact Contract Address (0x...) or a specific Label.
+                </p>
+            )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+          {filteredAgents.map((agent) => {
+             // REAL METRICS CALCULATION
+             const assets = agent.totalAssets ? parseFloat(formatEther(BigInt(agent.totalAssets))) : 0;
+             const shares = agent.totalShares ? parseFloat(formatEther(BigInt(agent.totalShares))) : 0;
+             
+             let price = 0;
+             if (shares > 0) {
+                 price = assets / shares;
+             }
+
+             // Trust Strength Score (0-99)
+             const strength = Math.min(99, Math.max(1, Math.log10(price * 10 + 1) * 50));
+             
+             const trustPct = strength.toFixed(0);
+             const distrustPct = (100 - strength).toFixed(0);
+             const realVolume = assets.toFixed(2);
+             const isHot = assets > 100;
+
+             // Calculate Reputation Score (normalized 0-100 based on strength)
+             const repScore = Math.floor(strength);
+
+             // Rank Calculation Logic (Futuristic Style)
+             let rank = 'D';
+             let rankColor = 'text-slate-500';
+             let rankBorder = 'border-slate-800';
+             let rankBg = 'bg-slate-900/50';
+             let barColor = 'bg-slate-700';
+             let shadow = '';
+             
+             if (repScore >= 90) {
+                 rank = 'S';
+                 rankColor = 'text-yellow-400';
+                 rankBorder = 'border-yellow-500/50';
+                 rankBg = 'bg-yellow-900/20';
+                 barColor = 'bg-yellow-400';
+                 shadow = 'shadow-[0_0_15px_rgba(250,204,21,0.2)]';
+             } else if (repScore >= 75) {
+                 rank = 'A';
+                 rankColor = 'text-purple-400';
+                 rankBorder = 'border-purple-500/50';
+                 rankBg = 'bg-purple-900/20';
+                 barColor = 'bg-purple-400';
+                 shadow = 'shadow-[0_0_10px_rgba(168,85,247,0.2)]';
+             } else if (repScore >= 60) {
+                 rank = 'B';
+                 rankColor = 'text-cyan-400';
+                 rankBorder = 'border-cyan-500/50';
+                 rankBg = 'bg-cyan-900/20';
+                 barColor = 'bg-cyan-400';
+                 shadow = 'shadow-[0_0_10px_rgba(6,182,212,0.2)]';
+             } else if (repScore >= 40) {
+                 rank = 'C';
+                 rankColor = 'text-emerald-400';
+                 rankBorder = 'border-emerald-500/50';
+                 rankBg = 'bg-emerald-900/20';
+                 barColor = 'bg-emerald-400';
+             }
+
+             return (
+              <Link 
+                key={agent.id} 
+                to={`/markets/${agent.id}`}
+                onClick={playClick}
+                onMouseEnter={playHover}
+                className="group relative flex flex-col bg-[#05080f] border border-intuition-border transition-all duration-300 overflow-hidden clip-path-slant hover-glow hover:-translate-y-2"
+              >
+                {/* Tech Corners */}
+                <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+                {/* Card Header */}
+                <div className="h-36 bg-slate-900/50 relative p-4 border-b border-intuition-border group-hover:border-intuition-primary/30 transition-colors">
+                   <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay"></div>
+                   
+                   <div className="relative z-10 flex justify-between items-start mb-3">
+                      <span className="text-[10px] font-mono text-intuition-primary/60 bg-black/50 px-1 border border-intuition-primary/20 group-hover:text-intuition-primary group-hover:border-intuition-primary/50 transition-colors">ID: {agent.id.slice(0,6)}</span>
+                      <div className="flex gap-2">
+                          {/* FUTURISTIC RANK BADGE */}
+                          <div className={`relative flex items-stretch border ${rankBorder} ${rankBg} ${shadow} clip-path-slant pr-2 h-6`}>
+                              <div className={`w-1 mr-2 ${barColor} ${rank === 'S' ? 'animate-pulse' : ''}`}></div>
+                              <div className="flex items-center gap-1">
+                                  <span className="text-[8px] font-mono text-slate-500 uppercase tracking-wider mt-0.5">CLS</span>
+                                  <span className={`text-base font-black font-display italic leading-none ${rankColor} ${rank === 'S' ? 'text-glow' : ''}`}>{rank}</span>
+                              </div>
+                          </div>
+
+                          <span className={`px-2 py-0.5 text-[10px] font-bold font-mono flex items-center gap-1 border h-6 clip-path-slant ${repScore > 80 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' : repScore > 50 ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-slate-700/50 text-slate-400 border-slate-600'}`}>
+                             <ShieldCheck size={10} /> REP: {repScore}
+                          </span>
+                          {isHot && (
+                            <span className="px-2 py-0.5 bg-intuition-warning/20 border border-intuition-warning text-intuition-warning text-[10px] font-bold font-mono flex items-center gap-1 animate-pulse h-6 clip-path-slant">
+                            <Zap size={10} /> HOT
+                            </span>
+                          )}
+                      </div>
+                   </div>
+
+                   <div className="flex items-center gap-4 relative z-10">
+                      <div className="w-14 h-14 bg-black border border-intuition-primary/50 p-0.5 shadow-[0_0_10px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_20px_rgba(0,243,255,0.4)] transition-shadow">
+                          {agent.image ? (
+                             <img src={agent.image} alt={agent.label} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
+                          ) : (
+                             <div className="w-full h-full flex items-center justify-center text-intuition-primary font-bold text-xl bg-intuition-primary/10">
+                                {agent.label?.[0]?.toUpperCase() || '?'}
+                             </div>
+                          )}
+                      </div>
+                      <div className="flex-1">
+                          <h3 className="text-white font-bold font-display text-lg leading-tight line-clamp-2 group-hover:text-intuition-primary transition-colors group-hover:text-glow">
+                             {agent.label || 'UNKNOWN_AGENT'}
+                          </h3>
+                          <p className="text-[10px] text-slate-500 font-mono mt-1">TYPE: {agent.type?.toUpperCase() || 'ATOM'}</p>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4 flex-1 flex flex-col bg-gradient-to-b from-intuition-dark to-[#02040a]">
+                   
+                   <div className="mb-5 space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider">
+                         <span className="text-intuition-success">TRUST {trustPct}%</span>
+                         <span className="text-intuition-danger">{distrustPct}% DISTRUST</span>
+                      </div>
+                      {/* Real Sentiment Bar calculated from Price */}
+                      <div className="w-full h-3 bg-black border border-slate-800 flex relative clip-path-slant">
+                         <div className="absolute inset-0 grid grid-cols-10 pointer-events-none">
+                            {[...Array(9)].map((_, i) => <div key={i} className="border-r border-black/50 h-full"></div>)}
+                         </div>
+                         <div style={{ width: `${trustPct}%` }} className="h-full bg-intuition-success/80 shadow-[0_0_10px_rgba(0,255,157,0.4)] transition-all duration-1000"></div>
+                         <div style={{ width: `${distrustPct}%` }} className="h-full bg-intuition-danger/80 shadow-[0_0_10px_rgba(255,0,85,0.4)] transition-all duration-1000"></div>
+                      </div>
+                   </div>
+
+                   {/* Fixed: Replaced nested buttons with divs to allow Link to function */}
+                   <div className="grid grid-cols-2 gap-2 mb-4 opacity-60 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="py-1.5 bg-intuition-success/10 border border-intuition-success/30 text-intuition-success text-xs font-bold font-mono text-center clip-path-slant">
+                         TRUST
+                      </div>
+                      <div className="py-1.5 bg-intuition-danger/10 border border-intuition-danger/30 text-intuition-danger text-xs font-bold font-mono text-center clip-path-slant">
+                         DISTRUST
+                      </div>
+                   </div>
+
+                   <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500 group-hover:text-intuition-primary/70 transition-colors">
+                      <div className="flex items-center gap-1 text-intuition-secondary">
+                         <DollarSign size={10} />
+                         VOL: {realVolume}
+                      </div>
+                      <div className="flex items-center gap-1">
+                         <Activity size={10} />
+                         PRICE: {price.toFixed(3)}
+                      </div>
+                   </div>
+                </div>
+              </Link>
+             );
+          })}
+        </div>
+      )}
     </div>
   );
 };
 
-export default Layout;
+export default Markets;
