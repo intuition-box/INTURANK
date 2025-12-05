@@ -1,345 +1,421 @@
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256 } from 'viem';
-import { CHAIN_ID, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS } from '../constants';
-import { Transaction } from '../types';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { Search, TrendingUp, Filter, DollarSign, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { formatEther } from 'viem';
+import { getAllAgents, searchGlobalAgents } from '../services/graphql';
+import { playHover, playClick } from '../services/audio';
+import { Account } from '../types';
 
-export const intuitionTestnet = {
-  id: CHAIN_ID,
-  name: 'Intuition Mainnet',
-  network: 'intuition-mainnet',
-  nativeCurrency: { decimals: 18, name: 'TRUST', symbol: 'TRUST' },
-  rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } },
-} as const;
+type SortOption = 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
 
-export const publicClient = createPublicClient({
-  chain: intuitionTestnet,
-  transport: http(RPC_URL),
-});
-
-// --- Local Transaction Helpers ---
-const LOCAL_TX_KEY = 'inturank_local_transactions';
-export const saveLocalTransaction = (tx: Transaction, account: string) => {
-  const key = `${LOCAL_TX_KEY}_${account.toLowerCase()}`;
-  const currentStr = localStorage.getItem(key);
-  const current: Transaction[] = currentStr ? JSON.parse(currentStr) : [];
-  const updated = [tx, ...current].slice(0, 50);
-  localStorage.setItem(key, JSON.stringify(updated));
-};
-
-export const getLocalTransactions = (account: string): Transaction[] => {
-  const key = `${LOCAL_TX_KEY}_${account.toLowerCase()}`;
-  const currentStr = localStorage.getItem(key);
-  return currentStr ? JSON.parse(currentStr) : [];
-};
-
-export const getConnectedAccount = async (): Promise<string | null> => {
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
-    try {
-      const walletClient = createWalletClient({
-        chain: intuitionTestnet,
-        transport: custom((window as any).ethereum),
-      });
-      const [address] = await walletClient.getAddresses();
-      return address ? getAddress(address) : null;
-    } catch { return null; }
-  }
-  return null;
-};
-
-export const getClientChainId = async (): Promise<number> => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-        try {
-            const chainIdHex = await (window as any).ethereum.request({ method: 'eth_chainId' });
-            return parseInt(chainIdHex, 16);
-        } catch { return 0; }
-    }
-    return 0;
-};
-
-export const switchNetwork = async () => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-        try {
-            await (window as any).ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: `0x${intuitionTestnet.id.toString(16)}` }],
-            });
-        } catch (switchError: any) {
-            // This error code indicates that the chain has not been added to MetaMask.
-            if (switchError.code === 4902) {
-                try {
-                    await (window as any).ethereum.request({
-                        method: 'wallet_addEthereumChain',
-                        params: [{
-                            chainId: `0x${intuitionTestnet.id.toString(16)}`,
-                            chainName: intuitionTestnet.name,
-                            nativeCurrency: intuitionTestnet.nativeCurrency,
-                            rpcUrls: [RPC_URL],
-                        }],
-                    });
-                } catch (addError) {
-                    console.error(addError);
-                }
-            }
-        }
-    }
-};
-
-export const getWalletBalance = async (address: string): Promise<string> => {
-  try {
-    const balance = await publicClient.getBalance({ address: address as `0x${string}` });
-    return formatEther(balance);
-  } catch (e) { return "0.00"; }
-};
-
-export const getShareBalance = async (account: string, termId: string, curveId: number = 0): Promise<string> => {
-  try {
-    // Ensure termId is properly formatted 32-byte hex
-    const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-    const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-    const checksumAccount = getAddress(account);
-    const curveIdBigInt = BigInt(curveId);
-
-    const shares = await publicClient.readContract({
-      address: MULTI_VAULT_ADDRESS as `0x${string}`,
-      abi: MULTI_VAULT_ABI,
-      functionName: 'getShares',
-      args: [checksumAccount, termIdBytes32, curveIdBigInt]
-    } as any);
-    return formatEther(shares as unknown as bigint);
-  } catch (e) { 
-    console.warn(`Error fetching shares for ${termId}:`, e);
-    return "0"; 
-  }
-};
-
-// --- Quote Redeem (Get Real-time Value) ---
-export const getQuoteRedeem = async (sharesAmount: string, termId: string, holder: string, curveId: number = 0): Promise<string> => {
-    try {
-        const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-        const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-        const checksumHolder = getAddress(holder);
-        const sharesWei = parseEther(sharesAmount);
-        const curveIdBigInt = BigInt(curveId);
-
-        // We use simulateContract to call 'redeemBatch' as if we were selling.
-        // This returns the asset amount we WOULD get.
-        const { result } = await publicClient.simulateContract({
-            address: MULTI_VAULT_ADDRESS as `0x${string}`,
-            abi: MULTI_VAULT_ABI,
-            functionName: 'redeemBatch',
-            account: checksumHolder,
-            args: [checksumHolder, [termIdBytes32], [curveIdBigInt], [sharesWei], [0n]],
-        } as any);
-
-        const assets = (result as unknown as bigint[])[0];
-        return formatEther(assets);
-    } catch (e) {
-        // If simulation fails (e.g., balance check fails or insufficient liquidity), return 0
-        return "0";
-    }
-};
-
-// --- Fetch Protocol Config (Min Deposit) ---
-export const getProtocolConfig = async () => {
-  try {
-    const config = await publicClient.readContract({
-      address: MULTI_VAULT_ADDRESS as `0x${string}`,
-      abi: MULTI_VAULT_ABI,
-      functionName: 'generalConfig',
-      args: [], // Explicit args required for viem strict overload resolution
-    } as any) as any;
-    
-    // Config struct from ABI: 
-    // [admin, protocolMultisig, feeDenominator, trustBonding, minDeposit, minShare, atomDataMaxLength, feeThreshold]
-    // minDeposit is at index 4 if returned as array, or 'minDeposit' key if object
-    const minDeposit = config[4] !== undefined ? config[4] : config.minDeposit;
-    
-    return {
-      minDeposit: formatEther(minDeposit),
-      minDepositWei: minDeposit
-    };
-  } catch (e) {
-    console.warn("Failed to fetch protocol config", e);
-    // Fallback safe default of 0.001 TRUST if fetch fails
-    return { minDeposit: "0.001", minDepositWei: parseEther("0.001") }; 
-  }
-};
-
-export const connectWallet = async (): Promise<string | null> => {
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
-    try {
-      const walletClient = createWalletClient({
-        chain: intuitionTestnet,
-        transport: custom((window as any).ethereum),
-      });
-      const [address] = await walletClient.requestAddresses();
-      try { await walletClient.switchChain({ id: intuitionTestnet.id }); } 
-      catch (e) { await walletClient.addChain({ chain: intuitionTestnet }); }
-      return address ? getAddress(address) : null;
-    } catch (error) {
-      console.error("Wallet connection failed:", error);
-      return null; 
-    }
-  } else { 
-    alert("Please install a wallet like MetaMask."); 
-    return null; 
-  }
-};
-
-export const depositToVault = async (amount: string, termId: string, receiver: string, curveId: number = 0) => {
-  if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error("No wallet");
-  const checksumReceiver = getAddress(receiver);
-  const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-  const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-  const curveIdBigInt = BigInt(curveId);
+const Markets: React.FC = () => {
+  const [agents, setAgents] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [serverResults, setServerResults] = useState<Account[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   
-  const walletClient = createWalletClient({
-    chain: intuitionTestnet,
-    transport: custom((window as any).ethereum),
-    account: checksumReceiver,
-  });
-  const assets = parseEther(amount);
+  // Sorting State
+  const [sortOption, setSortOption] = useState<SortOption>('VOL_DESC');
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
   
-  // Simulate to get expected shares
-  const { request, result } = await publicClient.simulateContract({
-    address: MULTI_VAULT_ADDRESS as `0x${string}`,
-    abi: MULTI_VAULT_ABI,
-    functionName: 'depositBatch',
-    account: checksumReceiver,
-    args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [assets], [0n]],
-    value: assets,
-  });
-  
-  const hash = await walletClient.writeContract(request as any);
-  // result is shares[] (uint256[])
-  const shares = (result as unknown as bigint[])[0]; 
-  
-  return { hash, shares };
-};
+  // Debounce ref
+  const searchTimeout = useRef<any>(null);
 
-export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, curveId: number = 0) => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error("No wallet");
-    const checksumReceiver = getAddress(receiver);
-    const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-    const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-    const curveIdBigInt = BigInt(curveId);
-    
-    const walletClient = createWalletClient({
-        chain: intuitionTestnet,
-        transport: custom((window as any).ethereum),
-        account: checksumReceiver,
-    });
-    
-    const shares = parseEther(sharesAmount);
-    
-    // Simulate to get expected assets
-    const { request, result } = await publicClient.simulateContract({
-        address: MULTI_VAULT_ADDRESS as `0x${string}`,
-        abi: MULTI_VAULT_ABI,
-        functionName: 'redeemBatch',
-        account: checksumReceiver,
-        args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [shares], [0n]],
-    });
-    
-    const hash = await walletClient.writeContract(request as any);
-    // result is assets[] (uint256[])
-    const assets = (result as unknown as bigint[])[0];
-    
-    return { hash, assets };
-};
-
-// --- ROBUST CHECK-OR-CREATE PATTERN FOR OPINIONS ---
-export const publishOpinion = async (
-  text: string,
-  agentId: string,
-  side: "TRUST" | "DISTRUST",
-  wallet: string
-) => {
-  if (!(window as any).ethereum) throw new Error("No wallet");
-
-  const checksumAddress = getAddress(wallet);
-  const walletClient = createWalletClient({
-    chain: intuitionTestnet,
-    transport: custom((window as any).ethereum),
-    account: checksumAddress,
-  });
-
-  // 1. Prepare Data
-  const textHex = stringToHex(text);
-  const atomFee = parseEther("0.0001");
-  const tripleFee = parseEther("0.0001");
-
-  // 2. Deterministic ID Check
-  const commentAtomId = keccak256(textHex);
-
-  // 3. Check if Exists On-Chain
-  const exists = await publicClient.readContract({
-    address: MULTI_VAULT_ADDRESS as `0x${string}`,
-    abi: MULTI_VAULT_ABI,
-    functionName: 'isTermCreated',
-    args: [commentAtomId]
-  } as unknown as any) as boolean;
-
-  // 4. Create Atom if needed (Idempotent)
-  if (!exists) {
-    try {
-      const { request: atomReq } = await publicClient.simulateContract({
-        address: MULTI_VAULT_ADDRESS as `0x${string}`,
-        abi: MULTI_VAULT_ABI,
-        functionName: 'createAtoms',
-        account: checksumAddress,
-        args: [[textHex], [atomFee]],
-        value: atomFee
-      });
-      const atomTx = await walletClient.writeContract(atomReq as any);
-      await publicClient.waitForTransactionReceipt({ hash: atomTx });
-    } catch (e: any) {
-      console.warn("Atom creation skipped or failed (likely exists):", e);
-    }
-  }
-
-  // 5. Create Triple (Agent -> HAS_OPINION -> Comment)
-  const subjectId = pad(agentId as Hex, { size: 32 });
-  // We use a generic predicate "HAS_OPINION" to avoid complex checks
-  const genericPredHex = stringToHex("HAS_OPINION");
-  const predicateId = keccak256(genericPredHex);
-  
-  // Check predicate existence
-  const predExists = await publicClient.readContract({
-      address: MULTI_VAULT_ADDRESS as `0x${string}`,
-      abi: MULTI_VAULT_ABI,
-      functionName: 'isTermCreated',
-      args: [predicateId]
-  } as unknown as any) as boolean;
-
-  if (!predExists) {
+  useEffect(() => {
+    const fetchData = async () => {
       try {
-        const { request: predReq } = await publicClient.simulateContract({
-            address: MULTI_VAULT_ADDRESS as `0x${string}`,
-            abi: MULTI_VAULT_ABI,
-            functionName: 'createAtoms',
-            account: checksumAddress,
-            args: [[genericPredHex], [atomFee]],
-            value: atomFee
-        });
-        const predTx = await walletClient.writeContract(predReq as any);
-        await publicClient.waitForTransactionReceipt({ hash: predTx });
-      } catch (e) { console.warn("Predicate creation skipped"); }
-  }
+        const data = await getAllAgents();
+        setAgents(data);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
 
-  // Finally create the Triple link
-  const { request: tripleReq } = await publicClient.simulateContract({
-    address: MULTI_VAULT_ADDRESS as `0x${string}`,
-    abi: MULTI_VAULT_ABI,
-    functionName: 'createTriples',
-    account: checksumAddress,
-    args: [
-      [subjectId],       
-      [predicateId],     
-      [commentAtomId],   
-      [tripleFee]        
-    ],
-    value: tripleFee
-  });
-  
-  return await walletClient.writeContract(tripleReq as any);
+    // Close sort dropdown on click outside
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Handle Server-Side Search Debounce
+  useEffect(() => {
+     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+     const term = searchTerm.trim();
+     
+     // Reset server results if empty
+     if (term.length < 2) {
+         setServerResults([]);
+         setIsSearching(false);
+         return;
+     }
+
+     setIsSearching(true);
+     searchTimeout.current = setTimeout(async () => {
+        try {
+            const results = await searchGlobalAgents(term);
+            setServerResults(results);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsSearching(false);
+        }
+     }, 600); // 600ms debounce
+
+     return () => clearTimeout(searchTimeout.current);
+  }, [searchTerm]);
+
+  const filteredAgents = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    
+    // Combine local agents and server results
+    const combinedMap = new Map<string, Account>();
+    agents.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
+    serverResults.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
+    
+    let candidates = Array.from(combinedMap.values());
+
+    // 1. STRICT SEARCH FILTERING
+    if (term) {
+        candidates = candidates.filter(agent => {
+            const label = (agent.label || '').toLowerCase();
+            const id = agent.id.toLowerCase();
+            
+            // If user explicitly types '0x', assume they are looking for an ID
+            if (term.startsWith('0x')) {
+                return id.includes(term);
+            }
+            
+            // Otherwise, prioritize Name/Label matching
+            if (label.includes(term)) return true;
+
+            // Only match ID if the search term is significantly unique (avoid matching "a", "b", "c" to hex chars)
+            // Or if it matches the EXACT ID
+            if (term.length > 5 && id.includes(term)) return true;
+            if (id === term) return true;
+
+            return false;
+        });
+    }
+
+    // 2. SORTING MATRIX
+    return candidates.sort((a, b) => {
+        const getAssets = (x: Account) => parseFloat(formatEther(BigInt(x.totalAssets || '0')));
+        const getShares = (x: Account) => parseFloat(formatEther(BigInt(x.totalShares || '0')));
+        const getPrice = (x: Account) => {
+             const s = getShares(x);
+             return s > 0 ? getAssets(x) / s : 0;
+        };
+
+        // Trust Score is derived from Price in this demo logic
+        const getTrust = (x: Account) => {
+             const p = getPrice(x);
+             return Math.min(99, Math.max(1, Math.log10(p * 10 + 1) * 50));
+        };
+
+        switch (sortOption) {
+            case 'VOL_DESC': return getAssets(b) - getAssets(a);
+            case 'VOL_ASC': return getAssets(a) - getAssets(b);
+            case 'PRICE_DESC': return getPrice(b) - getPrice(a);
+            case 'PRICE_ASC': return getPrice(a) - getPrice(b);
+            case 'TRUST_DESC': return getTrust(b) - getTrust(a);
+            case 'TRUST_ASC': return getTrust(a) - getTrust(b);
+            default: return 0;
+        }
+    });
+  }, [agents, searchTerm, serverResults, sortOption]);
+
+  const toggleSort = (option: SortOption) => {
+      setSortOption(option);
+      setIsSortOpen(false);
+      playClick();
+  };
+
+  const getSortLabel = (opt: SortOption) => {
+      switch(opt) {
+          case 'VOL_DESC': return 'VOLUME (HIGH)';
+          case 'VOL_ASC': return 'VOLUME (LOW)';
+          case 'PRICE_DESC': return 'PRICE (HIGH)';
+          case 'PRICE_ASC': return 'PRICE (LOW)';
+          case 'TRUST_DESC': return 'TRUST (HIGH)';
+          case 'TRUST_ASC': return 'TRUST (LOW)';
+      }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
+      {/* Arcade Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 border-b border-intuition-primary/20 pb-8">
+        <div>
+          <h1 className="text-4xl font-black text-white flex items-center gap-3 font-display tracking-wide text-glow">
+            <Activity className="text-intuition-primary animate-pulse" size={32} />
+            MARKET_EXPLORER
+          </h1>
+          <p className="text-intuition-primary/60 mt-2 font-mono text-sm">
+            >> SELECT_AGENT_TO_TRADE
+          </p>
+        </div>
+        
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+            {/* Search Bar */}
+            <div className="relative group flex-1">
+              <input 
+                  type="text" 
+                  placeholder="SEARCH NAME OR 0x..." 
+                  className="w-full md:w-72 bg-intuition-dark border border-intuition-border rounded-none py-3 pl-10 pr-10 text-intuition-primary font-mono text-sm focus:outline-none focus:border-intuition-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all placeholder-intuition-primary/30 uppercase clip-path-slant"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onFocus={playHover}
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-intuition-primary/50 group-hover:text-intuition-primary transition-colors" size={16} />
+              
+              {isSearching && (
+                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 size={16} className="text-intuition-primary animate-spin" />
+                 </div>
+              )}
+            </div>
+
+            {/* Sort Matrix Button */}
+            <div className="relative" ref={sortRef}>
+                <button 
+                    onClick={() => { setIsSortOpen(!isSortOpen); playClick(); }}
+                    className={`flex items-center justify-between gap-2 px-4 py-3 min-w-[180px] bg-intuition-dark border border-intuition-border text-xs font-mono font-bold text-intuition-primary clip-path-slant hover:bg-intuition-primary/10 hover:border-intuition-primary transition-all ${isSortOpen ? 'border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.2)]' : ''}`}
+                >
+                    <div className="flex items-center gap-2">
+                        <Filter size={14} />
+                        {getSortLabel(sortOption)}
+                    </div>
+                    <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Sort Matrix Dropdown */}
+                {isSortOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.15)] z-50 clip-path-slant p-1 animate-in slide-in-from-top-2 fade-in duration-200">
+                        <div className="bg-intuition-dark/90 p-2 space-y-1">
+                            <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest px-2 py-1 mb-1 border-b border-white/5">Sort Matrix</div>
+                            
+                            <button onClick={() => toggleSort('VOL_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>VOLUME (HIGH)</span> <TrendingUp size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('PRICE_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>PRICE (HIGH)</span> <DollarSign size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('TRUST_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'TRUST_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>TRUST (HIGH)</span> <ShieldCheck size={12} className="group-hover:scale-110" />
+                            </button>
+                            
+                            <div className="h-px bg-white/10 my-1"></div>
+
+                            <button onClick={() => toggleSort('VOL_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>VOLUME (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('PRICE_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>PRICE (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+      </div>
+
+      {/* Market Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+           {[...Array(8)].map((_, i) => (
+             <div key={i} className="h-[320px] bg-intuition-card/50 animate-pulse border border-intuition-border/50 relative overflow-hidden clip-path-slant">
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-intuition-primary/5 to-transparent -translate-y-full animate-[shimmer_1.5s_infinite]"></div>
+             </div>
+           ))}
+        </div>
+      ) : filteredAgents.length === 0 ? (
+        <div className="text-center py-20 border border-dashed border-intuition-border bg-intuition-card/30 clip-path-slant flex flex-col items-center justify-center gap-4">
+            <Database size={48} className="text-intuition-border" />
+            <p className="text-intuition-primary/50 text-lg font-mono">
+               {isSearching ? 'SEARCHING GLOBAL MATRIX...' : 'NO_DATA_FOUND_ON_NETWORK'}
+            </p>
+            {searchTerm && !isSearching && (
+                <p className="text-xs text-slate-500 max-w-md">
+                    We scanned the entire Intuition graph for "{searchTerm}" but found no matching Agents.
+                    <br/>Try searching by exact Contract Address (0x...) or a specific Label.
+                </p>
+            )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredAgents.map((agent) => {
+             // REAL METRICS CALCULATION
+             const assets = agent.totalAssets ? parseFloat(formatEther(BigInt(agent.totalAssets))) : 0;
+             const shares = agent.totalShares ? parseFloat(formatEther(BigInt(agent.totalShares))) : 0;
+             
+             let price = 0;
+             if (shares > 0) {
+                 price = assets / shares;
+             }
+
+             // Trust Strength Score (0-99)
+             const strength = Math.min(99, Math.max(1, Math.log10(price * 10 + 1) * 50));
+             
+             const trustPct = strength.toFixed(0);
+             const distrustPct = (100 - strength).toFixed(0);
+             const realVolume = assets.toFixed(2);
+             const isHot = assets > 100;
+
+             // Calculate Reputation Score (normalized 0-100 based on strength)
+             const repScore = Math.floor(strength);
+
+             // Rank Calculation Logic (Futuristic Style)
+             let rank = 'D';
+             let rankColor = 'text-slate-500';
+             let rankBorder = 'border-slate-800';
+             let rankBg = 'bg-slate-900/50';
+             let barColor = 'bg-slate-700';
+             let shadow = '';
+             
+             if (repScore >= 90) {
+                 rank = 'S';
+                 rankColor = 'text-yellow-400';
+                 rankBorder = 'border-yellow-500/50';
+                 rankBg = 'bg-yellow-900/20';
+                 barColor = 'bg-yellow-400';
+                 shadow = 'shadow-[0_0_15px_rgba(250,204,21,0.2)]';
+             } else if (repScore >= 75) {
+                 rank = 'A';
+                 rankColor = 'text-purple-400';
+                 rankBorder = 'border-purple-500/50';
+                 rankBg = 'bg-purple-900/20';
+                 barColor = 'bg-purple-400';
+                 shadow = 'shadow-[0_0_10px_rgba(168,85,247,0.2)]';
+             } else if (repScore >= 60) {
+                 rank = 'B';
+                 rankColor = 'text-cyan-400';
+                 rankBorder = 'border-cyan-500/50';
+                 rankBg = 'bg-cyan-900/20';
+                 barColor = 'bg-cyan-400';
+                 shadow = 'shadow-[0_0_10px_rgba(6,182,212,0.2)]';
+             } else if (repScore >= 40) {
+                 rank = 'C';
+                 rankColor = 'text-emerald-400';
+                 rankBorder = 'border-emerald-500/50';
+                 rankBg = 'bg-emerald-900/20';
+                 barColor = 'bg-emerald-400';
+             }
+
+             return (
+              <Link 
+                key={agent.id} 
+                to={`/markets/${agent.id}`}
+                onClick={playClick}
+                onMouseEnter={playHover}
+                className="group relative flex flex-col bg-[#05080f] border border-intuition-border transition-all duration-300 overflow-hidden clip-path-slant hover-glow hover:-translate-y-2"
+              >
+                {/* Tech Corners */}
+                <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+                {/* Card Header */}
+                <div className="h-36 bg-slate-900/50 relative p-4 border-b border-intuition-border group-hover:border-intuition-primary/30 transition-colors">
+                   <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay"></div>
+                   
+                   <div className="relative z-10 flex justify-between items-start mb-3">
+                      <span className="text-[10px] font-mono text-intuition-primary/60 bg-black/50 px-1 border border-intuition-primary/20 group-hover:text-intuition-primary group-hover:border-intuition-primary/50 transition-colors">ID: {agent.id.slice(0,6)}</span>
+                      <div className="flex gap-2">
+                          {/* FUTURISTIC RANK BADGE */}
+                          <div className={`relative flex items-stretch border ${rankBorder} ${rankBg} ${shadow} clip-path-slant pr-2 h-6`}>
+                              <div className={`w-1 mr-2 ${barColor} ${rank === 'S' ? 'animate-pulse' : ''}`}></div>
+                              <div className="flex items-center gap-1">
+                                  <span className="text-[8px] font-mono text-slate-500 uppercase tracking-wider mt-0.5">CLS</span>
+                                  <span className={`text-base font-black font-display italic leading-none ${rankColor} ${rank === 'S' ? 'text-glow' : ''}`}>{rank}</span>
+                              </div>
+                          </div>
+
+                          <span className={`px-2 py-0.5 text-[10px] font-bold font-mono flex items-center gap-1 border h-6 clip-path-slant ${repScore > 80 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' : repScore > 50 ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' : 'bg-slate-700/50 text-slate-400 border-slate-600'}`}>
+                             <ShieldCheck size={10} /> REP: {repScore}
+                          </span>
+                          {isHot && (
+                            <span className="px-2 py-0.5 bg-intuition-warning/20 border border-intuition-warning text-intuition-warning text-[10px] font-bold font-mono flex items-center gap-1 animate-pulse h-6 clip-path-slant">
+                            <Zap size={10} /> HOT
+                            </span>
+                          )}
+                      </div>
+                   </div>
+
+                   <div className="flex items-center gap-4 relative z-10">
+                      <div className="w-14 h-14 bg-black border border-intuition-primary/50 p-0.5 shadow-[0_0_10px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_20px_rgba(0,243,255,0.4)] transition-shadow">
+                          {agent.image ? (
+                             <img src={agent.image} alt={agent.label} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
+                          ) : (
+                             <div className="w-full h-full flex items-center justify-center text-intuition-primary font-bold text-xl bg-intuition-primary/10">
+                                {agent.label?.[0]?.toUpperCase() || '?'}
+                             </div>
+                          )}
+                      </div>
+                      <div className="flex-1">
+                          <h3 className="text-white font-bold font-display text-lg leading-tight line-clamp-2 group-hover:text-intuition-primary transition-colors group-hover:text-glow">
+                             {agent.label || 'UNKNOWN_AGENT'}
+                          </h3>
+                          <p className="text-[10px] text-slate-500 font-mono mt-1">TYPE: {agent.type?.toUpperCase() || 'ATOM'}</p>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4 flex-1 flex flex-col bg-gradient-to-b from-intuition-dark to-[#02040a]">
+                   
+                   <div className="mb-5 space-y-1.5">
+                      <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider">
+                         <span className="text-intuition-success">TRUST {trustPct}%</span>
+                         <span className="text-intuition-danger">{distrustPct}% DISTRUST</span>
+                      </div>
+                      {/* Real Sentiment Bar calculated from Price */}
+                      <div className="w-full h-3 bg-black border border-slate-800 flex relative clip-path-slant">
+                         <div className="absolute inset-0 grid grid-cols-10 pointer-events-none">
+                            {[...Array(9)].map((_, i) => <div key={i} className="border-r border-black/50 h-full"></div>)}
+                         </div>
+                         <div style={{ width: `${trustPct}%` }} className="h-full bg-intuition-success/80 shadow-[0_0_10px_rgba(0,255,157,0.4)] transition-all duration-1000"></div>
+                         <div style={{ width: `${distrustPct}%` }} className="h-full bg-intuition-danger/80 shadow-[0_0_10px_rgba(255,0,85,0.4)] transition-all duration-1000"></div>
+                      </div>
+                   </div>
+
+                   <div className="grid grid-cols-2 gap-2 mb-4 opacity-60 group-hover:opacity-100 transition-opacity duration-300">
+                      <button className="py-1.5 bg-intuition-success/10 border border-intuition-success/30 text-intuition-success text-xs font-bold font-mono hover:bg-intuition-success hover:text-black transition-colors clip-path-slant">
+                         TRUST
+                      </button>
+                      <button className="py-1.5 bg-intuition-danger/10 border border-intuition-danger/30 text-intuition-danger text-xs font-bold font-mono hover:bg-intuition-danger hover:text-black transition-colors clip-path-slant">
+                         DISTRUST
+                      </button>
+                   </div>
+
+                   <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500 group-hover:text-intuition-primary/70 transition-colors">
+                      <div className="flex items-center gap-1 text-intuition-secondary">
+                         <DollarSign size={10} />
+                         VOL: {realVolume}
+                      </div>
+                      <div className="flex items-center gap-1">
+                         <Activity size={10} />
+                         PRICE: {price.toFixed(3)}
+                      </div>
+                   </div>
+                </div>
+              </Link>
+             );
+          })}
+        </div>
+      )}
+    </div>
+  );
 };
+
+export default Markets;
