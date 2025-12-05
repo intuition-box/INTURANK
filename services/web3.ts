@@ -45,6 +45,44 @@ export const getConnectedAccount = async (): Promise<string | null> => {
   return null;
 };
 
+export const getClientChainId = async (): Promise<number> => {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+        try {
+            const chainIdHex = await (window as any).ethereum.request({ method: 'eth_chainId' });
+            return parseInt(chainIdHex, 16);
+        } catch { return 0; }
+    }
+    return 0;
+};
+
+export const switchNetwork = async () => {
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+        try {
+            await (window as any).ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: `0x${intuitionTestnet.id.toString(16)}` }],
+            });
+        } catch (switchError: any) {
+            // This error code indicates that the chain has not been added to MetaMask.
+            if (switchError.code === 4902) {
+                try {
+                    await (window as any).ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: `0x${intuitionTestnet.id.toString(16)}`,
+                            chainName: intuitionTestnet.name,
+                            nativeCurrency: intuitionTestnet.nativeCurrency,
+                            rpcUrls: [RPC_URL],
+                        }],
+                    });
+                } catch (addError) {
+                    console.error(addError);
+                }
+            }
+        }
+    }
+};
+
 export const getWalletBalance = async (address: string): Promise<string> => {
   try {
     const balance = await publicClient.getBalance({ address: address as `0x${string}` });
@@ -152,15 +190,16 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   const checksumReceiver = getAddress(receiver);
   const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
   const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+  const curveIdBigInt = BigInt(curveId);
+  
   const walletClient = createWalletClient({
     chain: intuitionTestnet,
     transport: custom((window as any).ethereum),
     account: checksumReceiver,
   });
   const assets = parseEther(amount);
-  const curveIdBigInt = BigInt(curveId);
   
-  // Simulate to catch errors like MultiVault_DepositBelowMinimumDeposit
+  // Simulate to get expected shares
   const { request, result } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
@@ -168,66 +207,44 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
     account: checksumReceiver,
     args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [assets], [0n]],
     value: assets,
-  } as any);
+  });
   
   const hash = await walletClient.writeContract(request as any);
+  // result is shares[] (uint256[])
   const shares = (result as unknown as bigint[])[0]; 
   
   return { hash, shares };
 };
 
 export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, curveId: number = 0) => {
-  if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error("No wallet");
-  const checksumReceiver = getAddress(receiver);
-  const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-  const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-  const walletClient = createWalletClient({
-    chain: intuitionTestnet,
-    transport: custom((window as any).ethereum),
-    account: checksumReceiver,
-  });
-  const shares = parseEther(sharesAmount);
-  const curveIdBigInt = BigInt(curveId);
-  
-  const { request, result } = await publicClient.simulateContract({
-    address: MULTI_VAULT_ADDRESS as `0x${string}`,
-    abi: MULTI_VAULT_ABI,
-    functionName: 'redeemBatch',
-    account: checksumReceiver,
-    args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [shares], [0n]],
-  } as any);
-  
-  const hash = await walletClient.writeContract(request as any);
-  const assets = (result as unknown as bigint[])[0];
-  
-  return { hash, assets };
-};
-
-export const getClientChainId = async (): Promise<number> => {
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
-    try {
-        const chainIdHex = await (window as any).ethereum.request({ method: 'eth_chainId' });
-        return parseInt(chainIdHex, 16);
-    } catch { return 0; }
-  }
-  return 0;
-};
-
-export const switchNetwork = async () => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) return;
+    if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error("No wallet");
+    const checksumReceiver = getAddress(receiver);
+    const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
+    const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+    const curveIdBigInt = BigInt(curveId);
+    
     const walletClient = createWalletClient({
         chain: intuitionTestnet,
         transport: custom((window as any).ethereum),
+        account: checksumReceiver,
     });
-    try {
-        await walletClient.switchChain({ id: intuitionTestnet.id });
-    } catch (e) {
-        try {
-            await walletClient.addChain({ chain: intuitionTestnet });
-        } catch (addError) {
-            console.error("Failed to add chain", addError);
-        }
-    }
+    
+    const shares = parseEther(sharesAmount);
+    
+    // Simulate to get expected assets
+    const { request, result } = await publicClient.simulateContract({
+        address: MULTI_VAULT_ADDRESS as `0x${string}`,
+        abi: MULTI_VAULT_ABI,
+        functionName: 'redeemBatch',
+        account: checksumReceiver,
+        args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [shares], [0n]],
+    });
+    
+    const hash = await walletClient.writeContract(request as any);
+    // result is assets[] (uint256[])
+    const assets = (result as unknown as bigint[])[0];
+    
+    return { hash, assets };
 };
 
 // --- ROBUST CHECK-OR-CREATE PATTERN FOR OPINIONS ---
@@ -246,25 +263,23 @@ export const publishOpinion = async (
     account: checksumAddress,
   });
 
-  // 1. Fetch Protocol Config (Dynamic Min Deposit)
-  const config = await getProtocolConfig();
-  const baseFee = config.minDepositWei;
-
-  // 2. Prepare Data
+  // 1. Prepare Data
   const textHex = stringToHex(text);
-  
-  // 3. Deterministic ID Check (Hash of data)
+  const atomFee = parseEther("0.0001");
+  const tripleFee = parseEther("0.0001");
+
+  // 2. Deterministic ID Check
   const commentAtomId = keccak256(textHex);
 
-  // 4. Check if Exists On-Chain
+  // 3. Check if Exists On-Chain
   const exists = await publicClient.readContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
     functionName: 'isTermCreated',
     args: [commentAtomId]
-  } as any) as boolean;
+  } as unknown as any) as boolean;
 
-  // 5. Create Atom if needed (Idempotent)
+  // 4. Create Atom if needed (Idempotent)
   if (!exists) {
     try {
       const { request: atomReq } = await publicClient.simulateContract({
@@ -272,18 +287,19 @@ export const publishOpinion = async (
         abi: MULTI_VAULT_ABI,
         functionName: 'createAtoms',
         account: checksumAddress,
-        args: [[textHex], [baseFee]],
-        value: baseFee // Send minDeposit
-      } as any);
+        args: [[textHex], [atomFee]],
+        value: atomFee
+      });
       const atomTx = await walletClient.writeContract(atomReq as any);
       await publicClient.waitForTransactionReceipt({ hash: atomTx });
     } catch (e: any) {
-      console.warn("Atom creation skipped or failed (likely exists or parallel tx):", e);
+      console.warn("Atom creation skipped or failed (likely exists):", e);
     }
   }
 
-  // 6. Create Triple (Agent -> HAS_OPINION -> Comment)
+  // 5. Create Triple (Agent -> HAS_OPINION -> Comment)
   const subjectId = pad(agentId as Hex, { size: 32 });
+  // We use a generic predicate "HAS_OPINION" to avoid complex checks
   const genericPredHex = stringToHex("HAS_OPINION");
   const predicateId = keccak256(genericPredHex);
   
@@ -293,7 +309,7 @@ export const publishOpinion = async (
       abi: MULTI_VAULT_ABI,
       functionName: 'isTermCreated',
       args: [predicateId]
-  } as any) as boolean;
+  } as unknown as any) as boolean;
 
   if (!predExists) {
       try {
@@ -302,9 +318,9 @@ export const publishOpinion = async (
             abi: MULTI_VAULT_ABI,
             functionName: 'createAtoms',
             account: checksumAddress,
-            args: [[genericPredHex], [baseFee]],
-            value: baseFee
-        } as any);
+            args: [[genericPredHex], [atomFee]],
+            value: atomFee
+        });
         const predTx = await walletClient.writeContract(predReq as any);
         await publicClient.waitForTransactionReceipt({ hash: predTx });
       } catch (e) { console.warn("Predicate creation skipped"); }
@@ -320,10 +336,10 @@ export const publishOpinion = async (
       [subjectId],       
       [predicateId],     
       [commentAtomId],   
-      [baseFee]        
+      [tripleFee]        
     ],
-    value: baseFee // Must match minDeposit
-  } as any);
+    value: tripleFee
+  });
   
   return await walletClient.writeContract(tripleReq as any);
 };

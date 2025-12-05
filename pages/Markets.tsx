@@ -1,15 +1,27 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, TrendingUp, Filter, DollarSign, Zap, Activity, ShieldCheck } from 'lucide-react';
+import { Search, TrendingUp, Filter, DollarSign, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { formatEther } from 'viem';
-import { getAllAgents } from '../services/graphql';
+import { getAllAgents, searchGlobalAgents } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
 import { Account } from '../types';
+
+type SortOption = 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
 
 const Markets: React.FC = () => {
   const [agents, setAgents] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [serverResults, setServerResults] = useState<Account[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Sorting State
+  const [sortOption, setSortOption] = useState<SortOption>('VOL_DESC');
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+  
+  // Debounce ref
+  const searchTimeout = useRef<any>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -23,54 +35,121 @@ const Markets: React.FC = () => {
       }
     };
     fetchData();
+
+    // Close sort dropdown on click outside
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Handle Server-Side Search Debounce
+  useEffect(() => {
+     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+     const term = searchTerm.trim();
+     
+     // Reset server results if empty
+     if (term.length < 2) {
+         setServerResults([]);
+         setIsSearching(false);
+         return;
+     }
+
+     setIsSearching(true);
+     searchTimeout.current = setTimeout(async () => {
+        try {
+            const results = await searchGlobalAgents(term);
+            setServerResults(results);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsSearching(false);
+        }
+     }, 600); // 600ms debounce
+
+     return () => clearTimeout(searchTimeout.current);
+  }, [searchTerm]);
 
   const filteredAgents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return agents;
-
-    // 1. Score all potential matches
-    const scored = agents
-      .map((agent) => {
-        const label = (agent.label || '').toLowerCase();
-        const id = agent.id.toLowerCase();
-        let score = 0;
-
-        // Priority 1: Exact ID Match (1000) - Pinpoint accuracy
-        if (id === term) score = 1000;
-        // Priority 2: Exact Label Match (900)
-        else if (label === term) score = 900;
-        // Priority 3: Label Starts With (800) - "Ade" matches "Adewale"
-        else if (label.startsWith(term)) score = 800;
-        // Priority 4: ID Starts With (700)
-        else if (id.startsWith(term)) score = 700;
-        // Priority 5: Word Boundary Match (600) - "Musk" matches "Elon Musk"
-        else if (label.split(/[\s-_]+/).some((w) => w.startsWith(term))) score = 600;
-        // Priority 6: General Label Inclusion (500) - "ewal" matches "Adewale"
-        else if (label.includes(term)) score = 500;
-        // Priority 7: General ID Inclusion (400)
-        else if (id.includes(term)) score = 400;
-
-        return { agent, score };
-      })
-      .filter((item) => item.score > 0);
-
-    // 2. Adaptive Filtering (Pinpointing)
-    if (scored.length === 0) return [];
     
-    // Find the highest quality match we have
-    const maxScore = Math.max(...scored.map(i => i.score));
+    // Combine local agents and server results
+    const combinedMap = new Map<string, Account>();
+    agents.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
+    serverResults.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
     
-    // If we have strong matches, cut off the weak noise
-    let threshold = 0;
-    if (maxScore >= 900) threshold = 800; // If exact match exists, only show exact or strong prefix
-    else if (maxScore >= 700) threshold = 600; // If prefix match exists, hide generic 'includes'
-    
-    return scored
-      .filter(item => item.score >= threshold)
-      .sort((a, b) => b.score - a.score)
-      .map((item) => item.agent);
-  }, [agents, searchTerm]);
+    let candidates = Array.from(combinedMap.values());
+
+    // 1. STRICT SEARCH FILTERING
+    if (term) {
+        candidates = candidates.filter(agent => {
+            const label = (agent.label || '').toLowerCase();
+            const id = agent.id.toLowerCase();
+            
+            // If user explicitly types '0x', assume they are looking for an ID
+            if (term.startsWith('0x')) {
+                return id.includes(term);
+            }
+            
+            // Otherwise, prioritize Name/Label matching
+            if (label.includes(term)) return true;
+
+            // Only match ID if the search term is significantly unique (avoid matching "a", "b", "c" to hex chars)
+            // Or if it matches the EXACT ID
+            if (term.length > 5 && id.includes(term)) return true;
+            if (id === term) return true;
+
+            return false;
+        });
+    }
+
+    // 2. SORTING MATRIX
+    return candidates.sort((a, b) => {
+        const getAssets = (x: Account) => parseFloat(formatEther(BigInt(x.totalAssets || '0')));
+        const getShares = (x: Account) => parseFloat(formatEther(BigInt(x.totalShares || '0')));
+        const getPrice = (x: Account) => {
+             const s = getShares(x);
+             return s > 0 ? getAssets(x) / s : 0;
+        };
+
+        // Trust Score is derived from Price in this demo logic
+        const getTrust = (x: Account) => {
+             const p = getPrice(x);
+             return Math.min(99, Math.max(1, Math.log10(p * 10 + 1) * 50));
+        };
+
+        switch (sortOption) {
+            case 'VOL_DESC': return getAssets(b) - getAssets(a);
+            case 'VOL_ASC': return getAssets(a) - getAssets(b);
+            case 'PRICE_DESC': return getPrice(b) - getPrice(a);
+            case 'PRICE_ASC': return getPrice(a) - getPrice(b);
+            case 'TRUST_DESC': return getTrust(b) - getTrust(a);
+            case 'TRUST_ASC': return getTrust(a) - getTrust(b);
+            default: return 0;
+        }
+    });
+  }, [agents, searchTerm, serverResults, sortOption]);
+
+  const toggleSort = (option: SortOption) => {
+      setSortOption(option);
+      setIsSortOpen(false);
+      playClick();
+  };
+
+  const getSortLabel = (opt: SortOption) => {
+      switch(opt) {
+          case 'VOL_DESC': return 'VOLUME (HIGH)';
+          case 'VOL_ASC': return 'VOLUME (LOW)';
+          case 'PRICE_DESC': return 'PRICE (HIGH)';
+          case 'PRICE_ASC': return 'PRICE (LOW)';
+          case 'TRUST_DESC': return 'TRUST (HIGH)';
+          case 'TRUST_ASC': return 'TRUST (LOW)';
+      }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
@@ -86,17 +165,66 @@ const Markets: React.FC = () => {
           </p>
         </div>
         
-        <div className="flex gap-3">
-            <div className="relative group">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+            {/* Search Bar */}
+            <div className="relative group flex-1">
               <input 
                   type="text" 
-                  placeholder="SEARCH_DB [PINPOINT]..." 
-                  className="w-full md:w-72 bg-intuition-dark border border-intuition-border rounded-none py-3 pl-10 pr-4 text-intuition-primary font-mono text-sm focus:outline-none focus:border-intuition-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all placeholder-intuition-primary/30 uppercase clip-path-slant"
+                  placeholder="SEARCH NAME OR 0x..." 
+                  className="w-full md:w-72 bg-intuition-dark border border-intuition-border rounded-none py-3 pl-10 pr-10 text-intuition-primary font-mono text-sm focus:outline-none focus:border-intuition-primary focus:shadow-[0_0_15px_rgba(0,243,255,0.2)] transition-all placeholder-intuition-primary/30 uppercase clip-path-slant"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onFocus={playHover}
               />
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-intuition-primary/50 group-hover:text-intuition-primary transition-colors" size={16} />
+              
+              {isSearching && (
+                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 size={16} className="text-intuition-primary animate-spin" />
+                 </div>
+              )}
+            </div>
+
+            {/* Sort Matrix Button */}
+            <div className="relative" ref={sortRef}>
+                <button 
+                    onClick={() => { setIsSortOpen(!isSortOpen); playClick(); }}
+                    className={`flex items-center justify-between gap-2 px-4 py-3 min-w-[180px] bg-intuition-dark border border-intuition-border text-xs font-mono font-bold text-intuition-primary clip-path-slant hover:bg-intuition-primary/10 hover:border-intuition-primary transition-all ${isSortOpen ? 'border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.2)]' : ''}`}
+                >
+                    <div className="flex items-center gap-2">
+                        <Filter size={14} />
+                        {getSortLabel(sortOption)}
+                    </div>
+                    <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Sort Matrix Dropdown */}
+                {isSortOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.15)] z-50 clip-path-slant p-1 animate-in slide-in-from-top-2 fade-in duration-200">
+                        <div className="bg-intuition-dark/90 p-2 space-y-1">
+                            <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest px-2 py-1 mb-1 border-b border-white/5">Sort Matrix</div>
+                            
+                            <button onClick={() => toggleSort('VOL_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>VOLUME (HIGH)</span> <TrendingUp size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('PRICE_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>PRICE (HIGH)</span> <DollarSign size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('TRUST_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'TRUST_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>TRUST (HIGH)</span> <ShieldCheck size={12} className="group-hover:scale-110" />
+                            </button>
+                            
+                            <div className="h-px bg-white/10 my-1"></div>
+
+                            <button onClick={() => toggleSort('VOL_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>VOLUME (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            </button>
+                            <button onClick={() => toggleSort('PRICE_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>PRICE (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
       </div>
@@ -111,8 +239,17 @@ const Markets: React.FC = () => {
            ))}
         </div>
       ) : filteredAgents.length === 0 ? (
-        <div className="text-center py-20 border border-dashed border-intuition-border bg-intuition-card/30 clip-path-slant">
-            <p className="text-intuition-primary/50 text-lg font-mono">NO_DATA_FOUND</p>
+        <div className="text-center py-20 border border-dashed border-intuition-border bg-intuition-card/30 clip-path-slant flex flex-col items-center justify-center gap-4">
+            <Database size={48} className="text-intuition-border" />
+            <p className="text-intuition-primary/50 text-lg font-mono">
+               {isSearching ? 'SEARCHING GLOBAL MATRIX...' : 'NO_DATA_FOUND_ON_NETWORK'}
+            </p>
+            {searchTerm && !isSearching && (
+                <p className="text-xs text-slate-500 max-w-md">
+                    We scanned the entire Intuition graph for "{searchTerm}" but found no matching Agents.
+                    <br/>Try searching by exact Contract Address (0x...) or a specific Label.
+                </p>
+            )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -264,7 +401,7 @@ const Markets: React.FC = () => {
                    <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500 group-hover:text-intuition-primary/70 transition-colors">
                       <div className="flex items-center gap-1 text-intuition-secondary">
                          <DollarSign size={10} />
-                         VOL: {realVolume} TRUST
+                         VOL: {realVolume}
                       </div>
                       <div className="flex items-center gap-1">
                          <Activity size={10} />
