@@ -356,7 +356,7 @@ const MarketDetail: React.FC = () => {
   const distrustPct = (100 - currentScore).toFixed(1);
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 py-6">
+    <div className="w-full px-4 md:px-8 py-6">
       <TransactionModal 
          isOpen={txModal.isOpen} 
          status={txModal.status} 

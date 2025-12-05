@@ -98,7 +98,7 @@ const AgentProfile: React.FC = () => {
   if (!agent) return <div className="pt-20 text-center text-red-500">Agent not found on network.</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10">
       <TransactionModal 
          isOpen={txModal.isOpen} 
          status={txModal.status} 

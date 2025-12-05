@@ -118,7 +118,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* HUD Top Bar */}
       <nav className="fixed top-0 w-full z-50 border-b border-intuition-primary/30 bg-intuition-dark/90 backdrop-blur-md shadow-[0_0_20px_rgba(0,243,255,0.1)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
             {/* Logo */}
@@ -330,7 +330,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Footer */}
       <footer className="border-t border-intuition-primary/20 bg-intuition-dark py-12 mt-auto z-20 relative">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-8">
+        <div className="w-full px-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-8">
           
           {/* System Status */}
           <div className="flex flex-col gap-2">

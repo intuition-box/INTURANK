@@ -184,7 +184,7 @@ const Dashboard: React.FC = () => {
   }) : [{ name: 0, val: 0 }, { name: 1, val: 0 }];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20">
       <div className="mb-12 p-1 bg-gradient-to-r from-intuition-primary via-intuition-secondary to-intuition-primary rounded-none clip-path-slant">
         <div className="bg-black p-8 flex flex-col md:flex-row items-center gap-8 clip-path-slant relative">
           <button 
