@@ -4,6 +4,7 @@
 let audioCtx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 
+// Only initialize on user interaction to comply with browser autoplay policies
 const initAudio = () => {
   try {
     if (!audioCtx) {
@@ -12,44 +13,44 @@ const initAudio = () => {
       if (Ctx) {
         audioCtx = new Ctx();
         masterGain = audioCtx.createGain();
-        masterGain.gain.value = 0.25; // Reduced global volume to 25% to prevent loudness issues
+        masterGain.gain.value = 0.25; // Reduced global volume to 25%
         masterGain.connect(audioCtx.destination);
       }
     }
+    
+    // Always try to resume if suspended
     if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => {});
+      audioCtx.resume().catch((e) => console.warn("Audio resume prevented:", e));
     }
+    
     return audioCtx;
   } catch (e) {
-    // Graceful fallback for browsers blocking audio or non-standard environments
     console.warn("Audio Init Failed:", e);
     return null;
   }
 };
 
 // --- HOVER: "Telemetry Chirp" ---
-// A rapid, high-tech data flutter.
 export const playHover = () => {
   try {
+    // Attempt init/resume
     const ctx = initAudio();
-    if (!ctx || !masterGain) return;
+    if (!ctx || !masterGain || ctx.state !== 'running') return;
+    
     const t = ctx.currentTime;
-
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     
     // FM Synthesis for "Flutter" effect
-    // Carrier: High pitch sine
     osc.type = 'sine';
     osc.frequency.setValueAtTime(1200, t);
     
-    // Modulator: Square wave for "digital" texture (Ring Mod style)
     const modulator = ctx.createOscillator();
     modulator.type = 'square';
-    modulator.frequency.setValueAtTime(40, t); // Fast flutter (40Hz)
+    modulator.frequency.setValueAtTime(40, t); 
 
     const modGain = ctx.createGain();
-    modGain.gain.setValueAtTime(300, t); // Depth of flutter
+    modGain.gain.setValueAtTime(300, t); 
 
     modulator.connect(modGain);
     modGain.connect(osc.frequency);
@@ -57,7 +58,6 @@ export const playHover = () => {
     osc.connect(gain);
     gain.connect(masterGain);
 
-    // Envelope: Short, sharp, percussive
     gain.gain.setValueAtTime(0, t);
     gain.gain.linearRampToValueAtTime(0.15, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
@@ -67,25 +67,25 @@ export const playHover = () => {
     osc.stop(t + 0.1);
     modulator.stop(t + 0.1);
   } catch (e) {
-    // Ignore audio errors during playback
+    // Silent fail
   }
 };
 
 // --- CLICK: "Servo Lock" ---
-// A punchy, mechanical engagement sound.
 export const playClick = () => {
   try {
     const ctx = initAudio();
-    if (!ctx || !masterGain) return;
+    if (!ctx || !masterGain || ctx.state !== 'running') return;
+    
     const t = ctx.currentTime;
 
-    // 1. The "Kick" (Low impact)
+    // 1. The "Kick"
     const oscLow = ctx.createOscillator();
     const gainLow = ctx.createGain();
     
     oscLow.type = 'sine';
     oscLow.frequency.setValueAtTime(200, t);
-    oscLow.frequency.exponentialRampToValueAtTime(50, t + 0.15); // Pitch drop
+    oscLow.frequency.exponentialRampToValueAtTime(50, t + 0.15); 
     
     gainLow.gain.setValueAtTime(0.8, t);
     gainLow.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
@@ -93,12 +93,12 @@ export const playClick = () => {
     oscLow.connect(gainLow);
     gainLow.connect(masterGain);
 
-    // 2. The "Servo" (High tech zip)
+    // 2. The "Servo"
     const oscHigh = ctx.createOscillator();
     const gainHigh = ctx.createGain();
     const filter = ctx.createBiquadFilter();
 
-    oscHigh.type = 'sawtooth'; // Gritty
+    oscHigh.type = 'sawtooth';
     oscHigh.frequency.setValueAtTime(800, t);
     oscHigh.frequency.exponentialRampToValueAtTime(200, t + 0.1);
 
@@ -119,32 +119,28 @@ export const playClick = () => {
     oscLow.stop(t + 0.2);
     oscHigh.stop(t + 0.2);
   } catch (e) {
-    // Ignore audio errors
+    // Silent fail
   }
 };
 
 // --- SUCCESS: "System Override" ---
-// A futuristic, rising power-up chord.
 export const playSuccess = () => {
   try {
     const ctx = initAudio();
-    if (!ctx || !masterGain) return;
+    if (!ctx || !masterGain || ctx.state !== 'running') return;
+    
     const t = ctx.currentTime;
 
-    // Play a rapid arpeggio (C Major 9)
-    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    const notes = [523.25, 659.25, 783.99, 1046.50]; 
     
     notes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       
-      // Slight delay between notes for arpeggio
       const start = t + (i * 0.04);
       
-      osc.type = 'triangle'; // Clean but with some body
+      osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, start);
-      
-      // Add a slight pitch bend up for "power up" feel
       osc.frequency.linearRampToValueAtTime(freq * 1.01, start + 0.3);
 
       gain.gain.setValueAtTime(0, start);
@@ -158,7 +154,6 @@ export const playSuccess = () => {
       osc.stop(start + 0.6);
     });
 
-    // Add a "Sparkle" Noise Sweep
     const noiseBufferSize = ctx.sampleRate * 0.5;
     const buffer = ctx.createBuffer(1, noiseBufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -173,7 +168,7 @@ export const playSuccess = () => {
     noiseFilter.type = 'bandpass';
     noiseFilter.Q.value = 10;
     noiseFilter.frequency.setValueAtTime(1000, t);
-    noiseFilter.frequency.exponentialRampToValueAtTime(8000, t + 0.5); // Upward sweep
+    noiseFilter.frequency.exponentialRampToValueAtTime(8000, t + 0.5);
 
     const noiseGain = ctx.createGain();
     noiseGain.gain.setValueAtTime(0.05, t);
@@ -185,6 +180,6 @@ export const playSuccess = () => {
     
     noise.start(t);
   } catch (e) {
-    // Ignore audio errors
+    // Silent fail
   }
 };

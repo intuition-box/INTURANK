@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Shield, Share2, Layers, ArrowUpRight, CheckCircle, User } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Shield, Share2, Layers, ArrowUpRight, CheckCircle, User, AlertCircle, RefreshCw } from 'lucide-react';
 import { getAgentById, getAgentTriples } from '../services/graphql';
 import { depositToVault, connectWallet, getProtocolConfig, getWalletBalance } from '../services/web3';
 import { Account, Triple } from '../types';
@@ -10,9 +10,11 @@ import { CURRENCY_SYMBOL } from '../constants';
 
 const AgentProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [agent, setAgent] = useState<Account | null>(null);
   const [triples, setTriples] = useState<Triple[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [stakeAmount, setStakeAmount] = useState('');
   const [minDeposit, setMinDeposit] = useState('0.001');
   
@@ -27,18 +29,31 @@ const AgentProfile: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      
+      // Create a timeout promise to prevent infinite hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Network Timeout")), 10000)
+      );
+
       try {
-        // Fetch in parallel
-        const [agentData, triplesData, config] = await Promise.all([
+        const dataPromise = Promise.all([
           getAgentById(id),
           getAgentTriples(id),
           getProtocolConfig()
         ]);
+
+        const [agentData, triplesData, config] = await Promise.race([dataPromise, timeoutPromise]) as any;
+        
+        if (!agentData) throw new Error("Agent Not Found");
+        
         setAgent(agentData);
-        setTriples(triplesData);
-        setMinDeposit(config.minDeposit);
-      } catch (error) {
-        console.error(error);
+        setTriples(triplesData || []);
+        setMinDeposit(config?.minDeposit || '0.001');
+      } catch (err: any) {
+        console.error("Profile Fetch Error:", err);
+        setError("Unable to retrieve agent data. The network may be congested or the ID is invalid.");
       } finally {
         setLoading(false);
       }
@@ -86,7 +101,6 @@ const AgentProfile: React.FC = () => {
     } catch (e: any) {
       console.error(e);
       let msg = 'Transaction failed.';
-      // Check for specific custom errors from updated ABI
       if (e.message?.includes('MultiVault_DepositBelowMinimumDeposit')) msg = `Deposit amount too low. Minimum is ${minDeposit} ${CURRENCY_SYMBOL}.`;
       else if (e.message?.includes('MultiVault_InsufficientBalance') || e.message?.includes('InsufficientBalance')) msg = `Insufficient balance to cover trade + gas.`;
       
@@ -94,11 +108,35 @@ const AgentProfile: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="pt-20 text-center text-intuition-primary animate-pulse">Loading Graph Data...</div>;
-  if (!agent) return <div className="pt-20 text-center text-red-500">Agent not found on network.</div>;
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <RefreshCw className="text-intuition-primary animate-spin" size={32} />
+        <div className="text-intuition-primary animate-pulse font-mono tracking-widest">LOADING GRAPH DATA...</div>
+      </div>
+    );
+  }
+
+  if (error || !agent) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+        <AlertCircle className="text-intuition-danger" size={48} />
+        <div>
+          <h2 className="text-xl font-bold text-white mb-2 font-display">CONNECTION INTERRUPTED</h2>
+          <p className="text-slate-400 font-mono text-sm max-w-md">{error || "Agent not found."}</p>
+        </div>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="px-6 py-2 border border-intuition-primary text-intuition-primary font-mono text-xs hover:bg-intuition-primary hover:text-black transition-colors"
+        >
+          RETRY UPLINK
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20">
       <TransactionModal 
          isOpen={txModal.isOpen} 
          status={txModal.status} 
