@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search } from 'lucide-react';
 import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
@@ -104,12 +104,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={16} /> },
   ];
 
-  // Analytics Group
+  // Analytics Group (Intel)
   const intelItems = [
     { label: 'FEED', path: '/feed', icon: <Globe size={16} /> },
     { label: 'COMPARE', path: '/compare', icon: <ArrowRightLeft size={16} /> },
     { label: 'INDEXES', path: '/indexes', icon: <Layers size={16} /> },
+    // Directory & Reputation
+    { label: 'TRADER_DIRECTORY', path: '/stats', icon: <Search size={16} /> }, 
   ];
+
+  if (walletAddress) {
+      intelItems.push({ 
+          label: 'MY_REPUTATION', 
+          path: `/profile/${walletAddress}`, 
+          icon: <UserCircle size={16} /> 
+      });
+  }
 
   const isActive = (path: string) => {
     if (path === '/' && location.pathname !== '/') return false;
@@ -190,10 +200,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </button>
 
                   {isIntelOpen && (
-                      <div className="absolute top-full right-0 mt-2 w-48 bg-black border border-intuition-primary/50 shadow-[0_0_20px_rgba(0,243,255,0.2)] z-[60] clip-path-slant p-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="absolute top-full right-0 mt-2 w-72 bg-black border border-intuition-primary/50 shadow-[0_0_20px_rgba(0,243,255,0.2)] z-[60] clip-path-slant p-1 animate-in fade-in slide-in-from-top-2 duration-200">
                           {intelItems.map(item => (
                               <Link 
-                                key={item.path}
+                                key={item.label}
                                 to={item.path}
                                 onClick={() => { playClick(); setIsIntelOpen(false); }}
                                 className={`flex items-center gap-3 px-4 py-3 text-xs font-bold font-mono hover:bg-intuition-primary/10 hover:text-intuition-primary transition-colors group ${isActive(item.path) ? 'text-intuition-primary' : 'text-slate-400'}`}
@@ -253,14 +263,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <div className="px-4 py-2 border-b border-white/10 text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">
                           System Access
                         </div>
-                        <Link 
-                          to={`/profile/${walletAddress}`}
-                          onClick={() => setIsWalletDropdownOpen(false)}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-mono text-slate-300 hover:bg-intuition-primary/10 hover:text-intuition-primary transition-colors group"
-                        >
-                          <UserCircle size={14} className="group-hover:scale-110 transition-transform"/> 
-                          MY_PUBLIC_PROFILE
-                        </Link>
                         <button 
                           onClick={handleCopyAddress}
                           onMouseEnter={playHover}
@@ -329,13 +331,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               
               {walletAddress ? (
                  <div className="space-y-2 mt-4 pt-4 border-t border-white/10">
-                    <Link 
-                      to={`/profile/${walletAddress}`}
-                      onClick={() => setIsMenuOpen(false)}
-                      className="w-full flex items-center gap-2 px-4 py-3 text-slate-300 hover:text-white font-mono font-bold text-xs"
-                    >
-                       <UserCircle size={14} /> MY PROFILE
-                    </Link>
                     <button
                       onClick={handleDisconnect}
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-intuition-danger text-intuition-danger font-mono font-bold bg-intuition-danger/10 clip-path-slant hover-glow"

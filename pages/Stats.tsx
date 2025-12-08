@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity } from 'lucide-react';
+import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2 } from 'lucide-react';
 import { getTopPositions, getAllAgents } from '../services/graphql';
-import { fetchAtomNameFromChain } from '../services/web3';
-import { formatEther } from 'viem';
+import { fetchAtomNameFromChain, resolveENS } from '../services/web3';
+import { formatEther, isAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from '../components/Toast';
 
 type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY';
 
@@ -20,13 +21,15 @@ interface LeaderboardEntry {
 }
 
 const Stats: React.FC = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<LeaderboardType>('STAKERS');
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isResolving, setIsResolving] = useState(false);
 
   // --- NAME RESOLUTION EFFECT ---
-  // If we have data loaded, but the top items are "Agent 0x...", try to fetch from chain
   useEffect(() => {
       if (loading || data.length === 0) return;
 
@@ -154,6 +157,36 @@ const Stats: React.FC = () => {
     fetchData();
   }, [activeTab]);
 
+  const handleSearch = async () => {
+      const query = searchQuery.trim();
+      if (!query) return;
+
+      if (isAddress(query)) {
+          playClick();
+          navigate(`/profile/${query}`);
+          return;
+      }
+
+      if (query.endsWith('.eth')) {
+          playClick();
+          setIsResolving(true);
+          try {
+              const address = await resolveENS(query);
+              if (address) {
+                  navigate(`/profile/${address}`);
+              } else {
+                  toast.error(`ENS IDENTITY NOT FOUND: ${query}`);
+              }
+          } catch (e) {
+              toast.error("ENS RESOLUTION FAILED");
+          } finally {
+              setIsResolving(false);
+          }
+      } else {
+          toast.error("INVALID WALLET OR ENS");
+      }
+  };
+
   return (
     <div className="min-h-screen bg-[#050b14] pt-24 pb-20 relative overflow-visible font-mono">
       {/* Background Elements */}
@@ -174,24 +207,75 @@ const Stats: React.FC = () => {
         {/* Navigation Tabs */}
         <div className="flex flex-wrap justify-center gap-4 mb-12">
             <button 
-                onClick={() => { playClick(); setActiveTab('STAKERS'); }}
+                onClick={() => { playClick(); setActiveTab('STAKERS'); setSearchQuery(''); }}
                 className={`px-6 py-3 border clip-path-slant font-bold font-display text-sm tracking-wider transition-all hover:-translate-y-1 ${activeTab === 'STAKERS' ? 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'bg-black text-slate-500 border-slate-800 hover:text-white hover:border-intuition-primary/50'}`}
             >
                 <div className="flex items-center gap-2"><Users size={16} /> TOP STAKERS</div>
             </button>
             <button 
-                onClick={() => { playClick(); setActiveTab('AGENTS_SUPPORT'); }}
+                onClick={() => { playClick(); setActiveTab('AGENTS_SUPPORT'); setSearchQuery(''); }}
                 className={`px-6 py-3 border clip-path-slant font-bold font-display text-sm tracking-wider transition-all hover:-translate-y-1 ${activeTab === 'AGENTS_SUPPORT' ? 'bg-intuition-success text-black border-intuition-success shadow-[0_0_20px_rgba(0,255,157,0.4)]' : 'bg-black text-slate-500 border-slate-800 hover:text-white hover:border-intuition-success/50'}`}
             >
                 <div className="flex items-center gap-2"><Shield size={16} /> MOST SUPPORTED</div>
             </button>
             <button 
-                onClick={() => { playClick(); setActiveTab('AGENTS_CONTROVERSY'); }}
+                onClick={() => { playClick(); setActiveTab('AGENTS_CONTROVERSY'); setSearchQuery(''); }}
                 className={`px-6 py-3 border clip-path-slant font-bold font-display text-sm tracking-wider transition-all hover:-translate-y-1 ${activeTab === 'AGENTS_CONTROVERSY' ? 'bg-intuition-danger text-black border-intuition-danger shadow-[0_0_20px_rgba(255,0,85,0.4)]' : 'bg-black text-slate-500 border-slate-800 hover:text-white hover:border-intuition-danger/50'}`}
             >
                 <div className="flex items-center gap-2"><Flame size={16} /> CONTROVERSIAL</div>
             </button>
         </div>
+
+        {/* SEARCH BAR FOR STAKERS - HIGH VISIBILITY UPGRADE */}
+        {activeTab === 'STAKERS' && (
+            <div className="max-w-2xl mx-auto mb-8 mt-4 relative z-20 group">
+                
+                {/* Decorative Brackets - Making it look locked in */}
+                <div className="absolute -left-3 top-0 bottom-0 w-3 border-l-2 border-t-2 border-b-2 border-intuition-primary/50 rounded-l-md pointer-events-none group-focus-within:border-intuition-primary transition-colors"></div>
+                <div className="absolute -right-3 top-0 bottom-0 w-3 border-r-2 border-t-2 border-b-2 border-intuition-primary/50 rounded-r-md pointer-events-none group-focus-within:border-intuition-primary transition-colors"></div>
+
+                <div className="bg-black/90 border border-intuition-primary/30 p-1 clip-path-slant shadow-[0_0_30px_rgba(0,243,255,0.15)] focus-within:shadow-[0_0_50px_rgba(0,243,255,0.3)] focus-within:border-intuition-primary transition-all duration-300">
+                    <div className="flex items-center gap-0">
+                        {/* Terminal Box */}
+                        <div className="bg-intuition-primary/10 h-12 flex items-center px-4 border-r border-intuition-primary/30">
+                            <Terminal size={20} className="text-intuition-primary animate-pulse" />
+                        </div>
+                        
+                        {/* Input Field */}
+                        <div className="flex-1 relative">
+                            <input 
+                                type="text" 
+                                placeholder="ENTER WALLET (0x...) OR ENS (.eth)" 
+                                className="w-full h-12 bg-transparent text-white font-mono text-sm px-4 outline-none placeholder-intuition-primary/40 uppercase tracking-widest focus:placeholder-intuition-primary/60 transition-colors"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                disabled={isResolving}
+                            />
+                        </div>
+
+                        {/* Action Button */}
+                        <button 
+                            onClick={handleSearch}
+                            disabled={isResolving || (!isAddress(searchQuery.trim()) && !searchQuery.trim().endsWith('.eth'))}
+                            className={`h-12 px-6 font-black font-display text-xs tracking-widest flex items-center justify-center gap-2 transition-colors ${
+                                (isAddress(searchQuery.trim()) || searchQuery.trim().endsWith('.eth'))
+                                ? 'bg-intuition-primary text-black hover:bg-white cursor-pointer' 
+                                : 'bg-transparent text-intuition-primary/40 cursor-not-allowed border-l border-intuition-primary/10'
+                            }`}
+                        >
+                            {isResolving ? (
+                                <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                                (isAddress(searchQuery.trim()) || searchQuery.trim().endsWith('.eth')) ? 
+                                <>INITIATE <ArrowRight size={14} /></> : 
+                                <Search size={20} />
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
         {/* Content Area */}
         {loading ? (
@@ -214,7 +298,7 @@ const Stats: React.FC = () => {
         ) : (
           <div className="space-y-4">
              {/* Top 3 Special Display */}
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-12">
                 {[1, 0, 2].map(orderIdx => {
                     const item = data[orderIdx];
                     if (!item) return null;
@@ -246,9 +330,12 @@ const Stats: React.FC = () => {
                                     {item.value}
                                 </div>
                                 
-                                {activeTab !== 'STAKERS' && (
-                                    <Link to={`/markets/${item.id}`} className="absolute inset-0" onClick={playClick} />
-                                )}
+                                {/* Link to Profile for Stakers, Market for Agents */}
+                                <Link 
+                                    to={activeTab === 'STAKERS' ? `/profile/${item.id}` : `/markets/${item.id}`} 
+                                    className="absolute inset-0" 
+                                    onClick={playClick} 
+                                />
                             </div>
                         </div>
                     );
@@ -279,9 +366,11 @@ const Stats: React.FC = () => {
                                             <div className="text-[10px] text-slate-600 font-mono uppercase">{item.subLabel}</div>
                                         </div>
                                     </div>
-                                    {activeTab !== 'STAKERS' && (
-                                        <Link to={`/markets/${item.id}`} className="absolute inset-0" onClick={playClick} />
-                                    )}
+                                    <Link 
+                                        to={activeTab === 'STAKERS' ? `/profile/${item.id}` : `/markets/${item.id}`} 
+                                        className="absolute inset-0" 
+                                        onClick={playClick} 
+                                    />
                                 </td>
                                 <td className="px-6 py-4 text-right font-mono font-bold text-intuition-secondary">
                                     {item.value}

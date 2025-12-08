@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins } from 'lucide-react';
+import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins, AlertTriangle } from 'lucide-react';
 import { formatEther } from 'viem';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -39,24 +39,24 @@ const Portfolio: React.FC = () => {
   const fetchUserData = async (address: string) => {
     setLoading(true);
     try {
+      // 1. Fetch Liquid Balance immediately
       const bal = await getWalletBalance(address);
-      setBalance(Number(bal).toFixed(4));
+      setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      // 1. History & Transactions
+      // 2. Fetch History (Chain + Local Merge)
       const chainHistory = await getUserHistory(address).catch(() => []);
       const localHistory = getLocalTransactions(address);
       
-      // Merge and dedupe history
       const mergedHistory = [...localHistory, ...chainHistory]
         .filter((tx, index, self) => index === self.findIndex((t) => (t.id === tx.id)))
-        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // Sort Ascending for Chart
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); 
       
-      setHistory(mergedHistory.slice().reverse()); // Store descending for list
+      setHistory(mergedHistory.slice().reverse());
 
-      // 2. Sentiment Bias
+      // 3. Analytics: Sentiment & PnL Baseline
       setSentimentBias(calculateSentimentBias(mergedHistory));
+      setSemanticFootprint(mergedHistory.length);
 
-      // 3. Performance Chart (Net Capital Deployed over time)
       let runningDeposit = 0;
       let runningRedeem = 0;
       const historyPoints = mergedHistory.map(tx => {
@@ -68,45 +68,47 @@ const Portfolio: React.FC = () => {
           return {
               timestamp: tx.timestamp,
               date: new Date(tx.timestamp).toLocaleDateString(),
-              val: runningDeposit - runningRedeem // Net Invested Capital
+              val: runningDeposit - runningRedeem 
           };
       });
-      // Add start point
       if (historyPoints.length > 0) historyPoints.unshift({ timestamp: historyPoints[0].timestamp - 1000, date: '', val: 0 });
       setChartData(historyPoints);
 
-      // 4. Positions & Exposure
+      // 4. ROBUST POSITION SCANNING
+      // We gather EVERY ID the user has ever touched from history + current graph state
+      // This fixes the "Active positions failing" issue if the graph is lagging on the `positions` entity
       const graphPositions = await getUserPositions(address).catch(() => []);
       
-      // CRITICAL: Merge IDs from Graph Positions AND History (Chain + Local) to ensure we check everything
       const uniqueVaultIds = Array.from(new Set([
           ...graphPositions.map((p: any) => p.vault?.term_id?.toLowerCase()),
           ...localHistory.map(tx => tx.vaultId?.toLowerCase()),
           ...chainHistory.map(tx => tx.vaultId?.toLowerCase())
       ])).filter(Boolean) as string[];
 
+      // Fetch metadata for these IDs (labels, images)
       const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
       
-      // Fetch LIVE on-chain data
+      // 5. LIVE CHAIN CHECK (The Source of Truth)
+      // We iterate ALL potential vaults and check the contract for actual balance
       const livePositions = await Promise.all(uniqueVaultIds.map(async (id) => {
           const meta = metadata.find(m => m.id.toLowerCase() === id);
           const curveId = meta?.curveId ? Number(meta.curveId) : 0; 
           
-          // Get Raw Shares
+          // Direct Contract Call
           const shares = await getShareBalance(address, id, curveId);
           const sharesNum = parseFloat(shares);
           
           // Filter dust
           if (sharesNum <= 0.000001) return null;
 
-          // Get Real On-Chain Value (Redemption Quote)
+          // Get Redeem Value
           const valueStr = await getQuoteRedeem(shares, id, address, curveId);
           const value = parseFloat(valueStr);
 
           return {
               id,
               shares: sharesNum,
-              value: value, // Real exit value
+              value: value, 
               atom: meta || { label: `Agent ${id.slice(0,6)}...`, id, image: null }
           };
       }));
@@ -115,19 +117,16 @@ const Portfolio: React.FC = () => {
       setPositions(finalPositions);
       setExposureData(calculateCategoryExposure(finalPositions));
 
-      // 5. Net Worth & PnL Calculation
+      // 6. Final Net Worth & PnL
       const currentVal = finalPositions.reduce((acc, cur) => acc + cur.value, 0);
-      setPortfolioValue(currentVal.toFixed(4));
+      setPortfolioValue(currentVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
       
-      // Net PnL = (Current Portfolio Value + Total Redeemed) - Total Deposited
       const pnl = (currentVal + runningRedeem) - runningDeposit;
       setNetPnL(pnl);
 
-      // 6. Semantic Footprint
-      setSemanticFootprint(mergedHistory.length); 
-
     } catch (e) {
       console.error("Portfolio Fetch Error", e);
+      toast.error("DATA SYNC FAILED. RETRYING...");
     } finally {
       setLoading(false);
     }
@@ -136,7 +135,7 @@ const Portfolio: React.FC = () => {
   const handleRefresh = () => {
       if (account) {
           playClick();
-          toast.info("SYNCING LEDGER...");
+          toast.info("RESYNCING LEDGER...");
           fetchUserData(account);
       }
   };
@@ -156,9 +155,10 @@ const Portfolio: React.FC = () => {
   return (
     <div className="min-h-screen bg-intuition-dark pt-8 pb-20 px-4 max-w-7xl mx-auto">
       
-      {/* Header Stats */}
+      {/* 1. Header Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Liquid Balance */}
+          
+          {/* LIQUID BALANCE (Explicitly Placed First) */}
           <div className="bg-black border border-intuition-border p-6 clip-path-slant relative group hover:border-intuition-primary/50 transition-colors">
               <div className="absolute top-0 right-0 p-3 opacity-20"><Wallet size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
@@ -168,7 +168,7 @@ const Portfolio: React.FC = () => {
               <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
 
-          {/* Net Worth (Positions) */}
+          {/* NET WORTH */}
           <div className="bg-black border border-intuition-primary/50 p-6 clip-path-slant relative group">
               <div className="absolute top-0 right-0 p-3 opacity-20"><Coins size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
@@ -178,7 +178,7 @@ const Portfolio: React.FC = () => {
               <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
 
-          {/* Est PnL */}
+          {/* EST PNL */}
           <div className={`bg-black border p-6 clip-path-slant relative ${netPnL >= 0 ? 'border-intuition-success/30' : 'border-intuition-danger/30'}`}>
               <div className="absolute top-0 right-0 p-3 opacity-20"><TrendingUp size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Est. PnL</div>
@@ -188,7 +188,7 @@ const Portfolio: React.FC = () => {
               <div className="text-xs text-slate-500 font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
 
-          {/* Sentiment Bias */}
+          {/* SENTIMENT BIAS */}
           <div className="bg-black border border-intuition-border p-6 clip-path-slant relative overflow-hidden">
               <div className="flex justify-between items-center mb-2">
                   <div className="text-[10px] font-mono text-slate-500 uppercase">Sentiment Bias</div>
@@ -212,24 +212,37 @@ const Portfolio: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Exposure Chart */}
-          <div className="bg-black border border-intuition-border p-6 clip-path-slant h-[300px]">
+          {/* Exposure Chart with Legend */}
+          <div className="bg-black border border-intuition-border p-6 clip-path-slant h-[300px] flex flex-col">
               <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><PieIcon size={14}/> Category Exposure</h3>
               {exposureData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                          <Pie data={exposureData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                              {exposureData.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.5)" />
-                              ))}
-                          </Pie>
-                          <Tooltip 
-                            contentStyle={{ backgroundColor: '#000', border: '1px solid #333' }}
-                            itemStyle={{ fontSize: '12px', fontFamily: 'monospace' }}
-                            formatter={(value: number) => `${value.toFixed(1)}%`}
-                          />
-                      </PieChart>
-                  </ResponsiveContainer>
+                  <div className="flex items-center h-full">
+                      <div className="w-1/2 h-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                  <Pie data={exposureData} innerRadius={40} outerRadius={65} paddingAngle={5} dataKey="value" nameKey="name">
+                                      {exposureData.map((entry, index) => (
+                                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.5)" />
+                                      ))}
+                                  </Pie>
+                                  <Tooltip 
+                                    contentStyle={{ backgroundColor: '#000', border: '1px solid #333' }}
+                                    itemStyle={{ fontSize: '12px', fontFamily: 'monospace' }}
+                                    formatter={(value: number) => `${value.toFixed(1)}%`}
+                                  />
+                              </PieChart>
+                          </ResponsiveContainer>
+                      </div>
+                      <div className="w-1/2 pl-2 flex flex-col justify-center gap-2 overflow-y-auto max-h-[220px] custom-scrollbar">
+                          {exposureData.map((entry, index) => (
+                              <div key={index} className="flex items-center gap-2 text-[10px] font-mono">
+                                  <div className="w-2 h-2 rounded-sm shrink-0 shadow-[0_0_5px_currentColor]" style={{ backgroundColor: COLORS[index % COLORS.length], color: COLORS[index % COLORS.length] }}></div>
+                                  <span className="text-slate-400 truncate flex-1">{entry.name}</span>
+                                  <span className="text-white font-bold">{entry.value.toFixed(0)}%</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
               ) : (
                   <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs border border-dashed border-slate-800 rounded">
                       NO ASSETS TO CATEGORIZE
@@ -312,7 +325,13 @@ const Portfolio: React.FC = () => {
                           </tr>
                       )) : (
                           <tr><td colSpan={5} className="p-12 text-center text-slate-600 font-mono italic">
-                              {loading ? 'SCANNING ON-CHAIN LEDGER...' : 'NO ACTIVE POSITIONS FOUND'}
+                              {loading ? (
+                                  <div className="flex items-center justify-center gap-2"><RefreshCw className="animate-spin" size={14} /> SCANNING ON-CHAIN LEDGER...</div>
+                              ) : (
+                                  <div className="flex items-center justify-center gap-2 text-yellow-500/50">
+                                      <AlertTriangle size={14} /> NO ACTIVE POSITIONS VERIFIED
+                                  </div>
+                              )}
                           </td></tr>
                       )}
                   </tbody>
@@ -337,7 +356,7 @@ const Portfolio: React.FC = () => {
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                      {history.map((tx, i) => (
+                      {history.length > 0 ? history.map((tx, i) => (
                           <tr key={i} className="hover:bg-white/5 transition-colors">
                               <td className="px-6 py-3 text-slate-500">{new Date(tx.timestamp).toLocaleString()}</td>
                               <td className={`px-6 py-3 font-bold ${tx.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-rose-400'}`}>{tx.type}</td>
@@ -346,7 +365,9 @@ const Portfolio: React.FC = () => {
                               </td>
                               <td className="px-6 py-3 text-right">{parseFloat(formatEther(BigInt(tx.assets || '0'))).toFixed(4)}</td>
                           </tr>
-                      ))}
+                      )) : (
+                          <tr><td colSpan={4} className="p-8 text-center text-slate-600 italic">NO TRANSACTION HISTORY</td></tr>
+                      )}
                   </tbody>
               </table>
           </div>

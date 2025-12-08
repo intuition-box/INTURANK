@@ -339,9 +339,12 @@ export const getAgentOpinions = async (termId: string) => {
 // 5. USER POSITIONS
 // -------------------------------------------------------
 export const getUserPositions = async (address: string) => {
+  // Robust case-handling: Query both raw and lowercase address
+  const ids = [address, address.toLowerCase()];
+  
   const query = `
-    query GetUserPositions ($id: String!) {
-      positions(where: { account_id: { _eq: $id } }) {
+    query GetUserPositions ($ids: [String!]!) {
+      positions(where: { account: { id: { _in: $ids } } }) {
         shares
         vault { term_id total_assets total_shares curve_id }
       }
@@ -349,7 +352,7 @@ export const getUserPositions = async (address: string) => {
   `;
 
   try {
-    const data = await fetchGraphQL(query, { id: address.toLowerCase() });
+    const data = await fetchGraphQL(query, { ids });
     return data?.positions ?? [];
   } catch (e) {
     console.warn("getUserPositions failed:", e);
@@ -364,58 +367,60 @@ export const getUserHistory = async (
   userAddress: string
 ): Promise<Transaction[]> => {
 
-  const account = userAddress.toLowerCase();
+  const ids = [userAddress, userAddress.toLowerCase()];
 
+  // Removed 'assets' from selection as it may not exist in this subgraph version
   const query = `
-    query GetUserHistory($account: String!) {
+    query GetUserHistory($ids: [String!]!) {
       deposits(
-        where: { sender_id: { _eq: $account } }
+        where: { sender: { id: { _in: $ids } } }
         order_by: { created_at: desc }
         limit: 20
       ) {
         id
         shares
         created_at
-        sender_id
+        sender { id }
         vault { term_id }
       }
 
       redemptions(
-        where: { receiver_id: { _eq: $account } }
+        where: { receiver: { id: { _in: $ids } } }
         order_by: { created_at: desc }
         limit: 20
       ) {
         id
         shares
-        assets
         created_at
-        receiver_id
+        receiver { id }
         vault { term_id }
       }
     }
   `;
 
   try {
-    const data = await fetchGraphQL(query, { account });
+    const data = await fetchGraphQL(query, { ids });
 
     const deposits = (data?.deposits ?? []).map((d: any) => ({
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", 
+      assets: "0", // Fallback as assets field removed
       timestamp: new Date(d.created_at).getTime(),
       vaultId: d.vault?.term_id,
-      assetLabel: d.vault?.term_id?.slice(0, 6)
+      assetLabel: d.vault?.term_id?.slice(0, 6),
+      user: d.sender?.id
     }));
 
     const redeems = (data?.redemptions ?? []).map((r: any) => ({
       id: r.id,
       type: "REDEEM",
       shares: r.shares,
-      assets: r.assets || "0",
+      assets: "0",
       timestamp: new Date(r.created_at).getTime(),
       vaultId: r.vault?.term_id,
-      assetLabel: r.vault?.term_id?.slice(0, 6)
+      assetLabel: r.vault?.term_id?.slice(0, 6),
+      user: r.receiver?.id
     }));
 
     return [...deposits, ...redeems].sort((a, b) => b.timestamp - a.timestamp);
@@ -597,7 +602,7 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
         id
         shares
         created_at
-        sender_id
+        sender { id }
       }
       redemptions(
         where: { vault: { term_id: { _in: $ids } } }
@@ -606,9 +611,8 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       ) {
         id
         shares
-        assets
         created_at
-        receiver_id
+        receiver { id }
       }
     }
   `;
@@ -620,22 +624,22 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", // Deposit assets not available in this query version, defaulting to 0 for display
+      assets: "0",
       timestamp: new Date(d.created_at).getTime(),
       vaultId: termId,
       assetLabel: "Share",
-      user: d.sender_id
+      user: d.sender?.id
     }));
 
     const redeems = (data?.redemptions ?? []).map((r: any) => ({
       id: r.id,
       type: "REDEEM",
       shares: r.shares,
-      assets: r.assets || "0",
+      assets: "0",
       timestamp: new Date(r.created_at).getTime(),
       vaultId: termId,
       assetLabel: "Share",
-      user: r.receiver_id
+      user: r.receiver?.id
     }));
 
     return [...deposits, ...redeems].sort((a, b) => b.timestamp - a.timestamp);
@@ -668,7 +672,6 @@ export const getAllMarketActivity = async (termId: string): Promise<Transaction[
       ) {
         id
         shares
-        assets
         created_at
       }
     }
@@ -681,7 +684,7 @@ export const getAllMarketActivity = async (termId: string): Promise<Transaction[
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", 
+      assets: "0",
       timestamp: new Date(d.created_at).getTime(),
     }));
 
@@ -689,7 +692,7 @@ export const getAllMarketActivity = async (termId: string): Promise<Transaction[
       id: r.id,
       type: "REDEEM",
       shares: r.shares,
-      assets: r.assets || "0",
+      assets: "0",
       timestamp: new Date(r.created_at).getTime(),
     }));
 

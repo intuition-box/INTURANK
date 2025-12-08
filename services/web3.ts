@@ -1,4 +1,6 @@
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, isAddress, getAddress, type Hex, stringToHex, keccak256, encodePacked, hexToString } from 'viem';
+import { mainnet } from 'viem/chains';
+import { normalize } from 'viem/ens';
 import { CHAIN_ID, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL } from '../constants';
 import { Transaction } from '../types';
 
@@ -14,6 +16,28 @@ export const publicClient = createPublicClient({
   chain: intuitionTestnet,
   transport: http(RPC_URL),
 });
+
+// --- ENS RESOLVER (ETH MAINNET) ---
+// We need a separate client for ENS because ENS lives on Ethereum Mainnet, not Intuition.
+const mainnetClient = createPublicClient({
+  chain: mainnet,
+  transport: http('https://eth.llamarpc.com') // Robust public RPC for ENS
+});
+
+export const resolveENS = async (name: string): Promise<string | null> => {
+    try {
+        if (!name.includes('.')) return null;
+        const normalizedName = normalize(name);
+        const address = await mainnetClient.getEnsAddress({
+            name: normalizedName,
+        });
+        return address;
+    } catch (e) {
+        console.warn("ENS Resolution failed:", e);
+        return null;
+    }
+};
+// --------------------------------
 
 // --- Local Transaction Helpers ---
 const LOCAL_TX_KEY = 'inturank_local_transactions';
