@@ -1,13 +1,14 @@
-// src/pages/Dashboard.tsx
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { Wallet, User, Zap, Activity, Clock, AlertTriangle, RefreshCw, Loader2, ExternalLink } from 'lucide-react';
+import { Wallet, User, Zap, Activity, Clock, AlertTriangle, RefreshCw, Loader2, ExternalLink, UserCircle } from 'lucide-react';
 import { formatEther } from 'viem';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
+import { Link } from 'react-router-dom';
+import { CURRENCY_SYMBOL } from '../constants';
 
 const Dashboard: React.FC = () => {
   const [account, setAccount] = useState<string | null>(null);
@@ -17,6 +18,7 @@ const Dashboard: React.FC = () => {
   const [balance, setBalance] = useState<string>('0.00');
   const [portfolioValue, setPortfolioValue] = useState<string>('0.00');
   const [netPnL, setNetPnL] = useState<number>(0);
+  const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
     const init = async () => {
@@ -41,39 +43,45 @@ const Dashboard: React.FC = () => {
       const chainHistory = await getUserHistory(address).catch(e => []);
       const localHistory = getLocalTransactions(address);
 
-      const pendingTxs = localHistory.filter(localTx =>
-        !chainHistory.some(chainTx => (chainTx.id || '').toString().toLowerCase().includes((localTx.id || '').toString().toLowerCase()))
-      );
-      const mergedHistory = [...pendingTxs, ...chainHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setHistory(mergedHistory);
+      const mergedHistory = [...localHistory, ...chainHistory]
+        .filter((tx, index, self) => index === self.findIndex((t) => (t.id === tx.id)))
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // Ascending for calc
+      
+      setHistory(mergedHistory.slice().reverse()); // Descending for display
+
+      // Calculate Running Capital for Chart & PnL
+      let runningDeposit = 0;
+      let runningRedeem = 0;
+      
+      const historyPoints = mergedHistory.map(tx => {
+          try {
+              const val = parseFloat(formatEther(BigInt(tx.assets || '0')));
+              if (tx.type === 'DEPOSIT') runningDeposit += val;
+              else if (tx.type === 'REDEEM') runningRedeem += val;
+          } catch {}
+          return {
+              name: tx.timestamp,
+              val: runningDeposit - runningRedeem
+          };
+      });
+      if (historyPoints.length > 0) historyPoints.unshift({ name: 0, val: 0 });
+      setChartData(historyPoints);
 
       // 2. Identify Vaults to Scan
-      const uniqueVaultIds = new Set<string>();
-      
-      // Add from graph positions (might be empty if graph is down)
-      const graphPositions = await getUserPositions(address).catch(e => []);
-      graphPositions.forEach((p: any) => p?.vault?.term_id && uniqueVaultIds.add(p.vault.term_id.toLowerCase()));
+      const uniqueVaultIds = Array.from(new Set([
+          ...localHistory.map(tx => tx.vaultId?.toLowerCase()),
+          ...chainHistory.map(tx => tx.vaultId?.toLowerCase()),
+          ...(await getUserPositions(address).catch(() => [])).map((p:any) => p.vault?.term_id?.toLowerCase())
+      ])).filter(Boolean) as string[];
 
-      // Add from local history (CRITICAL fallback)
-      localHistory.forEach(tx => tx.vaultId && uniqueVaultIds.add(tx.vaultId.toLowerCase()));
-      // Add from chain history
-      chainHistory.forEach(tx => tx.vaultId && uniqueVaultIds.add(tx.vaultId.toLowerCase()));
-
-      const vaultIdsArray = Array.from(uniqueVaultIds);
-
-      // 3. Fetch Metadata (Safely)
-      let metadata: any[] = [];
-      if (vaultIdsArray.length > 0) {
-        metadata = await getVaultsByIds(vaultIdsArray).catch(e => []);
-      }
+      // 3. Fetch Metadata
+      const metadata = await getVaultsByIds(uniqueVaultIds).catch(e => []);
 
       // 4. Check Live On-Chain Balances & VALUES
-      // This is the source of truth, regardless of the Graph
       const livePositionsData = await Promise.all(
-        vaultIdsArray.map(async (id) => {
+        uniqueVaultIds.map(async (id) => {
           try {
             const meta = metadata.find(m => (m.id || '').toLowerCase() === (id || '').toLowerCase());
-            // Default to 0 if meta missing. This assumes curveId 0 (Standard), which is a safe default for most atoms.
             const curveId = meta?.curveId ? Number(meta.curveId) : 0; 
             
             // Get Shares
@@ -82,14 +90,12 @@ const Dashboard: React.FC = () => {
             
             // Get Value (On-Chain Simulation)
             let valueStr = "0";
-            if (shares > 0) {
-                // If graph is down, quoteRedeem calculates value directly from contract
+            if (shares > 0.000001) {
                 valueStr = await getQuoteRedeem(sharesStr, id, address, curveId);
             }
 
             return { id, shares, meta, sharesStr, valueStr };
           } catch (e) {
-            console.warn(`Failed to process ${id}`, e);
             return { id, shares: 0, meta: undefined, sharesStr: '0', valueStr: '0' };
           }
         })
@@ -100,12 +106,10 @@ const Dashboard: React.FC = () => {
 
       const finalPositions = activePositions.map(item => {
           const val = parseFloat(item.valueStr);
-          
           return {
             id: item.id,
             shares: item.sharesStr,
             value: val,
-            // Fallback label if metadata missing (e.g. fresh mint or graph offline)
             atom: { 
                 label: item.meta?.label || `Agent ${item.id.slice(0, 6)}...`, 
                 image: item.meta?.image 
@@ -117,24 +121,14 @@ const Dashboard: React.FC = () => {
       setPositions(finalPositions);
 
       // 6. Calculate PnL
-      const totalVal = finalPositions.reduce((acc, cur) => acc + (cur.value || 0), 0);
-      let totalCost = 0;
-      mergedHistory.forEach(tx => {
-        try {
-          let val = 0;
-          const rawAssets = tx.assets ?? '0';
-          val = rawAssets.includes('.') ? parseFloat(rawAssets) : parseFloat(formatEther(BigInt(rawAssets)));
-          if (tx.type === 'DEPOSIT') totalCost += val;
-          else if (tx.type === 'REDEEM') totalCost -= val;
-        } catch {}
-      });
-
-      setPortfolioValue(totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
-      setNetPnL(totalVal - Math.max(0, totalCost));
+      const currentVal = finalPositions.reduce((acc, cur) => acc + (cur.value || 0), 0);
+      setPortfolioValue(currentVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
+      
+      // PnL = (Current Value + Total Redeemed) - Total Deposited
+      setNetPnL((currentVal + runningRedeem) - runningDeposit);
 
     } catch (e) {
       console.error('Dashboard Sync Error:', e);
-      // We don't show a toast error anymore because we want the UI to persist even if partial fail
     } finally {
       setLoading(false);
     }
@@ -173,16 +167,6 @@ const Dashboard: React.FC = () => {
     );
   }
 
-  // Normalize history for chart to avoid 0/Wei mix
-  const chartData = history.length > 0 ? history.slice().reverse().map((h, i) => {
-     let v = 0;
-     try {
-         const raw = h.assets || '0';
-         v = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw)));
-     } catch {}
-     return { name: i, val: v };
-  }) : [{ name: 0, val: 0 }, { name: 1, val: 0 }];
-
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20">
       <div className="mb-12 p-1 bg-gradient-to-r from-intuition-primary via-intuition-secondary to-intuition-primary rounded-none clip-path-slant">
@@ -199,7 +183,15 @@ const Dashboard: React.FC = () => {
           </div>
 
           <div className="flex-1 text-center md:text-left">
-            <div className="text-intuition-primary font-mono text-xs mb-1">PLAYER_ID</div>
+            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-2">
+                <span className="text-intuition-primary font-mono text-xs">PLAYER_ID</span>
+                <Link 
+                    to={`/profile/${account}`} 
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/10 text-white hover:bg-intuition-primary hover:text-black text-[10px] font-bold font-mono rounded transition-colors"
+                >
+                    <UserCircle size={12} /> VIEW PUBLIC PROFILE
+                </Link>
+            </div>
             <h1 className="text-3xl md:text-4xl font-black text-white font-display tracking-wider mb-2 text-glow">{account.slice(0, 6)}...{account.slice(-4)}</h1>
             <div className="flex flex-wrap gap-4 justify-center md:justify-start font-mono text-xs">
               <span className="bg-intuition-success/10 text-intuition-success px-2 py-1 border border-intuition-success/30">LEVEL: {positions.length > 0 ? 'TRADER' : 'NOVICE'}</span>
@@ -255,14 +247,14 @@ const Dashboard: React.FC = () => {
                   className="hover:bg-intuition-primary/10 transition-colors group hover:shadow-[inset_0_0_10px_rgba(0,243,255,0.1)]"
                 >
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
+                    <Link to={`/markets/${pos.id}`} className="flex items-center gap-3">
                       {pos.atom?.image && <img src={pos.atom.image} className="w-8 h-8 rounded-sm object-cover border border-intuition-primary/30" alt="" />}
                       <div className="font-bold text-white group-hover:text-intuition-primary transition-colors text-glow">{pos.atom?.label}</div>
-                    </div>
+                    </Link>
                   </td>
                   <td className="px-6 py-4 text-[10px] text-slate-500 font-mono">{pos.id.slice(0, 8)}...</td>
                   <td className="px-6 py-4 text-white font-bold font-display text-lg">{parseFloat(pos.shares || '0').toFixed(4)}</td>
-                  <td className="px-6 py-4 text-intuition-success">{(pos.value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} TRUST</td>
+                  <td className="px-6 py-4 text-intuition-success">{(pos.value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} {CURRENCY_SYMBOL}</td>
                   <td className="px-6 py-4 text-right"><span className="text-intuition-success text-xs font-bold border border-intuition-success/30 px-2 py-1 bg-intuition-success/10 rounded flex items-center justify-end gap-1"><ExternalLink size={10} /> ON-CHAIN</span></td>
                 </tr>
               )) : (!loading && (
@@ -298,7 +290,7 @@ const Dashboard: React.FC = () => {
                             const val = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw)));
                             return val.toFixed(4);
                         } catch { return '0.0000'; }
-                    })()} TRUST
+                    })()} {CURRENCY_SYMBOL}
                   </div>
                   <div className="text-slate-500">{new Date(tx.timestamp || Date.now()).toLocaleTimeString()}</div>
                 </div>
@@ -308,15 +300,27 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="border border-intuition-border bg-black p-6 min-h-[300px] flex flex-col clip-path-slant hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] transition-shadow">
-          <h3 className="font-bold text-white font-display mb-4 flex items-center gap-2"><Activity size={18} className="text-intuition-primary animate-pulse" /> PORTFOLIO_GROWTH [NAV]</h3>
+          <h3 className="font-bold text-white font-display mb-4 flex items-center gap-2"><Activity size={18} className="text-intuition-primary animate-pulse" /> CAPITAL_DEPLOYMENT</h3>
           <div className="flex-1 w-full h-full min-h-[200px] flex items-center justify-center text-slate-600 font-mono text-xs">
-            <ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="name" hide />
-              <YAxis hide />
-              <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333' }} />
-              <Area type="monotone" dataKey="val" stroke="#00f3ff" fill="rgba(0, 243, 255, 0.1)" />
-            </AreaChart></ResponsiveContainer>
+            {chartData.length > 1 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                          <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.2}/>
+                              <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
+                          </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+                      <XAxis dataKey="name" hide />
+                      <YAxis hide />
+                      <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333' }} />
+                      <Area type="stepAfter" dataKey="val" stroke="#00f3ff" fillOpacity={1} fill="url(#colorVal)" />
+                    </AreaChart>
+                </ResponsiveContainer>
+            ) : (
+                <span>INSUFFICIENT DATA FOR TELEMETRY</span>
+            )}
           </div>
         </div>
       </div>

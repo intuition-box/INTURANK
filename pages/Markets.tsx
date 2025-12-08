@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, TrendingUp, Filter, DollarSign, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowDown } from 'lucide-react';
+import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowDown, Star, LayoutGrid, Grid, Info } from 'lucide-react';
 import { formatEther } from 'viem';
 import { getAllAgents, searchGlobalAgents } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
 import { Account } from '../types';
+import { getWatchlist, getConnectedAccount } from '../services/web3';
+import { toast } from '../components/Toast';
 
-type SortOption = 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
+type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
+type ViewMode = 'GRID' | 'HEATMAP';
 
 const Markets: React.FC = () => {
   const [agents, setAgents] = useState<Account[]>([]);
@@ -14,9 +17,13 @@ const Markets: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [serverResults, setServerResults] = useState<Account[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
+  const [watchlistIds, setWatchlistIds] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>('GRID');
+  const [account, setAccount] = useState<string | null>(null);
   
-  // Sorting State
-  const [sortOption, setSortOption] = useState<SortOption>('VOL_DESC');
+  // Sorting State - Default to Market Cap High
+  const [sortOption, setSortOption] = useState<SortOption>('MCAP_DESC');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
   
@@ -35,16 +42,33 @@ const Markets: React.FC = () => {
       }
     };
     fetchData();
+    
+    getConnectedAccount().then(setAccount);
 
-    // Close sort dropdown on click outside
+    // Initial Watchlist load
+    if (account) setWatchlistIds(getWatchlist(account));
+
+    // Listen for watchlist updates from other components
+    const handleWatchUpdate = (e: any) => {
+        const updatedAccount = e.detail?.account;
+        // Only update if it concerns the current user or global
+        if (updatedAccount && account && updatedAccount.toLowerCase() === account.toLowerCase()) {
+            setWatchlistIds(getWatchlist(account));
+        }
+    };
+    window.addEventListener('watchlist-updated', handleWatchUpdate);
+
     const handleClickOutside = (event: MouseEvent) => {
       if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
         setIsSortOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        window.removeEventListener('watchlist-updated', handleWatchUpdate);
+    };
+  }, [account]);
 
   // Handle Server-Side Search Debounce
   useEffect(() => {
@@ -52,7 +76,6 @@ const Markets: React.FC = () => {
 
      const term = searchTerm.trim();
      
-     // Reset server results if empty
      if (term.length < 2) {
          setServerResults([]);
          setIsSearching(false);
@@ -69,7 +92,7 @@ const Markets: React.FC = () => {
         } finally {
             setIsSearching(false);
         }
-     }, 600); // 600ms debounce
+     }, 600); 
 
      return () => clearTimeout(searchTimeout.current);
   }, [searchTerm]);
@@ -84,22 +107,22 @@ const Markets: React.FC = () => {
     
     let candidates = Array.from(combinedMap.values());
 
+    // 0. WATCHLIST FILTER
+    if (showWatchlistOnly) {
+        candidates = candidates.filter(a => watchlistIds.some(wid => wid.toLowerCase() === a.id.toLowerCase()));
+    }
+
     // 1. STRICT SEARCH FILTERING
     if (term) {
         candidates = candidates.filter(agent => {
             const label = (agent.label || '').toLowerCase();
             const id = agent.id.toLowerCase();
             
-            // If user explicitly types '0x', assume they are looking for an ID
             if (term.startsWith('0x')) {
                 return id.includes(term);
             }
             
-            // Otherwise, prioritize Name/Label matching
             if (label.includes(term)) return true;
-
-            // Only match ID if the search term is significantly unique (avoid matching "a", "b", "c" to hex chars)
-            // Or if it matches the EXACT ID
             if (term.length > 5 && id.includes(term)) return true;
             if (id === term) return true;
 
@@ -111,28 +134,38 @@ const Markets: React.FC = () => {
     return candidates.sort((a, b) => {
         const getAssets = (x: Account) => parseFloat(formatEther(BigInt(x.totalAssets || '0')));
         const getShares = (x: Account) => parseFloat(formatEther(BigInt(x.totalShares || '0')));
-        const getPrice = (x: Account) => {
-             const s = getShares(x);
-             return s > 0 ? getAssets(x) / s : 0;
+        
+        // Spot Price from Graph (if available) or calculated
+        const getSpotPrice = (x: Account) => {
+            if (x.currentSharePrice && x.currentSharePrice !== "0") {
+                return parseFloat(formatEther(BigInt(x.currentSharePrice)));
+            }
+            // Fallback to average price if spot unavailable
+            return getShares(x) > 0 ? getAssets(x) / getShares(x) : 0;
         };
 
-        // Trust Score is derived from Price in this demo logic
+        const getMarketCap = (x: Account) => getShares(x) * getSpotPrice(x);
+
         const getTrust = (x: Account) => {
-             const p = getPrice(x);
-             return Math.min(99, Math.max(1, Math.log10(p * 10 + 1) * 50));
+             const p = getSpotPrice(x);
+             // Pivot around 1.0 being neutral (50)
+             if (p <= 0) return 50;
+             return Math.min(99, Math.max(1, 50 + (Math.log10(p) * 25)));
         };
 
         switch (sortOption) {
+            case 'MCAP_DESC': return getMarketCap(b) - getMarketCap(a);
+            case 'MCAP_ASC': return getMarketCap(a) - getMarketCap(b);
             case 'VOL_DESC': return getAssets(b) - getAssets(a);
             case 'VOL_ASC': return getAssets(a) - getAssets(b);
-            case 'PRICE_DESC': return getPrice(b) - getPrice(a);
-            case 'PRICE_ASC': return getPrice(a) - getPrice(b);
+            case 'PRICE_DESC': return getSpotPrice(b) - getSpotPrice(a);
+            case 'PRICE_ASC': return getSpotPrice(a) - getSpotPrice(b);
             case 'TRUST_DESC': return getTrust(b) - getTrust(a);
             case 'TRUST_ASC': return getTrust(a) - getTrust(b);
             default: return 0;
         }
     });
-  }, [agents, searchTerm, serverResults, sortOption]);
+  }, [agents, searchTerm, serverResults, sortOption, showWatchlistOnly, watchlistIds]);
 
   const toggleSort = (option: SortOption) => {
       setSortOption(option);
@@ -140,8 +173,19 @@ const Markets: React.FC = () => {
       playClick();
   };
 
+  const toggleWatchlistFilter = () => {
+      playClick();
+      if (!account && !showWatchlistOnly) {
+          toast.error("CONNECT WALLET TO VIEW WATCHLIST");
+          return;
+      }
+      setShowWatchlistOnly(!showWatchlistOnly);
+  };
+
   const getSortLabel = (opt: SortOption) => {
       switch(opt) {
+          case 'MCAP_DESC': return 'M.CAP (HIGH)';
+          case 'MCAP_ASC': return 'M.CAP (LOW)';
           case 'VOL_DESC': return 'VOLUME (HIGH)';
           case 'VOL_ASC': return 'VOLUME (LOW)';
           case 'PRICE_DESC': return 'PRICE (HIGH)';
@@ -166,6 +210,31 @@ const Markets: React.FC = () => {
         </div>
         
         <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center w-full md:w-auto">
+            {/* View Mode Toggle (Explicit Text) */}
+            <div className="flex gap-1 border border-intuition-border p-1 bg-black clip-path-slant">
+                <button 
+                    onClick={() => { playClick(); setViewMode('GRID'); }}
+                    className={`flex items-center gap-2 px-4 py-3 text-[10px] font-bold font-mono transition-colors ${viewMode === 'GRID' ? 'bg-intuition-primary text-black' : 'text-slate-500 hover:text-white'}`}
+                >
+                    <LayoutGrid size={14} /> GRID VIEW
+                </button>
+                <button 
+                    onClick={() => { playClick(); setViewMode('HEATMAP'); }}
+                    className={`flex items-center gap-2 px-4 py-3 text-[10px] font-bold font-mono transition-colors ${viewMode === 'HEATMAP' ? 'bg-intuition-primary text-black' : 'text-slate-500 hover:text-white'}`}
+                >
+                    <Grid size={14} /> HEATMAP
+                </button>
+            </div>
+
+            {/* Watchlist Filter */}
+            <button 
+                onClick={toggleWatchlistFilter}
+                className={`flex items-center justify-center gap-2 px-4 py-3 bg-intuition-dark border rounded-none text-xs font-mono font-bold clip-path-slant transition-all hover:bg-intuition-primary/10 ${showWatchlistOnly ? 'border-yellow-500 text-yellow-500 bg-yellow-500/10 shadow-[0_0_15px_rgba(234,179,8,0.2)]' : 'border-intuition-border text-slate-500 hover:border-yellow-500/50 hover:text-yellow-500'}`}
+                title="Toggle Watchlist"
+            >
+                <Star size={16} fill={showWatchlistOnly ? "currentColor" : "none"} />
+            </button>
+
             {/* Search Bar */}
             <div className="relative group flex-1 w-full md:w-auto">
               <input 
@@ -198,26 +267,25 @@ const Markets: React.FC = () => {
                     <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
                 </button>
 
-                {/* Sort Matrix Dropdown */}
                 {isSortOpen && (
                     <div className="absolute right-0 top-full mt-2 w-full md:w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.15)] z-50 clip-path-slant p-1 animate-in slide-in-from-top-2 fade-in duration-200">
                         <div className="bg-intuition-dark/90 p-2 space-y-1">
                             <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest px-2 py-1 mb-1 border-b border-white/5">Sort Matrix</div>
                             
+                            <button onClick={() => toggleSort('MCAP_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'MCAP_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
+                                <span>M.CAP (HIGH)</span> <TrendingUp size={12} className="group-hover:scale-110" />
+                            </button>
                             <button onClick={() => toggleSort('VOL_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
                                 <span>VOLUME (HIGH)</span> <TrendingUp size={12} className="group-hover:scale-110" />
                             </button>
                             <button onClick={() => toggleSort('PRICE_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
-                                <span>PRICE (HIGH)</span> <DollarSign size={12} className="group-hover:scale-110" />
-                            </button>
-                            <button onClick={() => toggleSort('TRUST_DESC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'TRUST_DESC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-400'}`}>
-                                <span>TRUST (HIGH)</span> <ShieldCheck size={12} className="group-hover:scale-110" />
+                                <span>PRICE (HIGH)</span> <Tag size={12} className="group-hover:scale-110" />
                             </button>
                             
                             <div className="h-px bg-white/10 my-1"></div>
 
-                            <button onClick={() => toggleSort('VOL_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'VOL_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
-                                <span>VOLUME (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
+                            <button onClick={() => toggleSort('MCAP_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'MCAP_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
+                                <span>M.CAP (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
                             </button>
                             <button onClick={() => toggleSort('PRICE_ASC')} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono hover:bg-intuition-primary/20 hover:text-white transition-colors group ${sortOption === 'PRICE_ASC' ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}>
                                 <span>PRICE (LOW)</span> <ArrowDown size={12} className="group-hover:scale-110" />
@@ -229,7 +297,27 @@ const Markets: React.FC = () => {
         </div>
       </div>
 
-      {/* Market Grid */}
+      {/* Heatmap Explanation / Legend */}
+      {viewMode === 'HEATMAP' && (
+          <div className="mb-8 p-4 bg-black border border-intuition-border clip-path-slant animate-in fade-in slide-in-from-top-4">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                  <div className="flex items-center gap-3">
+                      <Info className="text-intuition-primary" size={18} />
+                      <div className="text-xs font-mono text-slate-400">
+                          <strong className="text-white uppercase">Heatmap Visualization:</strong> Tiles are colored based on Price Strength relative to 1.0 TRUST/Share.
+                      </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 w-full md:w-auto bg-slate-900/50 p-2 rounded border border-slate-800">
+                      <div className="text-[10px] font-mono font-bold text-rose-500 whitespace-nowrap">BELOW PEG (&lt;1.0)</div>
+                      <div className="h-2 w-full md:w-48 bg-gradient-to-r from-rose-600 via-slate-600 to-emerald-500 rounded-full"></div>
+                      <div className="text-[10px] font-mono font-bold text-emerald-500 whitespace-nowrap">ABOVE PEG (&gt;1.0)</div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Market Content */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
            {[...Array(10)].map((_, i) => (
@@ -242,39 +330,96 @@ const Markets: React.FC = () => {
         <div className="text-center py-20 border border-dashed border-intuition-border bg-intuition-card/30 clip-path-slant flex flex-col items-center justify-center gap-4">
             <Database size={48} className="text-intuition-border" />
             <p className="text-intuition-primary/50 text-lg font-mono">
-               {isSearching ? 'SEARCHING GLOBAL MATRIX...' : 'NO_DATA_FOUND_ON_NETWORK'}
+               {showWatchlistOnly ? 'WATCHLIST_EMPTY' : isSearching ? 'SEARCHING GLOBAL MATRIX...' : 'NO_DATA_FOUND_ON_NETWORK'}
             </p>
-            {searchTerm && !isSearching && (
+            {showWatchlistOnly ? (
+                <p className="text-xs text-slate-500 max-w-md">
+                    Star agents in their profile to track them here.
+                </p>
+            ) : searchTerm && !isSearching && (
                 <p className="text-xs text-slate-500 max-w-md">
                     We scanned the entire Intuition graph for "{searchTerm}" but found no matching Agents.
                     <br/>Try searching by exact Contract Address (0x...) or a specific Label.
                 </p>
             )}
         </div>
+      ) : viewMode === 'HEATMAP' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+            {filteredAgents.map(agent => {
+                const assets = agent.totalAssets ? parseFloat(formatEther(BigInt(agent.totalAssets))) : 0;
+                const shares = agent.totalShares ? parseFloat(formatEther(BigInt(agent.totalShares))) : 0;
+                
+                // Prioritize Spot Price
+                let price = 0;
+                if (agent.currentSharePrice && agent.currentSharePrice !== "0") {
+                    price = parseFloat(formatEther(BigInt(agent.currentSharePrice)));
+                } else {
+                    price = shares > 0 ? assets / shares : 0;
+                }
+                
+                // Recalibrated Trust Score: Pivot around 1.0 (Neutral = 50)
+                let strength = 50;
+                if (price > 0) {
+                    strength = Math.min(99, Math.max(1, 50 + (Math.log10(price) * 25)));
+                }
+                
+                // Color Logic
+                let bgClass = 'bg-slate-800';
+                if (strength > 75) bgClass = 'bg-emerald-500';
+                else if (strength > 60) bgClass = 'bg-emerald-700';
+                else if (strength > 50) bgClass = 'bg-slate-600'; // Neutral/Slight Trust
+                else if (strength > 40) bgClass = 'bg-rose-700';
+                else bgClass = 'bg-rose-600';
+
+                // Market Cap for display in small
+                const marketCap = shares * price;
+
+                return (
+                    <Link 
+                        key={agent.id} 
+                        to={`/markets/${agent.id}`}
+                        onClick={playClick}
+                        className={`aspect-square p-2 flex flex-col justify-between hover:scale-105 transition-transform duration-300 relative group overflow-hidden ${bgClass} border border-black/20`}
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div className="text-[10px] font-black font-display text-white/90 truncate leading-tight z-10 drop-shadow-md">
+                            {agent.label || agent.id.slice(0,6)}
+                        </div>
+                        <div className="text-[8px] font-mono text-white/80 z-10 flex justify-between">
+                            <span>{strength.toFixed(0)}</span>
+                            <span>{marketCap > 0 ? `${marketCap.toFixed(1)}T` : '-'}</span>
+                        </div>
+                    </Link>
+                );
+            })}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
           {filteredAgents.map((agent) => {
-             // REAL METRICS CALCULATION
              const assets = agent.totalAssets ? parseFloat(formatEther(BigInt(agent.totalAssets))) : 0;
              const shares = agent.totalShares ? parseFloat(formatEther(BigInt(agent.totalShares))) : 0;
              
+             // Prioritize Spot Price
              let price = 0;
-             if (shares > 0) {
-                 price = assets / shares;
+             if (agent.currentSharePrice && agent.currentSharePrice !== "0") {
+                 price = parseFloat(formatEther(BigInt(agent.currentSharePrice)));
+             } else {
+                 price = shares > 0 ? assets / shares : 0;
              }
 
-             // Trust Strength Score (0-99)
-             const strength = Math.min(99, Math.max(1, Math.log10(price * 10 + 1) * 50));
-             
+             const marketCap = shares * price;
+
+             // Pivot around 1.0 (Neutral = 50)
+             let strength = 50;
+             if (price > 0) {
+                 strength = Math.min(99, Math.max(1, 50 + (Math.log10(price) * 25)));
+             }
+
              const trustPct = strength.toFixed(0);
              const distrustPct = (100 - strength).toFixed(0);
-             const realVolume = assets.toFixed(2);
-             const isHot = assets > 100;
-
-             // Calculate Reputation Score (normalized 0-100 based on strength)
+             const isHot = assets > 100; // Keep hot based on TVL liquidity depth
              const repScore = Math.floor(strength);
 
-             // Rank Calculation Logic (Futuristic Style)
              let rank = 'D';
              let rankColor = 'text-slate-500';
              let rankBorder = 'border-slate-800';
@@ -319,20 +464,17 @@ const Markets: React.FC = () => {
                 onMouseEnter={playHover}
                 className="group relative flex flex-col bg-[#05080f] border border-intuition-border transition-all duration-300 overflow-hidden clip-path-slant hover-glow hover:-translate-y-2"
               >
-                {/* Tech Corners */}
                 <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-intuition-primary opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
-                {/* Card Header */}
                 <div className="h-36 bg-slate-900/50 relative p-4 border-b border-intuition-border group-hover:border-intuition-primary/30 transition-colors">
                    <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay"></div>
                    
                    <div className="relative z-10 flex justify-between items-start mb-3">
                       <span className="text-[10px] font-mono text-intuition-primary/60 bg-black/50 px-1 border border-intuition-primary/20 group-hover:text-intuition-primary group-hover:border-intuition-primary/50 transition-colors">ID: {agent.id.slice(0,6)}</span>
                       <div className="flex gap-2">
-                          {/* FUTURISTIC RANK BADGE */}
                           <div className={`relative flex items-stretch border ${rankBorder} ${rankBg} ${shadow} clip-path-slant pr-2 h-6`}>
                               <div className={`w-1 mr-2 ${barColor} ${rank === 'S' ? 'animate-pulse' : ''}`}></div>
                               <div className="flex items-center gap-1">
@@ -371,15 +513,12 @@ const Markets: React.FC = () => {
                    </div>
                 </div>
 
-                {/* Card Body */}
                 <div className="p-4 flex-1 flex flex-col bg-gradient-to-b from-intuition-dark to-[#02040a]">
-                   
                    <div className="mb-5 space-y-1.5">
                       <div className="flex justify-between text-[10px] font-mono font-bold uppercase tracking-wider">
                          <span className="text-intuition-success">TRUST {trustPct}%</span>
                          <span className="text-intuition-danger">{distrustPct}% DISTRUST</span>
                       </div>
-                      {/* Real Sentiment Bar calculated from Price */}
                       <div className="w-full h-3 bg-black border border-slate-800 flex relative clip-path-slant">
                          <div className="absolute inset-0 grid grid-cols-10 pointer-events-none">
                             {[...Array(9)].map((_, i) => <div key={i} className="border-r border-black/50 h-full"></div>)}
@@ -389,7 +528,6 @@ const Markets: React.FC = () => {
                       </div>
                    </div>
 
-                   {/* Fixed: Replaced nested buttons with divs to allow Link to function */}
                    <div className="grid grid-cols-2 gap-2 mb-4 opacity-60 group-hover:opacity-100 transition-opacity duration-300">
                       <div className="py-1.5 bg-intuition-success/10 border border-intuition-success/30 text-intuition-success text-xs font-bold font-mono text-center clip-path-slant">
                          TRUST
@@ -401,12 +539,12 @@ const Markets: React.FC = () => {
 
                    <div className="mt-auto pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-500 group-hover:text-intuition-primary/70 transition-colors">
                       <div className="flex items-center gap-1 text-intuition-secondary">
-                         <DollarSign size={10} />
-                         VOL: {realVolume}
+                         <Activity size={10} />
+                         M.CAP: {marketCap.toFixed(2)}
                       </div>
                       <div className="flex items-center gap-1">
-                         <Activity size={10} />
-                         PRICE: {price.toFixed(3)}
+                         <Tag size={10} />
+                         SPOT: {price.toFixed(3)}
                       </div>
                    </div>
                 </div>

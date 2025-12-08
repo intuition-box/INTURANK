@@ -1,34 +1,72 @@
 import { GRAPHQL_URL } from '../constants';
-import { Transaction } from '../types';
+import { Transaction, Claim } from '../types';
+import { hexToString } from 'viem';
 
 // -------------------------------------------------------
-// BASIC FETCH WRAPPER
+// BASIC FETCH WRAPPER WITH TIMEOUT
 // -------------------------------------------------------
 const fetchGraphQL = async (query: string, variables: any = {}) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased to 15s
+
   try {
     const response = await fetch(GRAPHQL_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, variables }),
+      signal: controller.signal,
+      cache: 'no-store' // CRITICAL: Prevent browser caching to ensure live feed updates
     });
+    clearTimeout(timeoutId);
 
     const result = await response.json();
 
     if (result.errors) {
       console.warn("GraphQL Query Error:", result.errors);
-      // Don't throw here for the app to survive, just return null data
       return { data: null };
     }
 
     return result.data;
-  } catch (error) {
-    console.warn("GraphQL Network Error:", error);
-    // Return empty data structure to prevent destructuring errors
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn("GraphQL Request Timed Out");
+    } else {
+      console.warn("GraphQL Network Error:", error);
+    }
     return { data: null };
   }
 };
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
+
+const cleanString = (str: string) => {
+  // Remove non-printable characters and trim
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+};
+
+const resolveLabel = (atom: any, fallbackId: string) => {
+    // 1. Try explicit label
+    if (atom?.label && atom.label !== '0x' && !atom.label.startsWith('0x00')) {
+        return atom.label;
+    }
+
+    // 2. Try decoding data
+    if (atom?.data && atom.data !== '0x') {
+        try {
+            const decoded = hexToString(atom.data as `0x${string}`);
+            const cleaned = cleanString(decoded);
+            // Ensure it looks like a valid name (at least 2 chars, not just whitespace)
+            if (cleaned && cleaned.length > 1) return cleaned;
+        } catch (e) {
+            // ignore decode error
+        }
+    }
+
+    // 3. Fallback to ID
+    return `Agent ${fallbackId.slice(0, 6)}...`;
+};
 
 // Helper to chunk arrays to avoid GraphQL query limits
 const chunkArray = (array: any[], size: number) => {
@@ -43,13 +81,13 @@ const chunkArray = (array: any[], size: number) => {
 // 1. GET ALL AGENTS
 // -------------------------------------------------------
 export const getAllAgents = async () => {
-  // Increased limit to 1000 to provide "Full Access" as requested
   const query = `
-    query {
+    query GetAllAgents {
       vaults(limit: 1000, order_by: { total_assets: desc }) {
         term_id
         total_assets
         total_shares
+        current_share_price
         curve_id
       }
     }
@@ -57,18 +95,34 @@ export const getAllAgents = async () => {
 
   try {
     const vaultData = await fetchGraphQL(query);
-    const vaults = vaultData?.vaults ?? [];
-    if (vaults.length === 0) return [];
+    const allVaults = vaultData?.vaults ?? [];
+    if (allVaults.length === 0) return [];
+
+    // DEDUPLICATION: Keep only the first occurrence of each term_id
+    const uniqueVaultsMap = new Map<string, any>();
+    allVaults.forEach((v: any) => {
+        if (!v.term_id) return;
+        const id = normalize(v.term_id);
+        if (!uniqueVaultsMap.has(id)) {
+            uniqueVaultsMap.set(id, v);
+        }
+    });
+    const vaults = Array.from(uniqueVaultsMap.values());
 
     const termIds = vaults.map((v: any) => v.term_id);
+    
+    // ROBUST ID COLLECTION: Collect both raw and lowercase IDs to ensure hits
+    const queryIds = Array.from(new Set([
+        ...termIds, 
+        ...termIds.map(id => id.toLowerCase())
+    ]));
 
-    // Fetch matching atoms for the vaults in chunks
-    // This ensures we get accurate names for all 1000+ agents without hitting query size limits
     const atomQuery = `
-      query ($ids: [String!]!) {
+      query GetAtoms ($ids: [String!]!) {
         atoms(where: { term_id: { _in: $ids } }) {
           term_id
           label
+          data
           image
           type
           creator { id label }
@@ -76,7 +130,8 @@ export const getAllAgents = async () => {
       }
     `;
 
-    const idChunks = chunkArray(termIds, 200);
+    // Process in chunks
+    const idChunks = chunkArray(queryIds, 200);
     let allAtoms: any[] = [];
 
     for (const chunk of idChunks) {
@@ -91,12 +146,13 @@ export const getAllAgents = async () => {
 
       return {
         id: v.term_id,
-        label: a?.label || `Agent ${v.term_id.slice(0, 6)}...`,
+        label: resolveLabel(a, v.term_id),
         image: a?.image,
         type: a?.type || "ATOM",
         creator: a?.creator,
         totalAssets: v.total_assets,
         totalShares: v.total_shares,
+        currentSharePrice: v.current_share_price,
         curveId: v.curve_id
       };
     });
@@ -110,13 +166,15 @@ export const getAllAgents = async () => {
 // 2. GET AGENT BY ID
 // -------------------------------------------------------
 export const getAgentById = async (termId: string) => {
-  const id = termId.toLowerCase();
-
+  const idLower = termId.toLowerCase();
+  
+  // Try finding by raw ID or lowercase ID to catch edge cases
   const atomQ = `
-    query ($id: String!) {
-      atoms(where: { term_id: { _eq: $id } }) {
+    query GetAtomDetails ($ids: [String!]!) {
+      atoms(where: { term_id: { _in: $ids } }) {
         term_id
         label
+        data
         image
         type
         creator { id label }
@@ -125,26 +183,28 @@ export const getAgentById = async (termId: string) => {
   `;
 
   const vaultQ = `
-    query ($id: String!) {
-      vaults(where: { term_id: { _eq: $id } }) {
+    query GetVaultDetails ($ids: [String!]!) {
+      vaults(where: { term_id: { _in: $ids } }, order_by: { total_assets: desc }, limit: 1) {
         term_id
         total_assets
         total_shares
+        current_share_price
         curve_id
       }
     }
   `;
 
+  const idsToQuery = [termId, idLower];
+
   try {
     const [atomRes, vaultRes] = await Promise.all([
-      fetchGraphQL(atomQ, { id }),
-      fetchGraphQL(vaultQ, { id })
+      fetchGraphQL(atomQ, { ids: idsToQuery }),
+      fetchGraphQL(vaultQ, { ids: idsToQuery })
     ]);
 
     const atom = atomRes?.atoms?.[0];
     const vault = vaultRes?.vaults?.[0];
 
-    // Fallback if both missing (likely not indexed yet), but return structure so app doesn't break
     if (!atom && !vault) {
        return {
           id: termId,
@@ -153,23 +213,24 @@ export const getAgentById = async (termId: string) => {
           type: 'ATOM',
           totalAssets: "0",
           totalShares: "0",
+          currentSharePrice: "0",
           curveId: "0"
        };
     }
 
     return {
       id: termId,
-      label: atom?.label || `Agent ${termId.slice(0, 6)}...`,
+      label: resolveLabel(atom, termId),
       image: atom?.image,
       type: atom?.type || "ATOM",
       creator: atom?.creator,
       totalAssets: vault?.total_assets ?? "0",
       totalShares: vault?.total_shares ?? "0",
+      currentSharePrice: vault?.current_share_price ?? "0",
       curveId: vault?.curve_id ?? "0"
     };
   } catch (e) {
     console.warn("getAgentById failed:", e);
-    // Return a minimal safe object to prevent UI crashes
     return {
        id: termId,
        label: 'Agent (Offline)',
@@ -177,26 +238,28 @@ export const getAgentById = async (termId: string) => {
        type: 'ATOM',
        totalAssets: "0",
        totalShares: "0",
+       currentSharePrice: "0",
        curveId: "0"
     };
   }
 };
 
 // -------------------------------------------------------
-// 3. TRIPLES
+// 3. TRIPLES (Agent Profile - Outgoing)
 // -------------------------------------------------------
 export const getAgentTriples = async (termId: string) => {
+  const ids = [termId, termId.toLowerCase()];
   const query = `
-    query ($id: String!) {
-      triples(where: { subject: { term_id: { _eq: $id } } }) {
-        predicate { label }
-        object { label }
+    query GetAgentTriples ($ids: [String!]!) {
+      triples(where: { subject: { term_id: { _in: $ids } } }) {
+        predicate { label term_id }
+        object { label term_id image type }
         block_number
       }
     }
   `;
   try {
-    const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
+    const data = await fetchGraphQL(query, { ids });
     return data?.triples ?? [];
   } catch (e) {
     return [];
@@ -204,13 +267,40 @@ export const getAgentTriples = async (termId: string) => {
 };
 
 // -------------------------------------------------------
-// 4. OPINIONS
+// 3b. INCOMING TRIPLES (Who is signaling ON this agent?)
+// -------------------------------------------------------
+export const getIncomingTriples = async (termId: string) => {
+  const ids = [termId, termId.toLowerCase()];
+  const query = `
+    query GetIncomingTriples ($ids: [String!]!) {
+      triples(
+        where: { object: { term_id: { _in: $ids } } }
+        limit: 20
+        order_by: { block_number: desc }
+      ) {
+        subject { label term_id image type }
+        predicate { label term_id }
+        block_number
+      }
+    }
+  `;
+  try {
+    const data = await fetchGraphQL(query, { ids });
+    return data?.triples ?? [];
+  } catch (e) {
+    return [];
+  }
+};
+
+// -------------------------------------------------------
+// 4. OPINIONS (Agent Profile)
 // -------------------------------------------------------
 export const getAgentOpinions = async (termId: string) => {
+  const ids = [termId, termId.toLowerCase()];
   const query = `
-    query ($id: String!) {
+    query GetAgentOpinions ($ids: [String!]!) {
       triples(
-        where: { subject: { term_id: { _eq: $id } } }
+        where: { subject: { term_id: { _in: $ids } } }
         order_by: { block_number: desc }
         limit: 40
       ) {
@@ -222,16 +312,24 @@ export const getAgentOpinions = async (termId: string) => {
   `;
 
   try {
-    const data = await fetchGraphQL(query, { id: termId.toLowerCase() });
+    const data = await fetchGraphQL(query, { ids });
 
-    return (data?.triples ?? []).map((t: any) => ({
-      id: Math.random(),
-      text: t.object?.label,
-      isBullish:
-        t.predicate?.label?.toLowerCase().includes("trust") ||
-        t.predicate?.label?.toLowerCase().includes("bull"),
-      timestamp: Date.now()
-    }));
+    return (data?.triples ?? []).map((t: any) => {
+      const predLabel = (t.predicate?.label || '').toLowerCase().trim();
+      const isBullish = 
+        predLabel === 'support' ||
+        predLabel.includes("trust") ||
+        predLabel.includes("support") ||
+        predLabel.includes("bull") ||
+        predLabel.includes("like");
+
+      return {
+        id: Math.random(),
+        text: t.object?.label,
+        isBullish,
+        timestamp: Date.now()
+      };
+    });
   } catch (e) {
     return [];
   }
@@ -242,7 +340,7 @@ export const getAgentOpinions = async (termId: string) => {
 // -------------------------------------------------------
 export const getUserPositions = async (address: string) => {
   const query = `
-    query ($id: String!) {
+    query GetUserPositions ($id: String!) {
       positions(where: { account_id: { _eq: $id } }) {
         shares
         vault { term_id total_assets total_shares curve_id }
@@ -304,7 +402,7 @@ export const getUserHistory = async (
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", // Field missing in schema, defaulting to 0
+      assets: "0", 
       timestamp: new Date(d.created_at).getTime(),
       vaultId: d.vault?.term_id,
       assetLabel: d.vault?.term_id?.slice(0, 6)
@@ -334,24 +432,33 @@ export const getUserHistory = async (
 export const getVaultsByIds = async (ids: string[]) => {
     if (ids.length === 0) return [];
     
-    // Batch query to get atoms for these vaults
+    // Robust ID query
+    const queryIds = Array.from(new Set([
+        ...ids, 
+        ...ids.map(id => id.toLowerCase())
+    ]));
+
     const query = `
-      query ($ids: [String!]!) {
+      query GetVaultsByIds ($ids: [String!]!) {
         atoms(where: { term_id: { _in: $ids } }) {
           term_id
           label
+          data
           image
           type
         }
         vaults(where: { term_id: { _in: $ids } }) {
           term_id
+          total_assets
+          total_shares
+          current_share_price
           curve_id
         }
       }
     `;
 
     try {
-        const data = await fetchGraphQL(query, { ids });
+        const data = await fetchGraphQL(query, { ids: queryIds });
         const atoms = data?.atoms ?? [];
         const vaults = data?.vaults ?? [];
 
@@ -359,10 +466,11 @@ export const getVaultsByIds = async (ids: string[]) => {
              const a = atoms.find((atom: any) => normalize(atom.term_id) === normalize(v.term_id));
              return {
                  id: v.term_id,
-                 label: a?.label || `Agent ${v.term_id.slice(0,6)}...`,
+                 label: resolveLabel(a, v.term_id),
                  image: a?.image,
                  type: a?.type || 'ATOM',
-                 curveId: v.curve_id
+                 curveId: v.curve_id,
+                 currentSharePrice: v.current_share_price
              };
         });
     } catch (e) {
@@ -376,7 +484,7 @@ export const getVaultsByIds = async (ids: string[]) => {
 // -------------------------------------------------------
 export const getNetworkStats = async () => {
   const query = `
-    query {
+    query GetNetworkStats {
       vaults_aggregate {
         aggregate {
           sum { total_assets }
@@ -417,9 +525,8 @@ export const getNetworkStats = async () => {
 // 9. GET TOP POSITIONS (LEADERBOARD)
 // -------------------------------------------------------
 export const getTopPositions = async () => {
-   // Removed the nested 'atom { label }' request inside vault which caused the schema error
    const query = `
-     query {
+     query GetTopPositions {
        positions(limit: 100, order_by: { shares: desc }, where: { shares: { _gt: "0" } }) {
          account { id label image }
          shares
@@ -436,32 +543,34 @@ export const getTopPositions = async () => {
      
      if (positions.length === 0) return [];
 
-     // Extract vault IDs to fetch atom labels in a separate query
-     const termIds = Array.from(new Set(positions.map((p: any) => p.vault?.term_id).filter(Boolean)));
+     const termIds = Array.from(new Set(positions.map((p: any) => p.vault?.term_id).filter(Boolean))) as string[];
 
-     // Only fetch atoms if we have term IDs
      let atoms: any[] = [];
      if (termIds.length > 0) {
-         const atomQuery = `
-            query ($ids: [String!]!) {
-                atoms(where: { term_id: { _in: $ids } }) {
-                    term_id
-                    label
-                }
-            }
-         `;
-         const atomData = await fetchGraphQL(atomQuery, { ids: termIds });
-         atoms = atomData?.atoms ?? [];
+         // Query BOTH raw and lowercase to be safe
+         const queryIds = Array.from(new Set([
+             ...termIds, 
+             ...termIds.map(id => id.toLowerCase())
+         ]));
+
+         const chunks = chunkArray(queryIds, 200);
+         for (const chunk of chunks) {
+             const atomQuery = `query ($ids: [String!]!) { atoms(where: { term_id: { _in: $ids } }) { term_id label data image } }`;
+             const atomData = await fetchGraphQL(atomQuery, { ids: chunk });
+             if (atomData?.atoms) atoms = [...atoms, ...atomData.atoms];
+         }
      }
 
-     // Map atoms back to positions structure expected by UI
      return positions.map((p: any) => {
-         const atom = atoms.find((a: any) => a.term_id === p.vault?.term_id);
+         const atom = atoms.find((a: any) => normalize(a.term_id) === normalize(p.vault?.term_id));
          return {
              ...p,
              vault: {
                  ...p.vault,
-                 atom: atom ? { label: atom.label } : null
+                 atom: atom ? { 
+                     label: resolveLabel(atom, p.vault.term_id),
+                     image: atom.image 
+                 } : null
              }
          };
      });
@@ -476,11 +585,12 @@ export const getTopPositions = async () => {
 // 10. GET MARKET ACTIVITY
 // -------------------------------------------------------
 export const getMarketActivity = async (termId: string): Promise<Transaction[]> => {
-  const id = termId.toLowerCase();
+  const ids = [termId, termId.toLowerCase()];
+  
   const query = `
-    query ($id: String!) {
+    query GetMarketActivity ($ids: [String!]!) {
       deposits(
-        where: { vault: { term_id: { _eq: $id } } }
+        where: { vault: { term_id: { _in: $ids } } }
         order_by: { created_at: desc }
         limit: 20
       ) {
@@ -490,7 +600,7 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
         sender_id
       }
       redemptions(
-        where: { vault: { term_id: { _eq: $id } } }
+        where: { vault: { term_id: { _in: $ids } } }
         order_by: { created_at: desc }
         limit: 20
       ) {
@@ -504,16 +614,17 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
   `;
 
   try {
-    const data = await fetchGraphQL(query, { id });
+    const data = await fetchGraphQL(query, { ids });
     
     const deposits = (data?.deposits ?? []).map((d: any) => ({
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", // Field missing in schema
+      assets: "0", // Deposit assets not available in this query version, defaulting to 0 for display
       timestamp: new Date(d.created_at).getTime(),
       vaultId: termId,
-      assetLabel: "Share"
+      assetLabel: "Share",
+      user: d.sender_id
     }));
 
     const redeems = (data?.redemptions ?? []).map((r: any) => ({
@@ -523,7 +634,8 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       assets: r.assets || "0",
       timestamp: new Date(r.created_at).getTime(),
       vaultId: termId,
-      assetLabel: "Share"
+      assetLabel: "Share",
+      user: r.receiver_id
     }));
 
     return [...deposits, ...redeems].sort((a, b) => b.timestamp - a.timestamp);
@@ -534,7 +646,61 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
 };
 
 // -------------------------------------------------------
-// 11. SEARCH GLOBAL AGENTS (FUZZY SEARCH)
+// 10b. GET ALL MARKET ACTIVITY
+// -------------------------------------------------------
+export const getAllMarketActivity = async (termId: string): Promise<Transaction[]> => {
+  const ids = [termId, termId.toLowerCase()];
+  const query = `
+    query GetAllMarketActivity ($ids: [String!]!) {
+      deposits(
+        where: { vault: { term_id: { _in: $ids } } }
+        order_by: { created_at: desc }
+        limit: 1000
+      ) {
+        id
+        shares
+        created_at
+      }
+      redemptions(
+        where: { vault: { term_id: { _in: $ids } } }
+        order_by: { created_at: desc }
+        limit: 1000
+      ) {
+        id
+        shares
+        assets
+        created_at
+      }
+    }
+  `;
+
+  try {
+    const data = await fetchGraphQL(query, { ids });
+    
+    const deposits = (data?.deposits ?? []).map((d: any) => ({
+      id: d.id,
+      type: "DEPOSIT",
+      shares: d.shares,
+      assets: "0", 
+      timestamp: new Date(d.created_at).getTime(),
+    }));
+
+    const redeems = (data?.redemptions ?? []).map((r: any) => ({
+      id: r.id,
+      type: "REDEEM",
+      shares: r.shares,
+      assets: r.assets || "0",
+      timestamp: new Date(r.created_at).getTime(),
+    }));
+
+    return [...deposits, ...redeems].sort((a, b) => b.timestamp - a.timestamp);
+  } catch (e) {
+    return [];
+  }
+};
+
+// -------------------------------------------------------
+// 11. SEARCH GLOBAL AGENTS
 // -------------------------------------------------------
 export const searchGlobalAgents = async (searchTerm: string) => {
     if (!searchTerm || searchTerm.length < 2) return [];
@@ -543,15 +709,12 @@ export const searchGlobalAgents = async (searchTerm: string) => {
     const pattern = `%${term}%`;
     const isLikelyAddress = term.startsWith('0x') && term.length > 10;
 
-    // We run two queries: one for atoms (by label) and one for vaults (by exact ID if it looks like one)
-    // Then we fill in the missing relation.
-    
-    // 1. Search Atoms by Label
     const atomQuery = `
-      query ($pattern: String!) {
+      query SearchAtoms ($pattern: String!) {
         atoms(where: { label: { _ilike: $pattern } }, limit: 20) {
           term_id
           label
+          data
           image
           type
           creator { id label }
@@ -559,13 +722,13 @@ export const searchGlobalAgents = async (searchTerm: string) => {
       }
     `;
 
-    // 2. Search Vault by ID (if strictly provided)
     const vaultQuery = `
-      query ($id: String!) {
+      query SearchVaults ($id: String!) {
         vaults(where: { term_id: { _eq: $id } }) {
           term_id
           total_assets
           total_shares
+          current_share_price
           curve_id
         }
       }
@@ -581,52 +744,64 @@ export const searchGlobalAgents = async (searchTerm: string) => {
         const atoms = results[0]?.atoms ?? [];
         const addressVault = isLikelyAddress ? (results[1]?.vaults ?? []) : [];
 
-        // 3. Hydrate missing data
-        // If we found atoms, we need their vaults
         const atomIds = atoms.map((a: any) => a.term_id);
         
         let vaultsForAtoms: any[] = [];
         if (atomIds.length > 0) {
-             const vQ = `query ($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares curve_id } }`;
+             const vQ = `query GetVaultsForSearch ($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id } }`;
              const vData = await fetchGraphQL(vQ, { ids: atomIds });
              vaultsForAtoms = vData?.vaults ?? [];
         }
 
-        // If we found a vault by ID, we need its atom
         let atomForVault: any = null;
         if (addressVault.length > 0) {
-             const aQ = `query ($id: String!) { atoms(where: { term_id: { _eq: $id } }) { term_id label image type creator { id label } } }`;
+             const aQ = `query GetAtomForSearch ($id: String!) { atoms(where: { term_id: { _eq: $id } }) { term_id label data image type creator { id label } } }`;
              const aData = await fetchGraphQL(aQ, { id: addressVault[0].term_id });
              atomForVault = aData?.atoms?.[0];
         }
 
-        // 4. Merge Logic
         const formattedAtoms = atoms.map((a: any) => {
-             const v = vaultsForAtoms.find((v: any) => normalize(v.term_id) === normalize(a.term_id));
+             const matchingVaults = vaultsForAtoms.filter((v: any) => normalize(v.term_id) === normalize(a.term_id));
+             const bestVault = matchingVaults.sort((x:any, y:any) => {
+                 const xVal = BigInt(x.total_assets || 0);
+                 const yVal = BigInt(y.total_assets || 0);
+                 return xVal > yVal ? -1 : 1;
+             })[0];
+
              return {
                  id: a.term_id,
-                 label: a.label,
+                 label: resolveLabel(a, a.term_id),
                  image: a.image,
                  type: a.type || "ATOM",
                  creator: a.creator,
-                 totalAssets: v?.total_assets ?? "0",
-                 totalShares: v?.total_shares ?? "0",
-                 curveId: v?.curve_id ?? "0"
+                 totalAssets: bestVault?.total_assets ?? "0",
+                 totalShares: bestVault?.total_shares ?? "0",
+                 currentSharePrice: bestVault?.current_share_price ?? "0",
+                 curveId: bestVault?.curve_id ?? "0"
              };
         });
 
-        const formattedVault = addressVault.length > 0 ? [{
-             id: addressVault[0].term_id,
-             label: atomForVault?.label || `Agent ${addressVault[0].term_id.slice(0,6)}...`,
-             image: atomForVault?.image,
-             type: atomForVault?.type || "ATOM",
-             creator: atomForVault?.creator,
-             totalAssets: addressVault[0].total_assets,
-             totalShares: addressVault[0].total_shares,
-             curveId: addressVault[0].curve_id
-        }] : [];
+        let formattedVault = [];
+        if (addressVault.length > 0) {
+             const bestAddressVault = addressVault.sort((x:any, y:any) => {
+                 const xVal = BigInt(x.total_assets || 0);
+                 const yVal = BigInt(y.total_assets || 0);
+                 return xVal > yVal ? -1 : 1;
+             })[0];
 
-        // Combine and dedup
+             formattedVault = [{
+                 id: bestAddressVault.term_id,
+                 label: resolveLabel(atomForVault, bestAddressVault.term_id),
+                 image: atomForVault?.image,
+                 type: atomForVault?.type || "ATOM",
+                 creator: atomForVault?.creator,
+                 totalAssets: bestAddressVault.total_assets,
+                 totalShares: bestAddressVault.total_shares,
+                 currentSharePrice: bestAddressVault.current_share_price,
+                 curveId: bestAddressVault.curve_id
+             }];
+        }
+
         const combined = [...formattedVault, ...formattedAtoms];
         const unique = combined.filter((obj, index, self) =>
             index === self.findIndex((t) => (t.id === obj.id))
@@ -637,4 +812,100 @@ export const searchGlobalAgents = async (searchTerm: string) => {
         console.warn("Global Search Failed", e);
         return [];
     }
+};
+
+// -------------------------------------------------------
+// 12. GET GLOBAL CLAIMS (FEED)
+// -------------------------------------------------------
+export const getGlobalClaims = async (): Promise<Claim[]> => {
+  // CRITICAL: Ensure 'id' is NOT in the selection set
+  const query = `
+    query GetGlobalClaims {
+      triples(order_by: { block_number: desc }, limit: 50) {
+        block_number
+        transaction_hash
+        created_at
+        subject { term_id label data image type }
+        predicate { term_id label }
+        object { term_id label data image type }
+      }
+    }
+  `;
+
+  try {
+    const data = await fetchGraphQL(query);
+    const triples = data?.triples ?? [];
+
+    return triples.map((t: any) => {
+      const predLabelRaw = t.predicate?.label || 'SIGNAL';
+      const predLabelLower = predLabelRaw.toLowerCase().trim();
+      
+      let sentiment = 'SIGNAL'; // Default to a generic signal bucket
+      
+      // MAPPING LOGIC: "support" -> TRUST, "oppose" -> DISTRUST
+      if (
+          predLabelLower === 'support' || 
+          predLabelLower.includes('support') || 
+          predLabelLower.includes('trust') || 
+          predLabelLower.includes('like') || 
+          predLabelLower.includes('endorse') || 
+          predLabelLower.includes('bull') ||
+          predLabelLower.includes('agree')
+      ) {
+        sentiment = 'TRUST';
+      } else if (
+          predLabelLower === 'oppose' ||
+          predLabelLower.includes('oppose') || 
+          predLabelLower.includes('distrust') || 
+          predLabelLower.includes('dislike') || 
+          predLabelLower.includes('bear') || 
+          predLabelLower.includes('scam') || 
+          predLabelLower.includes('fake') || 
+          predLabelLower.includes('fraud') ||
+          predLabelLower.includes('doubt') ||
+          predLabelLower.includes('question')
+      ) {
+        sentiment = 'DISTRUST';
+      } else {
+        // IF it's not strictly support/oppose, use the ACTUAL predicate label
+        // This ensures "IS A", "WORKS AT", etc. are displayed correctly.
+        sentiment = predLabelRaw.toUpperCase();
+      }
+
+      // Confidence: Mock logic
+      const confidence = Math.floor(Math.random() * (99 - 60 + 1) + 60);
+
+      // Synthetic ID generation
+      const syntheticId = t.transaction_hash 
+          ? `${t.transaction_hash}_${t.object?.term_id}_${t.subject?.term_id}` 
+          : `local_${Date.now()}_${Math.random()}`;
+
+      // Timestamp Logic: Use created_at if available, else Date.now()
+      const timestamp = t.created_at ? new Date(t.created_at).getTime() : Date.now();
+
+      return {
+        id: syntheticId,
+        subject: { 
+            id: t.subject?.term_id, 
+            label: resolveLabel(t.subject, t.subject?.term_id),
+            image: t.subject?.image
+        },
+        predicate: sentiment,
+        object: { 
+            id: t.object?.term_id, 
+            label: resolveLabel(t.object, t.object?.term_id),
+            image: t.object?.image,
+            type: t.object?.type
+        },
+        confidence: confidence,
+        timestamp: timestamp, 
+        txHash: t.transaction_hash,
+        block: t.block_number,
+        reason: t.object?.label?.length > 20 ? t.object.label : undefined 
+      };
+    });
+  } catch (e) {
+    console.warn("Global Claims Fetch Failed", e);
+    return [];
+  }
 };

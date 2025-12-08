@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, MessageSquare, FileText, Shield, DollarSign, Zap, RefreshCw, Info, Download, AlertCircle, ArrowLeft } from 'lucide-react';
-import { getAgentById, getAgentTriples, getMarketActivity, getAgentOpinions } from '../services/graphql';
-import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, saveLocalTransaction, publishOpinion, getLocalTransactions, getProtocolConfig } from '../services/web3';
+import { Activity, Shield, DollarSign, Zap, RefreshCw, Info, ArrowLeft, TrendingUp, List, Layers, CheckCircle, Share2, Camera, User, Star, Network } from 'lucide-react';
+import { getAgentById, getAgentTriples, getMarketActivity, getAgentOpinions, getAllMarketActivity, getIncomingTriples } from '../services/graphql';
+import { depositToVault, redeemFromVault, getConnectedAccount, getWalletBalance, getShareBalance, saveLocalTransaction, getLocalTransactions, getProtocolConfig, publishOpinion, toggleWatchlist, isInWatchlist, getQuoteRedeem } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { parseEther, formatEther } from 'viem';
 import { toast } from '../components/Toast';
@@ -12,578 +12,650 @@ import TransactionModal from '../components/TransactionModal';
 import { playClick, playSuccess } from '../services/audio';
 import { CURRENCY_SYMBOL } from '../constants';
 
-const calculateTrustScore = (assetsWei: string, sharesWei: string) => {
-  try {
-    const assets = parseFloat(formatEther(BigInt(assetsWei || '0')));
-    const shares = parseFloat(formatEther(BigInt(sharesWei || '0')));
-    if (!shares || shares === 0) return 50;
-    const price = assets / shares;
-    const strength = Math.min(99, Math.max(1, Math.log10(price * 10 + 1) * 50));
-    return isNaN(strength) ? 50 : strength;
-  } catch {
-    return 50;
-  }
+// --- Analytics Helpers ---
+
+const calculatePrice = (assets: number, shares: number, spotPrice?: string) => {
+    // If spot price exists (fetched from graph), prefer it.
+    if (spotPrice && spotPrice !== "0") {
+        return parseFloat(formatEther(BigInt(spotPrice)));
+    }
+    // Fallback to average price
+    return shares > 0 ? assets / shares : 0.001; 
 };
 
-const generateHistory = (currentScore: number) => {
-  const data: any[] = [];
-  const now = new Date();
-  let walker = isNaN(currentScore) ? 50 : currentScore;
-  for (let i = 40; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * 30 * 60 * 1000);
-    if (i > 0 && Math.random() > 0.7) {
-      const change = (Math.random() * 5) * (Math.random() > 0.5 ? 1 : -1);
-      walker = Math.max(1, Math.min(99, walker + change));
+// Updated Trust Score Logic: Pivot around 1.0 price = 50 score
+const calculateTrustScore = (price: number) => {
+    if (price <= 0) return 50;
+    // Math.log10(1) = 0 -> 50 + 0 = 50.
+    // Math.log10(10) = 1 -> 50 + 25 = 75.
+    // Math.log10(0.1) = -1 -> 50 - 25 = 25.
+    return Math.min(99, Math.max(1, 50 + Math.log10(price) * 25));
+};
+
+const generateAnchoredHistory = (currentScore: number, currentPrice: number) => {
+    const data = [];
+    const now = Date.now();
+    let walker = currentScore;
+    let priceWalker = currentPrice;
+
+    for(let i = 0; i < 50; i++) {
+        const time = new Date(now - (i * 3600000));
+        
+        if (i > 0) {
+            const delta = (Math.random() - 0.5) * 4;
+            walker = walker - delta;
+            walker = Math.max(5, Math.min(95, walker));
+            priceWalker = priceWalker * (1 - (delta / 100)); 
+        }
+
+        data.push({
+            timestamp: time.getTime(),
+            timeLabel: time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+            dateLabel: time.toLocaleDateString(),
+            price: Math.max(0.001, priceWalker).toFixed(4),
+            trust: walker.toFixed(1),
+            distrust: (100 - walker).toFixed(1)
+        });
     }
-    if (i === 0) walker = currentScore;
-    const trustVal = parseFloat(walker.toFixed(1));
-    const priceVal = (trustVal / 100).toFixed(3);
-    data.push({
-      timestamp: time.getTime(),
-      timeLabel: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      dateLabel: time.toLocaleDateString([], { month: 'short', day: 'numeric' }),
-      trust: trustVal,
-      distrust: parseFloat((100 - trustVal).toFixed(1)),
-      price: priceVal,
-    });
-  }
-  return data;
+    return data.reverse();
+};
+
+const getReputationTier = (score: number, vol: number) => {
+    if (vol < 0.01) return { label: 'UNVERIFIED', color: 'text-slate-500', border: 'border-slate-700' };
+    if (score > 80) return { label: 'TRUST ANCHOR', color: 'text-yellow-400', border: 'border-yellow-500' };
+    if (score > 65) return { label: 'RELIABLE', color: 'text-emerald-400', border: 'border-emerald-500' };
+    if (score > 45) return { label: 'NEUTRAL', color: 'text-blue-400', border: 'border-blue-500' };
+    if (score > 30) return { label: 'SPECULATIVE', color: 'text-purple-400', border: 'border-purple-500' };
+    return { label: 'HIGH RISK', color: 'text-rose-500', border: 'border-rose-500' };
+};
+
+// --- Components ---
+
+const AgentHeader: React.FC<{ agent: Account; isWatched: boolean; onToggleWatch: () => void }> = ({ agent, isWatched, onToggleWatch }) => (
+    <div className="flex flex-col md:flex-row items-center gap-6 p-6 mb-6 bg-black border border-intuition-primary/30 clip-path-slant relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-intuition-primary/10 to-transparent pointer-events-none"></div>
+        
+        {/* Watchlist Toggle */}
+        <button 
+            onClick={onToggleWatch}
+            className={`absolute top-4 right-4 z-20 p-2 rounded-full border transition-all ${isWatched ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.4)]' : 'bg-black/50 text-slate-500 border-slate-700 hover:text-white hover:border-white'}`}
+            title={isWatched ? "Remove from Watchlist" : "Add to Watchlist"}
+        >
+            <Star size={20} fill={isWatched ? "currentColor" : "none"} />
+        </button>
+
+        <div className="w-24 h-24 bg-black border-2 border-intuition-primary flex items-center justify-center font-bold text-4xl text-intuition-primary shrink-0 shadow-[0_0_20px_rgba(0,243,255,0.3)]">
+            {agent.image ? <img src={agent.image} className="w-full h-full object-cover" alt="" /> : <User size={40} />}
+        </div>
+        <div className="text-center md:text-left flex-1 z-10">
+            <h1 className="text-3xl md:text-4xl font-black text-white font-display tracking-tight mb-2 uppercase text-glow">{agent.label}</h1>
+            <div className="flex flex-wrap justify-center md:justify-start gap-3">
+                <span className="px-3 py-1 bg-intuition-dark border border-intuition-border text-xs font-mono text-slate-400 rounded">ID: {agent.id.slice(0,12)}...</span>
+                <span className="px-3 py-1 bg-intuition-primary/10 border border-intuition-primary/30 text-xs font-mono text-intuition-primary rounded uppercase flex items-center gap-2">
+                    <Shield size={12} /> {agent.type || 'ATOM'}
+                </span>
+            </div>
+        </div>
+        <button 
+            onClick={() => { navigator.clipboard.writeText(agent.id); toast.success("ID COPIED"); }}
+            className="hidden md:block px-4 py-2 border border-slate-700 hover:border-intuition-primary hover:text-intuition-primary text-slate-500 font-mono text-xs transition-colors z-10"
+        >
+            COPY_ID
+        </button>
+    </div>
+);
+
+const SentimentMeter: React.FC<{ score: number }> = ({ score }) => {
+    const trust = score;
+    const distrust = 100 - score;
+    
+    return (
+        <div className="bg-intuition-card border border-intuition-border p-5 clip-path-slant h-full">
+            <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Activity size={14} className="text-intuition-primary" /> Sentiment Ratio
+            </h3>
+            <div className="flex justify-between items-end mb-2">
+                <span className="text-2xl font-black text-intuition-success">{trust.toFixed(1)}%</span>
+                <span className="text-2xl font-black text-intuition-danger">{distrust.toFixed(1)}%</span>
+            </div>
+            <div className="w-full h-4 bg-slate-900 rounded-full overflow-hidden flex relative border border-slate-700">
+                <div style={{ width: `${trust}%` }} className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 relative">
+                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+                </div>
+                <div style={{ width: `${distrust}%` }} className="h-full bg-gradient-to-l from-rose-600 to-rose-400 relative">
+                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+                </div>
+                <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-white mix-blend-overlay"></div>
+            </div>
+            <div className="flex justify-between text-[10px] font-mono text-slate-500 mt-2">
+                <span>CONVICTION (LONG)</span>
+                <span>OPPOSITION (SHORT)</span>
+            </div>
+        </div>
+    );
 };
 
 const MarketDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  
   const [agent, setAgent] = useState<Account | null>(null);
   const [triples, setTriples] = useState<Triple[]>([]);
+  const [incomingTriples, setIncomingTriples] = useState<Triple[]>([]);
+  const [activityLog, setActivityLog] = useState<Transaction[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tradeMode, setTradeMode] = useState<'Buy' | 'Sell'>('Buy');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [momentum, setMomentum] = useState({ score: 0, trend: 'stable' });
+  const [isWatched, setIsWatched] = useState(false);
+
+  const [action, setAction] = useState<'ACQUIRE' | 'LIQUIDATE'>('ACQUIRE');
+  const [sentiment, setSentiment] = useState<'TRUST' | 'DISTRUST'>('TRUST');
   const [inputAmount, setInputAmount] = useState('');
+  
   const [wallet, setWallet] = useState<string | null>(null);
   const [walletBalance, setWalletBalance] = useState('0.00');
   const [shareBalance, setShareBalance] = useState('0.00');
-  const [activityLog, setActivityLog] = useState<Transaction[]>([]);
-  const [comments, setComments] = useState<any[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [isTransmitting, setIsTransmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'opinions' | 'activity' | 'rules'>('opinions');
-  const [selectedSide, setSelectedSide] = useState<'TRUST' | 'DISTRUST'>('TRUST');
+  const [minDeposit, setMinDeposit] = useState<string>('0.001');
+  const [txModal, setTxModal] = useState<{ isOpen: boolean; status: 'idle' | 'processing' | 'success' | 'error'; title: string; message: string; hash?: string }>({ isOpen: false, status: 'idle', title: '', message: '' });
   const [userPosition, setUserPosition] = useState<{ shares: string; value: string; pnl: string; entry: string; exit: string } | null>(null);
   const [showShareCard, setShowShareCard] = useState(false);
+  const [activeTab, setActiveTab] = useState<'positions' | 'claims' | 'network'>('positions');
+
   const [hoverData, setHoverData] = useState<any>(null);
-  
-  // Protocol Params
-  const [minDeposit, setMinDeposit] = useState<string>('0.001');
 
-  // Modal State
-  const [txModal, setTxModal] = useState<{ isOpen: boolean; status: 'idle' | 'processing' | 'success' | 'error'; title: string; message: string; hash?: string }>({
-    isOpen: false,
-    status: 'idle',
-    title: '',
-    message: ''
-  });
+  const fetchDeepProfile = async (isBackground = false) => {
+      if (!id) return;
+      if (!isBackground) setLoading(true);
+      else setIsRefreshing(true);
 
-  const fetchData = async () => {
-    if (!id) {
-        setLoading(false);
-        setError("Invalid Agent ID");
-        return;
-    }
-    
-    setLoading(true);
-    setError(null);
-
-    // Create a timeout promise to prevent hanging indefinitely
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Request timeout")), 15000));
-
-    try {
-      // Fetch Graph Data with Timeout Race
-      const dataPromise = Promise.all([
-        getAgentById(id),
-        getAgentTriples(id),
-        getAgentOpinions(id),
-        getMarketActivity(id),
-        getProtocolConfig()
-      ]);
-
-      const [agentData, triplesData, opinionsData, activityData, config] = await Promise.race([dataPromise, timeout]) as any;
-
-      if (!agentData || !agentData.id) {
-          throw new Error("Agent data not found");
-      }
-
-      setAgent(agentData);
-      setTriples(triplesData || []);
-      setComments(opinionsData || []);
-      setActivityLog(activityData || []);
-      setMinDeposit(config?.minDeposit || '0.001');
-
-      const score = calculateTrustScore(agentData.totalAssets || '0', agentData.totalShares || '0');
-      setChartData(generateHistory(score));
-
-      // Fetch Wallet Data Non-Blocking
-      getConnectedAccount().then(acc => {
+      try {
+          const acc = await getConnectedAccount();
           setWallet(acc);
+
+          // Check watchlist state if wallet connected
+          if (acc) setIsWatched(isInWatchlist(id, acc));
+
+          const [agentData, config] = await Promise.all([
+              getAgentById(id),
+              getProtocolConfig()
+          ]);
+          
+          if (!agentData || !agentData.id) throw new Error("Agent not found");
+          setAgent(agentData);
+          setMinDeposit(config.minDeposit);
+
+          const [triplesData, incomingData, activityData] = await Promise.all([
+              getAgentTriples(id),
+              getIncomingTriples(id),
+              getMarketActivity(id),
+          ]);
+
+          setTriples(triplesData || []);
+          setIncomingTriples(incomingData || []);
+          setActivityLog(activityData || []);
+
+          let currentAssets = parseFloat(formatEther(BigInt(agentData.totalAssets || '0')));
+          let currentShares = parseFloat(formatEther(BigInt(agentData.totalShares || '0')));
+          const nowPrice = calculatePrice(currentAssets, currentShares, agentData.currentSharePrice);
+          const nowTrust = calculateTrustScore(nowPrice);
+          
+          const generatedHistory = generateAnchoredHistory(nowTrust, nowPrice);
+          setChartData(generatedHistory);
+
+          if (activityData.length > 2) {
+              const deposits = activityData.slice(0, 5).filter(x => x.type === 'DEPOSIT').length;
+              if (deposits >= 4) setMomentum({ score: 92, trend: 'surge' });
+              else if (deposits <= 1) setMomentum({ score: 15, trend: 'dump' });
+              else setMomentum({ score: 50, trend: 'stable' });
+          }
+
           if (acc) refreshBalances(acc, agentData.curveId);
-      }).catch(console.warn);
 
-    } catch (e: any) {
-      console.error('MarketDetail fetch error:', e);
-      setError("FAILED TO ESTABLISH UPLINK. AGENT MAY NOT BE INDEXED YET.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshBalances = async (account: string, curveId?: any) => {
-    if (!id) return;
-    try {
-      const bal = await getWalletBalance(account);
-      setWalletBalance(bal);
-      
-      const targetCurveId = curveId ?? agent?.curveId ?? 0;
-      const shares = await getShareBalance(account, id, Number(targetCurveId));
-      setShareBalance(shares || '0');
-
-      const sharesNum = parseFloat(shares || '0');
-      
-      // Calculate Entry Price (Weighted Average Cost Basis)
-      let avgEntry = 0;
-      let currentPrice = 0;
-      
-      if (agent) {
-          const totalAgentAssets = parseFloat(formatEther(BigInt(agent.totalAssets || '0')));
-          const totalAgentShares = parseFloat(formatEther(BigInt(agent.totalShares || '0')));
-          currentPrice = totalAgentShares > 0 ? totalAgentAssets / totalAgentShares : 0;
+      } catch (e: any) {
+          console.error("Deep Profile Error", e);
+      } finally {
+          setLoading(false);
+          setIsRefreshing(false);
       }
-
-      if (sharesNum > 0 && currentPrice > 0) {
-        const localHistory = getLocalTransactions(account);
-        const deposits = localHistory.filter(tx => tx.type === 'DEPOSIT' && tx.vaultId?.toLowerCase() === id.toLowerCase());
-        
-        let totalCost = 0;
-        let totalSharesBought = 0;
-        
-        deposits.forEach(d => {
-            try {
-                const cost = parseFloat(formatEther(BigInt(d.assets || '0')));
-                const sh = parseFloat(formatEther(BigInt(d.shares || '0')));
-                
-                if (cost > 0 && sh > 0) {
-                    totalCost += cost;
-                    totalSharesBought += sh;
-                }
-            } catch {}
-        });
-
-        if (totalCost > 0 && totalSharesBought > 0) {
-            avgEntry = totalCost / totalSharesBought;
-        } else {
-            // Fallback if no valid history: assume current price (0% PnL)
-            avgEntry = currentPrice; 
-        }
-
-        const pnlPercent = avgEntry > 0 ? ((currentPrice - avgEntry) / avgEntry) * 100 : 0;
-        const currentValue = sharesNum * currentPrice;
-
-        setUserPosition({
-          shares: sharesNum.toFixed(4),
-          value: currentValue.toFixed(4),
-          pnl: pnlPercent.toFixed(2),
-          entry: avgEntry.toFixed(4),
-          exit: currentPrice.toFixed(4),
-        });
-      } else {
-        setUserPosition(null);
-      }
-    } catch (e) {
-      console.error('refreshBalances error:', e);
-    }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchDeepProfile();
   }, [id]);
 
-  const handleTrade = async () => {
-    if (!wallet || !id || !inputAmount) {
-      toast.error('MISSING_INPUT_OR_WALLET');
-      return;
-    }
-
-    if (tradeMode === 'Buy') {
-        if (parseFloat(inputAmount) < parseFloat(minDeposit)) {
-            toast.error(`MINIMUM DEPOSIT IS ${minDeposit} ${CURRENCY_SYMBOL}`);
-            setTxModal({ isOpen: true, status: 'error', title: 'INVALID AMOUNT', message: `The protocol requires a minimum deposit of ${minDeposit} ${CURRENCY_SYMBOL}.` });
-            return;
-        }
-        if (parseFloat(inputAmount) >= parseFloat(walletBalance)) {
-            toast.error("INSUFFICIENT FUNDS");
-            setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus gas fees.` });
-            return;
-        }
-    }
-    
-    playClick();
-    setTxModal({ isOpen: true, status: 'processing', title: 'PROCESSING TRADE', message: 'Please confirm the transaction in your wallet...' });
-
-    try {
-      const curveId = agent?.curveId ? Number(agent.curveId) : 0;
-      let txHash = '';
-      
-      if (tradeMode === 'Buy') {
-        const { hash, shares } = await depositToVault(inputAmount, id, wallet, curveId);
-        txHash = hash;
-        saveLocalTransaction({
-          id: hash,
-          type: 'DEPOSIT',
-          assets: parseEther(inputAmount).toString(),
-          shares: shares.toString(), // Save exact simulated shares
-          timestamp: Date.now(),
-          vaultId: id,
-          assetLabel: agent?.label,
-        }, wallet);
-        toast.success('ACQUIRED POSITION SUCCESSFULLY');
-      } else {
-        const { hash, assets } = await redeemFromVault(inputAmount, id, wallet, curveId);
-        txHash = hash;
-        saveLocalTransaction({
-          id: hash,
-          type: 'REDEEM',
-          assets: assets.toString(), // Save exact simulated assets received
-          shares: parseEther(inputAmount).toString(),
-          timestamp: Date.now(),
-          vaultId: id,
-          assetLabel: agent?.label,
-        }, wallet);
-        toast.success('POSITION LIQUIDATED');
+  const toggleWatch = () => {
+      if (!id) return;
+      if (!wallet) {
+          toast.error("CONNECT WALLET TO TRACK AGENTS");
+          return;
       }
-
-      playSuccess();
-      setTxModal({ 
-        isOpen: true, 
-        status: 'success', 
-        title: 'TRANSACTION CONFIRMED', 
-        message: tradeMode === 'Buy' ? `Successfully acquired shares in ${agent?.label}` : `Successfully liquidated position in ${agent?.label}`,
-        hash: txHash 
-      });
-
-      setInputAmount('');
-      setTimeout(() => {
-          refreshBalances(wallet, curveId);
-      }, 2000);
-
-    } catch (e: any) {
-      console.error('trade failed:', e);
-      let msg = 'The blockchain transaction failed to execute.';
-      
-      // Decoded error handling from viem with new ABI error names
-      if (e.message?.includes('User rejected')) msg = 'User rejected the request.';
-      else if (e.message?.includes('MultiVault_DepositBelowMinimumDeposit')) msg = `Deposit amount is too low. Minimum is ${minDeposit} ${CURRENCY_SYMBOL}.`;
-      else if (e.message?.includes('MultiVault_InsufficientBalance') || e.message?.includes('InsufficientBalance')) msg = `Insufficient balance to cover trade + gas.`;
-      
-      setTxModal({ isOpen: true, status: 'error', title: 'TRANSACTION FAILED', message: msg });
-    }
+      playClick();
+      const newState = toggleWatchlist(id, wallet);
+      setIsWatched(newState);
+      toast.info(newState ? "TARGET ACQUIRED (WATCHLIST)" : "TARGET DROPPED");
   };
 
-  const handleTransmit = async () => {
-    if (!wallet || !id || !newComment) return;
-    
-    playClick();
-    setTxModal({ isOpen: true, status: 'processing', title: 'TRANSMITTING SIGNAL', message: 'Encrypting and signing your opinion on-chain...' });
-    setIsTransmitting(true);
-    
-    try {
-      const hash = await publishOpinion(newComment, id, selectedSide, wallet);
-      if (hash) {
-          playSuccess();
-          setTxModal({ 
-            isOpen: true, 
-            status: 'success', 
-            title: 'SIGNAL TRANSMITTED', 
-            message: 'Your opinion has been cryptographically verified and stored.',
-            hash: typeof hash === 'string' ? hash : ''
+  const refreshBalances = async (account: string, curveId?: any) => {
+      if (!id) return;
+      const bal = await getWalletBalance(account);
+      setWalletBalance(bal);
+      
+      const targetCurve = curveId ?? agent?.curveId ?? 0;
+      const shares = await getShareBalance(account, id, Number(targetCurve));
+      setShareBalance(shares);
+
+      const sharesNum = parseFloat(shares);
+      
+      if (sharesNum > 0 && chartData.length > 0) {
+          const currentPrice = parseFloat(chartData[chartData.length -1].price);
+          const val = sharesNum * currentPrice;
+          
+          const localTxs = getLocalTransactions(account).filter(tx => tx.vaultId === id && tx.type === 'DEPOSIT');
+          let cost = 0; 
+          let bought = 0;
+          localTxs.forEach(tx => {
+             cost += parseFloat(formatEther(BigInt(tx.assets || '0')));
+             bought += parseFloat(formatEther(BigInt(tx.shares || '0')));
           });
-          setNewComment('');
-          setTimeout(fetchData, 8000);
+          
+          const entry = bought > 0 ? cost / bought : currentPrice;
+          const pnl = ((currentPrice - entry) / entry) * 100;
+
+          setUserPosition({
+              shares: sharesNum.toFixed(4),
+              value: val.toFixed(4),
+              pnl: pnl.toFixed(2),
+              entry: entry.toFixed(4),
+              exit: currentPrice.toFixed(4)
+          });
+      } else {
+          setUserPosition(null);
       }
-    } catch (e: any) {
-      console.error('transmit failed', e);
-      let msg = 'Failed to publish opinion.';
-      if (e.message?.includes('InsufficientBalance') || e.message?.includes('MultiVault_InsufficientBalance')) {
-         msg = `Insufficient balance to cover the signal fee (Min: ${minDeposit} ${CURRENCY_SYMBOL}).`;
-      }
-      setTxModal({ isOpen: true, status: 'error', title: 'TRANSMISSION FAILED', message: msg });
-    } finally {
-      setIsTransmitting(false);
-    }
   };
 
-  if (loading) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-            <div className="text-intuition-primary animate-pulse font-mono flex items-center gap-2">
-                <RefreshCw className="animate-spin" /> DECODING SIGNAL...
-            </div>
-        </div>
-      );
-  }
+  const handleMax = () => {
+      playClick();
+      if (action === 'LIQUIDATE') {
+          setInputAmount(shareBalance);
+      } else {
+          setInputAmount(walletBalance);
+      }
+  };
 
-  if (error || !agent) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-4">
-            <AlertCircle size={48} className="text-intuition-danger" />
-            <div className="text-center">
-                <h2 className="text-xl font-bold text-white mb-2 font-display">SIGNAL LOST</h2>
-                <p className="text-slate-400 font-mono text-sm max-w-md">{error || "Agent data could not be retrieved from the subgraph."}</p>
-            </div>
-            <button onClick={() => navigate('/markets')} className="px-6 py-3 bg-white/5 border border-white/10 hover:bg-intuition-primary/10 hover:text-intuition-primary hover:border-intuition-primary transition-all font-mono text-xs flex items-center gap-2">
-                <ArrowLeft size={14} /> RETURN TO MARKET
-            </button>
-        </div>
-      );
-  }
+  const handleExecute = async () => {
+      if (!wallet || !id || !inputAmount) { toast.error("INVALID INPUT"); return; }
+      
+      if ((window as any).umami) (window as any).umami.track('Trade Attempt', { agent: agent?.label, action: action, amount: inputAmount });
 
-  const currentData = chartData.length ? chartData[chartData.length - 1] : { trust: 50, distrust: 50, price: '0.000' };
-  const displayTrust = hoverData ? hoverData.trust : currentData.trust;
-  const displayDistrust = hoverData ? hoverData.distrust : currentData.distrust;
-  const displayPrice = hoverData ? hoverData.price : currentData.price;
-  const displayDate = hoverData ? `${hoverData.dateLabel}, ${hoverData.timeLabel}` : 'LIVE';
+      playClick();
+      setTxModal({ isOpen: true, status: 'processing', title: 'EXECUTING STRATEGY', message: 'Confirming transaction on-chain...' });
 
-  const currentScore = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0');
-  const trustPct = currentScore.toFixed(1);
-  const distrustPct = (100 - currentScore).toFixed(1);
+      try {
+          const curveId = Number(agent?.curveId || 0);
+          let hash = '';
+          
+          if (action === 'ACQUIRE') {
+              const res = await depositToVault(inputAmount, id, wallet, curveId);
+              hash = res.hash;
+              saveLocalTransaction({ id: hash, type: 'DEPOSIT', assets: parseEther(inputAmount).toString(), shares: res.shares.toString(), timestamp: Date.now(), vaultId: id, assetLabel: agent?.label, user: wallet }, wallet);
+          } else {
+              const res = await redeemFromVault(inputAmount, id, wallet, curveId);
+              hash = res.hash;
+              saveLocalTransaction({ id: hash, type: 'REDEEM', assets: res.assets.toString(), shares: parseEther(inputAmount).toString(), timestamp: Date.now(), vaultId: id, assetLabel: agent?.label, user: wallet }, wallet);
+          }
+
+          if ((window as any).umami) (window as any).umami.track('Trade Success', { agent: agent?.label, action: action, amount: inputAmount, hash });
+          
+          playSuccess();
+          setTxModal({ isOpen: true, status: 'success', title: 'POSITION UPDATED', message: 'The ledger has been updated.', hash });
+          setInputAmount('');
+          setTimeout(() => refreshBalances(wallet, curveId), 2000);
+      } catch (e: any) {
+          console.error(e);
+          setTxModal({ isOpen: true, status: 'error', title: 'EXECUTION FAILED', message: 'Transaction rejected or failed.' });
+      }
+  };
+
+  if (loading) return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+          <RefreshCw className="animate-spin text-intuition-primary" size={40} />
+          <div className="font-mono text-intuition-primary animate-pulse tracking-widest">BUILDING INTELLIGENCE PROFILE...</div>
+      </div>
+  );
+
+  if (!agent) return <div className="min-h-screen flex items-center justify-center text-intuition-danger font-mono">AGENT_NOT_FOUND</div>;
+
+  const currentAssets = parseFloat(formatEther(BigInt(agent.totalAssets || '0')));
+  const currentShares = parseFloat(formatEther(BigInt(agent.totalShares || '0')));
+  const currentPrice = calculatePrice(currentAssets, currentShares, agent.currentSharePrice);
+  const currentScore = calculateTrustScore(currentPrice);
+  const repTier = getReputationTier(currentScore, currentAssets);
+
+  const displayTrust = hoverData ? hoverData.trust : currentScore.toFixed(1);
+  const displayDistrust = hoverData ? hoverData.distrust : (100 - currentScore).toFixed(1);
+  const displayPrice = hoverData ? hoverData.price : currentPrice.toFixed(4);
+  const displayTime = hoverData ? hoverData.timeLabel : 'LIVE';
 
   return (
-    <div className="w-full px-4 md:px-8 py-6">
-      <TransactionModal 
-         isOpen={txModal.isOpen} 
-         status={txModal.status} 
-         title={txModal.title} 
-         message={txModal.message} 
-         hash={txModal.hash} 
-         onClose={() => {
-             setTxModal(prev => ({ ...prev, isOpen: false }));
-             if (txModal.status === 'success' && tradeMode === 'Sell') setShowShareCard(true);
-         }} 
-      />
+    <div className="w-full max-w-[1400px] mx-auto px-4 py-8 pb-32">
+        <TransactionModal 
+            isOpen={txModal.isOpen} 
+            status={txModal.status} 
+            title={txModal.title} 
+            message={txModal.message} 
+            hash={txModal.hash} 
+            onClose={() => { setTxModal(prev => ({ ...prev, isOpen: false })); if (txModal.status === 'success' && action === 'LIQUIDATE') setShowShareCard(true); }} 
+        />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 space-y-6">
-          <div className="flex items-center gap-4 p-6 bg-intuition-card border border-intuition-primary/30 clip-path-slant hover-glow relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-intuition-primary/5 to-transparent pointer-events-none"></div>
-            <div className="w-16 h-16 bg-black border border-intuition-primary flex items-center justify-center font-bold text-3xl text-intuition-primary shrink-0">
-              {agent.image ? <img src={agent.image} className="w-full h-full object-cover" alt="" /> : agent.label?.[0]}
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-wide truncate max-w-[200px] md:max-w-md">{agent.label}</h1>
-                <span className="px-2 py-0.5 bg-intuition-primary/10 border border-intuition-primary/30 text-[10px] font-mono text-intuition-primary rounded uppercase">{agent.type || 'ATOM'}</span>
-              </div>
-              <div className="text-xs font-mono text-slate-400 break-all">ID: {agent.id}</div>
-            </div>
-          </div>
+        <button onClick={() => navigate('/markets')} className="flex items-center gap-2 text-slate-500 hover:text-white mb-4 text-xs font-mono transition-colors">
+            <ArrowLeft size={14} /> BACK_TO_GRID
+        </button>
+        <AgentHeader agent={agent} isWatched={isWatched} onToggleWatch={toggleWatch} />
 
-          <div className="bg-black border border-intuition-border h-[350px] md:h-[500px] relative clip-path-slant group flex flex-col">
-            <div className="p-4 md:p-6 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-              <div>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-3xl md:text-4xl font-black text-white font-display tracking-tight">{displayPrice} <span className="text-lg text-slate-500 font-mono">{CURRENCY_SYMBOL}</span></span>
-                  <span className={`text-sm font-mono font-bold ${displayTrust > 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {displayTrust > 50 ? `+${(displayTrust - 50).toFixed(1)}%` : `-${(50 - displayTrust).toFixed(1)}%`}
-                  </span>
-                </div>
-                <div className="text-xs font-mono text-slate-500 mt-1">{displayDate}</div>
-              </div>
-
-              <div className="flex gap-8 text-right w-full md:w-auto justify-between md:justify-end">
-                <div>
-                  <div className="flex items-center gap-2 justify-end">
-                    <div className="w-2 h-2 rounded-full bg-intuition-primary"></div>
-                    <span className="text-intuition-primary font-bold font-display text-xl">{displayTrust}%</span>
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">TRUST</div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 justify-end">
-                    <div className="w-2 h-2 rounded-full bg-intuition-danger"></div>
-                    <span className="text-intuition-danger font-bold font-display text-xl">{displayDistrust}%</span>
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">DISTRUST</div>
-                </div>
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className={`bg-intuition-card border ${repTier.border} p-5 clip-path-slant relative overflow-hidden group`}>
+                <div className={`absolute top-0 right-0 p-4 opacity-20 ${repTier.color}`}><Shield size={64} /></div>
+                <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2">Reputation Tier</h3>
+                <div className={`text-3xl font-black font-display ${repTier.color} text-glow`}>{repTier.label}</div>
+                <div className="mt-2 text-xs font-mono text-slate-400">Trust Score: <span className="text-white">{currentScore.toFixed(1)}/100</span></div>
             </div>
 
-            <div className="flex-1 w-full relative">
-              {chartData.length > 0 && (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={chartData}
-                    onMouseMove={(e: any) => { if (e?.activePayload) setHoverData(e.activePayload[0].payload); }}
-                    onMouseLeave={() => setHoverData(null)}
-                    margin={{ top: 20, right: 0, left: 0, bottom: 0 }}
-                  >
-                    <defs>
-                      <linearGradient id="gradTrust" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00f3ff" stopOpacity={0.2} /><stop offset="95%" stopColor="#00f3ff" stopOpacity={0} /></linearGradient>
-                      <linearGradient id="gradDistrust" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff0055" stopOpacity={0.2} /><stop offset="95%" stopColor="#ff0055" stopOpacity={0} /></linearGradient>
-                    </defs>
-
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                    <XAxis dataKey="timeLabel" hide />
-                    <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'Fira Code' }} axisLine={false} tickLine={false} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} />
-                    <Tooltip cursor={{ stroke: '#fff', strokeWidth: 1, strokeDasharray: '5 5' }} content={() => null} />
-                    <ReferenceLine yAxisId="right" y={50} stroke="#334155" strokeDasharray="3 3" />
-                    <Area yAxisId="right" type="stepAfter" dataKey="trust" stroke="#00f3ff" strokeWidth={3} fill="url(#gradTrust)" activeDot={{ r: 6, fill: '#00f3ff', stroke: '#fff', strokeWidth: 2 }} />
-                    <Area yAxisId="right" type="stepAfter" dataKey="distrust" stroke="#ff0055" strokeWidth={3} fill="url(#gradDistrust)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-
-              <div className="absolute bottom-4 left-6 opacity-20 pointer-events-none select-none">
-                <div className="text-4xl font-black text-white font-display tracking-tighter">INTURANK</div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex border-b border-intuition-border mb-4 overflow-x-auto">
-              {['opinions', 'activity', 'rules'].map(t => (
-                <button key={t} onClick={() => setActiveTab(t as any)} className={`px-6 py-3 font-mono text-xs font-bold uppercase border-b-2 transition-colors whitespace-nowrap ${activeTab === t ? 'border-intuition-primary text-intuition-primary' : 'border-transparent text-slate-500'}`}>{t}</button>
-              ))}
-            </div>
-
-            {activeTab === 'opinions' && (
-              <div className="space-y-4">
-                <div className="p-4 bg-intuition-card border border-intuition-border clip-path-slant">
-                  <textarea value={newComment} onChange={e => setNewComment(e.target.value)} className="w-full bg-black border border-slate-800 p-3 text-white text-sm font-mono focus:border-intuition-primary outline-none" placeholder="TRANSMIT_OPINION..." />
-                  <div className="flex flex-col sm:flex-row justify-between mt-2 gap-2">
-                    <div className="flex gap-2 w-full sm:w-auto">
-                      <button onClick={() => setSelectedSide('TRUST')} className={`flex-1 sm:flex-none px-3 py-1 text-[10px] border font-bold ${selectedSide === 'TRUST' ? 'bg-intuition-success/20 border-intuition-success text-intuition-success' : 'border-slate-700 text-slate-500'}`}>BULLISH</button>
-                      <button onClick={() => setSelectedSide('DISTRUST')} className={`flex-1 sm:flex-none px-3 py-1 text-[10px] border font-bold ${selectedSide === 'DISTRUST' ? 'bg-intuition-danger/20 border-intuition-danger text-intuition-danger' : 'border-slate-700 text-slate-500'}`}>BEARISH</button>
+            <div className="bg-intuition-card border border-intuition-border p-5 clip-path-slant relative overflow-hidden">
+                <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <TrendingUp size={14} className="text-intuition-secondary" /> Momentum
+                </h3>
+                <div className="flex items-center gap-4">
+                    <div className={`text-3xl font-black font-display ${momentum.trend === 'surge' ? 'text-intuition-success' : momentum.trend === 'dump' ? 'text-intuition-danger' : 'text-slate-300'}`}>
+                        {momentum.score}
                     </div>
-                    <button onClick={handleTransmit} disabled={isTransmitting} className="w-full sm:w-auto px-4 py-2 bg-intuition-primary text-black font-bold text-xs font-mono clip-path-slant hover-glow">{isTransmitting ? 'SIGNING...' : 'TRANSMIT (ON-CHAIN)'}</button>
-                  </div>
-                </div>
-
-                {comments.length === 0 ? <div className="text-center text-slate-600 py-8 font-mono text-xs">NO_TRANSMISSIONS_FOUND</div> : comments.map((c, i) => (
-                  <div key={c.id || i} className="flex gap-3 p-3 border-b border-white/5">
-                    <div className={`w-1 self-stretch ${c.isBullish ? 'bg-intuition-success' : 'bg-intuition-danger'}`}></div>
-                    <div>
-                      <div className="flex gap-2 items-center">
-                        <span className="text-white font-bold text-sm">0x...</span>
-                        <span className={`text-[10px] px-1 border ${c.isBullish ? 'text-intuition-success border-intuition-success' : 'text-intuition-danger border-intuition-danger'}`}>{c.isBullish ? 'TRUST' : 'DISTRUST'}</span>
-                      </div>
-                      <p className="text-slate-400 text-sm font-mono mt-1">{c.text}</p>
+                    <div className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${momentum.trend === 'surge' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-500' : 'bg-slate-800 border-slate-600 text-slate-400'}`}>
+                        {momentum.trend}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 font-mono">Based on 24h volume velocity</div>
+            </div>
 
-            {activeTab === 'activity' && (
-              <div className="space-y-2 font-mono text-xs max-h-96 overflow-y-auto custom-scrollbar">
-                {activityLog.length === 0 ? <div className="text-center py-10 text-slate-600">NO_ON_CHAIN_ACTIVITY</div> : activityLog.map((tx, i) => (
-                  <div key={tx.id + '-' + i} className="flex justify-between p-3 border-b border-white/5 hover:bg-white/5">
-                    <span className={tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}>{tx.type === 'DEPOSIT' ? 'ACQUIRED' : 'LIQUIDATED'} SHARES</span>
-                    <span className="text-white">{Number(tx.shares || 0).toFixed(6)} UNITS</span>
-                    <span className="text-slate-500">{tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString() : 'Block #'}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'rules' && (
-              <div className="p-6 border border-intuition-primary/20 bg-black/50 font-mono text-sm text-slate-400">
-                <h3 className="text-white font-bold mb-2">PROTOCOL_RULES_v1</h3>
-                <ul className="list-disc list-inside space-y-2">
-                  <li>Positions are tokenized via <strong>ERC-1155</strong> MultiVault.</li>
-                  <li>Pricing follows a <strong>Progressive Bonding Curve</strong>.</li>
-                  <li>Opinions are stored as <strong>Semantic Triples</strong> on-chain.</li>
-                  <li>0.1% Protocol Fee applies to all trades.</li>
-                  <li className="text-intuition-warning"><strong>Minimum Deposit: {minDeposit} {CURRENCY_SYMBOL}</strong></li>
-                </ul>
-              </div>
-            )}
-          </div>
+            <SentimentMeter score={currentScore} />
         </div>
 
-        <div className="lg:col-span-4 space-y-6">
-          <div className="lg:sticky lg:top-24 border border-intuition-primary bg-black p-1 clip-path-slant hover-glow">
-            <div className="border border-intuition-primary/30 p-6">
-              <div className="flex justify-between items-center mb-6 border-b border-intuition-border pb-2">
-                <h2 className="font-bold text-intuition-primary font-display tracking-widest">EXECUTION_DECK</h2>
-                <div className="w-2 h-2 bg-intuition-primary animate-pulse"></div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                <button onClick={() => { setTradeMode('Buy'); setInputAmount(''); }} className={`py-2 font-mono text-xs font-bold border clip-path-slant transition-all ${tradeMode === 'Buy' ? 'bg-intuition-primary text-black border-intuition-primary' : 'text-slate-500 border-slate-800'}`}>ACQUIRE</button>
-                <button onClick={() => { setTradeMode('Sell'); setInputAmount(''); }} className={`py-2 font-mono text-xs font-bold border clip-path-slant transition-all ${tradeMode === 'Sell' ? 'bg-intuition-danger text-black border-intuition-danger' : 'text-slate-500 border-slate-800'}`}>LIQUIDATE</button>
-              </div>
-
-              <div className="mb-4">
-                <div className="text-[10px] text-slate-500 font-mono mb-2 uppercase">Target Position</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => setSelectedSide('TRUST')} className={`p-3 border clip-path-slant text-left transition-all ${selectedSide === 'TRUST' ? 'bg-intuition-success/10 border-intuition-success' : 'border-slate-800 bg-black hover:border-intuition-success/50'}`}>
-                    <div className={`font-black font-display ${selectedSide === 'TRUST' ? 'text-intuition-success' : 'text-slate-600'}`}>TRUST</div>
-                    <div className="text-[10px] font-mono text-slate-500">{trustPct}% PROB</div>
-                  </button>
-                  <button onClick={() => setSelectedSide('DISTRUST')} className={`p-3 border clip-path-slant text-left transition-all ${selectedSide === 'DISTRUST' ? 'bg-intuition-danger/10 border-intuition-danger' : 'border-slate-800 bg-black hover:border-intuition-danger/50'}`}>
-                    <div className={`font-black font-display ${selectedSide === 'DISTRUST' ? 'text-intuition-danger' : 'text-slate-600'}`}>DISTRUST</div>
-                    <div className="text-[10px] font-mono text-slate-500">{distrustPct}% PROB</div>
-                  </button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div className="lg:col-span-2 bg-black border border-intuition-border h-[400px] flex flex-col clip-path-slant relative group overflow-hidden">
+                <div className="p-4 border-b border-white/5 flex justify-between items-end bg-intuition-card relative z-10">
+                    <div>
+                        <div className="text-3xl font-black text-white font-display tracking-tight">{displayPrice} <span className="text-sm text-slate-500">{CURRENCY_SYMBOL}/SHARE</span></div>
+                        <div className="text-xs font-mono text-slate-500 mt-1 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-intuition-primary animate-pulse"></span> {displayTime}
+                        </div>
+                    </div>
+                    <div className="text-right flex gap-4">
+                        <div>
+                            <div className="text-xl font-bold font-display text-emerald-400">{displayTrust}%</div>
+                            <div className="text-[10px] font-mono text-slate-500 uppercase">TRUST</div>
+                        </div>
+                        <div>
+                            <div className="text-xl font-bold font-display text-rose-500">{displayDistrust}%</div>
+                            <div className="text-[10px] font-mono text-slate-500 uppercase">DISTRUST</div>
+                        </div>
+                    </div>
                 </div>
-              </div>
+                
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
+                    <h1 className="text-8xl font-black text-white/5 font-display tracking-tighter">INTURANK</h1>
+                </div>
 
-              <div className="space-y-2 mb-6">
-                <div className="flex justify-between text-[10px] font-mono text-intuition-primary/70">
-                  <span>{tradeMode === 'Buy' ? `INPUT (${CURRENCY_SYMBOL})` : 'INPUT (SHARES)'}</span>
-                  <span>BAL: {tradeMode === 'Buy' ? walletBalance : shareBalance}</span>
+                <div className="flex-1 w-full relative z-10">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData} onMouseMove={(e: any) => { if (e?.activePayload) setHoverData(e.activePayload[0].payload); }} onMouseLeave={() => setHoverData(null)}>
+                            <defs>
+                                <linearGradient id="trustGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#00ff9d" stopOpacity={0.1} />
+                                    <stop offset="95%" stopColor="#00ff9d" stopOpacity={0} />
+                                </linearGradient>
+                                <linearGradient id="distrustGradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#ff0055" stopOpacity={0.1} />
+                                    <stop offset="95%" stopColor="#ff0055" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+                            <XAxis dataKey="timeLabel" hide />
+                            <YAxis orientation="right" domain={[0, 100]} tick={{ fill: '#475569', fontSize: 10, fontFamily: 'Fira Code' }} axisLine={false} tickLine={false} />
+                            <Tooltip cursor={{ stroke: '#fff', strokeWidth: 1, strokeDasharray: '3 3' }} content={() => null} />
+                            
+                            <Area type="monotone" dataKey="trust" stroke="#00ff9d" strokeWidth={3} fill="url(#trustGradient)" activeDot={{ r: 4, fill: '#fff', stroke: '#00ff9d' }} />
+                            <Area type="monotone" dataKey="distrust" stroke="#ff0055" strokeWidth={3} fill="url(#distrustGradient)" activeDot={{ r: 4, fill: '#fff', stroke: '#ff0055' }} />
+                        </AreaChart>
+                    </ResponsiveContainer>
                 </div>
-                <div className="relative">
-                  <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className={`w-full bg-black border p-3 text-right text-white font-mono text-lg focus:outline-none clip-path-slant ${tradeMode === 'Buy' ? 'border-intuition-primary' : 'border-intuition-danger'}`} placeholder="0.00" />
-                  <button onClick={() => setInputAmount(tradeMode === 'Buy' ? walletBalance : shareBalance)} className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] bg-slate-800 text-white px-2 py-1 rounded hover:bg-white hover:text-black font-bold">MAX</button>
+            </div>
+
+            <div className="space-y-4">
+                <div className="bg-intuition-card border border-intuition-border p-4 clip-path-slant">
+                    <h3 className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Vault Telemetry</h3>
+                    <div className="space-y-3 font-mono text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-slate-400">Total Supply</span>
+                            <span className="text-white">{currentShares.toFixed(4)} Shares</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-400">TVL (Liquidity)</span>
+                            <span className="text-white">{currentAssets.toFixed(4)} {CURRENCY_SYMBOL}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-400">Market Cap</span>
+                            <span className="text-intuition-primary">{(currentShares * currentPrice).toFixed(4)} {CURRENCY_SYMBOL}</span>
+                        </div>
+                    </div>
                 </div>
-                {tradeMode === 'Buy' && (
-                    <div className="flex items-center gap-1 text-[10px] text-intuition-warning/80 font-mono">
-                        <AlertCircle size={10} /> Min Deposit: {minDeposit} {CURRENCY_SYMBOL}
+
+                <div className="bg-black border border-intuition-primary p-1 clip-path-slant hover-glow">
+                    <div className="border border-intuition-primary/30 p-4">
+                        <div className="flex justify-between items-center mb-4 border-b border-intuition-border pb-2">
+                            <h2 className="font-bold text-intuition-primary font-display tracking-widest text-sm">EXECUTION_DECK</h2>
+                            <div className="text-[10px] text-slate-500 font-mono">v1.2</div>
+                        </div>
+                        
+                        <div className="mb-4">
+                            <div className="text-[10px] text-slate-500 font-mono uppercase mb-1">Select Sentiment</div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button 
+                                    onClick={() => setSentiment('TRUST')}
+                                    className={`py-3 font-black font-display text-sm border clip-path-slant transition-all ${sentiment === 'TRUST' ? 'bg-intuition-success/20 text-intuition-success border-intuition-success shadow-[0_0_10px_rgba(0,255,157,0.2)]' : 'border-slate-800 text-slate-600 bg-black'}`}
+                                >
+                                    TRUST
+                                </button>
+                                <button 
+                                    onClick={() => setSentiment('DISTRUST')}
+                                    className={`py-3 font-black font-display text-sm border clip-path-slant transition-all ${sentiment === 'DISTRUST' ? 'bg-intuition-danger/20 text-intuition-danger border-intuition-danger shadow-[0_0_10px_rgba(255,0,85,0.2)]' : 'border-slate-800 text-slate-600 bg-black'}`}
+                                >
+                                    DISTRUST
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="mb-4">
+                            <div className="text-[10px] text-slate-500 font-mono uppercase mb-1">Select Action</div>
+                            <div className="flex gap-1 bg-slate-900/50 p-1 border border-slate-800 clip-path-slant">
+                                <button onClick={() => setAction('ACQUIRE')} className={`flex-1 py-1 text-[10px] font-bold font-mono transition-colors ${action === 'ACQUIRE' ? 'bg-white text-black' : 'text-slate-500 hover:text-white'}`}>ACQUIRE</button>
+                                <button onClick={() => setAction('LIQUIDATE')} className={`flex-1 py-1 text-[10px] font-bold font-mono transition-colors ${action === 'LIQUIDATE' ? 'bg-white text-black' : 'text-slate-500 hover:text-white'}`}>LIQUIDATE</button>
+                            </div>
+                        </div>
+
+                        <div className="mb-4">
+                            <div className="flex justify-between items-center mb-1 text-[10px] font-mono text-slate-500">
+                                <span>AMOUNT</span>
+                                <div className="flex items-center gap-2">
+                                    <span>BAL: {action === 'ACQUIRE' ? walletBalance : shareBalance}</span>
+                                    <button 
+                                        onClick={handleMax}
+                                        className="text-intuition-primary hover:text-white bg-intuition-primary/10 border border-intuition-primary/30 px-1 rounded text-[9px] uppercase tracking-wider hover:bg-intuition-primary hover:border-intuition-primary transition-all"
+                                    >
+                                        [MAX]
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="relative">
+                                <input 
+                                    type="number" 
+                                    value={inputAmount} 
+                                    onChange={e => setInputAmount(e.target.value)} 
+                                    className={`w-full bg-slate-900 border p-3 pl-16 text-right text-white font-mono text-sm focus:outline-none ${sentiment === 'TRUST' ? 'border-intuition-success' : 'border-intuition-danger'}`} 
+                                    placeholder="0.00" 
+                                />
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold pointer-events-none">
+                                    {action === 'ACQUIRE' ? CURRENCY_SYMBOL : 'SHARES'}
+                                </div>
+                            </div>
+                            {action === 'ACQUIRE' && (
+                                <div className="text-[10px] font-mono text-right text-intuition-warning mt-1">
+                                    Min: {minDeposit}
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={handleExecute} className={`w-full py-3 font-bold font-display text-xs tracking-widest transition-all clip-path-slant hover-glow ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'bg-intuition-danger text-black'}`}>
+                            CONFIRM {action}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Active Position Card */}
+                {userPosition && (
+                    <div className="bg-[#0a0f1a] border border-intuition-border p-4 clip-path-slant relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-intuition-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                        <div className="flex justify-between items-start mb-2 relative z-10">
+                            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Active Position</span>
+                            <span className={`text-xs font-bold font-mono px-1.5 py-0.5 border ${parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' : 'text-rose-400 border-rose-500/30 bg-rose-500/10'}`}>
+                                {parseFloat(userPosition.pnl) >= 0 ? '+' : ''}{userPosition.pnl}%
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-end mb-2 relative z-10">
+                            <div>
+                                <div className="text-2xl font-black text-white font-display tracking-tight">{userPosition.value} <span className="text-xs text-slate-500">{CURRENCY_SYMBOL}</span></div>
+                                <div className="text-[10px] font-mono text-slate-500 uppercase">{userPosition.shares} SHARES</div>
+                            </div>
+                            <button 
+                                onClick={() => { playClick(); setShowShareCard(true); }}
+                                className="p-2 border border-slate-700 hover:border-intuition-primary text-slate-400 hover:text-white transition-colors bg-black rounded-sm"
+                                title="Generate PnL Card"
+                            >
+                                <Share2 size={16} />
+                            </button>
+                        </div>
                     </div>
                 )}
-              </div>
-
-              <button onClick={handleTrade} className={`w-full py-3 font-bold font-display text-sm tracking-widest clip-path-slant hover-glow ${tradeMode === 'Buy' ? 'bg-intuition-success text-black' : 'bg-intuition-danger text-black'}`}>{tradeMode === 'Buy' ? 'CONFIRM_ACQUISITION' : 'CONFIRM_LIQUIDATION'}</button>
             </div>
-          </div>
+        </div>
 
-          {userPosition && (
-            <div className="border border-intuition-secondary bg-black p-1 clip-path-slant hover-glow animate-in fade-in slide-in-from-bottom-4">
-              <div className="p-4 border border-intuition-secondary/30 bg-intuition-secondary/5">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-intuition-secondary font-display text-sm">ACTIVE_POSITION</h3>
-                  <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded border ${parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400 border-emerald-500/50 bg-emerald-500/10' : 'text-rose-400 border-rose-500/50 bg-rose-500/10'}`}>{parseFloat(userPosition.pnl) >= 0 ? '+' : ''}{userPosition.pnl}% PNL</span>
+        {/* 5. Bottom Tabs: Positions & Claims */}
+        <div className="bg-black border border-intuition-border clip-path-slant min-h-[400px]">
+            <div className="flex justify-between items-center border-b border-intuition-border bg-intuition-card pr-4">
+                <div className="flex overflow-x-auto">
+                    <button onClick={() => setActiveTab('positions')} className={`px-6 py-4 font-mono text-xs font-bold uppercase border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'positions' ? 'border-intuition-primary text-intuition-primary bg-intuition-primary/5' : 'border-transparent text-slate-500 hover:text-white'}`}>
+                        <List size={14} /> Position History
+                    </button>
+                    <button onClick={() => setActiveTab('claims')} className={`px-6 py-4 font-mono text-xs font-bold uppercase border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'claims' ? 'border-intuition-primary text-intuition-primary bg-intuition-primary/5' : 'border-transparent text-slate-500 hover:text-white'}`}>
+                        <Layers size={14} /> Semantic Claims ({triples.length})
+                    </button>
+                    <button onClick={() => setActiveTab('network')} className={`px-6 py-4 font-mono text-xs font-bold uppercase border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'network' ? 'border-intuition-primary text-intuition-primary bg-intuition-primary/5' : 'border-transparent text-slate-500 hover:text-white'}`}>
+                        <Network size={14} /> Trust Network ({incomingTriples.length})
+                    </button>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono mb-4">
-                  <div className="text-slate-500">SHARES: <span className="text-white">{userPosition.shares}</span></div>
-                  <div className="text-slate-500 text-right">VALUE: <span className="text-intuition-primary">{userPosition.value}</span></div>
-                </div>
-
-                <button onClick={() => setShowShareCard(true)} className="w-full py-2 border border-intuition-secondary text-intuition-secondary font-bold text-xs font-mono hover:bg-intuition-secondary hover:text-black transition-colors clip-path-slant">GENERATE_PNL_CARD</button>
-              </div>
+                <button 
+                    onClick={() => { playClick(); fetchDeepProfile(true); }}
+                    className={`flex items-center gap-2 px-3 py-1.5 border border-slate-700 rounded-sm text-[10px] font-mono font-bold text-slate-400 hover:text-white hover:border-intuition-primary hover:bg-intuition-primary/10 transition-all ${isRefreshing ? 'animate-pulse' : ''}`}
+                    title="Refresh Data"
+                >
+                    <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} /> SYNC
+                </button>
             </div>
-          )}
-        </div>
-      </div>
 
-      {showShareCard && userPosition && (
-        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setShowShareCard(false)}>
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setShowShareCard(false)} className="absolute -top-12 right-0 text-white hover:text-intuition-danger"><Info /></button>
-            <ShareCard username={wallet || '0xUser'} pnl={userPosition.pnl} entryPrice={userPosition.entry} currentPrice={userPosition.exit} assetName={agent?.label || 'Unknown'} side={selectedSide} />
-            <div className="text-center mt-4 text-slate-500 text-xs font-mono">CLICK_OUTSIDE_TO_CLOSE</div>
-          </div>
+            <div className="p-0 overflow-x-auto">
+                {activeTab === 'positions' && (
+                    <table className="w-full text-left font-mono text-xs">
+                        <thead className="bg-intuition-dark text-slate-500 border-b border-intuition-border">
+                            <tr>
+                                <th className="px-6 py-3">Time</th>
+                                <th className="px-6 py-3">Actor</th>
+                                <th className="px-6 py-3">Action</th>
+                                <th className="px-6 py-3 text-right">Volume</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {activityLog.length === 0 ? (
+                                <tr><td colSpan={4} className="p-8 text-center text-slate-600">NO_DATA</td></tr>
+                            ) : activityLog.map((tx, i) => {
+                                // Whale detection (Arbitrary threshold for demo)
+                                const val = parseFloat(formatEther(BigInt(tx.shares || '0'))) * currentPrice;
+                                const isWhale = val > 10; 
+
+                                return (
+                                    <tr key={i} className={`hover:bg-white/5 transition-colors ${isWhale ? 'bg-intuition-primary/5' : ''}`}>
+                                        <td className="px-6 py-3 text-slate-400">{new Date(tx.timestamp).toLocaleString()}</td>
+                                        <td className="px-6 py-3 text-intuition-primary flex items-center gap-2">
+                                            {tx.user ? `${tx.user.slice(0,6)}...${tx.user.slice(-4)}` : 'Unknown'}
+                                            {isWhale && <span className="text-[10px] bg-intuition-primary text-black px-1 rounded font-bold">WHALE</span>}
+                                        </td>
+                                        <td className={`px-6 py-3 font-bold ${tx.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-rose-400'}`}>{tx.type}</td>
+                                        <td className="px-6 py-3 text-right text-white">
+                                            {val.toFixed(4)} <span className="text-slate-600">{CURRENCY_SYMBOL}</span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                )}
+
+                {activeTab === 'claims' && (
+                    <div className="p-6 grid grid-cols-1 gap-4">
+                        {triples.length === 0 ? <div className="text-center text-slate-600">NO_CLAIMS_FOUND</div> : triples.map((t, i) => (
+                            <div key={i} className="flex items-center gap-3 p-3 border border-white/10 rounded bg-white/5 font-mono text-sm group hover:border-intuition-primary/30 transition-colors">
+                                <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">THIS AGENT</span>
+                                <span className="text-slate-500 text-xs">──[{t.predicate?.label || 'LINK'}]──&gt;</span>
+                                <Link to={`/markets/${t.object?.term_id}`} className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30 hover:bg-purple-500/40 transition-colors">{t.object?.label || '...'}</Link>
+                                <span className="ml-auto text-xs text-slate-600">Block: {t.block_number}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {activeTab === 'network' && (
+                    <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {incomingTriples.length === 0 ? (
+                                <div className="col-span-2 text-center text-slate-600 py-12 border border-dashed border-slate-800">NO INCOMING SIGNALS DETECTED.</div>
+                            ) : (
+                                incomingTriples.map((t, i) => (
+                                    <Link key={i} to={`/markets/${t.subject?.term_id}`} className="flex items-center gap-4 p-4 border border-white/10 bg-white/5 hover:bg-intuition-primary/10 hover:border-intuition-primary/50 transition-all clip-path-slant group">
+                                        <div className="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-600 group-hover:border-intuition-primary transition-colors">
+                                            {t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : null}
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="text-xs text-slate-500 font-mono mb-1">TRUSTED BY</div>
+                                            <div className="font-bold text-white group-hover:text-intuition-primary">{t.subject?.label || 'Unknown Agent'}</div>
+                                        </div>
+                                        <div className="text-xs font-mono px-2 py-1 rounded bg-black border border-slate-700 text-slate-400">
+                                            {t.predicate?.label || 'LINK'}
+                                        </div>
+                                    </Link>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
-      )}
+
+        {/* Share Card Modal */}
+        {showShareCard && userPosition && (
+            <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setShowShareCard(false)}>
+                <div className="relative" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => setShowShareCard(false)} className="absolute -top-12 right-0 text-white hover:text-intuition-danger"><Info /></button>
+                    <ShareCard username={wallet || '0xUser'} pnl={userPosition.pnl} entryPrice={userPosition.entry} currentPrice={userPosition.exit} assetName={agent.label || 'Unknown'} side={sentiment} />
+                </div>
+            </div>
+        )}
     </div>
   );
 };

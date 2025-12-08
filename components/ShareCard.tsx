@@ -1,6 +1,8 @@
-import React, { useRef } from 'react';
-import { Download, Share2, Award, Copy } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Download, Share2, Award, Copy, Twitter, Loader2, CheckCircle } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import { toast } from './Toast';
+import Logo from './Logo';
 
 interface ShareCardProps {
   username: string;
@@ -20,53 +22,129 @@ const ShareCard: React.FC<ShareCardProps> = ({
   side
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
   const isPositive = parseFloat(pnl) >= 0;
 
-  const handleShare = async () => {
-    const text = `🚀 I just realized ${pnl}% PnL on ${assetName} using IntuRank!\n\n📈 Entry: ${entryPrice}\n📉 Exit: ${currentPrice}\n\nTrade Reputation on Intuition Network.`;
-    try {
-        await navigator.clipboard.writeText(text);
-        toast.success("STATS COPIED TO CLIPBOARD");
-    } catch (err) {
-        toast.error("FAILED TO COPY");
-    }
+  const handleShareToX = () => {
+    const text = `🚀 I just realized ${pnl}% PnL on ${assetName} using IntuRank!\n\n📈 Entry: ${entryPrice}\n📉 Exit: ${currentPrice}\n\nTrade Reputation on @IntuitionSys.`;
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   };
 
-  const handleSave = () => {
-     toast.info("PRESS WIN+SHIFT+S TO SNAPSHOT");
+  const handleSave = async () => {
+     if (!cardRef.current) return;
+     setIsCapturing(true);
+     try {
+        const canvas = await html2canvas(cardRef.current, {
+            backgroundColor: '#02040a',
+            scale: 2, // High resolution
+            useCORS: true
+        });
+        const image = canvas.toDataURL("image/png");
+        const link = document.createElement('a');
+        link.href = image;
+        link.download = `inturank-pnl-${assetName}-${Date.now()}.png`;
+        link.click();
+        toast.success("CARD SAVED TO DEVICE");
+     } catch (err) {
+        console.error(err);
+        toast.error("IMAGE GENERATION FAILED");
+     } finally {
+        setIsCapturing(false);
+     }
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto perspective-1000 group">
-      <div ref={cardRef} className="relative bg-black border-2 border-intuition-primary p-6 rounded-xl shadow-[0_0_30px_rgba(0,243,255,0.15)] overflow-hidden clip-path-slant transform transition-transform hover:rotate-y-3 hover:rotate-x-3 duration-500">
-        <div className={`absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl ${isPositive ? 'from-emerald-500/20' : 'from-rose-500/20'} to-transparent rounded-bl-full blur-xl pointer-events-none`} />
-        <div className="flex justify-between items-start mb-6 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-slate-900 border border-slate-700 rounded flex items-center justify-center">
-              <Award className="text-intuition-primary" size={20} />
+    <div className="flex flex-col gap-4 items-center">
+        {/* THE CARD ITSELF */}
+        <div className="w-full max-w-sm mx-auto perspective-1000 group">
+        <div ref={cardRef} className="relative bg-[#05080f] border-2 border-intuition-primary p-6 rounded-none clip-path-slant shadow-[0_0_50px_rgba(0,243,255,0.2)] overflow-hidden">
+            {/* Background Effects */}
+            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none"></div>
+            <div className={`absolute -top-20 -right-20 w-64 h-64 bg-gradient-to-bl ${isPositive ? 'from-emerald-500/30' : 'from-rose-500/30'} to-transparent rounded-full blur-3xl pointer-events-none`} />
+            <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-intuition-primary to-transparent opacity-50"></div>
+
+            {/* Header */}
+            <div className="flex justify-between items-start mb-8 relative z-10">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-black border border-intuition-primary rounded flex items-center justify-center shadow-[0_0_15px_rgba(0,243,255,0.3)]">
+                        <Logo className="w-8 h-8 text-intuition-primary" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-white font-black font-display tracking-widest text-lg">INTU<span className="text-intuition-primary">RANK</span></h3>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Reputation Market</div>
+                    </div>
+                </div>
+                <div className="text-right">
+                    <div className="text-[10px] font-mono text-slate-500 uppercase">Trader</div>
+                    <div className="text-white font-bold font-mono text-xs bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                        {username.slice(0, 6)}...{username.slice(-4)}
+                    </div>
+                </div>
             </div>
-            <div>
-              <h3 className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">PLAYER_ID</h3>
-              <div className="text-white font-bold font-display tracking-wide text-glow">{username.slice(0, 6)}...{username.slice(-4)}</div>
+
+            {/* Main PnL Section */}
+            <div className="text-center py-6 border-y border-white/10 mb-8 bg-white/5 backdrop-blur-sm relative z-10">
+                <div className="text-xs font-mono text-slate-400 mb-2 uppercase tracking-[0.2em]">Realized PnL</div>
+                <div className={`text-6xl font-black font-display tracking-tighter ${isPositive ? 'text-emerald-400 drop-shadow-[0_0_20px_rgba(52,211,153,0.6)]' : 'text-rose-400 drop-shadow-[0_0_20px_rgba(251,113,133,0.6)]'}`}>
+                    {isPositive ? '+' : ''}{pnl}%
+                </div>
+                <div className={`inline-block mt-2 px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${side === 'TRUST' ? 'bg-intuition-success/10 border-intuition-success text-intuition-success' : 'bg-intuition-danger/10 border-intuition-danger text-intuition-danger'}`}>
+                    {side} POSITION
+                </div>
             </div>
-          </div>
-          <div className="px-3 py-1 bg-intuition-dark border border-intuition-border rounded text-[10px] font-mono text-intuition-primary">INTURANK // ALPHA</div>
+
+            {/* Trade Details */}
+            <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-6 text-sm font-mono relative z-10">
+                <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider">Asset</span>
+                    <span className="text-white font-bold truncate border-b border-slate-800 pb-1">{assetName}</span>
+                </div>
+                <div className="flex flex-col text-right">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider">Result</span>
+                    <span className={`font-bold pb-1 border-b border-slate-800 ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>{isPositive ? 'WIN' : 'LOSS'}</span>
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider">Entry</span>
+                    <span className="text-slate-300">{entryPrice}</span>
+                </div>
+                <div className="flex flex-col text-right">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider">Exit</span>
+                    <span className="text-white font-bold">{currentPrice}</span>
+                </div>
+            </div>
+
+            {/* Footer Watermark */}
+            <div className="flex justify-between items-center pt-4 border-t border-intuition-primary/20 relative z-10">
+                <div className="text-[8px] font-mono text-intuition-primary/60">
+                    VERIFIED ON INTUITION PROTOCOL
+                </div>
+                <div className="text-[8px] font-mono text-slate-600">
+                    {new Date().toLocaleDateString()}
+                </div>
+            </div>
         </div>
-        <div className="text-center py-4 border-y border-white/10 mb-6 bg-white/5 backdrop-blur-sm relative z-10">
-          <div className="text-[10px] font-mono text-slate-400 mb-1 uppercase tracking-widest">REALIZED PNL</div>
-          <div className={`text-5xl font-black font-display tracking-tight ${isPositive ? 'text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'text-rose-400 drop-shadow-[0_0_10px_rgba(251,113,133,0.5)]'}`}>{pnl}%</div>
         </div>
-        <div className="grid grid-cols-2 gap-4 mb-6 text-sm font-mono relative z-10">
-          <div><div className="text-[10px] text-slate-500 uppercase">Asset</div><div className="text-white font-bold truncate">{assetName}</div></div>
-          <div className="text-right"><div className="text-[10px] text-slate-500 uppercase">Side</div><div className={`font-bold ${side === 'TRUST' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{side}</div></div>
-          <div><div className="text-[10px] text-slate-500 uppercase">Entry</div><div className="text-white">{entryPrice}</div></div>
-          <div className="text-right"><div className="text-[10px] text-slate-500 uppercase">Exit</div><div className="text-white">{currentPrice}</div></div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2 w-full max-w-sm">
+            <button 
+                onClick={handleShareToX} 
+                className="flex-1 py-3 bg-black border border-slate-700 text-white font-bold font-mono text-xs hover:bg-slate-900 transition-colors flex items-center justify-center gap-2 clip-path-slant"
+            >
+                <Twitter size={14} /> SHARE
+            </button>
+            <button 
+                onClick={handleSave} 
+                disabled={isCapturing}
+                className="flex-1 py-3 bg-intuition-primary text-black font-bold font-mono text-xs clip-path-slant hover:bg-white transition-colors flex items-center justify-center gap-2"
+            >
+                {isCapturing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} 
+                {isCapturing ? 'SAVING...' : 'SAVE IMAGE'}
+            </button>
         </div>
-        <div className="flex gap-2 relative z-10">
-          <button onClick={handleShare} className="flex-1 py-2 bg-intuition-primary text-black font-bold font-mono text-xs clip-path-slant hover:bg-white transition-colors flex items-center justify-center gap-2"><Share2 size={14} /> COPY TEXT</button>
-          <button onClick={handleSave} className="flex-1 py-2 border border-intuition-primary text-intuition-primary font-bold font-mono text-xs clip-path-slant hover:bg-intuition-primary/10 transition-colors flex items-center justify-center gap-2"><Download size={14} /> SNAPSHOT</button>
-        </div>
-      </div>
     </div>
   );
 };

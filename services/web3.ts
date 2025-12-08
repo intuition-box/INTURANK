@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, isAddress, getAddress, type Hex, stringToHex, keccak256, encodePacked } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, isAddress, getAddress, type Hex, stringToHex, keccak256, encodePacked, hexToString } from 'viem';
 import { CHAIN_ID, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL } from '../constants';
 import { Transaction } from '../types';
 
@@ -6,7 +6,7 @@ export const intuitionTestnet = {
   id: CHAIN_ID,
   name: 'Intuition Mainnet',
   network: 'intuition',
-  nativeCurrency: { decimals: 18, name: 'ETH', symbol: 'ETH' }, // Updated to ETH as standard for L2s usually
+  nativeCurrency: { decimals: 18, name: 'ETH', symbol: 'ETH' }, 
   rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } },
 } as const;
 
@@ -30,18 +30,99 @@ export const getLocalTransactions = (account: string): Transaction[] => {
   const currentStr = localStorage.getItem(key);
   return currentStr ? JSON.parse(currentStr) : [];
 };
+
+// --- Connection Persistence Helper ---
+const WALLET_CONNECTED_KEY = 'inturank_wallet_connected';
+
+export const disconnectWallet = () => {
+    if (typeof window !== 'undefined') {
+        localStorage.removeItem(WALLET_CONNECTED_KEY);
+    }
+};
+
+// --- Watchlist Helpers (Auth Protected) ---
+const getWatchlistKey = (account: string) => `inturank_watchlist_${account.toLowerCase()}`;
+
+export const getWatchlist = (account?: string | null): string[] => {
+    if (!account) return [];
+    try {
+        const stored = localStorage.getItem(getWatchlistKey(account));
+        return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+};
+
+export const toggleWatchlist = (id: string, account?: string | null): boolean => {
+    if (!account) return false;
+    
+    const list = getWatchlist(account);
+    const normalizedId = id.toLowerCase();
+    const idx = list.findIndex(item => item.toLowerCase() === normalizedId);
+    
+    let newList;
+    const isAdded = idx === -1;
+    
+    if (isAdded) {
+        newList = [id, ...list]; // Add to top
+    } else {
+        newList = list.filter(item => item.toLowerCase() !== normalizedId);
+    }
+    
+    localStorage.setItem(getWatchlistKey(account), JSON.stringify(newList));
+    
+    // Dispatch custom event for UI updates
+    window.dispatchEvent(new CustomEvent('watchlist-updated', { detail: { account } }));
+    
+    return isAdded;
+};
+
+export const isInWatchlist = (id: string, account?: string | null): boolean => {
+    if (!account) return false;
+    const list = getWatchlist(account);
+    return list.some(item => item.toLowerCase() === id.toLowerCase());
+};
 // --------------------------------
 
-export const getConnectedAccount = async (): Promise<string | null> => {
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
+// --- Fallback Name Resolution ---
+export const fetchAtomNameFromChain = async (termId: string): Promise<string | null> => {
     try {
-      const walletClient = createWalletClient({
-        chain: intuitionTestnet,
-        transport: custom((window as any).ethereum),
-      });
-      const [address] = await walletClient.getAddresses();
-      return address ? getAddress(address) : null;
-    } catch { return null; }
+        const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
+        const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+        
+        const data = await publicClient.readContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'getAtom',
+            args: [termIdBytes32]
+        }) as Hex;
+
+        if (!data || data === '0x') return null;
+
+        const decoded = hexToString(data);
+        const clean = decoded.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
+        
+        return clean.length > 1 ? clean : null;
+    } catch (e) {
+        return null;
+    }
+};
+
+export const getConnectedAccount = async (): Promise<string | null> => {
+  if (typeof window !== 'undefined') {
+    // Prevent auto-connect if user explicitly disconnected previously
+    if (!localStorage.getItem(WALLET_CONNECTED_KEY)) {
+        return null;
+    }
+
+    if ((window as any).ethereum) {
+        try {
+        const walletClient = createWalletClient({
+            chain: intuitionTestnet,
+            transport: custom((window as any).ethereum),
+        });
+        const [address] = await walletClient.getAddresses();
+        return address ? getAddress(address) : null;
+        } catch { return null; }
+    }
   }
   return null;
 };
@@ -83,8 +164,6 @@ export const switchNetwork = async () => {
                 params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
             });
         } catch (switchError: any) {
-            // Mobile wallets might return different error codes or messages for "chain not found"
-            // We try to add the chain if switching fails for *any* reason that suggests it's missing
             if (
                 switchError.code === 4902 || 
                 switchError.data?.originalError?.code === 4902 ||
@@ -94,7 +173,6 @@ export const switchNetwork = async () => {
                 await addNetwork();
             } else {
                 console.error("Switch network error:", switchError);
-                // Fallback attempt to add anyway
                 await addNetwork();
             }
         }
@@ -137,8 +215,7 @@ export const getProtocolConfig = async () => {
             minShare: formatEther(config.minShare)
         };
     } catch (e) {
-        // console.error("Failed to fetch protocol config", e);
-        return { minDeposit: '0.001', minShare: '0.001' }; // Fallback
+        return { minDeposit: '0.001', minShare: '0.001' }; 
     }
 };
 
@@ -153,11 +230,10 @@ export const getQuoteRedeem = async (sharesAmount: string, termId: string, accou
             abi: MULTI_VAULT_ABI,
             functionName: 'previewRedeem',
             args: [termIdBytes32, BigInt(curveId), sharesWei]
-        } as any) as [bigint, bigint]; // [assetsAfterFees, sharesUsed]
+        } as any) as [bigint, bigint]; 
 
         return formatEther(result[0]);
     } catch (e) {
-        // console.warn("getQuoteRedeem failed", e);
         return "0";
     }
 };
@@ -171,13 +247,15 @@ export const connectWallet = async (): Promise<string | null> => {
           transport: custom((window as any).ethereum),
         });
         const [address] = await walletClient.requestAddresses();
-        
-        // Attempt switch quietly
         try { 
             await walletClient.switchChain({ id: intuitionTestnet.id }); 
         } catch (e) { 
-            // If simple switch fails, try the robust switch/add logic
             try { await switchNetwork(); } catch (e2) { console.warn("Auto-switch failed", e2); }
+        }
+        
+        // Persist connected state
+        if (address) {
+            localStorage.setItem(WALLET_CONNECTED_KEY, 'true');
         }
         
         return address ? getAddress(address) : null;
@@ -186,10 +264,9 @@ export const connectWallet = async (): Promise<string | null> => {
         return null; 
       }
     } else {
-      // Mobile Deep Linking Logic
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       if (isMobile) {
-        const currentUrl = window.location.href.split('//')[1]; // Remove protocol
+        const currentUrl = window.location.href.split('//')[1];
         const deepLink = `https://metamask.app.link/dapp/${currentUrl}`;
         window.location.href = deepLink;
         return null;
@@ -214,7 +291,6 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   });
   const assets = parseEther(amount);
   
-  // Simulate to get expected shares
   const { request, result } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
@@ -225,7 +301,6 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   });
   
   const hash = await walletClient.writeContract(request as any);
-  // result is shares[] (uint256[])
   const shares = (result as unknown as bigint[])[0]; 
   
   return { hash, shares };
@@ -243,7 +318,6 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
   });
   const shares = parseEther(sharesAmount);
   
-  // Simulate to get expected assets
   const { request, result } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
@@ -253,13 +327,11 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
   });
   
   const hash = await walletClient.writeContract(request as any);
-  // result is assets[] (uint256[])
   const assets = (result as unknown as bigint[])[0];
   
   return { hash, assets };
 };
 
-// --- ROBUST CHECK-OR-CREATE PATTERN FOR OPINIONS ---
 export const publishOpinion = async (
   text: string,
   agentId: string,
@@ -275,15 +347,12 @@ export const publishOpinion = async (
     account: checksumAddress,
   });
 
-  // 1. Prepare Data
   const textHex = stringToHex(text);
   const atomFee = parseEther("0.0001");
   const tripleFee = parseEther("0.0001");
 
-  // 2. Deterministic ID Check
   const commentAtomId = keccak256(textHex);
 
-  // 3. Check if Exists On-Chain
   const exists = await publicClient.readContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
@@ -291,7 +360,6 @@ export const publishOpinion = async (
     args: [commentAtomId]
   } as unknown as any) as boolean;
 
-  // 4. Create Atom if needed (Idempotent)
   if (!exists) {
     try {
       const { request: atomReq } = await publicClient.simulateContract({
@@ -305,17 +373,14 @@ export const publishOpinion = async (
       const atomTx = await walletClient.writeContract(atomReq as any);
       await publicClient.waitForTransactionReceipt({ hash: atomTx });
     } catch (e: any) {
-      console.warn("Atom creation skipped or failed (likely exists):", e);
+      console.warn("Atom creation skipped or failed:", e);
     }
   }
 
-  // 5. Create Triple (Agent -> HAS_OPINION -> Comment)
   const subjectId = pad(agentId as Hex, { size: 32 });
-  // We use a generic predicate "HAS_OPINION" to avoid complex checks
   const genericPredHex = stringToHex("HAS_OPINION");
   const predicateId = keccak256(genericPredHex);
   
-  // Check predicate existence
   const predExists = await publicClient.readContract({
       address: MULTI_VAULT_ADDRESS as `0x${string}`,
       abi: MULTI_VAULT_ABI,
@@ -338,7 +403,6 @@ export const publishOpinion = async (
       } catch (e) { console.warn("Predicate creation skipped"); }
   }
 
-  // Finally create the Triple link
   const { request: tripleReq } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,

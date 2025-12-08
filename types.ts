@@ -13,13 +13,29 @@ export interface Account {
   curveId?: any;
   totalAssets?: string; // Real Volume (in Wei)
   totalShares?: string; // Total Supply (in Wei)
+  currentSharePrice?: string; // Spot Price (in Wei)
 }
 
 export interface Triple {
-  subject: { term_id: string; label: string };
+  id?: string;
+  subject: { term_id: string; label: string; image?: string; type?: string };
   predicate: { term_id: string; label: string };
-  object: { term_id: string; label: string };
+  object: { term_id: string; label: string; image?: string; type?: string };
   block_number?: number;
+  transaction_hash?: string;
+  timestamp?: number;
+}
+
+export interface Claim {
+  id: string;
+  subject: { id: string; label: string; image?: string };
+  predicate: string; // Changed from union type to string to support dynamic predicates
+  object: { id: string; label: string; image?: string; type?: string };
+  confidence: number; // 0-100
+  timestamp: number;
+  txHash?: string;
+  reason?: string;
+  block?: number;
 }
 
 export interface Position {
@@ -37,6 +53,7 @@ export interface Transaction {
   timestamp: number;
   vaultId: string;
   assetLabel?: string;
+  user?: string;
 }
 
 // UI Types
