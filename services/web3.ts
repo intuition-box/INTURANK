@@ -93,7 +93,7 @@ export const fetchAtomNameFromChain = async (termId: string): Promise<string | n
             abi: MULTI_VAULT_ABI,
             functionName: 'getAtom',
             args: [termIdBytes32]
-        }) as Hex;
+        } as any) as Hex;
 
         if (!data || data === '0x') return null;
 
