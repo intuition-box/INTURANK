@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
+import { getWalletBalance, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { User, PieChart as PieIcon, Activity, Clock, Zap, Download, Shield } from 'lucide-react';
+import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers } from 'lucide-react';
 import { formatEther } from 'viem';
 import { Transaction } from '../types';
 import { calculateCategoryExposure, calculateSentimentBias } from '../services/analytics';
@@ -28,7 +28,7 @@ const PublicProfile: React.FC = () => {
   const fetchUserData = async (addr: string) => {
     setLoading(true);
     try {
-      // 1. History & Transactions (Only On-Chain for public view, plus local if available in storage but usually not)
+      // 1. History & Transactions (Only On-Chain for public view)
       const chainHistory = await getUserHistory(addr).catch(() => []);
       
       const mergedHistory = chainHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -40,8 +40,10 @@ const PublicProfile: React.FC = () => {
       // 3. Positions & Exposure
       const graphPositions = await getUserPositions(addr).catch(() => []);
       
+      // CRITICAL: Extract IDs from history too, ensuring we scan everything interacted with
       const uniqueVaultIds = Array.from(new Set([
           ...graphPositions.map((p: any) => p.vault?.term_id?.toLowerCase()),
+          ...chainHistory.map(tx => tx.vaultId?.toLowerCase())
       ])).filter(Boolean) as string[];
 
       const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
@@ -84,7 +86,7 @@ const PublicProfile: React.FC = () => {
     }
   };
 
-  if (!address) return <div className="min-h-screen flex items-center justify-center text-red-500">INVALID ADDRESS</div>;
+  if (!address) return <div className="min-h-screen flex items-center justify-center text-red-500 font-mono">INVALID ADDRESS</div>;
 
   return (
     <div className="min-h-screen bg-intuition-dark pt-8 pb-20 px-4 max-w-7xl mx-auto">
@@ -108,17 +110,23 @@ const PublicProfile: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-black border border-intuition-border p-6 clip-path-slant">
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Total Value Locked</div>
+              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
+                  <Shield size={12} /> Total Value Locked
+              </div>
               <div className="text-3xl font-black text-white font-display text-glow">{portfolioValue} <span className="text-sm text-intuition-primary">{CURRENCY_SYMBOL}</span></div>
           </div>
           <div className="bg-black border border-intuition-border p-6 clip-path-slant">
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Semantic Footprint</div>
+              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
+                  <Layers size={12} /> Semantic Footprint
+              </div>
               <div className="text-3xl font-black text-white font-display flex items-center gap-2">
                   {semanticFootprint} <span className="text-xs text-slate-500 font-mono">TXS</span>
               </div>
           </div>
           <div className="bg-black border border-intuition-border p-6 clip-path-slant relative overflow-hidden">
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Sentiment Bias</div>
+              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
+                  <TrendingUp size={12} /> Sentiment Bias
+              </div>
               <div className="relative h-4 bg-slate-800 rounded-full mt-4 overflow-hidden flex">
                   <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success h-full transition-all duration-1000"></div>
                   <div style={{ width: `${sentimentBias.distrust}%` }} className="bg-intuition-danger h-full transition-all duration-1000"></div>
@@ -133,37 +141,50 @@ const PublicProfile: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="bg-black border border-intuition-border p-6 clip-path-slant h-[300px]">
               <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><PieIcon size={14}/> Category Exposure</h3>
-              <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                      <Pie data={exposureData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                          {exposureData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.5)" />
-                          ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#000', border: '1px solid #333' }}
-                        itemStyle={{ fontSize: '12px', fontFamily: 'monospace' }}
-                      />
-                  </PieChart>
-              </ResponsiveContainer>
+              {exposureData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                          <Pie data={exposureData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                              {exposureData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.5)" />
+                              ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#000', border: '1px solid #333' }}
+                            itemStyle={{ fontSize: '12px', fontFamily: 'monospace' }}
+                            formatter={(value: number) => `${value.toFixed(1)}%`}
+                          />
+                      </PieChart>
+                  </ResponsiveContainer>
+              ) : (
+                  <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs border border-dashed border-slate-800 rounded">
+                      NO ASSETS TO CATEGORIZE
+                  </div>
+              )}
           </div>
 
           <div className="lg:col-span-2 bg-black border border-intuition-border p-6 clip-path-slant h-[300px]">
               <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><Activity size={14}/> Recent Activity Volume</h3>
-              <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history.length > 0 ? history.map((_, i) => ({ val: Math.random() * 50 })) : []}>
-                      <defs>
-                          <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.2}/>
-                              <stop offset="95%" stopColor="#94a3b8" stopOpacity={0}/>
-                          </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis hide />
-                      <YAxis hide />
-                      <Area type="monotone" dataKey="val" stroke="#94a3b8" fillOpacity={1} fill="url(#colorVal)" />
-                  </AreaChart>
-              </ResponsiveContainer>
+              {history.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={history.map((_, i) => ({ val: Math.random() * 50 + 10 }))}>
+                          <defs>
+                              <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.2}/>
+                                  <stop offset="95%" stopColor="#94a3b8" stopOpacity={0}/>
+                              </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+                          <XAxis hide />
+                          <YAxis hide />
+                          <Area type="monotone" dataKey="val" stroke="#94a3b8" fillOpacity={1} fill="url(#colorVal)" />
+                      </AreaChart>
+                  </ResponsiveContainer>
+              ) : (
+                  <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs border border-dashed border-slate-800 rounded">
+                      NO ACTIVITY LOGGED ON-CHAIN
+                  </div>
+              )}
           </div>
       </div>
 
@@ -179,23 +200,30 @@ const PublicProfile: React.FC = () => {
                           <th className="px-6 py-4">Category</th>
                           <th className="px-6 py-4 text-right">Shares</th>
                           <th className="px-6 py-4 text-right">Value</th>
+                          <th className="px-6 py-4 text-right">Action</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                       {positions.length > 0 ? positions.map((p, i) => (
                           <tr key={i} className="hover:bg-white/5 transition-colors group">
                               <td className="px-6 py-4">
-                                  <div className="font-bold text-white group-hover:text-intuition-primary transition-colors">{p.atom?.label || p.id.slice(0,8)}</div>
-                                  <div className="text-[10px] text-slate-600">{p.id}</div>
+                                  <Link to={`/markets/${p.id}`} className="flex items-center gap-3 group-hover:text-intuition-primary transition-colors">
+                                      {p.atom?.image ? <img src={p.atom.image} className="w-6 h-6 rounded-full object-cover border border-white/10" /> : <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-[10px]">{p.atom?.label?.[0]}</div>}
+                                      <div className="font-bold">{p.atom?.label || p.id.slice(0,8)}</div>
+                                  </Link>
+                                  <div className="text-[10px] text-slate-600 font-mono mt-0.5">{p.id.slice(0, 12)}...</div>
                               </td>
                               <td className="px-6 py-4 text-xs text-slate-500">
-                                  <span className="bg-slate-800 px-2 py-1 rounded border border-slate-700">{p.atom ? calculateCategoryExposure([{value: 1, atom: p.atom}])[0]?.name : 'UNKNOWN'}</span>
+                                  <span className="bg-slate-900 px-2 py-1 rounded border border-slate-700">{p.atom ? calculateCategoryExposure([{value: 1, atom: p.atom}])[0]?.name : 'UNKNOWN'}</span>
                               </td>
-                              <td className="px-6 py-4 text-right">{p.shares.toFixed(4)}</td>
+                              <td className="px-6 py-4 text-right font-mono">{p.shares.toFixed(4)}</td>
                               <td className="px-6 py-4 text-right text-emerald-400">{p.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {CURRENCY_SYMBOL}</td>
+                              <td className="px-6 py-4 text-right">
+                                  <Link to={`/markets/${p.id}`} className="px-3 py-1 bg-white/5 border border-white/10 hover:bg-intuition-primary/20 hover:border-intuition-primary hover:text-intuition-primary text-[10px] font-bold rounded transition-colors">VIEW</Link>
+                              </td>
                           </tr>
                       )) : (
-                          <tr><td colSpan={4} className="p-12 text-center text-slate-600 font-mono italic">
+                          <tr><td colSpan={5} className="p-12 text-center text-slate-600 font-mono italic">
                               {loading ? 'SCANNING LEDGER...' : 'NO ACTIVE POSITIONS FOUND ON-CHAIN'}
                           </td></tr>
                       )}

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info } from 'lucide-react';
+import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins } from 'lucide-react';
 import { formatEther } from 'viem';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -78,10 +78,11 @@ const Portfolio: React.FC = () => {
       // 4. Positions & Exposure
       const graphPositions = await getUserPositions(address).catch(() => []);
       
-      // normalize IDs to lowercase to avoid mismatches
+      // CRITICAL: Merge IDs from Graph Positions AND History (Chain + Local) to ensure we check everything
       const uniqueVaultIds = Array.from(new Set([
           ...graphPositions.map((p: any) => p.vault?.term_id?.toLowerCase()),
-          ...localHistory.map(tx => tx.vaultId?.toLowerCase())
+          ...localHistory.map(tx => tx.vaultId?.toLowerCase()),
+          ...chainHistory.map(tx => tx.vaultId?.toLowerCase())
       ])).filter(Boolean) as string[];
 
       const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
@@ -156,32 +157,56 @@ const Portfolio: React.FC = () => {
     <div className="min-h-screen bg-intuition-dark pt-8 pb-20 px-4 max-w-7xl mx-auto">
       
       {/* Header Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-black border border-intuition-primary/50 p-6 clip-path-slant">
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Net Worth</div>
-              <div className="text-3xl font-black text-white font-display text-glow">{portfolioValue} <span className="text-sm text-intuition-primary">{CURRENCY_SYMBOL}</span></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Liquid Balance */}
+          <div className="bg-black border border-intuition-border p-6 clip-path-slant relative group hover:border-intuition-primary/50 transition-colors">
+              <div className="absolute top-0 right-0 p-3 opacity-20"><Wallet size={40} /></div>
+              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
+                  <span className="w-1 h-1 bg-white rounded-full"></span> Liquid Balance
+              </div>
+              <div className="text-3xl font-black text-white font-display">{balance}</div>
+              <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
-          <div className="bg-black border border-intuition-border p-6 clip-path-slant">
+
+          {/* Net Worth (Positions) */}
+          <div className="bg-black border border-intuition-primary/50 p-6 clip-path-slant relative group">
+              <div className="absolute top-0 right-0 p-3 opacity-20"><Coins size={40} /></div>
+              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
+                  <span className="w-1 h-1 bg-intuition-primary rounded-full animate-pulse"></span> Net Worth (Locked)
+              </div>
+              <div className="text-3xl font-black text-white font-display text-glow">{portfolioValue}</div>
+              <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
+          </div>
+
+          {/* Est PnL */}
+          <div className={`bg-black border p-6 clip-path-slant relative ${netPnL >= 0 ? 'border-intuition-success/30' : 'border-intuition-danger/30'}`}>
+              <div className="absolute top-0 right-0 p-3 opacity-20"><TrendingUp size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Est. PnL</div>
               <div className={`text-3xl font-black font-display ${netPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {netPnL > 0 ? '+' : ''}{netPnL.toFixed(4)} <span className="text-sm text-slate-500">{CURRENCY_SYMBOL}</span>
+                  {netPnL > 0 ? '+' : ''}{netPnL.toFixed(4)}
               </div>
+              <div className="text-xs text-slate-500 font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
-          <div className="bg-black border border-intuition-border p-6 clip-path-slant">
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Semantic Footprint</div>
-              <div className="text-3xl font-black text-white font-display flex items-center gap-2">
-                  {semanticFootprint} <span className="text-xs text-slate-500 font-mono">TXS</span>
-              </div>
-          </div>
+
+          {/* Sentiment Bias */}
           <div className="bg-black border border-intuition-border p-6 clip-path-slant relative overflow-hidden">
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Sentiment Bias</div>
-              <div className="relative h-4 bg-slate-800 rounded-full mt-4 overflow-hidden flex">
-                  <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success h-full transition-all duration-1000"></div>
-                  <div style={{ width: `${sentimentBias.distrust}%` }} className="bg-intuition-danger h-full transition-all duration-1000"></div>
+              <div className="flex justify-between items-center mb-2">
+                  <div className="text-[10px] font-mono text-slate-500 uppercase">Sentiment Bias</div>
+                  <div className="text-[9px] font-mono text-slate-600 bg-slate-900 px-1 rounded border border-slate-800">{semanticFootprint} TXS</div>
               </div>
-              <div className="flex justify-between text-[10px] mt-1 font-mono font-bold">
-                  <span className="text-intuition-success">{sentimentBias.trust.toFixed(0)}% BULL</span>
-                  <span className="text-intuition-danger">{sentimentBias.distrust.toFixed(0)}% BEAR</span>
+              
+              <div className="relative h-6 bg-slate-800 rounded-sm mt-2 overflow-hidden flex border border-slate-700">
+                  <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black">
+                      {sentimentBias.trust > 20 && `${sentimentBias.trust.toFixed(0)}%`}
+                  </div>
+                  <div style={{ width: `${sentimentBias.distrust}%` }} className="bg-intuition-danger h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black">
+                      {sentimentBias.distrust > 20 && `${sentimentBias.distrust.toFixed(0)}%`}
+                  </div>
+              </div>
+              
+              <div className="flex justify-between text-[9px] mt-2 font-mono font-bold text-slate-500">
+                  <span>BULLISH</span>
+                  <span>BEARISH</span>
               </div>
           </div>
       </div>
@@ -206,7 +231,9 @@ const Portfolio: React.FC = () => {
                       </PieChart>
                   </ResponsiveContainer>
               ) : (
-                  <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs">NO ASSETS TO CATEGORIZE</div>
+                  <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs border border-dashed border-slate-800 rounded">
+                      NO ASSETS TO CATEGORIZE
+                  </div>
               )}
           </div>
 
@@ -234,7 +261,9 @@ const Portfolio: React.FC = () => {
                       </AreaChart>
                   </ResponsiveContainer>
               ) : (
-                  <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs">NO TRANSACTION HISTORY</div>
+                  <div className="h-full flex items-center justify-center text-slate-600 font-mono text-xs border border-dashed border-slate-800 rounded">
+                      NO TRANSACTION HISTORY FOUND
+                  </div>
               )}
           </div>
       </div>
@@ -245,10 +274,10 @@ const Portfolio: React.FC = () => {
               <h3 className="font-bold text-white font-display tracking-widest flex items-center gap-2"><Zap size={16} className="text-intuition-warning"/> ACTIVE_POSITIONS</h3>
               <button 
                 onClick={handleRefresh} 
-                className="text-slate-500 hover:text-white transition-colors"
+                className="text-slate-500 hover:text-white transition-colors flex items-center gap-1 text-[10px] font-mono border border-slate-800 px-2 py-1 rounded"
                 title="Refresh Assets"
               >
-                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                  <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> FORCE_SYNC
               </button>
           </div>
           <div className="overflow-x-auto min-h-[150px]">
@@ -267,13 +296,13 @@ const Portfolio: React.FC = () => {
                           <tr key={i} className="hover:bg-white/5 transition-colors group">
                               <td className="px-6 py-4">
                                   <Link to={`/markets/${p.id}`} className="flex items-center gap-3 group-hover:text-intuition-primary transition-colors">
-                                      {p.atom?.image && <img src={p.atom.image} className="w-6 h-6 rounded-full object-cover border border-white/10" />}
+                                      {p.atom?.image ? <img src={p.atom.image} className="w-6 h-6 rounded-full object-cover border border-white/10" /> : <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-[10px]">{p.atom?.label?.[0]}</div>}
                                       <div className="font-bold">{p.atom?.label || p.id.slice(0,8)}</div>
                                   </Link>
-                                  <div className="text-[10px] text-slate-600 font-mono">{p.id}</div>
+                                  <div className="text-[10px] text-slate-600 font-mono mt-0.5">{p.id.slice(0, 12)}...</div>
                               </td>
                               <td className="px-6 py-4 text-xs text-slate-500">
-                                  <span className="bg-slate-800 px-2 py-1 rounded border border-slate-700">{p.atom ? calculateCategoryExposure([{value: 1, atom: p.atom}])[0]?.name : 'UNKNOWN'}</span>
+                                  <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800">{p.atom ? calculateCategoryExposure([{value: 1, atom: p.atom}])[0]?.name : 'UNKNOWN'}</span>
                               </td>
                               <td className="px-6 py-4 text-right font-mono">{p.shares.toFixed(4)}</td>
                               <td className="px-6 py-4 text-right text-intuition-success font-mono font-bold">{p.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {CURRENCY_SYMBOL}</td>
@@ -283,7 +312,7 @@ const Portfolio: React.FC = () => {
                           </tr>
                       )) : (
                           <tr><td colSpan={5} className="p-12 text-center text-slate-600 font-mono italic">
-                              {loading ? 'SCANNING LEDGER...' : 'NO ACTIVE POSITIONS FOUND ON-CHAIN'}
+                              {loading ? 'SCANNING ON-CHAIN LEDGER...' : 'NO ACTIVE POSITIONS FOUND'}
                           </td></tr>
                       )}
                   </tbody>
@@ -313,7 +342,7 @@ const Portfolio: React.FC = () => {
                               <td className="px-6 py-3 text-slate-500">{new Date(tx.timestamp).toLocaleString()}</td>
                               <td className={`px-6 py-3 font-bold ${tx.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-rose-400'}`}>{tx.type}</td>
                               <td className="px-6 py-3 text-white">
-                                  <Link to={`/markets/${tx.vaultId}`} className="hover:underline">{tx.assetLabel || tx.vaultId?.slice(0,8) || 'Unknown'}</Link>
+                                  <Link to={`/markets/${tx.vaultId}`} className="hover:underline hover:text-intuition-primary transition-colors">{tx.assetLabel || tx.vaultId?.slice(0,8) || 'Unknown'}</Link>
                               </td>
                               <td className="px-6 py-3 text-right">{parseFloat(formatEther(BigInt(tx.assets || '0'))).toFixed(4)}</td>
                           </tr>
