@@ -1,13 +1,13 @@
 import { GRAPHQL_URL } from '../constants';
 import { Transaction, Claim } from '../types';
-import { hexToString } from 'viem';
+import { hexToString, formatEther, parseEther } from 'viem';
 
 // -------------------------------------------------------
 // BASIC FETCH WRAPPER WITH TIMEOUT
 // -------------------------------------------------------
 const fetchGraphQL = async (query: string, variables: any = {}) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased to 15s
+  const timeoutId = setTimeout(() => controller.abort(), 15000); 
 
   try {
     const response = await fetch(GRAPHQL_URL, {
@@ -15,7 +15,7 @@ const fetchGraphQL = async (query: string, variables: any = {}) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, variables }),
       signal: controller.signal,
-      cache: 'no-store' // CRITICAL: Prevent browser caching to ensure live feed updates
+      cache: 'no-store' 
     });
     clearTimeout(timeoutId);
 
@@ -40,12 +40,6 @@ const fetchGraphQL = async (query: string, variables: any = {}) => {
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
 
-const cleanString = (str: string) => {
-  // Remove non-printable characters and trim
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
-};
-
 const resolveLabel = (atom: any, fallbackId: string) => {
     // 1. Try explicit label
     if (atom?.label && atom.label !== '0x' && !atom.label.startsWith('0x00')) {
@@ -55,17 +49,19 @@ const resolveLabel = (atom: any, fallbackId: string) => {
     // 2. Try decoding data
     if (atom?.data && atom.data !== '0x') {
         try {
-            const decoded = hexToString(atom.data as `0x${string}`);
-            const cleaned = cleanString(decoded);
-            // Ensure it looks like a valid name (at least 2 chars, not just whitespace)
-            if (cleaned && cleaned.length > 1) return cleaned;
+            // Ensure 0x prefix
+            const raw = atom.data.startsWith('0x') ? atom.data : `0x${atom.data}`;
+            const decoded = hexToString(raw as `0x${string}`);
+            // Remove null bytes and non-printable chars
+            const cleaned = decoded.replace(/\0/g, '').trim();
+            if (cleaned && cleaned.length > 0) return cleaned;
         } catch (e) {
             // ignore decode error
         }
     }
 
     // 3. Fallback to ID
-    return `Agent ${fallbackId.slice(0, 6)}...`;
+    return fallbackId ? `${fallbackId.slice(0, 6)}...` : 'Unknown';
 };
 
 // Helper to chunk arrays to avoid GraphQL query limits
@@ -98,7 +94,6 @@ export const getAllAgents = async () => {
     const allVaults = vaultData?.vaults ?? [];
     if (allVaults.length === 0) return [];
 
-    // DEDUPLICATION: Keep only the first occurrence of each term_id
     const uniqueVaultsMap = new Map<string, any>();
     allVaults.forEach((v: any) => {
         if (!v.term_id) return;
@@ -111,14 +106,13 @@ export const getAllAgents = async () => {
 
     const termIds = vaults.map((v: any) => v.term_id);
     
-    // ROBUST ID COLLECTION: Collect both raw and lowercase IDs to ensure hits
     const queryIds = Array.from(new Set([
         ...termIds, 
         ...termIds.map(id => id.toLowerCase())
     ]));
 
-    const atomQuery = `
-      query GetAtoms ($ids: [String!]!) {
+    const dataQuery = `
+      query GetAgentsData ($ids: [String!]!) {
         atoms(where: { term_id: { _in: $ids } }) {
           term_id
           label
@@ -127,28 +121,54 @@ export const getAllAgents = async () => {
           type
           creator { id label }
         }
+        triples(where: { term_id: { _in: $ids } }) {
+          term_id
+          subject { label term_id image } 
+          predicate { label }
+          object { label term_id image }
+        }
       }
     `;
 
-    // Process in chunks
     const idChunks = chunkArray(queryIds, 200);
     let allAtoms: any[] = [];
+    let allTriples: any[] = [];
 
     for (const chunk of idChunks) {
-        const chunkData = await fetchGraphQL(atomQuery, { ids: chunk });
+        const chunkData = await fetchGraphQL(dataQuery, { ids: chunk });
         if (chunkData?.atoms) {
             allAtoms = [...allAtoms, ...chunkData.atoms];
+        }
+        if (chunkData?.triples) {
+            allTriples = [...allTriples, ...chunkData.triples];
         }
     }
 
     return vaults.map((v: any) => {
       const a = allAtoms.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+      const t = allTriples.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+
+      let label = resolveLabel(a, v.term_id);
+      let type = (a?.type || "ATOM").toUpperCase();
+      let image = a?.image;
+
+      if (t) {
+          const subj = t.subject?.label || '...';
+          const pred = t.predicate?.label || 'LINK';
+          const obj = t.object?.label || '...';
+          
+          if (subj !== '...' || obj !== '...') {
+              label = `${subj} ${pred} ${obj}`;
+              type = "CLAIM";
+              image = t.subject?.image || t.object?.image;
+          }
+      }
 
       return {
         id: v.term_id,
-        label: resolveLabel(a, v.term_id),
-        image: a?.image,
-        type: a?.type || "ATOM",
+        label: label,
+        image: image,
+        type: type,
         creator: a?.creator,
         totalAssets: v.total_assets,
         totalShares: v.total_shares,
@@ -163,12 +183,71 @@ export const getAllAgents = async () => {
 };
 
 // -------------------------------------------------------
-// 2. GET AGENT BY ID
+// 1b. GET LISTS (Specialized)
+// -------------------------------------------------------
+export const getLists = async () => {
+  const query = `
+    query GetLists {
+      atoms(limit: 50, where: { image: { _is_null: false } }) {
+        term_id
+        label
+        image
+        type
+        creator { id label }
+      }
+    }
+  `;
+  
+  try {
+      const data = await fetchGraphQL(query);
+      const listAtoms = data?.atoms || [];
+      if (listAtoms.length === 0) return [];
+
+      const listIds = listAtoms.map((a: any) => a.term_id);
+      
+      const triplesQuery = `
+        query GetListItems($ids: [String!]!) {
+          triples(where: { subject: { term_id: { _in: $ids } } }, limit: 200) {
+            subject { term_id }
+            object { term_id label image }
+          }
+        }
+      `;
+      
+      const triplesData = await fetchGraphQL(triplesQuery, { ids: listIds });
+      const triples = triplesData?.triples || [];
+
+      return listAtoms.map((atom: any) => {
+          const items = triples
+            .filter((t: any) => normalize(t.subject?.term_id) === normalize(atom.term_id))
+            .map((t: any) => t.object)
+            .filter((obj: any) => obj && (obj.image || obj.label));
+            
+          const uniqueItems = Array.from(new Map(items.map((i:any) => [i.term_id, i])).values());
+
+          return {
+              id: atom.term_id,
+              label: resolveLabel(atom, atom.term_id),
+              image: atom.image,
+              type: 'LIST',
+              creator: atom.creator,
+              items: uniqueItems.slice(0, 6),
+              totalItems: uniqueItems.length
+          };
+      });
+  } catch (e) {
+      console.warn("getLists failed", e);
+      return [];
+  }
+};
+
+// -------------------------------------------------------
+// 2. GET AGENT BY ID (UPDATED)
 // -------------------------------------------------------
 export const getAgentById = async (termId: string) => {
   const idLower = termId.toLowerCase();
+  const idsToQuery = [termId, idLower];
   
-  // Try finding by raw ID or lowercase ID to catch edge cases
   const atomQ = `
     query GetAtomDetails ($ids: [String!]!) {
       atoms(where: { term_id: { _in: $ids } }) {
@@ -194,18 +273,28 @@ export const getAgentById = async (termId: string) => {
     }
   `;
 
-  const idsToQuery = [termId, idLower];
+  const tripleQ = `
+    query GetTripleDetails ($ids: [String!]!) {
+      triples(where: { term_id: { _in: $ids } }) {
+        subject { label term_id data }
+        predicate { label term_id }
+        object { label term_id data }
+      }
+    }
+  `;
 
   try {
-    const [atomRes, vaultRes] = await Promise.all([
+    const [atomRes, vaultRes, tripleRes] = await Promise.all([
       fetchGraphQL(atomQ, { ids: idsToQuery }),
-      fetchGraphQL(vaultQ, { ids: idsToQuery })
+      fetchGraphQL(vaultQ, { ids: idsToQuery }),
+      fetchGraphQL(tripleQ, { ids: idsToQuery })
     ]);
 
     const atom = atomRes?.atoms?.[0];
     const vault = vaultRes?.vaults?.[0];
+    const triple = tripleRes?.triples?.[0];
 
-    if (!atom && !vault) {
+    if (!atom && !vault && !triple) {
        return {
           id: termId,
           label: 'Unknown Agent',
@@ -218,11 +307,24 @@ export const getAgentById = async (termId: string) => {
        };
     }
 
+    let resolvedLabel = 'Agent (Unlabeled)';
+    let type = (atom?.type || "ATOM").toUpperCase();
+
+    if (triple) {
+        const subj = resolveLabel(triple.subject, triple.subject?.term_id);
+        const pred = triple.predicate?.label || 'LINKS TO';
+        const obj = resolveLabel(triple.object, triple.object?.term_id);
+        resolvedLabel = `${subj} ${pred} ${obj}`;
+        type = "CLAIM";
+    } else {
+        resolvedLabel = resolveLabel(atom, termId);
+    }
+
     return {
       id: termId,
-      label: resolveLabel(atom, termId),
+      label: resolvedLabel,
       image: atom?.image,
-      type: atom?.type || "ATOM",
+      type: type,
       creator: atom?.creator,
       totalAssets: vault?.total_assets ?? "0",
       totalShares: vault?.total_shares ?? "0",
@@ -252,6 +354,7 @@ export const getAgentTriples = async (termId: string) => {
   const query = `
     query GetAgentTriples ($ids: [String!]!) {
       triples(where: { subject: { term_id: { _in: $ids } } }) {
+        term_id
         predicate { label term_id }
         object { label term_id image type }
         block_number
@@ -278,6 +381,7 @@ export const getIncomingTriples = async (termId: string) => {
         limit: 20
         order_by: { block_number: desc }
       ) {
+        term_id
         subject { label term_id image type }
         predicate { label term_id }
         block_number
@@ -293,7 +397,7 @@ export const getIncomingTriples = async (termId: string) => {
 };
 
 // -------------------------------------------------------
-// 4. OPINIONS (Agent Profile)
+// 4. OPINIONS
 // -------------------------------------------------------
 export const getAgentOpinions = async (termId: string) => {
   const ids = [termId, termId.toLowerCase()];
@@ -339,9 +443,7 @@ export const getAgentOpinions = async (termId: string) => {
 // 5. USER POSITIONS
 // -------------------------------------------------------
 export const getUserPositions = async (address: string) => {
-  // Robust case-handling: Query both raw and lowercase address
   const ids = [address, address.toLowerCase()];
-  
   const query = `
     query GetUserPositions ($ids: [String!]!) {
       positions(where: { account: { id: { _in: $ids } } }) {
@@ -363,13 +465,8 @@ export const getUserPositions = async (address: string) => {
 // -------------------------------------------------------
 // 6. USER HISTORY
 // -------------------------------------------------------
-export const getUserHistory = async (
-  userAddress: string
-): Promise<Transaction[]> => {
-
+export const getUserHistory = async (userAddress: string): Promise<Transaction[]> => {
   const ids = [userAddress, userAddress.toLowerCase()];
-
-  // Removed 'assets' from selection as it may not exist in this subgraph version
   const query = `
     query GetUserHistory($ids: [String!]!) {
       deposits(
@@ -383,7 +480,6 @@ export const getUserHistory = async (
         sender { id }
         vault { term_id }
       }
-
       redemptions(
         where: { receiver: { id: { _in: $ids } } }
         order_by: { created_at: desc }
@@ -405,7 +501,7 @@ export const getUserHistory = async (
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", // Fallback as assets field removed
+      assets: "0", 
       timestamp: new Date(d.created_at).getTime(),
       vaultId: d.vault?.term_id,
       assetLabel: d.vault?.term_id?.slice(0, 6),
@@ -437,7 +533,6 @@ export const getUserHistory = async (
 export const getVaultsByIds = async (ids: string[]) => {
     if (ids.length === 0) return [];
     
-    // Robust ID query
     const queryIds = Array.from(new Set([
         ...ids, 
         ...ids.map(id => id.toLowerCase())
@@ -473,7 +568,7 @@ export const getVaultsByIds = async (ids: string[]) => {
                  id: v.term_id,
                  label: resolveLabel(a, v.term_id),
                  image: a?.image,
-                 type: a?.type || 'ATOM',
+                 type: (a?.type || 'ATOM').toUpperCase(),
                  curveId: v.curve_id,
                  currentSharePrice: v.current_share_price
              };
@@ -490,26 +585,10 @@ export const getVaultsByIds = async (ids: string[]) => {
 export const getNetworkStats = async () => {
   const query = `
     query GetNetworkStats {
-      vaults_aggregate {
-        aggregate {
-          sum { total_assets }
-        }
-      }
-      atoms_aggregate {
-        aggregate {
-          count
-        }
-      }
-      triples_aggregate {
-        aggregate {
-          count
-        }
-      }
-      positions_aggregate {
-        aggregate {
-          count
-        }
-      }
+      vaults_aggregate { aggregate { sum { total_assets } } }
+      atoms_aggregate { aggregate { count } }
+      triples_aggregate { aggregate { count } }
+      positions_aggregate { aggregate { count } }
     }
   `;
 
@@ -527,7 +606,7 @@ export const getNetworkStats = async () => {
 };
 
 // -------------------------------------------------------
-// 9. GET TOP POSITIONS (LEADERBOARD)
+// 9. GET TOP POSITIONS
 // -------------------------------------------------------
 export const getTopPositions = async () => {
    const query = `
@@ -535,9 +614,7 @@ export const getTopPositions = async () => {
        positions(limit: 100, order_by: { shares: desc }, where: { shares: { _gt: "0" } }) {
          account { id label image }
          shares
-         vault { 
-           term_id 
-         }
+         vault { term_id }
        }
      }
    `;
@@ -552,7 +629,6 @@ export const getTopPositions = async () => {
 
      let atoms: any[] = [];
      if (termIds.length > 0) {
-         // Query BOTH raw and lowercase to be safe
          const queryIds = Array.from(new Set([
              ...termIds, 
              ...termIds.map(id => id.toLowerCase())
@@ -775,7 +851,7 @@ export const searchGlobalAgents = async (searchTerm: string) => {
                  id: a.term_id,
                  label: resolveLabel(a, a.term_id),
                  image: a.image,
-                 type: a.type || "ATOM",
+                 type: (a.type || "ATOM").toUpperCase(),
                  creator: a.creator,
                  totalAssets: bestVault?.total_assets ?? "0",
                  totalShares: bestVault?.total_shares ?? "0",
@@ -796,7 +872,7 @@ export const searchGlobalAgents = async (searchTerm: string) => {
                  id: bestAddressVault.term_id,
                  label: resolveLabel(atomForVault, bestAddressVault.term_id),
                  image: atomForVault?.image,
-                 type: atomForVault?.type || "ATOM",
+                 type: (atomForVault?.type || "ATOM").toUpperCase(),
                  creator: atomForVault?.creator,
                  totalAssets: bestAddressVault.total_assets,
                  totalShares: bestAddressVault.total_shares,
@@ -821,10 +897,10 @@ export const searchGlobalAgents = async (searchTerm: string) => {
 // 12. GET GLOBAL CLAIMS (FEED)
 // -------------------------------------------------------
 export const getGlobalClaims = async (): Promise<Claim[]> => {
-  // CRITICAL: Ensure 'id' is NOT in the selection set
   const query = `
     query GetGlobalClaims {
       triples(order_by: { block_number: desc }, limit: 50) {
+        term_id
         block_number
         transaction_hash
         created_at
@@ -840,50 +916,35 @@ export const getGlobalClaims = async (): Promise<Claim[]> => {
     const triples = data?.triples ?? [];
 
     return triples.map((t: any) => {
+      // Robust null checking
+      if (!t.subject || !t.object) return null;
+
       const predLabelRaw = t.predicate?.label || 'SIGNAL';
       const predLabelLower = predLabelRaw.toLowerCase().trim();
       
-      let sentiment = 'SIGNAL'; // Default to a generic signal bucket
+      let sentiment = 'SIGNAL'; 
       
-      // MAPPING LOGIC: "support" -> TRUST, "oppose" -> DISTRUST
       if (
-          predLabelLower === 'support' || 
           predLabelLower.includes('support') || 
           predLabelLower.includes('trust') || 
-          predLabelLower.includes('like') || 
-          predLabelLower.includes('endorse') || 
-          predLabelLower.includes('bull') ||
-          predLabelLower.includes('agree')
+          predLabelLower.includes('like')
       ) {
         sentiment = 'TRUST';
       } else if (
-          predLabelLower === 'oppose' ||
           predLabelLower.includes('oppose') || 
           predLabelLower.includes('distrust') || 
-          predLabelLower.includes('dislike') || 
-          predLabelLower.includes('bear') || 
-          predLabelLower.includes('scam') || 
-          predLabelLower.includes('fake') || 
-          predLabelLower.includes('fraud') ||
-          predLabelLower.includes('doubt') ||
-          predLabelLower.includes('question')
+          predLabelLower.includes('dislike')
       ) {
         sentiment = 'DISTRUST';
       } else {
-        // IF it's not strictly support/oppose, use the ACTUAL predicate label
-        // This ensures "IS A", "WORKS AT", etc. are displayed correctly.
         sentiment = predLabelRaw.toUpperCase();
       }
 
-      // Confidence: Mock logic
-      const confidence = Math.floor(Math.random() * (99 - 60 + 1) + 60);
+      // Synthetic ID generation fallback
+      const syntheticId = t.term_id || (t.transaction_hash 
+          ? `${t.transaction_hash}_${t.object?.term_id}` 
+          : `local_${Date.now()}_${Math.random()}`);
 
-      // Synthetic ID generation
-      const syntheticId = t.transaction_hash 
-          ? `${t.transaction_hash}_${t.object?.term_id}_${t.subject?.term_id}` 
-          : `local_${Date.now()}_${Math.random()}`;
-
-      // Timestamp Logic: Use created_at if available, else Date.now()
       const timestamp = t.created_at ? new Date(t.created_at).getTime() : Date.now();
 
       return {
@@ -898,17 +959,115 @@ export const getGlobalClaims = async (): Promise<Claim[]> => {
             id: t.object?.term_id, 
             label: resolveLabel(t.object, t.object?.term_id),
             image: t.object?.image,
-            type: t.object?.type
+            type: (t.object?.type || 'ATOM').toUpperCase()
         },
-        confidence: confidence,
+        confidence: 75, // Placeholder confidence
         timestamp: timestamp, 
         txHash: t.transaction_hash,
         block: t.block_number,
         reason: t.object?.label?.length > 20 ? t.object.label : undefined 
       };
-    });
+    }).filter(Boolean) as Claim[]; // Filter out nulls
   } catch (e) {
     console.warn("Global Claims Fetch Failed", e);
+    return [];
+  }
+};
+
+// -------------------------------------------------------
+// 13. GET TOP CLAIMS (LEADERBOARD) - ROBUST (UPDATED TO USE MARKET CAP)
+// -------------------------------------------------------
+export const getTopClaims = async () => {
+  const query = `
+    query GetTopVaultsForClaims {
+      vaults(limit: 50, order_by: { total_assets: desc }, where: { total_assets: { _gt: "0" } }) {
+        term_id
+        total_assets
+        total_shares
+        current_share_price
+      }
+    }
+  `;
+
+  try {
+    const data = await fetchGraphQL(query);
+    const vaults = data?.vaults || [];
+    if (vaults.length === 0) return [];
+
+    const termIds = vaults.map((v: any) => v.term_id);
+    
+    // Explicitly define field selection to avoid "field id not found" error
+    const tripleQuery = `
+      query GetTriplesByTermIds ($ids: [String!]!) {
+        triples(where: { term_id: { _in: $ids } }) {
+          term_id
+          subject { term_id label image type data }
+          predicate { term_id label }
+          object { term_id label image type data }
+        }
+      }
+    `;
+
+    const triplesData = await fetchGraphQL(tripleQuery, { ids: termIds });
+    const triples = triplesData?.triples || [];
+
+    // Map back to include Market Cap (Value)
+    const results = triples.map((t: any) => {
+        // Find vault by matching ID
+        const vault = vaults.find((v: any) => normalize(v.term_id) === normalize(t.term_id));
+        
+        // Resolve labels using robust decoding
+        const subjLabel = resolveLabel(t.subject, t.subject?.term_id);
+        const objLabel = resolveLabel(t.object, t.object?.term_id);
+        const predLabel = t.predicate?.label || 'LINK';
+
+        // Calculate Market Cap
+        let marketCapWei = BigInt(0);
+        if (vault) {
+            const assets = BigInt(vault.total_assets || '0');
+            const shares = BigInt(vault.total_shares || '0');
+            const spotPrice = BigInt(vault.current_share_price || '0');
+
+            if (spotPrice > BigInt(0)) {
+                // Precision handling: (shares * spotPrice) / 1e18 if prices are in 18 decimals
+                // BUT current_share_price is likely in Wei per Share.
+                // Since shares are also in 18 decimals, we must normalize.
+                // Standard ERC20 math: (amount * price) / 1e18
+                marketCapWei = (shares * spotPrice) / BigInt(1e18); 
+            } else if (shares > BigInt(0)) {
+                // Fallback: Assets (TVL) is essentially price * shares if linear, 
+                // but typically TVL is a safer fallback if price is missing.
+                marketCapWei = assets;
+            }
+        }
+
+        return {
+            id: t.term_id,
+            subject: {
+                id: t.subject?.term_id,
+                label: subjLabel,
+                image: t.subject?.image
+            },
+            predicate: predLabel,
+            object: {
+                id: t.object?.term_id,
+                label: objLabel,
+                image: t.object?.image
+            },
+            // Return string for safe BigInt handling on frontend
+            value: marketCapWei.toString()
+        };
+    });
+
+    // Sort by Market Cap desc
+    return results.sort((a: any, b: any) => {
+        const valA = BigInt(a.value);
+        const valB = BigInt(b.value);
+        return valA > valB ? -1 : valA < valB ? 1 : 0;
+    });
+
+  } catch (e) {
+    console.error("getTopClaims failed", e);
     return [];
   }
 };

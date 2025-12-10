@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins, AlertTriangle } from 'lucide-react';
+import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins, AlertTriangle, Lock } from 'lucide-react';
 import { formatEther } from 'viem';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -141,15 +141,53 @@ const Portfolio: React.FC = () => {
   };
 
   if (!account) return (
-      <div className="min-h-screen flex flex-col items-center justify-center font-mono bg-intuition-dark">
-          <div className="text-center mb-8">
-              <h1 className="text-3xl font-black text-white font-display mb-2">PORTFOLIO LOCKED</h1>
-              <p className="text-slate-500">AUTHENTICATION REQUIRED TO ACCESS ASSETS</p>
+    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-intuition-dark">
+      {/* Background FX */}
+      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-intuition-primary/5 rounded-full blur-[100px] pointer-events-none animate-pulse"></div>
+      
+      {/* Container */}
+      <div className="relative z-10 p-1 bg-gradient-to-br from-intuition-primary/50 to-transparent clip-path-slant max-w-lg w-full mx-4 animate-in fade-in zoom-in duration-500 box-glow">
+        <div className="bg-black p-12 flex flex-col items-center text-center clip-path-slant border border-intuition-primary/20 backdrop-blur-xl">
+          
+          {/* Icon */}
+          <div className="mb-8 relative group">
+            <div className="absolute inset-0 bg-intuition-primary/20 blur-xl rounded-full group-hover:bg-intuition-primary/40 transition-all duration-500"></div>
+            <div className="relative w-24 h-24 bg-black border-2 border-intuition-primary flex items-center justify-center clip-path-slant shadow-[0_0_30px_rgba(0,243,255,0.2)]">
+              <Lock size={40} className="text-intuition-primary group-hover:scale-110 transition-transform duration-300" />
+            </div>
+            <div className="absolute -bottom-2 -right-2 text-intuition-danger animate-bounce">
+                <AlertTriangle size={24} className="fill-black" />
+            </div>
           </div>
-          <button onClick={() => connectWallet().then(acc => acc && setAccount(acc))} className="px-8 py-3 bg-intuition-primary text-black font-bold clip-path-slant hover-glow flex items-center gap-2">
-              <Wallet size={18} /> CONNECT WALLET
+
+          {/* Text */}
+          <h1 className="text-4xl font-black text-white font-display tracking-widest mb-2 text-glow">
+            PORTFOLIO <span className="text-intuition-primary">LOCKED</span>
+          </h1>
+          <p className="text-slate-400 font-mono text-sm mb-8 max-w-xs leading-relaxed">
+            SECURE CONNECTION REQUIRED TO DECRYPT ASSET LEDGER.
+          </p>
+
+          {/* Action */}
+          <button 
+            onClick={() => { playClick(); connectWallet().then(acc => acc && setAccount(acc)); }} 
+            onMouseEnter={playHover}
+            className="w-full py-4 bg-intuition-primary text-black font-black font-display text-lg tracking-widest clip-path-slant hover:bg-white hover:shadow-[0_0_40px_rgba(0,243,255,0.6)] transition-all flex items-center justify-center gap-3 group"
+          >
+            <Wallet size={20} className="group-hover:-rotate-12 transition-transform" />
+            INITIALIZE_UPLINK
           </button>
+
+          {/* Footer Decor */}
+          <div className="mt-8 flex items-center gap-2 text-[10px] font-mono text-slate-600 uppercase">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_5px_red]"></div>
+            System Standby
+          </div>
+
+        </div>
       </div>
+    </div>
   );
 
   return (
@@ -159,61 +197,61 @@ const Portfolio: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           
           {/* LIQUID BALANCE (Explicitly Placed First) */}
-          <div className="bg-black border border-intuition-border p-6 clip-path-slant relative group hover:border-intuition-primary/50 transition-colors">
+          <div className="bg-black border border-intuition-border p-6 clip-path-slant relative group hover:border-intuition-primary/50 transition-colors neon-panel">
               <div className="absolute top-0 right-0 p-3 opacity-20"><Wallet size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
-                  <span className="w-1 h-1 bg-white rounded-full"></span> Liquid Balance
+                  <span className="w-1 h-1 bg-white rounded-full shadow-[0_0_5px_white]"></span> Liquid Balance
               </div>
-              <div className="text-3xl font-black text-white font-display">{balance}</div>
+              <div className="text-3xl font-black text-white font-display text-glow-white">{balance}</div>
               <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
 
           {/* NET WORTH */}
-          <div className="bg-black border border-intuition-primary/50 p-6 clip-path-slant relative group">
+          <div className="bg-black border border-intuition-primary/50 p-6 clip-path-slant relative group neon-panel shadow-[0_0_20px_rgba(0,243,255,0.1)]">
               <div className="absolute top-0 right-0 p-3 opacity-20"><Coins size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
-                  <span className="w-1 h-1 bg-intuition-primary rounded-full animate-pulse"></span> Net Worth (Locked)
+                  <span className="w-1 h-1 bg-intuition-primary rounded-full animate-pulse shadow-[0_0_5px_#00f3ff]"></span> Net Worth (Locked)
               </div>
               <div className="text-3xl font-black text-white font-display text-glow">{portfolioValue}</div>
               <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
 
           {/* EST PNL */}
-          <div className={`bg-black border p-6 clip-path-slant relative ${netPnL >= 0 ? 'border-intuition-success/30' : 'border-intuition-danger/30'}`}>
+          <div className={`bg-black border p-6 clip-path-slant relative neon-panel ${netPnL >= 0 ? 'border-intuition-success/30 shadow-[0_0_20px_rgba(0,255,157,0.1)]' : 'border-intuition-danger/30 shadow-[0_0_20px_rgba(255,0,85,0.1)]'}`}>
               <div className="absolute top-0 right-0 p-3 opacity-20"><TrendingUp size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Est. PnL</div>
-              <div className={`text-3xl font-black font-display ${netPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <div className={`text-3xl font-black font-display ${netPnL >= 0 ? 'text-emerald-400 text-glow-success' : 'text-rose-400 text-glow-danger'}`}>
                   {netPnL > 0 ? '+' : ''}{netPnL.toFixed(4)}
               </div>
               <div className="text-xs text-slate-500 font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
 
           {/* SENTIMENT BIAS */}
-          <div className="bg-black border border-intuition-border p-6 clip-path-slant relative overflow-hidden">
+          <div className="bg-black border border-intuition-border p-6 clip-path-slant relative overflow-hidden neon-panel">
               <div className="flex justify-between items-center mb-2">
                   <div className="text-[10px] font-mono text-slate-500 uppercase">Sentiment Bias</div>
                   <div className="text-[9px] font-mono text-slate-600 bg-slate-900 px-1 rounded border border-slate-800">{semanticFootprint} TXS</div>
               </div>
               
-              <div className="relative h-6 bg-slate-800 rounded-sm mt-2 overflow-hidden flex border border-slate-700">
-                  <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black">
+              <div className="relative h-6 bg-slate-800 rounded-sm mt-2 overflow-hidden flex border border-slate-700 shadow-inner">
+                  <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black shadow-[0_0_10px_rgba(0,255,157,0.5)] relative z-10">
                       {sentimentBias.trust > 20 && `${sentimentBias.trust.toFixed(0)}%`}
                   </div>
-                  <div style={{ width: `${sentimentBias.distrust}%` }} className="bg-intuition-danger h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black">
+                  <div style={{ width: `${sentimentBias.distrust}%` }} className="bg-intuition-danger h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black shadow-[0_0_10px_rgba(255,0,85,0.5)] relative z-10">
                       {sentimentBias.distrust > 20 && `${sentimentBias.distrust.toFixed(0)}%`}
                   </div>
               </div>
               
               <div className="flex justify-between text-[9px] mt-2 font-mono font-bold text-slate-500">
-                  <span>BULLISH</span>
-                  <span>BEARISH</span>
+                  <span className="text-intuition-success text-shadow">BULLISH</span>
+                  <span className="text-intuition-danger text-shadow">BEARISH</span>
               </div>
           </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           {/* Exposure Chart with Legend */}
-          <div className="bg-black border border-intuition-border p-6 clip-path-slant h-[300px] flex flex-col">
+          <div className="bg-black border border-intuition-border p-6 clip-path-slant h-[300px] flex flex-col neon-panel">
               <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><PieIcon size={14}/> Category Exposure</h3>
               {exposureData.length > 0 ? (
                   <div className="flex items-center h-full">
@@ -251,7 +289,7 @@ const Portfolio: React.FC = () => {
           </div>
 
           {/* Capital History */}
-          <div className="lg:col-span-2 bg-black border border-intuition-border p-6 clip-path-slant h-[300px]">
+          <div className="lg:col-span-2 bg-black border border-intuition-border p-6 clip-path-slant h-[300px] neon-panel">
               <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><Activity size={14}/> Capital Deployment History (Net Invested)</h3>
               {chartData.length > 1 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -282,7 +320,7 @@ const Portfolio: React.FC = () => {
       </div>
 
       {/* Positions Table */}
-      <div className="bg-black border border-intuition-border clip-path-slant mb-8">
+      <div className="bg-black border border-intuition-border clip-path-slant mb-8 neon-panel">
           <div className="p-4 border-b border-intuition-border bg-intuition-card flex justify-between items-center">
               <h3 className="font-bold text-white font-display tracking-widest flex items-center gap-2"><Zap size={16} className="text-intuition-warning"/> ACTIVE_POSITIONS</h3>
               <button 
@@ -310,27 +348,25 @@ const Portfolio: React.FC = () => {
                               <td className="px-6 py-4">
                                   <Link to={`/markets/${p.id}`} className="flex items-center gap-3 group-hover:text-intuition-primary transition-colors">
                                       {p.atom?.image ? <img src={p.atom.image} className="w-6 h-6 rounded-full object-cover border border-white/10" /> : <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-[10px]">{p.atom?.label?.[0]}</div>}
-                                      <div className="font-bold">{p.atom?.label || p.id.slice(0,8)}</div>
+                                      <div className="font-bold group-hover:text-glow">{p.atom?.label || p.id.slice(0,8)}</div>
                                   </Link>
                                   <div className="text-[10px] text-slate-600 font-mono mt-0.5">{p.id.slice(0, 12)}...</div>
                               </td>
                               <td className="px-6 py-4 text-xs text-slate-500">
-                                  <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800">{p.atom ? calculateCategoryExposure([{value: 1, atom: p.atom}])[0]?.name : 'UNKNOWN'}</span>
+                                  <span className="bg-slate-900 px-2 py-1 rounded border border-slate-700">{p.atom ? calculateCategoryExposure([{value: 1, atom: p.atom}])[0]?.name : 'UNKNOWN'}</span>
                               </td>
                               <td className="px-6 py-4 text-right font-mono">{p.shares.toFixed(4)}</td>
-                              <td className="px-6 py-4 text-right text-intuition-success font-mono font-bold">{p.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {CURRENCY_SYMBOL}</td>
+                              <td className="px-6 py-4 text-right text-emerald-400 font-bold">{p.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} {CURRENCY_SYMBOL}</td>
                               <td className="px-6 py-4 text-right">
-                                  <Link to={`/markets/${p.id}`} className="px-3 py-1 bg-white/5 border border-white/10 hover:bg-intuition-primary/20 hover:border-intuition-primary hover:text-intuition-primary text-[10px] font-bold rounded transition-colors">MANAGE</Link>
+                                  <Link to={`/markets/${p.id}`} className="px-3 py-1 bg-white/5 border border-white/10 hover:bg-intuition-primary/20 hover:border-intuition-primary hover:text-intuition-primary text-[10px] font-bold rounded transition-colors shadow-none hover:shadow-[0_0_10px_rgba(0,243,255,0.4)]">VIEW</Link>
                               </td>
                           </tr>
                       )) : (
                           <tr><td colSpan={5} className="p-12 text-center text-slate-600 font-mono italic">
                               {loading ? (
-                                  <div className="flex items-center justify-center gap-2"><RefreshCw className="animate-spin" size={14} /> SCANNING ON-CHAIN LEDGER...</div>
+                                  <div className="flex items-center justify-center gap-2"><RefreshCw className="animate-spin" size={14} /> SCANNING PUBLIC LEDGER...</div>
                               ) : (
-                                  <div className="flex items-center justify-center gap-2 text-yellow-500/50">
-                                      <AlertTriangle size={14} /> NO ACTIVE POSITIONS VERIFIED
-                                  </div>
+                                  'NO ACTIVE POSITIONS FOUND ON-CHAIN'
                               )}
                           </td></tr>
                       )}
@@ -338,41 +374,6 @@ const Portfolio: React.FC = () => {
               </table>
           </div>
       </div>
-
-      {/* Trade History */}
-      <div className="bg-black border border-intuition-border clip-path-slant">
-          <div className="p-4 border-b border-intuition-border bg-intuition-card flex justify-between items-center">
-              <h3 className="font-bold text-white font-display tracking-widest flex items-center gap-2"><Clock size={16} className="text-intuition-secondary"/> TRADE_LOG</h3>
-              <button className="text-xs font-mono text-slate-500 hover:text-white flex items-center gap-1"><Download size={12} /> CSV</button>
-          </div>
-          <div className="max-h-[400px] overflow-y-auto">
-              <table className="w-full text-left font-mono text-xs">
-                  <thead className="bg-intuition-dark text-slate-500 uppercase border-b border-intuition-border sticky top-0">
-                      <tr>
-                          <th className="px-6 py-3">Time</th>
-                          <th className="px-6 py-3">Action</th>
-                          <th className="px-6 py-3">Asset</th>
-                          <th className="px-6 py-3 text-right">Amount</th>
-                      </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                      {history.length > 0 ? history.map((tx, i) => (
-                          <tr key={i} className="hover:bg-white/5 transition-colors">
-                              <td className="px-6 py-3 text-slate-500">{new Date(tx.timestamp).toLocaleString()}</td>
-                              <td className={`px-6 py-3 font-bold ${tx.type === 'DEPOSIT' ? 'text-emerald-400' : 'text-rose-400'}`}>{tx.type}</td>
-                              <td className="px-6 py-3 text-white">
-                                  <Link to={`/markets/${tx.vaultId}`} className="hover:underline hover:text-intuition-primary transition-colors">{tx.assetLabel || tx.vaultId?.slice(0,8) || 'Unknown'}</Link>
-                              </td>
-                              <td className="px-6 py-3 text-right">{parseFloat(formatEther(BigInt(tx.assets || '0'))).toFixed(4)}</td>
-                          </tr>
-                      )) : (
-                          <tr><td colSpan={4} className="p-8 text-center text-slate-600 italic">NO TRANSACTION HISTORY</td></tr>
-                      )}
-                  </tbody>
-              </table>
-          </div>
-      </div>
-
     </div>
   );
 };

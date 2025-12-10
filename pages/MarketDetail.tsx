@@ -610,10 +610,15 @@ const MarketDetail: React.FC = () => {
                 {activeTab === 'claims' && (
                     <div className="p-6 grid grid-cols-1 gap-4">
                         {triples.length === 0 ? <div className="text-center text-slate-600">NO_CLAIMS_FOUND</div> : triples.map((t, i) => (
-                            <div key={i} className="flex items-center gap-3 p-3 border border-white/10 rounded bg-white/5 font-mono text-sm group hover:border-intuition-primary/30 transition-colors">
-                                <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30">THIS AGENT</span>
-                                <span className="text-slate-500 text-xs">──[{t.predicate?.label || 'LINK'}]──&gt;</span>
-                                <Link to={`/markets/${t.object?.term_id}`} className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30 hover:bg-purple-500/40 transition-colors">{t.object?.label || '...'}</Link>
+                            <div key={i} className="flex flex-col md:flex-row items-center gap-3 p-3 border border-white/10 rounded bg-white/5 font-mono text-sm group hover:border-intuition-primary/30 transition-colors">
+                                <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded border border-blue-500/30 whitespace-nowrap">THIS AGENT</span>
+                                <span className="text-slate-500 text-xs hidden md:inline">──[{t.predicate?.label || 'LINK'}]──&gt;</span>
+                                <span className="text-slate-500 text-xs md:hidden">↓ {t.predicate?.label || 'LINK'} ↓</span>
+                                
+                                <Link to={`/markets/${t.object?.term_id}`} className="flex items-center gap-2 px-2 py-1 bg-purple-500/20 text-purple-300 rounded border border-purple-500/30 hover:bg-purple-500/40 transition-colors">
+                                    {t.object?.image && <img src={t.object.image} className="w-4 h-4 rounded-full object-cover"/>}
+                                    {t.object?.label || '...'}
+                                </Link>
                                 <span className="ml-auto text-xs text-slate-600">Block: {t.block_number}</span>
                             </div>
                         ))}
@@ -628,12 +633,12 @@ const MarketDetail: React.FC = () => {
                             ) : (
                                 incomingTriples.map((t, i) => (
                                     <Link key={i} to={`/markets/${t.subject?.term_id}`} className="flex items-center gap-4 p-4 border border-white/10 bg-white/5 hover:bg-intuition-primary/10 hover:border-intuition-primary/50 transition-all clip-path-slant group">
-                                        <div className="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-600 group-hover:border-intuition-primary transition-colors">
-                                            {t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : null}
+                                        <div className="w-10 h-10 rounded-full bg-slate-800 overflow-hidden border border-slate-600 group-hover:border-intuition-primary transition-colors flex items-center justify-center">
+                                            {t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <span className="text-xs">{t.subject?.label?.[0]}</span>}
                                         </div>
                                         <div className="flex-1">
                                             <div className="text-xs text-slate-500 font-mono mb-1">TRUSTED BY</div>
-                                            <div className="font-bold text-white group-hover:text-intuition-primary">{t.subject?.label || 'Unknown Agent'}</div>
+                                            <div className="font-bold text-white group-hover:text-intuition-primary truncate">{t.subject?.label || 'Unknown Agent'}</div>
                                         </div>
                                         <div className="text-xs font-mono px-2 py-1 rounded bg-black border border-slate-700 text-slate-400">
                                             {t.predicate?.label || 'LINK'}

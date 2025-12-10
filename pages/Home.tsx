@@ -71,29 +71,29 @@ const Home: React.FC = () => {
       <div className="relative min-h-[90vh] flex flex-col justify-center items-center overflow-hidden border-b border-intuition-primary/20">
         {/* Animated Background Elements */}
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-intuition-primary/10 via-black to-black opacity-50"></div>
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 border border-intuition-primary/10 rounded-full animate-[spin_20s_linear_infinite] border-dashed pointer-events-none"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] border border-intuition-secondary/10 rounded-full animate-[spin_30s_linear_infinite_reverse] border-dotted pointer-events-none"></div>
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 border border-intuition-primary/10 rounded-full animate-[spin_20s_linear_infinite] border-dashed pointer-events-none box-glow"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] border border-intuition-secondary/10 rounded-full animate-[spin_30s_linear_infinite_reverse] border-dotted pointer-events-none box-glow"></div>
         
         <div className="relative z-10 text-center max-w-5xl px-4 mt-10">
           <div 
             onMouseEnter={playHover}
-            className="inline-flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 mb-8 md:mb-10 border border-intuition-primary/50 bg-black/80 backdrop-blur-md rounded-none text-intuition-primary font-mono text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] uppercase hover-glow cursor-help clip-path-slant"
+            className="inline-flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 mb-8 md:mb-10 border border-intuition-primary/50 bg-black/80 backdrop-blur-md rounded-none text-intuition-primary font-mono text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] uppercase hover-glow cursor-help clip-path-slant shadow-[0_0_15px_rgba(0,243,255,0.2)]"
           >
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-intuition-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-intuition-primary"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-intuition-primary shadow-[0_0_8px_#00f3ff]"></span>
             </span>
             INTUITION MAINNET ACTIVE
           </div>
 
-          <h1 className="text-4xl sm:text-6xl md:text-9xl font-black tracking-tighter text-white mb-6 md:mb-8 leading-[0.9] font-display drop-shadow-[0_0_25px_rgba(0,243,255,0.3)]">
+          <h1 className="text-4xl sm:text-6xl md:text-9xl font-black tracking-tighter text-white mb-6 md:mb-8 leading-[0.9] font-display drop-shadow-[0_0_35px_rgba(0,243,255,0.4)]">
             SEMANTIC <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-intuition-primary via-white to-intuition-secondary hover-glitch">CAPITALISM</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-intuition-primary via-white to-intuition-secondary hover-glitch text-glow">CAPITALISM</span>
           </h1>
 
           <p className="max-w-2xl mx-auto text-base md:text-xl text-slate-400 mb-10 md:mb-12 font-mono leading-relaxed px-4">
-            <span className="text-intuition-primary">&gt;&gt;</span> The intelligence layer of the open web.<br/>
-            <span className="text-intuition-primary">&gt;&gt;</span> Stake on identity. Short the noise. Profit from truth.
+            <span className="text-intuition-primary text-glow">&gt;&gt;</span> The intelligence layer of the open web.<br/>
+            <span className="text-intuition-primary text-glow">&gt;&gt;</span> Stake on identity. Short the noise. Profit from truth.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-6 mb-24 w-full px-4">
@@ -101,7 +101,7 @@ const Home: React.FC = () => {
               to="/markets"
               onClick={playClick}
               onMouseEnter={playHover}
-              className="group relative w-full sm:w-64 py-4 md:py-5 bg-intuition-primary text-black font-black text-lg tracking-widest font-display overflow-hidden clip-path-slant hover-glow transition-all hover:-translate-y-1"
+              className="group relative w-full sm:w-64 py-4 md:py-5 bg-intuition-primary text-black font-black text-lg tracking-widest font-display overflow-hidden clip-path-slant hover-glow transition-all hover:-translate-y-1 shadow-[0_0_30px_rgba(0,243,255,0.4)]"
             >
               <div className="absolute inset-0 bg-white/40 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
               <span className="relative flex items-center justify-center gap-2">
@@ -113,7 +113,7 @@ const Home: React.FC = () => {
               to="/stats"
               onClick={playClick}
               onMouseEnter={playHover}
-              className="group w-full sm:w-64 py-4 md:py-5 border border-intuition-primary/50 text-intuition-primary font-bold text-lg tracking-widest font-display bg-black/50 hover:bg-intuition-primary/10 transition-all clip-path-slant hover-glow hover:-translate-y-1 flex items-center justify-center"
+              className="group w-full sm:w-64 py-4 md:py-5 border border-intuition-primary/50 text-intuition-primary font-bold text-lg tracking-widest font-display bg-black/50 hover:bg-intuition-primary/10 transition-all clip-path-slant hover-glow hover:-translate-y-1 flex items-center justify-center shadow-[0_0_20px_rgba(0,243,255,0.1)]"
             >
               LEADERBOARD
             </Link>
@@ -121,17 +121,17 @@ const Home: React.FC = () => {
         </div>
 
         {/* Scroll Indicator */}
-        <div className="absolute bottom-10 animate-bounce text-intuition-primary/50 flex flex-col items-center">
+        <div className="absolute bottom-10 animate-bounce text-intuition-primary flex flex-col items-center drop-shadow-[0_0_10px_#00f3ff]">
           <ChevronDown size={32} />
         </div>
       </div>
 
       {/* --- LIVE TICKER (SUPERB VERSION) --- */}
-      <div className="border-y border-intuition-primary/30 bg-black py-1 overflow-hidden relative z-20 h-14 flex items-center group">
+      <div className="border-y border-intuition-primary/30 bg-black py-1 overflow-hidden relative z-20 h-14 flex items-center group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
          {/* Live Indicator */}
          <div className="absolute left-0 top-0 bottom-0 bg-black z-30 px-4 flex items-center gap-2 border-r border-intuition-primary/30 shadow-[10px_0_20px_rgba(0,0,0,1)]">
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-            <span className="text-xs font-black font-display text-white tracking-widest">LIVE</span>
+            <span className="text-xs font-black font-display text-white tracking-widest text-glow-danger">LIVE</span>
          </div>
 
          {/* Gradients for smooth fade in/out */}
@@ -176,7 +176,7 @@ const Home: React.FC = () => {
         <div className="w-full max-w-[95%] mx-auto px-4 relative z-10">
           <div className="flex items-center gap-4 mb-8 md:mb-12">
             <Activity className="text-intuition-primary animate-pulse" size={24} />
-            <h2 className="text-2xl md:text-3xl font-display font-bold text-white tracking-wide">NETWORK_TELEMETRY</h2>
+            <h2 className="text-2xl md:text-3xl font-display font-bold text-white tracking-wide text-glow">NETWORK_TELEMETRY</h2>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
@@ -194,7 +194,7 @@ const Home: React.FC = () => {
         
         <div className="w-full max-w-[95%] mx-auto px-4 relative z-10">
           <div className="text-center mb-12 md:mb-20">
-            <h2 className="text-3xl md:text-5xl font-black font-display text-white mb-4 md:mb-6">THE PROTOCOL</h2>
+            <h2 className="text-3xl md:text-5xl font-black font-display text-white mb-4 md:mb-6 text-glow">THE PROTOCOL</h2>
             <p className="text-slate-400 font-mono text-xs md:text-sm tracking-widest uppercase">Initializing Trust Algorithm...</p>
           </div>
 
@@ -224,18 +224,18 @@ const Home: React.FC = () => {
       {/* --- THE MANIFESTO (TERMINAL) --- */}
       <div className="py-16 md:py-24 bg-black border-y border-intuition-primary/20 relative">
         <div className="max-w-4xl mx-auto px-4">
-          <div className="w-full bg-[#0a0f1a] border border-intuition-border rounded-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] transform hover:scale-[1.01] transition-transform duration-500">
+          <div className="w-full bg-[#0a0f1a] border border-intuition-border rounded-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] transform hover:scale-[1.01] transition-transform duration-500 box-glow-hover">
             <div className="bg-[#1f2937] px-4 py-2 flex items-center gap-2 border-b border-black">
-              <div className="w-3 h-3 rounded-full bg-red-500"></div>
-              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_5px_red]"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-[0_0_5px_yellow]"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_5px_lime]"></div>
               <div className="ml-4 text-[10px] font-mono text-slate-400">mission_log.txt</div>
             </div>
             <div className="p-6 md:p-8 font-mono text-sm md:text-base leading-relaxed text-slate-300 relative">
               <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-              <p className="mb-4 text-intuition-primary">&gt;&gt; SYSTEM BOOT SEQUENCE INITIATED...</p>
+              <p className="mb-4 text-intuition-primary text-glow">&gt;&gt; SYSTEM BOOT SEQUENCE INITIATED...</p>
               <p className="mb-4">
-                The internet is broken. Information is abundant, but <span className="text-white font-bold">trust</span> is scarce. 
+                The internet is broken. Information is abundant, but <span className="text-white font-bold text-glow">trust</span> is scarce. 
                 We are drowning in noise, deepfakes, and sybil attacks.
               </p>
               <p className="mb-4">
@@ -243,7 +243,7 @@ const Home: React.FC = () => {
                 By attaching financial value to truth, we make lying expensive.
               </p>
               <p className="mb-6">
-                <span className="text-intuition-success">We are building the credit score for everything.</span> Not controlled by a bank, 
+                <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span> Not controlled by a bank, 
                 but by you. The market decides what is true.
               </p>
               <p className="animate-pulse text-intuition-primary">&gt;&gt; AWAITING INPUT_</p>
@@ -256,14 +256,14 @@ const Home: React.FC = () => {
       <div className="py-20 md:py-32 text-center relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         <div className="relative z-10 px-4">
-          <h2 className="text-4xl md:text-7xl font-black font-display text-white mb-8 tracking-tighter">
+          <h2 className="text-4xl md:text-7xl font-black font-display text-white mb-8 tracking-tighter text-glow">
             JOIN THE <span className="text-intuition-primary">VANGUARD</span>
           </h2>
           <div className="flex justify-center">
             <Link 
               to="/markets" 
               onClick={playClick}
-              className="w-full sm:w-auto px-12 py-6 bg-white text-black font-black font-display text-xl tracking-widest clip-path-slant hover:bg-intuition-primary transition-colors shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(0,243,255,0.6)]"
+              className="w-full sm:w-auto px-12 py-6 bg-white text-black font-black font-display text-xl tracking-widest clip-path-slant hover:bg-intuition-primary transition-colors shadow-[0_0_30px_rgba(255,255,255,0.5)] hover:shadow-[0_0_60px_rgba(0,243,255,0.8)]"
             >
               INITIALIZE_LINK
             </Link>
@@ -277,7 +277,7 @@ const Home: React.FC = () => {
 
 const StatBox = ({ label, value, sub, delay, loading }: any) => (
   <div 
-    className="p-6 border border-intuition-border bg-intuition-card/50 clip-path-slant hover:border-intuition-primary/50 transition-all hover:-translate-y-2 group relative overflow-hidden"
+    className="p-6 border border-intuition-border bg-intuition-card/50 clip-path-slant hover:border-intuition-primary/50 transition-all hover:-translate-y-2 group relative overflow-hidden box-glow-hover"
     style={{ animationDelay: `${delay}ms` }}
   >
     <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-30 transition-opacity">
@@ -287,7 +287,7 @@ const StatBox = ({ label, value, sub, delay, loading }: any) => (
     {loading ? (
         <div className="h-8 w-24 bg-white/10 animate-pulse rounded mb-1"></div>
     ) : (
-        <div className="text-2xl md:text-4xl font-black text-white font-display mb-1 group-hover:text-intuition-primary transition-colors relative z-10">{value}</div>
+        <div className="text-2xl md:text-4xl font-black text-white font-display mb-1 group-hover:text-intuition-primary transition-colors relative z-10 text-glow">{value}</div>
     )}
     <div className="text-intuition-success font-mono text-xs relative z-10">{sub}</div>
   </div>
@@ -296,16 +296,16 @@ const StatBox = ({ label, value, sub, delay, loading }: any) => (
 const StepCard = ({ num, icon, title, desc }: any) => (
   <div 
     onMouseEnter={playHover}
-    className="relative p-8 border border-intuition-border bg-black/50 hover:bg-intuition-primary/5 transition-all duration-500 group clip-path-slant"
+    className="relative p-8 border border-intuition-border bg-black/50 hover:bg-intuition-primary/5 transition-all duration-500 group clip-path-slant box-glow-hover"
   >
     <div className="absolute -top-6 -left-6 text-8xl font-black text-intuition-border/20 font-display group-hover:text-intuition-primary/10 transition-colors select-none">
       {num}
     </div>
     <div className="relative z-10">
-      <div className="mb-6 p-4 inline-block bg-black border border-intuition-border rounded-lg group-hover:border-intuition-primary group-hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all">
+      <div className="mb-6 p-4 inline-block bg-black border border-intuition-border rounded-lg group-hover:border-intuition-primary group-hover:shadow-[0_0_30px_rgba(0,243,255,0.4)] transition-all">
         {icon}
       </div>
-      <h3 className="text-2xl font-bold text-white mb-4 font-display tracking-wide">{title}</h3>
+      <h3 className="text-2xl font-bold text-white mb-4 font-display tracking-wide group-hover:text-intuition-primary transition-colors">{title}</h3>
       <p className="text-slate-400 font-mono text-sm leading-relaxed border-l-2 border-intuition-primary/20 pl-4 group-hover:border-intuition-primary/60 transition-colors">
         {desc}
       </p>

@@ -59,17 +59,17 @@ const ClaimFeed: React.FC = () => {
   return (
     <div className="w-full">
       {/* Feed Controls */}
-      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6 bg-black border border-intuition-border p-4 clip-path-slant">
+      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6 bg-black border border-intuition-border p-4 clip-path-slant shadow-[0_0_20px_rgba(0,0,0,0.5)]">
          <div className="flex items-center gap-4">
-             <div className="relative">
+             <div className="relative group">
                  <input 
                     type="text" 
                     placeholder="SEARCH_FEED..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 pl-8 pr-4 py-2 text-xs font-mono text-white focus:border-intuition-primary outline-none w-full sm:w-48"
+                    className="bg-slate-900 border border-slate-700 pl-8 pr-4 py-2 text-xs font-mono text-white focus:border-intuition-primary outline-none w-full sm:w-48 transition-all focus:shadow-[0_0_15px_rgba(0,243,255,0.2)]"
                  />
-                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-intuition-primary transition-colors" />
              </div>
              
              <div className="flex items-center gap-2">
@@ -89,13 +89,13 @@ const ClaimFeed: React.FC = () => {
          </div>
 
          <div className="flex gap-2">
-             <button onClick={() => { playClick(); setFilter('ALL'); }} className={`px-3 py-1 text-[10px] font-bold font-mono border ${filter === 'ALL' ? 'bg-intuition-primary text-black border-intuition-primary' : 'border-slate-800 text-slate-500 hover:text-white'}`}>ALL</button>
-             <button onClick={() => { playClick(); setFilter('TRUST'); }} className={`px-3 py-1 text-[10px] font-bold font-mono border ${filter === 'TRUST' ? 'bg-intuition-success/20 text-intuition-success border-intuition-success' : 'border-slate-800 text-slate-500 hover:text-white'}`}>TRUST</button>
-             <button onClick={() => { playClick(); setFilter('DISTRUST'); }} className={`px-3 py-1 text-[10px] font-bold font-mono border ${filter === 'DISTRUST' ? 'bg-intuition-danger/20 text-intuition-danger border-intuition-danger' : 'border-slate-800 text-slate-500 hover:text-white'}`}>DISTRUST</button>
+             <button onClick={() => { playClick(); setFilter('ALL'); }} className={`px-3 py-1 text-[10px] font-bold font-mono border transition-all ${filter === 'ALL' ? 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_10px_rgba(0,243,255,0.4)]' : 'border-slate-800 text-slate-500 hover:text-white'}`}>ALL</button>
+             <button onClick={() => { playClick(); setFilter('TRUST'); }} className={`px-3 py-1 text-[10px] font-bold font-mono border transition-all ${filter === 'TRUST' ? 'bg-intuition-success/20 text-intuition-success border-intuition-success shadow-[0_0_10px_rgba(0,255,157,0.4)]' : 'border-slate-800 text-slate-500 hover:text-white'}`}>TRUST</button>
+             <button onClick={() => { playClick(); setFilter('DISTRUST'); }} className={`px-3 py-1 text-[10px] font-bold font-mono border transition-all ${filter === 'DISTRUST' ? 'bg-intuition-danger/20 text-intuition-danger border-intuition-danger shadow-[0_0_10px_rgba(255,0,85,0.4)]' : 'border-slate-800 text-slate-500 hover:text-white'}`}>DISTRUST</button>
          </div>
       </div>
 
-      {/* Feed List */}
+      {/* Feed List - Animated */}
       <div className="space-y-3 relative min-h-[400px]">
          {loading && claims.length === 0 ? (
              <div className="absolute inset-0 flex flex-col items-center justify-center text-intuition-primary">
@@ -103,12 +103,16 @@ const ClaimFeed: React.FC = () => {
                  <span className="font-mono text-xs animate-pulse">SYNCING_SEMANTIC_LAYER...</span>
              </div>
          ) : filteredClaims.length === 0 ? (
-             <div className="text-center py-20 border border-dashed border-intuition-border text-slate-500 font-mono text-xs">
+             <div className="text-center py-20 border border-dashed border-intuition-border text-slate-500 font-mono text-xs bg-black/50">
                  NO_CLAIMS_FOUND_IN_SECTOR
              </div>
          ) : (
-             filteredClaims.map((claim) => (
-                 <div key={claim.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+             filteredClaims.map((claim, i) => (
+                 <div 
+                    key={claim.id} 
+                    className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards"
+                    style={{ animationDelay: `${i * 50}ms` }}
+                 >
                      <ClaimCard claim={claim} />
                  </div>
              ))
