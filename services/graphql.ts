@@ -1,3 +1,4 @@
+
 import { GRAPHQL_URL } from '../constants';
 import { Transaction, Claim } from '../types';
 import { hexToString, formatEther, parseEther } from 'viem';
@@ -472,10 +473,11 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
       deposits(
         where: { sender: { id: { _in: $ids } } }
         order_by: { created_at: desc }
-        limit: 20
+        limit: 50
       ) {
         id
         shares
+        assets
         created_at
         sender { id }
         vault { term_id }
@@ -483,10 +485,11 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
       redemptions(
         where: { receiver: { id: { _in: $ids } } }
         order_by: { created_at: desc }
-        limit: 20
+        limit: 50
       ) {
         id
         shares
+        assets
         created_at
         receiver { id }
         vault { term_id }
@@ -501,7 +504,7 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0", 
+      assets: d.assets || "0", 
       timestamp: new Date(d.created_at).getTime(),
       vaultId: d.vault?.term_id,
       assetLabel: d.vault?.term_id?.slice(0, 6),
@@ -512,7 +515,7 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
       id: r.id,
       type: "REDEEM",
       shares: r.shares,
-      assets: "0",
+      assets: r.assets || "0",
       timestamp: new Date(r.created_at).getTime(),
       vaultId: r.vault?.term_id,
       assetLabel: r.vault?.term_id?.slice(0, 6),
@@ -677,6 +680,7 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       ) {
         id
         shares
+        assets
         created_at
         sender { id }
       }
@@ -687,6 +691,7 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       ) {
         id
         shares
+        assets
         created_at
         receiver { id }
       }
@@ -700,7 +705,7 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       id: d.id,
       type: "DEPOSIT",
       shares: d.shares,
-      assets: "0",
+      assets: d.assets || "0",
       timestamp: new Date(d.created_at).getTime(),
       vaultId: termId,
       assetLabel: "Share",
@@ -711,7 +716,7 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
       id: r.id,
       type: "REDEEM",
       shares: r.shares,
-      assets: "0",
+      assets: r.assets || "0",
       timestamp: new Date(r.created_at).getTime(),
       vaultId: termId,
       assetLabel: "Share",

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
@@ -43,8 +44,11 @@ const Dashboard: React.FC = () => {
       const chainHistory = await getUserHistory(address).catch(e => []);
       const localHistory = getLocalTransactions(address);
 
-      const mergedHistory = [...localHistory, ...chainHistory]
-        .filter((tx, index, self) => index === self.findIndex((t) => (t.id === tx.id)))
+      // Deduplicate: Check if local tx hash is part of the graph ID
+      const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
+      const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
+
+      const mergedHistory = [...uniqueLocal, ...chainHistory]
         .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // Ascending for calc
       
       setHistory(mergedHistory.slice().reverse()); // Descending for display
@@ -292,7 +296,7 @@ const Dashboard: React.FC = () => {
                         } catch { return '0.0000'; }
                     })()} {CURRENCY_SYMBOL}
                   </div>
-                  <div className="text-slate-500">{new Date(tx.timestamp || Date.now()).toLocaleTimeString()}</div>
+                  <div className="text-slate-500">{new Date(tx.timestamp || Date.now()).toLocaleTimeString() : 'Block #'}</div>
                 </div>
               </div>
             )) : (<div className="text-slate-600 text-center py-4 border border-dashed border-slate-800">[NO HISTORY FOUND]</div>)}

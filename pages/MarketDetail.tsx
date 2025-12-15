@@ -1,8 +1,9 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Activity, Shield, DollarSign, Zap, RefreshCw, Info, ArrowLeft, TrendingUp, List, Layers, CheckCircle, Share2, Camera, User, Star, Network } from 'lucide-react';
-import { getAgentById, getAgentTriples, getMarketActivity, getAgentOpinions, getAllMarketActivity, getIncomingTriples } from '../services/graphql';
+import { getAgentById, getAgentTriples, getMarketActivity, getAgentOpinions, getAllMarketActivity, getIncomingTriples, getUserHistory } from '../services/graphql';
 import { depositToVault, redeemFromVault, getConnectedAccount, getWalletBalance, getShareBalance, saveLocalTransaction, getLocalTransactions, getProtocolConfig, publishOpinion, toggleWatchlist, isInWatchlist, getQuoteRedeem } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { parseEther, formatEther } from 'viem';
@@ -251,16 +252,28 @@ const MarketDetail: React.FC = () => {
           const currentPrice = parseFloat(chartData[chartData.length -1].price);
           const val = sharesNum * currentPrice;
           
-          const localTxs = getLocalTransactions(account).filter(tx => tx.vaultId === id && tx.type === 'DEPOSIT');
-          let cost = 0; 
-          let bought = 0;
-          localTxs.forEach(tx => {
-             cost += parseFloat(formatEther(BigInt(tx.assets || '0')));
-             bought += parseFloat(formatEther(BigInt(tx.shares || '0')));
+          // FETCH COMBINED HISTORY FOR ACCURATE ENTRY PRICE
+          const chainHistory = await getUserHistory(account).catch(() => []);
+          const localHistory = getLocalTransactions(account);
+          const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
+          const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
+          
+          const mergedHistory = [...uniqueLocal, ...chainHistory].filter(tx => tx.vaultId?.toLowerCase() === id.toLowerCase() && tx.type === 'DEPOSIT');
+
+          let totalCost = 0; 
+          let totalSharesBought = 0;
+          
+          mergedHistory.forEach(tx => {
+             const cost = parseFloat(formatEther(BigInt(tx.assets || '0')));
+             const bought = parseFloat(formatEther(BigInt(tx.shares || '0')));
+             if (cost > 0 && bought > 0) {
+                 totalCost += cost;
+                 totalSharesBought += bought;
+             }
           });
           
-          const entry = bought > 0 ? cost / bought : currentPrice;
-          const pnl = ((currentPrice - entry) / entry) * 100;
+          const entry = totalSharesBought > 0 ? totalCost / totalSharesBought : currentPrice;
+          const pnl = entry > 0 ? ((currentPrice - entry) / entry) * 100 : 0;
 
           setUserPosition({
               shares: sharesNum.toFixed(4),
@@ -298,6 +311,7 @@ const MarketDetail: React.FC = () => {
           if (action === 'ACQUIRE') {
               const res = await depositToVault(inputAmount, id, wallet, curveId);
               hash = res.hash;
+              // Note: assets is approximate here (inputAmount), real value settled on chain
               saveLocalTransaction({ id: hash, type: 'DEPOSIT', assets: parseEther(inputAmount).toString(), shares: res.shares.toString(), timestamp: Date.now(), vaultId: id, assetLabel: agent?.label, user: wallet }, wallet);
           } else {
               const res = await redeemFromVault(inputAmount, id, wallet, curveId);
@@ -513,7 +527,14 @@ const MarketDetail: React.FC = () => {
                             )}
                         </div>
 
-                        <button onClick={handleExecute} className={`w-full py-3 font-bold font-display text-xs tracking-widest transition-all clip-path-slant hover-glow ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'bg-intuition-danger text-black'}`}>
+                        <button 
+                            onClick={handleExecute} 
+                            className={`btn-cyber w-full py-4 text-sm ${
+                                action === 'ACQUIRE' 
+                                    ? (sentiment === 'TRUST' ? 'btn-cyber-cyan' : 'btn-cyber-danger')
+                                    : 'btn-cyber-outline'
+                            }`}
+                        >
                             CONFIRM {action}
                         </button>
                     </div>

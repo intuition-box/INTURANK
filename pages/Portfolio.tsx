@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
@@ -47,8 +48,11 @@ const Portfolio: React.FC = () => {
       const chainHistory = await getUserHistory(address).catch(() => []);
       const localHistory = getLocalTransactions(address);
       
-      const mergedHistory = [...localHistory, ...chainHistory]
-        .filter((tx, index, self) => index === self.findIndex((t) => (t.id === tx.id)))
+      // Improved Deduplication: Check if local tx hash is part of the graph ID
+      const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
+      const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
+      
+      const mergedHistory = [...uniqueLocal, ...chainHistory]
         .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); 
       
       setHistory(mergedHistory.slice().reverse());
@@ -75,33 +79,24 @@ const Portfolio: React.FC = () => {
       setChartData(historyPoints);
 
       // 4. ROBUST POSITION SCANNING
-      // We gather EVERY ID the user has ever touched from history + current graph state
-      // This fixes the "Active positions failing" issue if the graph is lagging on the `positions` entity
       const graphPositions = await getUserPositions(address).catch(() => []);
       
       const uniqueVaultIds = Array.from(new Set([
           ...graphPositions.map((p: any) => p.vault?.term_id?.toLowerCase()),
-          ...localHistory.map(tx => tx.vaultId?.toLowerCase()),
-          ...chainHistory.map(tx => tx.vaultId?.toLowerCase())
+          ...mergedHistory.map(tx => tx.vaultId?.toLowerCase())
       ])).filter(Boolean) as string[];
 
-      // Fetch metadata for these IDs (labels, images)
       const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
       
-      // 5. LIVE CHAIN CHECK (The Source of Truth)
-      // We iterate ALL potential vaults and check the contract for actual balance
       const livePositions = await Promise.all(uniqueVaultIds.map(async (id) => {
           const meta = metadata.find(m => m.id.toLowerCase() === id);
           const curveId = meta?.curveId ? Number(meta.curveId) : 0; 
           
-          // Direct Contract Call
           const shares = await getShareBalance(address, id, curveId);
           const sharesNum = parseFloat(shares);
           
-          // Filter dust
           if (sharesNum <= 0.000001) return null;
 
-          // Get Redeem Value
           const valueStr = await getQuoteRedeem(shares, id, address, curveId);
           const value = parseFloat(valueStr);
 
@@ -117,7 +112,6 @@ const Portfolio: React.FC = () => {
       setPositions(finalPositions);
       setExposureData(calculateCategoryExposure(finalPositions));
 
-      // 6. Final Net Worth & PnL
       const currentVal = finalPositions.reduce((acc, cur) => acc + cur.value, 0);
       setPortfolioValue(currentVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
       
@@ -173,9 +167,9 @@ const Portfolio: React.FC = () => {
           <button 
             onClick={() => { playClick(); connectWallet().then(acc => acc && setAccount(acc)); }} 
             onMouseEnter={playHover}
-            className="w-full py-4 bg-intuition-primary text-black font-black font-display text-lg tracking-widest clip-path-slant hover:bg-white hover:shadow-[0_0_40px_rgba(0,243,255,0.6)] transition-all flex items-center justify-center gap-3 group"
+            className="btn-cyber btn-cyber-white w-full py-4 text-lg"
           >
-            <Wallet size={20} className="group-hover:-rotate-12 transition-transform" />
+            <Wallet size={20} className="mr-2 group-hover:-rotate-12 transition-transform" />
             INITIALIZE_UPLINK
           </button>
 

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Wallet, Shield, X, Zap, Loader2 } from 'lucide-react';
 import { playHover, playClick } from '../services/audio';
@@ -58,7 +59,8 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onConnect })
             onClick={handleInjectedConnect}
             onMouseEnter={playHover}
             disabled={isConnecting}
-            className="w-full group relative overflow-hidden border border-slate-700 hover:border-intuition-primary bg-slate-900/50 hover:bg-intuition-primary/10 transition-all duration-300 p-0 clip-path-slant text-left disabled:opacity-50 disabled:cursor-wait"
+            className="btn-cyber btn-cyber-outline w-full p-0 text-left disabled:opacity-50 disabled:cursor-wait"
+            style={{ display: 'block', height: 'auto', clipPath: 'polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px)' }}
           >
             <div className="p-5 flex items-center gap-4 relative z-10">
               <div className="w-12 h-12 border border-slate-600 rounded-lg flex items-center justify-center bg-black group-hover:border-intuition-primary group-hover:text-intuition-primary text-white transition-colors">
@@ -71,8 +73,6 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onConnect })
                 <div className="text-[10px] font-mono text-slate-500 uppercase group-hover:text-slate-400">METAMASK / RABBY / BRAVE</div>
               </div>
             </div>
-            {/* Hover Scanline */}
-            {!isConnecting && <div className="absolute top-0 left-0 w-1 h-full bg-intuition-primary scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-center"></div>}
           </button>
 
           {/* Option 2: WalletConnect (Disabled/Mock) */}

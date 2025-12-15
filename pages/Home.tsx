@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Shield, Database, Network, Cpu, ChevronRight, Activity, Globe, Lock, Terminal, Zap, Hash, TrendingUp, ChevronDown, Radio } from 'lucide-react';
@@ -101,19 +102,16 @@ const Home: React.FC = () => {
               to="/markets"
               onClick={playClick}
               onMouseEnter={playHover}
-              className="group relative w-full sm:w-64 py-4 md:py-5 bg-intuition-primary text-black font-black text-lg tracking-widest font-display overflow-hidden clip-path-slant hover-glow transition-all hover:-translate-y-1 shadow-[0_0_30px_rgba(0,243,255,0.4)]"
+              className="btn-cyber btn-cyber-cyan w-full sm:w-64 py-5 text-lg"
             >
-              <div className="absolute inset-0 bg-white/40 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-              <span className="relative flex items-center justify-center gap-2">
-                ENTER_MARKET <ArrowRight className="group-hover:translate-x-1 transition-transform" size={20} />
-              </span>
+              ENTER_MARKET <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" size={20} />
             </Link>
             
             <Link
               to="/stats"
               onClick={playClick}
               onMouseEnter={playHover}
-              className="group w-full sm:w-64 py-4 md:py-5 border border-intuition-primary/50 text-intuition-primary font-bold text-lg tracking-widest font-display bg-black/50 hover:bg-intuition-primary/10 transition-all clip-path-slant hover-glow hover:-translate-y-1 flex items-center justify-center shadow-[0_0_20px_rgba(0,243,255,0.1)]"
+              className="btn-cyber btn-cyber-outline w-full sm:w-64 py-5 text-lg"
             >
               LEADERBOARD
             </Link>
@@ -263,7 +261,7 @@ const Home: React.FC = () => {
             <Link 
               to="/markets" 
               onClick={playClick}
-              className="w-full sm:w-auto px-12 py-6 bg-white text-black font-black font-display text-xl tracking-widest clip-path-slant hover:bg-intuition-primary transition-colors shadow-[0_0_30px_rgba(255,255,255,0.5)] hover:shadow-[0_0_60px_rgba(0,243,255,0.8)]"
+              className="btn-cyber btn-cyber-white w-full sm:w-auto px-12 py-6 text-xl"
             >
               INITIALIZE_LINK
             </Link>

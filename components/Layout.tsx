@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github } from 'lucide-react';
 import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
@@ -393,11 +394,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
              </a>
           </div>
 
-          <div className="flex gap-4">
-             {/* Social Links Simplified */}
-             <div className="text-slate-500 font-mono text-[10px] tracking-widest">
-                [GITHUB] [TWITTER] [TELEGRAM]
-             </div>
+          <div className="flex gap-6 items-center">
+             <a href="https://github.com/intuition-box/INTURANK" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="GitHub">
+                <Github size={24} />
+             </a>
+             <a href="https://x.com/inturank" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="X (Twitter)">
+                {/* X Logo SVG */}
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="w-6 h-6 fill-current"><g><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></g></svg>
+             </a>
+             <a href="https://t.me/inturank" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="Telegram">
+                {/* Telegram Logo SVG */}
+                <svg viewBox="0 0 24 24" className="w-6 h-6 fill-current" xmlns="http://www.w3.org/2000/svg"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 11.944 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+             </a>
           </div>
         </div>
       </footer>
