@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Activity, RefreshCw, Search, Terminal, Database, ShieldAlert, SignalHigh, Loader2 } from 'lucide-react';
 import { getGlobalClaims } from '../services/graphql';

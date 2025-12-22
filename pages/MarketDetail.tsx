@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -164,7 +163,7 @@ const MarketDetail: React.FC = () => {
   const displayDistrust = hoverData ? hoverData.distrust : (100 - currentScore).toFixed(1);
 
   return (
-    <div className="w-full max-w-[1400px] mx-auto px-4 py-8 pb-32">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-8 pb-32">
         <TransactionModal isOpen={txModal.isOpen} status={txModal.status} title={txModal.title} message={txModal.message} hash={txModal.hash} onClose={() => setTxModal(p => ({ ...p, isOpen: false }))} />
         <Link to="/markets" className="flex items-center gap-2 text-slate-500 hover:text-white mb-6 text-xs font-mono transition-colors group">
             <ArrowLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> BACK_TO_DATABASE

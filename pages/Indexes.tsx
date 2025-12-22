@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { getAllAgents } from '../services/graphql';
 import { Account } from '../types';
@@ -145,7 +144,7 @@ const Indexes: React.FC = () => {
                 <div className="flex flex-col lg:flex-row gap-12 items-start">
                     <div className="flex-1">
                         <p className="text-intuition-primary/60 font-mono text-sm mb-8 max-w-2xl leading-relaxed uppercase tracking-widest">
-                            >> Aggregate performance across specific semantic sectors. Track the collective conviction of the most influential entities in the trust graph.
+                            {" >> "} Aggregate performance across specific semantic sectors. Track the collective conviction of the most influential entities in the trust graph.
                         </p>
                         
                         <div className="bg-black border border-intuition-primary/30 p-6 flex items-start gap-5 max-w-3xl clip-path-slant shadow-[0_0_30px_rgba(0,243,255,0.05)] group hover:border-intuition-primary/60 transition-all">

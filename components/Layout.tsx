@@ -368,7 +368,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                  System Online
              </div>
              <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">
-                 Chain_ID [{CHAIN_ID}] :: v.1.2.0
+                 Chain_ID [{CHAIN_ID}] :: {" >> "} v.1.2.0
              </div>
           </div>
 

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Wallet, Shield, X, Zap, Loader2 } from 'lucide-react';
 import { playHover, playClick } from '../services/audio';
@@ -51,7 +50,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onConnect })
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
           
           <div className="text-xs font-mono text-intuition-primary/70 uppercase tracking-widest mb-4">
-            &gt;&gt; SELECT INTERFACE PROTOCOL
+            {" >> "} SELECT INTERFACE PROTOCOL
           </div>
 
           {/* Option 1: Injected (Metamask) */}

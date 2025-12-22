@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { User, Shield, CheckCircle, AlertTriangle, MessageSquare, Activity, Tag, Binary, Fingerprint, ChevronsRight, Share2 } from 'lucide-react';
@@ -107,7 +106,7 @@ const ClaimCard: React.FC<{ claim: Claim }> = ({ claim }) => {
            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 relative z-10">
                <div className="lg:col-span-9">
                    <div className="p-2.5 bg-white/5 border border-white/5 clip-path-slant italic font-mono text-[9px] text-slate-400 leading-relaxed">
-                        &gt; DECRYPTED_SIGNAL: "{claim.reason || 'Semantic link established via consensus staking. No descriptive payload detected in this packet.'}"
+                        {" > "} DECRYPTED_SIGNAL: "{claim.reason || 'Semantic link established via consensus staking. No descriptive payload detected in this packet.'}"
                    </div>
                </div>
                

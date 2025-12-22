@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowRightLeft, Search, TrendingUp, Shield, Activity, Zap, Users, Trophy, Brain, Flame, Sword, Info, Loader2, Sparkles, Quote, Terminal, ChevronRight } from 'lucide-react';
 import { getAllAgents, getAgentTriples } from '../services/graphql';
@@ -108,7 +107,7 @@ const AgentCard: React.FC<{
     
     return (
         <div 
-            className={`relative flex-1 bg-[#05080f] border-2 p-10 flex flex-col items-center justify-center min-h-[420px] transition-all duration-500 hover:bg-slate-900/40 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success shadow-[0_0_60px_rgba(0,255,157,0.15)] scale-[1.02] z-10' : isLoser ? 'border-intuition-danger/30 opacity-80' : 'border-slate-800 hover:border-intuition-primary/50'}`}
+            className={`relative flex-1 bg-[#05080f] border-2 p-10 flex flex-col items-center justify-center min-h-[420px] transition-all duration-500 hover:bg-slate-900/40 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success shadow-[0_0_60px_rgba(0,243,255,0.15)] scale-[1.02] z-10' : isLoser ? 'border-intuition-danger/30 opacity-80' : 'border-slate-800 hover:border-intuition-primary/50'}`}
             onClick={() => { playClick(); onSelect(); }}
             onMouseEnter={playHover}
         >
@@ -265,7 +264,7 @@ const Compare: React.FC = () => {
                     </div>
                     <div>
                         <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tight text-glow uppercase">AGENT_COMPARISON</h1>
-                        <p className="text-intuition-primary/50 font-mono text-xs tracking-[0.4em] uppercase mt-2">>> NEURAL_REPUTATION_ARBITRAGE_ENGINE</p>
+                        <p className="text-intuition-primary/50 font-mono text-xs tracking-[0.4em] uppercase mt-2">{" >> "} NEURAL_REPUTATION_ARBITRAGE_ENGINE</p>
                     </div>
                 </div>
                 

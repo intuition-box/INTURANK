@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Shield, Database, Network, Cpu, ChevronRight, Activity, Globe, Lock, Terminal, Zap, Hash, TrendingUp, ChevronDown, Radio } from 'lucide-react';
@@ -93,8 +92,8 @@ const Home: React.FC = () => {
           </h1>
 
           <p className="max-w-2xl mx-auto text-base md:text-xl text-slate-400 mb-10 md:mb-12 font-mono leading-relaxed px-4">
-            <span className="text-intuition-primary text-glow">&gt;&gt;</span> The intelligence layer of the open web.<br/>
-            <span className="text-intuition-primary text-glow">&gt;&gt;</span> Stake on identity. Short the noise. Profit from truth.
+            <span className="text-intuition-primary text-glow">{" >> "}</span> The intelligence layer of the open web.<br/>
+            <span className="text-intuition-primary text-glow">{" >> "}</span> Stake on identity. Short the noise. Profit from truth.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-6 mb-24 w-full px-4">
@@ -231,7 +230,7 @@ const Home: React.FC = () => {
             </div>
             <div className="p-6 md:p-8 font-mono text-sm md:text-base leading-relaxed text-slate-300 relative">
               <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-              <p className="mb-4 text-intuition-primary text-glow">&gt;&gt; SYSTEM BOOT SEQUENCE INITIATED...</p>
+              <p className="mb-4 text-intuition-primary text-glow">{" >> "} SYSTEM BOOT SEQUENCE INITIATED...</p>
               <p className="mb-4">
                 The internet is broken. Information is abundant, but <span className="text-white font-bold text-glow">trust</span> is scarce. 
                 We are drowning in noise, deepfakes, and sybil attacks.
@@ -244,7 +243,7 @@ const Home: React.FC = () => {
                 <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span> Not controlled by a bank, 
                 but by you. The market decides what is true.
               </p>
-              <p className="animate-pulse text-intuition-primary">&gt;&gt; AWAITING INPUT_</p>
+              <p className="animate-pulse text-intuition-primary">{" >> "} AWAITING INPUT_</p>
             </div>
           </div>
         </div>
