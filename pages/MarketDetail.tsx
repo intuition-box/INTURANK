@@ -71,7 +71,6 @@ const MarketDetail: React.FC = () => {
   const [minDeposit, setMinDeposit] = useState<string>('0.001');
   const [txModal, setTxModal] = useState<any>({ isOpen: false, status: 'idle', title: '', message: '' });
   const [userPosition, setUserPosition] = useState<any>(null);
-  const [showShareCard, setShowShareCard] = useState(false);
   const [activeTab, setActiveTab] = useState<'positions' | 'claims' | 'network'>('positions');
   const [hoverData, setHoverData] = useState<any>(null);
 
@@ -242,46 +241,72 @@ const MarketDetail: React.FC = () => {
             <div className="space-y-4">
                 <ShieldScore history={activityLog} />
                 <RealityCheck agent={agent} score={currentScore} />
+                
+                {/* EXECUTION DECK HUD */}
                 <div className="bg-black border border-intuition-primary p-1 clip-path-slant hover-glow transition-all">
                     <div className="border border-intuition-primary/30 p-6 bg-[#05080f]">
-                        <h2 className="font-bold text-intuition-primary font-display text-xs mb-6 uppercase tracking-[0.2em] border-b border-white/5 pb-3 flex justify-between items-center">
-                           <span>Execution Deck</span>
-                           <div className="flex gap-1">
-                                <div className="w-1 h-1 rounded-full bg-intuition-primary animate-ping"></div>
-                                <div className="w-1 h-1 rounded-full bg-intuition-primary"></div>
-                           </div>
-                        </h2>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="font-black text-intuition-primary font-display text-xs uppercase tracking-[0.25em] text-glow">
+                                Execution Deck
+                            </h2>
+                            <div className="w-1.5 h-1.5 rounded-full bg-intuition-primary animate-pulse shadow-[0_0_8px_#00f3ff]"></div>
+                        </div>
                         
-                        <div className="grid grid-cols-2 gap-2 mb-6">
+                        <div className="grid grid-cols-2 gap-2 mb-8">
                             <button 
                                 onClick={() => { playClick(); setAction('ACQUIRE'); }} 
-                                className={`py-3 text-[10px] font-black border clip-path-slant transition-all ${action === 'ACQUIRE' ? 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.3)]' : 'border-slate-800 text-slate-600 bg-black'}`}
+                                className={`py-4 text-[10px] font-black border clip-path-slant transition-all uppercase tracking-widest ${action === 'ACQUIRE' ? 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'border-slate-800 text-slate-500 bg-black hover:border-white/10'}`}
                             >
                                 ACQUIRE_SIGNAL
                             </button>
                             <button 
                                 onClick={() => { playClick(); setAction('LIQUIDATE'); }} 
-                                className={`py-3 text-[10px] font-black border clip-path-slant transition-all ${action === 'LIQUIDATE' ? 'bg-intuition-danger text-black border-intuition-danger shadow-[0_0_15px_rgba(255,0,85,0.3)]' : 'border-slate-800 text-slate-600 bg-black'}`}
+                                className={`py-4 text-[10px] font-black border clip-path-slant transition-all uppercase tracking-widest ${action === 'LIQUIDATE' ? 'bg-intuition-danger text-black border-intuition-danger shadow-[0_0_20px_rgba(255,0,85,0.4)]' : 'border-slate-800 text-slate-500 bg-black hover:border-white/10'}`}
                             >
                                 LIQUIDATE_SIGNAL
                             </button>
                         </div>
 
-                        <div className="mb-6">
-                            <div className="flex justify-between items-center mb-2 text-[10px] font-mono text-slate-500 uppercase tracking-wider font-bold">
-                                <span>Volume_{action}</span>
-                                <span className="opacity-60">MAX: {action === 'ACQUIRE' ? parseFloat(walletBalance).toFixed(4) : parseFloat(shareBalance).toFixed(4)}</span>
+                        {/* Conviction Layer Selector */}
+                        <div className="mb-6 space-y-3">
+                            <div className="flex justify-between items-end">
+                                <span className="text-[9px] font-mono text-slate-600 uppercase font-black tracking-widest">Target_Position</span>
+                                <span className="text-[8px] font-mono text-slate-700 uppercase">Mag_{sentiment === 'TRUST' ? displayTrust : displayDistrust}%</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button 
+                                    onClick={() => { playClick(); setSentiment('TRUST'); }}
+                                    className={`flex flex-col p-3 border clip-path-slant transition-all text-left ${sentiment === 'TRUST' ? 'bg-intuition-success/10 border-intuition-success' : 'bg-black border-slate-800 opacity-40 hover:opacity-100'}`}
+                                >
+                                    <span className={`text-[10px] font-black font-display tracking-widest ${sentiment === 'TRUST' ? 'text-intuition-success text-glow-success' : 'text-slate-500'}`}>TRUST</span>
+                                    <span className="text-[8px] font-mono text-slate-600 uppercase">Supportive</span>
+                                </button>
+                                <button 
+                                    onClick={() => { playClick(); setSentiment('DISTRUST'); }}
+                                    className={`flex flex-col p-3 border clip-path-slant transition-all text-left ${sentiment === 'DISTRUST' ? 'bg-intuition-danger/10 border-intuition-danger' : 'bg-black border-slate-800 opacity-40 hover:opacity-100'}`}
+                                >
+                                    <span className={`text-[10px] font-black font-display tracking-widest ${sentiment === 'DISTRUST' ? 'text-intuition-danger text-glow-danger' : 'text-slate-500'}`}>DISTRUST</span>
+                                    <span className="text-[8px] font-mono text-slate-600 uppercase">Skeptical</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="mb-8">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest font-black">Volume_{action}</span>
+                                <span className="text-[9px] font-mono text-slate-600 uppercase">MAX: {action === 'ACQUIRE' ? parseFloat(walletBalance).toFixed(4) : parseFloat(shareBalance).toFixed(4)}</span>
                             </div>
                             <div className="relative group">
+                                <div className="absolute inset-0 bg-intuition-primary/5 blur-md opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
                                 <input 
                                     type="number" 
                                     value={inputAmount} 
                                     onChange={e => setInputAmount(e.target.value)} 
-                                    className={`w-full bg-slate-900 border p-4 text-right text-white font-mono text-lg focus:outline-none clip-path-slant transition-all ${action === 'ACQUIRE' ? 'border-intuition-primary/30 focus:border-intuition-primary' : 'border-intuition-danger/30 focus:border-intuition-danger'}`} 
+                                    className={`w-full bg-[#03050a] border p-5 text-right text-white font-mono text-2xl focus:outline-none clip-path-slant transition-all relative z-10 ${action === 'ACQUIRE' ? 'border-intuition-primary/30 focus:border-intuition-primary' : 'border-intuition-danger/30 focus:border-intuition-danger'}`} 
                                     placeholder="0.00" 
                                 />
-                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-600 uppercase pointer-events-none group-focus-within:text-white transition-colors">
-                                    {action === 'ACQUIRE' ? CURRENCY_SYMBOL : 'UNITS'}
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-700 uppercase pointer-events-none group-focus-within:text-intuition-primary transition-colors z-20">
+                                    {sentiment === 'TRUST' ? 'TRUST' : 'SKEPTIC'}
                                 </div>
                             </div>
                         </div>
@@ -289,7 +314,7 @@ const MarketDetail: React.FC = () => {
                         <button 
                             onClick={handleExecute} 
                             disabled={!wallet || !inputAmount || parseFloat(inputAmount) <= 0}
-                            className={`btn-cyber w-full py-5 text-xs font-black tracking-[0.2em] shadow-xl disabled:opacity-30 disabled:cursor-not-allowed ${action === 'ACQUIRE' ? 'btn-cyber-cyan' : 'btn-cyber-danger'}`}
+                            className={`btn-cyber w-full py-6 text-sm font-black tracking-[0.3em] shadow-2xl disabled:opacity-20 disabled:cursor-not-allowed transition-all ${action === 'ACQUIRE' ? 'btn-cyber-cyan' : 'btn-cyber-danger'}`}
                         >
                             {action === 'ACQUIRE' ? 'CONFIRM_SIGNAL' : 'EXIT_POSITION'}
                         </button>
