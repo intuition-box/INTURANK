@@ -9,7 +9,8 @@ import { playClick, playHover } from '../services/audio';
 import { Link } from 'react-router-dom';
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = 'gemini-3-flash-preview';
+// Use Pro model for higher-stakes reasoning tasks
+const MODEL_NAME = 'gemini-3-pro-preview';
 
 // AI Rivalry Analysis Component
 const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number; rScore: number }> = ({ left, right, lScore, rScore }) => {
@@ -17,9 +18,15 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     const [loading, setLoading] = useState(false);
 
     const generateAnalysis = async () => {
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) {
+            setAnalysis('Neural uplink restricted. Environment variable [API_KEY] not detected in local context.');
+            return;
+        }
+
         setLoading(true);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey });
             const prompt = `
                 Perform a high-stakes competitive analysis between two reputation-based assets in a trust graph.
                 Entity A: ${left.label} (Score: ${lScore.toFixed(1)}, Type: ${left.type})
@@ -34,11 +41,11 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
 
             const response = await ai.models.generateContent({
                 model: MODEL_NAME,
-                contents: prompt,
+                contents: [{ parts: [{ text: prompt }] }],
             });
             setAnalysis(response.text || 'Synthesis incomplete. Tactical data corrupted.');
         } catch (e) {
-            setAnalysis('AI Uplink severed. Manual calculation required.');
+            setAnalysis('AI Uplink severed. Manual calculation required for conflict simulation.');
         } finally {
             setLoading(false);
         }
@@ -57,7 +64,7 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
                         <div className="p-2 bg-intuition-primary/10 border border-intuition-primary/40 rounded text-intuition-primary">
                             <Sword size={20} />
                         </div>
-                        <h3 className="text-lg font-black font-display text-white tracking-widest uppercase">CONFLICT_SIMULATION_V2</h3>
+                        <h3 className="text-lg font-black font-display text-white tracking-widest uppercase">CONFLICT_SIMULATION_V3</h3>
                     </div>
                     
                     {!analysis && !loading ? (
@@ -115,7 +122,6 @@ const AgentCard: React.FC<{
                 {label}
             </div>
 
-            {/* Scanline Effect */}
             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
             
             {agent ? (
@@ -189,7 +195,6 @@ const ComparisonRow: React.FC<{
 
     return (
         <div className="flex items-center justify-between py-8 border-b border-white/5 hover:bg-white/5 px-10 transition-all group relative overflow-hidden">
-            {/* Visual Bars Background */}
             <div className="absolute left-0 top-0 bottom-0 bg-intuition-success/5 transition-all duration-1000" style={{ width: `${leftPercent / 2}%` }}></div>
             <div className="absolute right-0 top-0 bottom-0 bg-intuition-success/5 transition-all duration-1000" style={{ width: `${rightPercent / 2}%` }}></div>
 
@@ -255,11 +260,9 @@ const Compare: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-intuition-dark pt-12 pb-32 px-4 max-w-[1400px] mx-auto">
-            
-            {/* Header Telemetry */}
             <div className="flex flex-col md:flex-row items-center justify-between mb-16 gap-6 border-b border-white/5 pb-10">
                 <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 bg-intuition-primary/10 border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.2)] group-hover:rotate-180 transition-all clip-path-slant">
+                    <div className="w-16 h-16 bg-intuition-primary/10 border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_20px_rgba(243,255,0,0.2)] group-hover:rotate-180 transition-all clip-path-slant">
                         <ArrowRightLeft size={32} />
                     </div>
                     <div>
@@ -278,7 +281,6 @@ const Compare: React.FC = () => {
                 </div>
             </div>
 
-            {/* Arena Stage */}
             <div className="flex flex-col lg:flex-row gap-8 relative mb-20 items-stretch">
                 <AgentCard 
                     label="CHALLENGER A"
@@ -288,9 +290,7 @@ const Compare: React.FC = () => {
                     isLoser={leftAgent && rightAgent && lScore < rScore}
                 />
                 
-                {/* Arena Centerpiece */}
                 <div className="flex flex-col items-center justify-center gap-6 min-w-[120px] relative">
-                    {/* Vertical Tension Line */}
                     <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-gradient-to-b from-transparent via-slate-800 to-transparent"></div>
                     
                     <div className="text-[10px] font-black font-mono text-slate-600 uppercase tracking-widest bg-intuition-dark z-10 px-2 py-1">Tension_Index</div>
@@ -323,16 +323,11 @@ const Compare: React.FC = () => {
                 />
             </div>
 
-            {/* Simulation & Metrics */}
             {leftAgent && rightAgent ? (
                 <div className="space-y-12 animate-in fade-in slide-in-from-bottom-10 duration-1000">
-                    
-                    {/* Rivalry AI Synthesis */}
                     <RivalryAnalysis left={leftAgent} right={rightAgent} lScore={lScore} rScore={rScore} />
 
-                    {/* Multi-Metric Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        {/* Data Telemetry Table */}
                         <div className="bg-black border border-intuition-border clip-path-slant shadow-2xl relative overflow-hidden group">
                             <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
                             <div className="bg-intuition-card p-4 border-b border-intuition-border text-center text-xs font-black font-mono text-intuition-primary uppercase tracking-[0.5em]">
@@ -368,7 +363,6 @@ const Compare: React.FC = () => {
                             />
                         </div>
 
-                        {/* Relative Performance Chart */}
                         <div className="bg-black border border-intuition-border p-10 h-[450px] clip-path-slant relative neon-panel group">
                             <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
                             <div className="absolute top-10 right-10 z-10">
@@ -427,7 +421,6 @@ const Compare: React.FC = () => {
                 </div>
             )}
 
-            {/* High-Tech Selector Modal */}
             {isSelectorOpen && (
                 <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 backdrop-blur-2xl animate-in fade-in duration-300" onClick={() => setIsSelectorOpen(null)}>
                     <div className="w-full max-w-2xl bg-[#05080f] border-2 border-intuition-primary shadow-[0_0_100px_rgba(0,243,255,0.1)] p-10 clip-path-slant relative" onClick={e => e.stopPropagation()}>
@@ -452,10 +445,6 @@ const Compare: React.FC = () => {
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
-                            <div className="absolute right-4 bottom-4 flex gap-1">
-                                 <div className="w-1.5 h-1.5 bg-intuition-primary animate-pulse"></div>
-                                 <div className="w-1.5 h-1.5 bg-intuition-primary animate-pulse delay-100"></div>
-                            </div>
                         </div>
 
                         <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-4 custom-scrollbar relative z-10">

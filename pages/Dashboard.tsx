@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
@@ -17,7 +16,7 @@ const Dashboard: React.FC = () => {
   const [history, setHistory] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<string>('0.00');
-  const [portfolioValue, setPortfolioValue] = useState<string>('0.00');
+  const [portfolioValue, setPortfolioValue] = useState('0.00');
   const [netPnL, setNetPnL] = useState<number>(0);
   const [chartData, setChartData] = useState<any[]>([]);
 
@@ -281,22 +280,23 @@ const Dashboard: React.FC = () => {
                 onMouseEnter={playHover}
                 className="flex justify-between items-center p-3 border-b border-white/5 hover:bg-white/5 transition-colors relative overflow-hidden"
               >
-                {!tx.id?.startsWith?.('0x') && <div className="absolute left-0 top-0 h-full w-1 bg-yellow-500 animate-pulse"></div>}
+                {/* Visual indicator for off-chain vs on-chain */}
+                {tx.id && !tx.id.toString().startsWith('0x') && <div className="absolute left-0 top-0 h-full w-1 bg-yellow-500 animate-pulse"></div>}
                 <div className="flex flex-col pl-2">
                   <span className={`font-bold ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRED' : 'LIQUIDATED'} {tx.assetLabel || 'Unknown'}</span>
-                  <span className="text-slate-600">ID: {tx.vaultId?.slice(0, 8)}...</span>
+                  <span className="text-slate-600">ID: {tx.vaultId ? tx.vaultId.toString().slice(0, 8) : '0x00'}...</span>
                 </div>
                 <div className="text-right">
                   <div className="text-white font-bold">
                     {(() => {
                         try {
-                            const raw = tx.assets ?? '0';
+                            const raw = tx.assets ? tx.assets.toString() : '0';
                             const val = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw)));
                             return val.toFixed(4);
                         } catch { return '0.0000'; }
                     })()} {CURRENCY_SYMBOL}
                   </div>
-                  <div className="text-slate-500">{new Date(tx.timestamp || Date.now()).toLocaleTimeString() : 'Block #'}</div>
+                  <div className="text-slate-500">{tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString() : 'Block #'}</div>
                 </div>
               </div>
             )) : (<div className="text-slate-600 text-center py-4 border border-dashed border-slate-800">[NO HISTORY FOUND]</div>)}

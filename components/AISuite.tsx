@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Brain, ShieldCheck, Zap, Loader2, AlertCircle, Quote, Terminal } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
@@ -14,9 +13,19 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
     useEffect(() => {
         const generateBrief = async () => {
             if (!agent.id) return;
+            
+            // Vite handles the substitution of process.env.API_KEY at build time.
+            const apiKey = process.env.API_KEY;
+            
+            if (!apiKey) {
+                setBrief('Neural uplink restricted. Environment variable [API_KEY] not detected in local context.');
+                setLoading(false);
+                return;
+            }
+
             setLoading(true);
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const ai = new GoogleGenAI({ apiKey });
                 const triplesContext = (triples || [])
                     .slice(0, 5)
                     .map(t => `${t.subject?.label || 'Subject'} -> ${t.predicate?.label || 'Link'} -> ${t.object?.label || 'Object'}`)
@@ -36,18 +45,19 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
 
                 const response = await ai.models.generateContent({
                     model: MODEL_NAME,
-                    contents: prompt,
+                    contents: [{ parts: [{ text: prompt }] }],
                 });
-                setBrief(response.text || 'Insufficient data for synthesis.');
+                
+                setBrief(response.text || 'Synthesis incomplete. Core data stream fragmented.');
             } catch (e) {
                 console.error("AI_SYNTHESIS_FAILURE:", e);
-                setBrief('Neural uplink restricted. Real-time intel unavailable.');
+                setBrief('Neural uplink restricted. Real-time intel unavailable via current satellite node.');
             } finally {
                 setLoading(false);
             }
         };
         generateBrief();
-    }, [agent.id, triples?.length, history?.length]);
+    }, [agent.id, agent.totalAssets, triples?.length, history?.length]);
 
     return (
         <div className="bg-intuition-card border border-intuition-primary/40 p-6 clip-path-slant relative overflow-hidden group min-h-[140px] shadow-[0_0_30px_rgba(0,243,255,0.05)] hover:shadow-[0_0_40px_rgba(0,243,255,0.15)] transition-all duration-500">
@@ -55,7 +65,6 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
                 <Brain size={64} />
             </div>
             
-            {/* Header with Pulse */}
             <div className="flex justify-between items-center mb-4 relative z-10">
                 <h3 className="text-[10px] font-mono text-intuition-primary uppercase tracking-[0.3em] flex items-center gap-2 font-black">
                     <div className="relative">
@@ -74,7 +83,7 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
                     <div className="flex items-center gap-3 text-slate-500 font-mono text-xs">
                         <Loader2 size={14} className="animate-spin" /> SYNCHRONIZING_COGNITION...
                     </div>
-                    <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5">
+                    <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5 p-[1px]">
                         <div className="h-full bg-intuition-primary w-1/3 animate-[marquee_2s_linear_infinite] shadow-[0_0_10px_#00f3ff]"></div>
                     </div>
                 </div>
@@ -136,7 +145,7 @@ export const ShieldScore: React.FC<{ history: Transaction[] }> = ({ history }) =
         <div className="bg-black border border-white/10 p-5 clip-path-slant group hover:border-white/30 transition-all hover:bg-white/5 shadow-lg">
             <div className="flex justify-between items-center mb-3">
                 <div className="text-[9px] font-mono text-slate-500 uppercase tracking-widest font-bold">Shield Integrity Index</div>
-                <div className="text-[10px] font-mono text-intuition-primary font-black uppercase text-glow">{integrity}%</div>
+                <div className={`text-[10px] font-mono text-intuition-primary font-black uppercase text-glow`}>{integrity}%</div>
             </div>
             <div className="flex gap-1.5 h-4 px-1">
                 {[...Array(10)].map((_, i) => (

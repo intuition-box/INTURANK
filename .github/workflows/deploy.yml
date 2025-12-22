@@ -31,8 +31,9 @@ jobs:
         run: npm install --no-fund --no-audit
 
       - name: Build site
- 
         run: npm run build
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -49,5 +50,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-
