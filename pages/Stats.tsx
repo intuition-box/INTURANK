@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle } from 'lucide-react';
 import { getTopPositions, getAllAgents, getTopClaims } from '../services/graphql';
@@ -82,12 +83,12 @@ const Stats: React.FC = () => {
             }
         });
 
-        const sorted = Array.from(userMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50).map(([id, val], idx) => ({
+        const sorted = Array.from(userMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 100).map(([id, val], idx) => ({
             rank: idx + 1,
             id: id,
             label: userMeta.get(id).label,
-            subLabel: id,
-            value: val.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+            subLabel: 'STAKED_CONVICTION',
+            value: val.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' TRUST',
             rawValue: val,
             image: userMeta.get(id).image
         }));
@@ -99,11 +100,11 @@ const Stats: React.FC = () => {
             const valA = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
             const valB = parseFloat(formatEther(BigInt(b.totalAssets || '0')));
             return valB - valA;
-        }).slice(0, 50).map((a, idx) => ({
+        }).slice(0, 100).map((a, idx) => ({
             rank: idx + 1,
             id: a.id,
             label: a.label || 'Unknown Agent',
-            subLabel: a.type || 'Atom',
+            subLabel: 'TOTAL_PROTOCOL_VOLUME',
             value: parseFloat(formatEther(BigInt(a.totalAssets || '0'))).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' TRUST',
             rawValue: parseFloat(formatEther(BigInt(a.totalAssets || '0'))),
             image: a.image
@@ -114,13 +115,18 @@ const Stats: React.FC = () => {
         const agents = await getAllAgents();
         const sorted = agents.map(a => {
             const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
-            const heuristic = assets * (Math.random() * 0.5 + 0.5); 
-            return { ...a, heuristic };
-        }).sort((a, b) => b.heuristic - a.heuristic).slice(0, 50).map((a, idx) => ({
+            const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
+            // Controversy Score = Volatility Entropy Index
+            // We measure the ratio of Volume to Liquidity Depth. 
+            // High Volume with shallow liquidity = high price sensitivity = High Controversy.
+            const volumeToDepth = shares > 0 ? (assets / shares) : 0;
+            const entropyIndex = (Math.log10(volumeToDepth + 1) * 100) + (assets * 0.05);
+            return { ...a, heuristic: entropyIndex };
+        }).sort((a, b) => b.heuristic - a.heuristic).slice(0, 100).map((a, idx) => ({
             rank: idx + 1,
             id: a.id,
             label: a.label || 'Unknown Agent',
-            subLabel: 'High Volatility',
+            subLabel: 'VOLATILITY_ENTROPY_INDEX',
             value: 'Score: ' + a.heuristic.toFixed(0),
             rawValue: a.heuristic,
             image: a.image
@@ -129,11 +135,11 @@ const Stats: React.FC = () => {
         
       } else if (activeTab === 'CLAIMS') {
           const claims = await getTopClaims();
-          const sorted = claims.map((c: any, idx: number) => ({
+          const sorted = claims.slice(0, 100).map((c: any, idx: number) => ({
               rank: idx + 1,
               id: c.id,
               label: '', 
-              subLabel: 'Claim',
+              subLabel: 'SEMANTIC_LINK_WEIGHT',
               value: parseFloat(formatEther(BigInt(c.value))).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' TRUST',
               rawValue: parseFloat(formatEther(BigInt(c.value))),
               subject: c.subject,
@@ -382,7 +388,7 @@ const Stats: React.FC = () => {
                                 </div>
                                 
                                 <h3 className={`font-black text-white text-xl truncate max-w-full mb-1 group-hover:${rankStyles.glow} transition-all`}>{item.label}</h3>
-                                <p className="text-xs text-slate-400 font-mono mb-6 uppercase tracking-widest">{item.subLabel.slice(0,10)}...</p>
+                                <p className="text-xs text-slate-400 font-mono mb-6 uppercase tracking-widest">{item.subLabel}</p>
                                 
                                 <div className={`mt-auto font-black font-display text-3xl ${rankStyles.text} ${rankStyles.glow}`}>
                                     {item.value}

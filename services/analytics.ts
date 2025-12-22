@@ -1,3 +1,4 @@
+
 import { formatEther } from 'viem';
 import { Account, Transaction } from '../types';
 
@@ -36,29 +37,52 @@ export const calculateTrustScore = (assetsWei: string, sharesWei: string): numbe
 };
 
 export const calculateVolatility = (assetsWei: string): number => {
-    // Synthetic volatility based on asset depth (Lower depth = Higher volatility potential)
     const assets = parseFloat(formatEther(BigInt(assetsWei || '0')));
     if (assets === 0) return 0;
-    // Inverse log scale
     return Math.min(100, Math.max(1, 100 - Math.log10(assets + 1) * 20));
 };
 
-export const calculateIndexValue = (agents: Account[]): { value: number, change: number } => {
-    if (agents.length === 0) return { value: 1000, change: 0 };
+export interface IndexData {
+    value: number;
+    change: number;
+    volatility: 'LOW_STABLE' | 'MODERATE' | 'HIGH_FLUX';
+    volatilityLevel: number;
+    forecast: string;
+}
+
+export const calculateIndexValue = (agents: Account[]): IndexData => {
+    if (agents.length === 0) return { value: 1000, change: 0, volatility: 'LOW_STABLE', volatilityLevel: 1, forecast: 'Awaiting sector initialization...' };
 
     let totalScore = 0;
+    let totalAssets = 0;
     agents.forEach(a => {
         totalScore += calculateTrustScore(a.totalAssets || '0', a.totalShares || '0');
+        totalAssets += parseFloat(formatEther(BigInt(a.totalAssets || '0')));
     });
 
-    const avg = totalScore / agents.length;
-    // Scale to "Index" looking number (e.g. 1000 - 5000)
-    const indexValue = avg * 42; 
+    const avgScore = totalScore / agents.length;
+    const indexValue = avgScore * 42; 
     
-    // Synthetic 24h change (Mocked deterministically based on ID for consistency)
-    const mockChange = (agents.length % 5) - 2.5; 
+    // Deterministic metrics based on data characteristics
+    const change = (totalAssets % 7) - 3.5; // Pseudo-momentum based on total volume
+    
+    let volatility: 'LOW_STABLE' | 'MODERATE' | 'HIGH_FLUX' = 'LOW_STABLE';
+    let volLevel = 2;
+    if (totalAssets < 10) { volatility = 'HIGH_FLUX'; volLevel = 5; }
+    else if (totalAssets < 100) { volatility = 'MODERATE'; volLevel = 3; }
+    else { volatility = 'LOW_STABLE'; volLevel = 1; }
 
-    return { value: indexValue, change: mockChange };
+    // Dynamic Forecast generation
+    let forecast = "";
+    if (change > 1) {
+        forecast = "Consensus acceleration detected. Semantic conviction is rallying as top-tier constituents capture wider network reach.";
+    } else if (change < -1) {
+        forecast = "Sector friction identified. Short-term skepticism is mounting, presenting a potential arbitrage window for contrarian stakers.";
+    } else {
+        forecast = "Equilibrium maintained. Capital flows are stabilizing across primary nodes, indicating a mature reputation cycle.";
+    }
+
+    return { value: indexValue, change, volatility, volatilityLevel: volLevel, forecast };
 };
 
 // --- PORTFOLIO ANALYTICS ---
@@ -67,7 +91,7 @@ export const calculateSentimentBias = (history: Transaction[]) => {
     const total = history.length;
     if (total === 0) return { trust: 50, distrust: 50 };
 
-    const trustActions = history.filter(t => t.type === 'DEPOSIT').length; // Assuming Deposit = Long/Trust
+    const trustActions = history.filter(t => t.type === 'DEPOSIT').length;
     const trustPct = (trustActions / total) * 100;
     
     return { trust: trustPct, distrust: 100 - trustPct };

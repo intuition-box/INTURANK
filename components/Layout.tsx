@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github } from 'lucide-react';
@@ -157,7 +156,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link to="/" onClick={playClick} className="text-xl font-black tracking-wider text-white font-display group-hover:text-intuition-primary transition-colors text-glow">
                   INTU<span className="text-intuition-primary group-hover:text-white transition-colors">RANK</span>
                 </Link>
-                <span className="hidden md:block text-[10px] text-intuition-primary/70 font-mono tracking-[0.2em] group-hover:tracking-[0.3em] transition-all">V.1.1.0 BETA</span>
+                <span className="hidden md:block text-[10px] text-intuition-primary/70 font-mono tracking-[0.2em] group-hover:tracking-[0.3em] transition-all">V.1.2.0 STABLE</span>
               </div>
             </div>
 
@@ -369,7 +368,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                  System Online
              </div>
              <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">
-                 Chain_ID [{CHAIN_ID}] :: v.1.1.0
+                 Chain_ID [{CHAIN_ID}] :: v.1.2.0
              </div>
           </div>
 
@@ -405,6 +404,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
              <a href="https://t.me/inturank" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="Telegram">
                 {/* Telegram Logo SVG */}
                 <svg viewBox="0 0 24 24" className="w-6 h-6 fill-current" xmlns="http://www.w3.org/2000/svg"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 11.944 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+             </a>
+             <a href="https://inturank.medium.com" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="Medium">
+                {/* Medium Logo SVG */}
+                <svg viewBox="0 0 24 24" className="w-6 h-6 fill-current" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M13.54 12a6.8 6.8 0 1 1-6.77-6.82A6.8 6.8 0 0 1 13.54 12zM20.96 12c0 3.54-1.51 6.42-3.38 6.42s-3.38-2.88-3.38-6.42 1.51-6.42 3.38-6.42 3.38 2.88 3.38 6.42zM24 12c0 3.17-.31 5.75-.7 5.75s-.7-2.58-.7-5.75.31-5.75.7-5.75.7 2.58.7 5.75z"/>
+                </svg>
              </a>
           </div>
         </div>

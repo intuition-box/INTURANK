@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins, AlertTriangle, Lock } from 'lucide-react';
+import { Wallet, PieChart as PieIcon, Activity, Clock, RefreshCw, Zap, ExternalLink, Download, Info, TrendingUp, Coins, AlertTriangle, Lock, ShieldAlert, Cpu, EyeOff, Radio } from 'lucide-react';
 import { formatEther } from 'viem';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -40,15 +40,12 @@ const Portfolio: React.FC = () => {
   const fetchUserData = async (address: string) => {
     setLoading(true);
     try {
-      // 1. Fetch Liquid Balance immediately
       const bal = await getWalletBalance(address);
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      // 2. Fetch History (Chain + Local Merge)
       const chainHistory = await getUserHistory(address).catch(() => []);
       const localHistory = getLocalTransactions(address);
       
-      // Improved Deduplication: Check if local tx hash is part of the graph ID
       const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
       const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
       
@@ -57,28 +54,27 @@ const Portfolio: React.FC = () => {
       
       setHistory(mergedHistory.slice().reverse());
 
-      // 3. Analytics: Sentiment & PnL Baseline
       setSentimentBias(calculateSentimentBias(mergedHistory));
       setSemanticFootprint(mergedHistory.length);
 
-      let runningDeposit = 0;
-      let runningRedeem = 0;
+      let runningCostBasis = 0; 
+      let totalRealizedOutflow = 0; 
+
       const historyPoints = mergedHistory.map(tx => {
           try {
               const val = parseFloat(formatEther(BigInt(tx.assets || '0')));
-              if (tx.type === 'DEPOSIT') runningDeposit += val;
-              else if (tx.type === 'REDEEM') runningRedeem += val;
+              if (tx.type === 'DEPOSIT') runningCostBasis += val;
+              else if (tx.type === 'REDEEM') totalRealizedOutflow += val;
           } catch {}
           return {
               timestamp: tx.timestamp,
               date: new Date(tx.timestamp).toLocaleDateString(),
-              val: runningDeposit - runningRedeem 
+              val: runningCostBasis - totalRealizedOutflow 
           };
       });
       if (historyPoints.length > 0) historyPoints.unshift({ timestamp: historyPoints[0].timestamp - 1000, date: '', val: 0 });
       setChartData(historyPoints);
 
-      // 4. ROBUST POSITION SCANNING
       const graphPositions = await getUserPositions(address).catch(() => []);
       
       const uniqueVaultIds = Array.from(new Set([
@@ -112,10 +108,10 @@ const Portfolio: React.FC = () => {
       setPositions(finalPositions);
       setExposureData(calculateCategoryExposure(finalPositions));
 
-      const currentVal = finalPositions.reduce((acc, cur) => acc + cur.value, 0);
-      setPortfolioValue(currentVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
+      const currentActiveValue = finalPositions.reduce((acc, cur) => acc + cur.value, 0);
+      setPortfolioValue(currentActiveValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
       
-      const pnl = (currentVal + runningRedeem) - runningDeposit;
+      const pnl = (currentActiveValue + totalRealizedOutflow) - runningCostBasis;
       setNetPnL(pnl);
 
     } catch (e) {
@@ -135,50 +131,88 @@ const Portfolio: React.FC = () => {
   };
 
   if (!account) return (
-    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-intuition-dark">
-      {/* Background FX */}
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-intuition-primary/5 rounded-full blur-[100px] pointer-events-none animate-pulse"></div>
+    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-intuition-dark py-20">
+      {/* Dynamic Grid Background with Glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-intuition-primary/10 via-black to-black opacity-60"></div>
+      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none"></div>
       
-      {/* Container */}
-      <div className="relative z-10 p-1 bg-gradient-to-br from-intuition-primary/50 to-transparent clip-path-slant max-w-lg w-full mx-4 animate-in fade-in zoom-in duration-500 box-glow">
-        <div className="bg-black p-12 flex flex-col items-center text-center clip-path-slant border border-intuition-primary/20 backdrop-blur-xl">
-          
-          {/* Icon */}
-          <div className="mb-8 relative group">
-            <div className="absolute inset-0 bg-intuition-primary/20 blur-xl rounded-full group-hover:bg-intuition-primary/40 transition-all duration-500"></div>
-            <div className="relative w-24 h-24 bg-black border-2 border-intuition-primary flex items-center justify-center clip-path-slant shadow-[0_0_30px_rgba(0,243,255,0.2)]">
-              <Lock size={40} className="text-intuition-primary group-hover:scale-110 transition-transform duration-300" />
+      {/* Floating UI Elements (Ambient HUD) */}
+      <div className="absolute top-20 left-20 text-intuition-primary/20 animate-pulse hidden xl:block">
+          <div className="flex flex-col gap-2 font-mono text-[8px] uppercase tracking-[0.5em]">
+              <span>[SECURE_CHANNEL_OFFLINE]</span>
+              <span>[UPLINK_AWAITING_KEY]</span>
+              <span>[ENCRYPTION_LEVEL_4]</span>
+          </div>
+      </div>
+      
+      <div className="absolute bottom-20 right-20 text-intuition-primary/20 animate-pulse hidden xl:block">
+          <Cpu size={120} strokeWidth={0.5} />
+      </div>
+
+      <div className="relative z-10 w-full max-w-xl mx-4">
+        {/* The Outer Frame with Intense Neon Glow */}
+        <div className="relative p-[2px] bg-gradient-to-tr from-intuition-primary via-intuition-secondary to-intuition-primary clip-path-slant shadow-[0_0_60px_rgba(0,243,255,0.3)] animate-pulse-fast">
+          <div className="bg-[#05080f] p-10 md:p-16 flex flex-col items-center text-center clip-path-slant border border-white/5 backdrop-blur-3xl relative overflow-hidden">
+            
+            {/* Scanline Animation */}
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-intuition-primary/5 to-transparent h-1/2 w-full -translate-y-full animate-[marquee_5s_linear_infinite] pointer-events-none"></div>
+
+            <div className="mb-10 relative group">
+              {/* Radial Aura */}
+              <div className="absolute inset-0 bg-intuition-primary/30 blur-[40px] rounded-full scale-150 animate-pulse"></div>
+              
+              {/* Central Lock Hexagon */}
+              <div className="relative w-32 h-32 bg-black border-2 border-intuition-primary flex items-center justify-center clip-path-slant shadow-[0_0_40px_#00f3ff] group-hover:shadow-[0_0_60px_#00f3ff] transition-all duration-500">
+                <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/20 to-transparent"></div>
+                <ShieldAlert size={60} className="text-intuition-primary drop-shadow-[0_0_10px_#00f3ff] group-hover:scale-110 transition-transform duration-500" />
+              </div>
+
+              {/* Orbital Sync Status */}
+              <div className="absolute -top-4 -right-4 bg-intuition-danger text-black font-black font-mono text-[10px] px-3 py-1 rounded shadow-[0_0_15px_#ff0055] animate-bounce">
+                DISCONNECTED
+              </div>
             </div>
-            <div className="absolute -bottom-2 -right-2 text-intuition-danger animate-bounce">
-                <AlertTriangle size={24} className="fill-black" />
+
+            <div className="space-y-4 mb-12 relative z-10">
+              <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tight leading-none text-glow-white uppercase">
+                NEURAL <span className="text-intuition-primary text-glow">LOCKED</span>
+              </h1>
+              <p className="text-slate-400 font-mono text-xs md:text-sm tracking-[0.2em] leading-relaxed max-w-sm mx-auto uppercase">
+                Biometric Wallet Authentication required to decrypt your <span className="text-white font-bold">Semantic Portfolio</span> and track real-time PnL.
+              </p>
+            </div>
+
+            <div className="w-full flex flex-col gap-4 relative z-10">
+              <button 
+                onClick={() => { playClick(); connectWallet().then(acc => acc && setAccount(acc)); }} 
+                onMouseEnter={playHover}
+                className="btn-cyber btn-cyber-cyan w-full py-6 text-xl shadow-[0_0_30px_rgba(0,243,255,0.4)]"
+              >
+                <Radio size={20} className="mr-3 animate-pulse" />
+                INITIATE_HANDSHAKE
+              </button>
+              
+              <div className="flex items-center justify-center gap-6 mt-4">
+                  <div className="flex flex-col items-center">
+                      <div className="text-[10px] font-mono text-slate-600 uppercase mb-1">Status</div>
+                      <div className="flex items-center gap-1.5 text-intuition-success font-bold text-[9px] font-mono">
+                          <div className="w-1.5 h-1.5 rounded-full bg-intuition-success animate-pulse shadow-[0_0_5px_#00ff9d]"></div>
+                          NODES_READY
+                      </div>
+                  </div>
+                  <div className="w-px h-8 bg-white/10"></div>
+                  <div className="flex flex-col items-center">
+                      <div className="text-[10px] font-mono text-slate-600 uppercase mb-1">Latency</div>
+                      <div className="text-intuition-primary font-bold text-[9px] font-mono">24ms_STABLE</div>
+                  </div>
+              </div>
+            </div>
+            
+            {/* Warning Text */}
+            <div className="mt-12 text-[8px] font-mono text-slate-500 uppercase tracking-widest flex items-center gap-2 opacity-50">
+               <EyeOff size={10} /> ACCESS_LOGGED_BY_INTUITION_SENTINEL_V4.2
             </div>
           </div>
-
-          {/* Text */}
-          <h1 className="text-4xl font-black text-white font-display tracking-widest mb-2 text-glow">
-            PORTFOLIO <span className="text-intuition-primary">LOCKED</span>
-          </h1>
-          <p className="text-slate-400 font-mono text-sm mb-8 max-w-xs leading-relaxed">
-            SECURE CONNECTION REQUIRED TO DECRYPT ASSET LEDGER.
-          </p>
-
-          {/* Action */}
-          <button 
-            onClick={() => { playClick(); connectWallet().then(acc => acc && setAccount(acc)); }} 
-            onMouseEnter={playHover}
-            className="btn-cyber btn-cyber-white w-full py-4 text-lg"
-          >
-            <Wallet size={20} className="mr-2 group-hover:-rotate-12 transition-transform" />
-            INITIALIZE_UPLINK
-          </button>
-
-          {/* Footer Decor */}
-          <div className="mt-8 flex items-center gap-2 text-[10px] font-mono text-slate-600 uppercase">
-            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_5px_red]"></div>
-            System Standby
-          </div>
-
         </div>
       </div>
     </div>
@@ -186,11 +220,7 @@ const Portfolio: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-intuition-dark pt-8 pb-20 px-4 max-w-7xl mx-auto">
-      
-      {/* 1. Header Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          
-          {/* LIQUID BALANCE (Explicitly Placed First) */}
           <div className="bg-black border border-intuition-border p-6 clip-path-slant relative group hover:border-intuition-primary/50 transition-colors neon-panel">
               <div className="absolute top-0 right-0 p-3 opacity-20"><Wallet size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
@@ -199,34 +229,30 @@ const Portfolio: React.FC = () => {
               <div className="text-3xl font-black text-white font-display text-glow-white">{balance}</div>
               <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
-
-          {/* NET WORTH */}
           <div className="bg-black border border-intuition-primary/50 p-6 clip-path-slant relative group neon-panel shadow-[0_0_20px_rgba(0,243,255,0.1)]">
               <div className="absolute top-0 right-0 p-3 opacity-20"><Coins size={40} /></div>
               <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
-                  <span className="w-1 h-1 bg-intuition-primary rounded-full animate-pulse shadow-[0_0_5px_#00f3ff]"></span> Net Worth (Locked)
+                  <span className="w-1 h-1 bg-intuition-primary rounded-full animate-pulse shadow-[0_0_5px_#00f3ff]"></span> Active Stake Equity
               </div>
               <div className="text-3xl font-black text-white font-display text-glow">{portfolioValue}</div>
               <div className="text-xs text-intuition-primary font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
-
-          {/* EST PNL */}
           <div className={`bg-black border p-6 clip-path-slant relative neon-panel ${netPnL >= 0 ? 'border-intuition-success/30 shadow-[0_0_20px_rgba(0,255,157,0.1)]' : 'border-intuition-danger/30 shadow-[0_0_20px_rgba(255,0,85,0.1)]'}`}>
               <div className="absolute top-0 right-0 p-3 opacity-20"><TrendingUp size={40} /></div>
-              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2">Est. PnL</div>
+              <div className="text-[10px] font-mono text-slate-500 uppercase mb-2 flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full ${netPnL >= 0 ? 'bg-intuition-success' : 'bg-intuition-danger'} animate-pulse`}></span>
+                Est. Unrealized + Realized PnL
+              </div>
               <div className={`text-3xl font-black font-display ${netPnL >= 0 ? 'text-emerald-400 text-glow-success' : 'text-rose-400 text-glow-danger'}`}>
                   {netPnL > 0 ? '+' : ''}{netPnL.toFixed(4)}
               </div>
               <div className="text-xs text-slate-500 font-mono mt-1">{CURRENCY_SYMBOL}</div>
           </div>
-
-          {/* SENTIMENT BIAS */}
           <div className="bg-black border border-intuition-border p-6 clip-path-slant relative overflow-hidden neon-panel">
               <div className="flex justify-between items-center mb-2">
                   <div className="text-[10px] font-mono text-slate-500 uppercase">Sentiment Bias</div>
                   <div className="text-[9px] font-mono text-slate-600 bg-slate-900 px-1 rounded border border-slate-800">{semanticFootprint} TXS</div>
               </div>
-              
               <div className="relative h-6 bg-slate-800 rounded-sm mt-2 overflow-hidden flex border border-slate-700 shadow-inner">
                   <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success h-full transition-all duration-1000 flex items-center justify-center text-[9px] font-black text-black shadow-[0_0_10px_rgba(0,255,157,0.5)] relative z-10">
                       {sentimentBias.trust > 20 && `${sentimentBias.trust.toFixed(0)}%`}
@@ -235,16 +261,13 @@ const Portfolio: React.FC = () => {
                       {sentimentBias.distrust > 20 && `${sentimentBias.distrust.toFixed(0)}%`}
                   </div>
               </div>
-              
               <div className="flex justify-between text-[9px] mt-2 font-mono font-bold text-slate-500">
                   <span className="text-intuition-success text-shadow">BULLISH</span>
                   <span className="text-intuition-danger text-shadow">BEARISH</span>
               </div>
           </div>
       </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-          {/* Exposure Chart with Legend */}
           <div className="bg-black border border-intuition-border p-6 clip-path-slant h-[300px] flex flex-col neon-panel">
               <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><PieIcon size={14}/> Category Exposure</h3>
               {exposureData.length > 0 ? (
@@ -281,10 +304,8 @@ const Portfolio: React.FC = () => {
                   </div>
               )}
           </div>
-
-          {/* Capital History */}
           <div className="lg:col-span-2 bg-black border border-intuition-border p-6 clip-path-slant h-[300px] neon-panel">
-              <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><Activity size={14}/> Capital Deployment History (Net Invested)</h3>
+              <h3 className="text-xs font-bold text-white font-mono uppercase mb-4 flex items-center gap-2"><Activity size={14}/> Capital Utilization (Equity over Time)</h3>
               {chartData.length > 1 ? (
                   <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={chartData}>
@@ -312,15 +333,12 @@ const Portfolio: React.FC = () => {
               )}
           </div>
       </div>
-
-      {/* Positions Table */}
       <div className="bg-black border border-intuition-border clip-path-slant mb-8 neon-panel">
           <div className="p-4 border-b border-intuition-border bg-intuition-card flex justify-between items-center">
               <h3 className="font-bold text-white font-display tracking-widest flex items-center gap-2"><Zap size={16} className="text-intuition-warning"/> ACTIVE_POSITIONS</h3>
               <button 
                 onClick={handleRefresh} 
                 className="text-slate-500 hover:text-white transition-colors flex items-center gap-1 text-[10px] font-mono border border-slate-800 px-2 py-1 rounded"
-                title="Refresh Assets"
               >
                   <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> FORCE_SYNC
               </button>
@@ -332,7 +350,7 @@ const Portfolio: React.FC = () => {
                           <th className="px-6 py-4">Asset</th>
                           <th className="px-6 py-4">Category</th>
                           <th className="px-6 py-4 text-right">Shares</th>
-                          <th className="px-6 py-4 text-right">Value (Real-Time)</th>
+                          <th className="px-6 py-4 text-right">Current Value</th>
                           <th className="px-6 py-4 text-right">Action</th>
                       </tr>
                   </thead>

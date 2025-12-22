@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowDown, Star, LayoutGrid, Grid, Info, Hexagon, Network, Layers, ArrowRight, Shield, Share2, User, ChevronsRight } from 'lucide-react';
@@ -18,6 +19,7 @@ const Markets: React.FC = () => {
   const [claims, setClaims] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedTerm, setDebouncedTerm] = useState('');
   const [serverResults, setServerResults] = useState<Account[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
@@ -29,7 +31,16 @@ const Markets: React.FC = () => {
   const [sortOption, setSortOption] = useState<SortOption>('MCAP_DESC');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
-  const searchTimeout = useRef<any>(null);
+  const debounceRef = useRef<any>(null);
+
+  // --- Search Debouncing Logic ---
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+        setDebouncedTerm(searchTerm);
+    }, 400); 
+    return () => clearTimeout(debounceRef.current);
+  }, [searchTerm]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -37,7 +48,7 @@ const Markets: React.FC = () => {
         const data = await getAllAgents();
         setAgents(data);
       } catch (error) {
-        console.error(error);
+        console.warn("[INTERNAL_LOG] AGENT_FETCH_ERROR", error);
       } finally {
         setLoading(false);
       }
@@ -96,25 +107,21 @@ const Markets: React.FC = () => {
   }, [activeSegment]);
 
   useEffect(() => {
-     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-     const term = searchTerm.trim();
+     const term = debouncedTerm.trim();
      if (term.length < 2) {
          setServerResults([]);
          setIsSearching(false);
          return;
      }
      setIsSearching(true);
-     searchTimeout.current = setTimeout(async () => {
-        try {
-            const results = await searchGlobalAgents(term);
-            setServerResults(results);
-        } catch (e) { console.error(e); } finally { setIsSearching(false); }
-     }, 600); 
-     return () => clearTimeout(searchTimeout.current);
-  }, [searchTerm]);
+     searchGlobalAgents(term)
+        .then(setServerResults)
+        .catch(() => setServerResults([]))
+        .finally(() => setIsSearching(false));
+  }, [debouncedTerm]);
 
   const filteredItems = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = debouncedTerm.trim().toLowerCase();
     let candidates: any[] = [];
 
     if (activeSegment === 'VECTORS') candidates = lists;
@@ -167,18 +174,18 @@ const Markets: React.FC = () => {
 
     if (term) {
         candidates = candidates.filter(item => {
-            if (activeSegment === 'VECTORS') return item.label?.toLowerCase().includes(term);
-            if (activeSegment === 'SYNAPSES') return item.subject?.label?.toLowerCase().includes(term) || item.object?.label?.toLowerCase().includes(term);
+            if (activeSegment === 'VECTORS') return (item.label || '').toLowerCase().includes(term);
+            if (activeSegment === 'SYNAPSES') return (item.subject?.label || '').toLowerCase().includes(term) || (item.object?.label || '').toLowerCase().includes(term);
             return false;
         });
     }
     return candidates;
-  }, [agents, lists, claims, searchTerm, serverResults, sortOption, showWatchlistOnly, watchlistIds, activeSegment]);
+  }, [agents, lists, claims, debouncedTerm, serverResults, sortOption, showWatchlistOnly, watchlistIds, activeSegment]);
 
   const toggleSort = (option: SortOption) => { setSortOption(option); setIsSortOpen(false); playClick(); };
   const toggleWatchlistFilter = () => {
       playClick();
-      if (!account && !showWatchlistOnly) { toast.error("CONNECT WALLET TO VIEW WATCHLIST"); return; }
+      if (!account && !showWatchlistOnly) { toast.error("WALLET_CONNECTION_REQUIRED"); return; }
       setShowWatchlistOnly(!showWatchlistOnly);
   };
 
@@ -431,68 +438,12 @@ const Markets: React.FC = () => {
              const marketCap = shares * price;
              const strength = Math.min(99, Math.max(1, 50 + (Math.log10(price > 0 ? price : 1) * 25)));
              
-             // Dynamic Style Configurator based on Rank - OPTIMIZED FOR GLOW
-             let styles = {
-                 rank: 'D',
-                 textColor: 'text-slate-400',
-                 barGradient: 'bg-gradient-to-r from-slate-800 to-slate-500',
-                 barShadow: 'shadow-[0_0_10px_rgba(148,163,184,0.3)]',
-                 borderColor: 'border-slate-800',
-                 // Subtle base glow
-                 shadowHover: 'group-hover:shadow-[0_0_15px_rgba(148,163,184,0.3),inset_0_0_10px_rgba(148,163,184,0.1)]', 
-                 borderHover: 'group-hover:border-slate-500',
-                 gradient: 'from-slate-900/20 via-black to-black'
-             };
+             let styles = { rank: 'D', textColor: 'text-slate-400', barGradient: 'bg-gradient-to-r from-slate-800 to-slate-500', barShadow: 'shadow-[0_0_10px_rgba(148,163,184,0.3)]', borderColor: 'border-slate-800', shadowHover: 'group-hover:shadow-[0_0_15px_rgba(148,163,184,0.3),inset_0_0_10px_rgba(148,163,184,0.1)]', borderHover: 'group-hover:border-slate-500', gradient: 'from-slate-900/20 via-black to-black' };
 
-             if (strength >= 90) {
-                 styles = {
-                     rank: 'S',
-                     textColor: 'text-yellow-400',
-                     barGradient: 'bg-gradient-to-r from-yellow-600/50 via-yellow-400 to-yellow-200',
-                     barShadow: 'shadow-[0_0_15px_rgba(250,204,21,0.8)]',
-                     borderColor: 'border-yellow-500/30',
-                     // Intense Gold Glow - Outer Halo + Inner Radiance
-                     shadowHover: 'group-hover:shadow-[0_0_30px_rgba(234,179,8,0.6),inset_0_0_20px_rgba(234,179,8,0.2)]', 
-                     borderHover: 'group-hover:border-yellow-300',
-                     gradient: 'from-yellow-500/10 via-black to-black'
-                 };
-             } else if (strength >= 75) {
-                 styles = {
-                     rank: 'A',
-                     textColor: 'text-purple-400',
-                     barGradient: 'bg-gradient-to-r from-purple-600/50 via-purple-400 to-purple-200',
-                     barShadow: 'shadow-[0_0_15px_rgba(192,132,252,0.8)]',
-                     borderColor: 'border-purple-500/30',
-                     // Intense Purple Glow
-                     shadowHover: 'group-hover:shadow-[0_0_30px_rgba(168,85,247,0.6),inset_0_0_20px_rgba(168,85,247,0.2)]',
-                     borderHover: 'group-hover:border-purple-300',
-                     gradient: 'from-purple-500/10 via-black to-black'
-                 };
-             } else if (strength >= 60) {
-                 styles = {
-                     rank: 'B',
-                     textColor: 'text-cyan-400',
-                     barGradient: 'bg-gradient-to-r from-cyan-600/50 via-cyan-400 to-cyan-200',
-                     barShadow: 'shadow-[0_0_15px_rgba(34,211,238,0.8)]',
-                     borderColor: 'border-cyan-500/30',
-                     // Intense Cyan Glow
-                     shadowHover: 'group-hover:shadow-[0_0_30px_rgba(6,182,212,0.6),inset_0_0_20px_rgba(6,182,212,0.2)]',
-                     borderHover: 'group-hover:border-cyan-300',
-                     gradient: 'from-cyan-500/10 via-black to-black'
-                 };
-             } else if (strength >= 40) {
-                 styles = {
-                     rank: 'C',
-                     textColor: 'text-emerald-400',
-                     barGradient: 'bg-gradient-to-r from-emerald-600/50 via-emerald-400 to-emerald-200',
-                     barShadow: 'shadow-[0_0_15px_rgba(52,211,153,0.8)]',
-                     borderColor: 'border-emerald-500/30',
-                     // Intense Green Glow
-                     shadowHover: 'group-hover:shadow-[0_0_30px_rgba(16,185,129,0.6),inset_0_0_20px_rgba(16,185,129,0.2)]',
-                     borderHover: 'group-hover:border-emerald-300',
-                     gradient: 'from-emerald-500/10 via-black to-black'
-                 };
-             }
+             if (strength >= 90) styles = { rank: 'S', textColor: 'text-yellow-400', barGradient: 'bg-gradient-to-r from-yellow-600/50 via-yellow-400 to-yellow-200', barShadow: 'shadow-[0_0_15px_rgba(250,204,21,0.8)]', borderColor: 'border-yellow-500/30', shadowHover: 'group-hover:shadow-[0_0_30px_rgba(234,179,8,0.6),inset_0_0_20px_rgba(234,179,8,0.2)]', borderHover: 'group-hover:border-yellow-300', gradient: 'from-yellow-500/10 via-black to-black' };
+             else if (strength >= 75) styles = { rank: 'A', textColor: 'text-purple-400', barGradient: 'bg-gradient-to-r from-purple-600/50 via-purple-400 to-purple-200', barShadow: 'shadow-[0_0_15px_rgba(192,132,252,0.8)]', borderColor: 'border-purple-500/30', shadowHover: 'group-hover:shadow-[0_0_30px_rgba(168,85,247,0.6),inset_0_0_20px_rgba(168,85,247,0.2)]', borderHover: 'group-hover:border-purple-300', gradient: 'from-purple-500/10 via-black to-black' };
+             else if (strength >= 60) styles = { rank: 'B', textColor: 'text-cyan-400', barGradient: 'bg-gradient-to-r from-cyan-600/50 via-cyan-400 to-cyan-200', barShadow: 'shadow-[0_0_15px_rgba(34,211,238,0.8)]', borderColor: 'border-cyan-500/30', shadowHover: 'group-hover:shadow-[0_0_30px_rgba(6,182,212,0.6),inset_0_0_20px_rgba(6,182,212,0.2)]', borderHover: 'group-hover:border-cyan-300', gradient: 'from-cyan-500/10 via-black to-black' };
+             else if (strength >= 40) styles = { rank: 'C', textColor: 'text-emerald-400', barGradient: 'bg-gradient-to-r from-emerald-600/50 via-emerald-400 to-emerald-200', barShadow: 'shadow-[0_0_15px_rgba(52,211,153,0.8)]', borderColor: 'border-emerald-500/30', shadowHover: 'group-hover:shadow-[0_0_30px_rgba(16,185,129,0.6),inset_0_0_20px_rgba(16,185,129,0.2)]', borderHover: 'group-hover:border-emerald-300', gradient: 'from-emerald-500/10 via-black to-black' };
 
              return (
               <Link 
@@ -502,16 +453,10 @@ const Markets: React.FC = () => {
                 onMouseEnter={playHover}
                 className={`group relative flex flex-col bg-[#05080f] border ${styles.borderColor} transition-all duration-200 overflow-hidden clip-path-slant hover:-translate-y-2 hover:scale-[1.02] ${styles.shadowHover} ${styles.borderHover}`}
               >
-                {/* Simulated "Scanline" Effect on Hover */}
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent -translate-y-full group-hover:translate-y-full transition-transform duration-700 pointer-events-none z-20"></div>
-                
-                {/* Background Gradient - kept subtle to emphasize glow */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${styles.gradient} opacity-40 pointer-events-none`}></div>
-
-                {/* Top Section: Identity */}
                 <div className="relative p-5 z-10 flex flex-col h-full">
                    <div className="flex justify-between items-start mb-4">
-                      {/* Image Hexagon */}
                       <div className={`relative w-16 h-16 shrink-0 border-2 ${styles.borderColor} bg-black flex items-center justify-center overflow-hidden clip-path-slant shadow-lg group-hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] transition-shadow`}>
                           {agent.image ? (
                              <img src={agent.image} alt={agent.label} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
@@ -519,16 +464,11 @@ const Markets: React.FC = () => {
                              <div className={`text-2xl font-bold ${styles.textColor}`}>{agent.label?.[0]?.toUpperCase()}</div>
                           )}
                       </div>
-
-                      {/* Rank Badge */}
                       <div className={`flex flex-col items-end`}>
-                          <div className={`text-4xl font-black font-display italic ${styles.textColor} drop-shadow-md text-glow`}>
-                              {styles.rank}
-                          </div>
+                          <div className={`text-4xl font-black font-display italic ${styles.textColor} drop-shadow-md text-glow`}>{styles.rank}</div>
                           <div className={`text-[8px] font-mono ${styles.textColor} uppercase tracking-widest opacity-80`}>TIER</div>
                       </div>
                    </div>
-
                    <div className="mb-4">
                        <div className="flex items-center gap-2 mb-1">
                            <h3 className="text-white font-bold font-display text-lg leading-tight truncate group-hover:text-intuition-primary transition-colors group-hover:text-shadow">
@@ -541,38 +481,24 @@ const Markets: React.FC = () => {
                            <span>ID: {agent.id.slice(0,6)}</span>
                        </div>
                    </div>
-
-                   {/* Data Grid - Tech Style */}
                    <div className="mt-auto grid grid-cols-2 gap-px bg-slate-800/50 border border-slate-700/50 rounded-sm overflow-hidden">
                        <div className="bg-[#0a0f1a] p-2 flex flex-col justify-center border-r border-slate-800/50 group-hover:bg-slate-900 transition-colors">
                            <span className="text-[8px] text-slate-500 uppercase tracking-wider mb-0.5">Market Cap</span>
-                           <span className={`text-xs font-mono font-bold ${styles.textColor}`}>
-                               {marketCap > 0 ? marketCap.toFixed(2) : '-'}
-                           </span>
+                           <span className={`text-xs font-mono font-bold ${styles.textColor}`}>{marketCap > 0 ? marketCap.toFixed(2) : '-'}</span>
                        </div>
                        <div className="bg-[#0a0f1a] p-2 flex flex-col justify-center group-hover:bg-slate-900 transition-colors text-right">
                            <span className="text-[8px] text-slate-500 uppercase tracking-wider mb-0.5">Spot Price</span>
-                           <span className="text-xs font-mono font-bold text-white">
-                               {price.toFixed(3)}
-                           </span>
+                           <span className="text-xs font-mono font-bold text-white">{price.toFixed(3)}</span>
                        </div>
                    </div>
-
-                   {/* Trust Bar - NEON Gaming Style */}
                    <div className="mt-3 pt-2 border-t border-white/5">
                        <div className="flex justify-between items-end text-[9px] font-mono font-bold uppercase mb-1">
                            <span className={styles.textColor}>TRUST {strength.toFixed(0)}%</span>
                            <span className="text-slate-600">DISTRUST {(100-strength).toFixed(0)}%</span>
                        </div>
                        <div className="h-2 w-full bg-black/60 rounded-sm overflow-hidden border border-white/10 relative shadow-inner">
-                           {/* Dark Grid Background */}
                            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDAwIi8+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiMzMzMiLz4KPC9zdmc+')] opacity-30"></div>
-                           
-                           <div 
-                               style={{ width: `${strength}%` }} 
-                               className={`h-full ${styles.barGradient} ${styles.barShadow} relative transition-all duration-1000 flex items-center justify-end`}
-                           >
-                                {/* White Hot Tip for Plasma Effect */}
+                           <div style={{ width: `${strength}%` }} className={`h-full ${styles.barGradient} ${styles.barShadow} relative transition-all duration-1000 flex items-center justify-end`}>
                                 <div className="h-full w-1 bg-white/80 blur-[1px] shadow-[0_0_5px_white]"></div>
                            </div>
                        </div>

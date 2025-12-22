@@ -1,229 +1,149 @@
+
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, isAddress, getAddress, type Hex, stringToHex, keccak256, encodePacked, hexToString } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
-import { CHAIN_ID, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL } from '../constants';
+import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL } from '../constants';
 import { Transaction } from '../types';
 
-export const intuitionTestnet = {
+export const intuitionChain = {
   id: CHAIN_ID,
-  name: 'Intuition Mainnet',
+  name: NETWORK_NAME,
   network: 'intuition',
   nativeCurrency: { decimals: 18, name: 'ETH', symbol: 'ETH' }, 
   rpcUrls: { default: { http: [RPC_URL] }, public: { http: [RPC_URL] } },
 } as const;
 
 export const publicClient = createPublicClient({
-  chain: intuitionTestnet,
+  chain: intuitionChain,
   transport: http(RPC_URL),
 });
 
-// --- ENS RESOLVER (ETH MAINNET) ---
-// We need a separate client for ENS because ENS lives on Ethereum Mainnet, not Intuition.
 const mainnetClient = createPublicClient({
   chain: mainnet,
-  transport: http('https://eth.llamarpc.com') // Robust public RPC for ENS
+  transport: http('https://eth.llamarpc.com')
 });
+
+export const parseProtocolError = (error: any): string => {
+  const errStr = error?.message || error?.toString() || "";
+  console.debug("[INTERNAL_LOG] PARSING_EXCEPTION:", error);
+  
+  if (errStr.includes("User rejected")) return "Transaction cancelled in wallet.";
+  if (errStr.includes("MultiVault_InsufficientAssets")) return "Insufficient TRUST for this operation.";
+  if (errStr.includes("MultiVault_SlippageExceeded")) return "Price moved too fast. Try a smaller amount.";
+  if (errStr.includes("MultiVault_DepositBelowMinimumDeposit")) return "Amount below protocol minimum requirements.";
+  if (errStr.includes("InsufficientBalance")) return "Insufficient native ETH for gas fees.";
+  if (errStr.includes("Requested entity was not found")) return "Indexer catching up — please wait 30s and try again.";
+  
+  return "Protocol execution failed. Market state may have shifted.";
+};
 
 export const resolveENS = async (name: string): Promise<string | null> => {
     try {
         if (!name.includes('.')) return null;
-        const normalizedName = normalize(name);
-        const address = await mainnetClient.getEnsAddress({
-            name: normalizedName,
-        });
-        return address;
-    } catch (e) {
-        console.warn("ENS Resolution failed:", e);
-        return null;
-    }
+        return await mainnetClient.getEnsAddress({ name: normalize(name) });
+    } catch { return null; }
 };
-// --------------------------------
 
-// --- Local Transaction Helpers ---
-const LOCAL_TX_KEY = 'inturank_local_transactions';
+const LOCAL_TX_KEY = 'inturank_ledger_v2';
 export const saveLocalTransaction = (tx: Transaction, account: string) => {
+  console.info("[INTERNAL_LOG] SYNCING_LOCAL_LEDGER:", tx.id);
   const key = `${LOCAL_TX_KEY}_${account.toLowerCase()}`;
-  const currentStr = localStorage.getItem(key);
-  const current: Transaction[] = currentStr ? JSON.parse(currentStr) : [];
-  const updated = [tx, ...current].slice(0, 50);
-  localStorage.setItem(key, JSON.stringify(updated));
+  const current: Transaction[] = JSON.parse(localStorage.getItem(key) || '[]');
+  localStorage.setItem(key, JSON.stringify([tx, ...current].slice(0, 50)));
 };
 
 export const getLocalTransactions = (account: string): Transaction[] => {
-  const key = `${LOCAL_TX_KEY}_${account.toLowerCase()}`;
-  const currentStr = localStorage.getItem(key);
-  return currentStr ? JSON.parse(currentStr) : [];
+  return JSON.parse(localStorage.getItem(`${LOCAL_TX_KEY}_${account.toLowerCase()}`) || '[]');
 };
 
-// --- Connection Persistence Helper ---
-const WALLET_CONNECTED_KEY = 'inturank_wallet_connected';
+export const getWatchlist = (account: string): string[] => {
+  if (!account) return [];
+  return JSON.parse(localStorage.getItem(`inturank_watchlist_${account.toLowerCase()}`) || '[]');
+};
 
+const WALLET_PERSIST_KEY = 'inturank_session_active';
 export const disconnectWallet = () => {
-    if (typeof window !== 'undefined') {
-        localStorage.removeItem(WALLET_CONNECTED_KEY);
-    }
-};
-
-// --- Watchlist Helpers (Auth Protected) ---
-const getWatchlistKey = (account: string) => `inturank_watchlist_${account.toLowerCase()}`;
-
-export const getWatchlist = (account?: string | null): string[] => {
-    if (!account) return [];
-    try {
-        const stored = localStorage.getItem(getWatchlistKey(account));
-        return stored ? JSON.parse(stored) : [];
-    } catch { return []; }
+    console.info("[INTERNAL_LOG] TERMINATING_SESSION");
+    localStorage.removeItem(WALLET_PERSIST_KEY);
 };
 
 export const toggleWatchlist = (id: string, account?: string | null): boolean => {
     if (!account) return false;
-    
-    const list = getWatchlist(account);
-    const normalizedId = id.toLowerCase();
-    const idx = list.findIndex(item => item.toLowerCase() === normalizedId);
-    
-    let newList;
-    const isAdded = idx === -1;
-    
-    if (isAdded) {
-        newList = [id, ...list]; // Add to top
-    } else {
-        newList = list.filter(item => item.toLowerCase() !== normalizedId);
-    }
-    
-    localStorage.setItem(getWatchlistKey(account), JSON.stringify(newList));
-    
-    // Dispatch custom event for UI updates
+    const key = `inturank_watchlist_${account.toLowerCase()}`;
+    const list: string[] = JSON.parse(localStorage.getItem(key) || '[]');
+    const isAdded = !list.includes(id);
+    const newList = isAdded ? [id, ...list] : list.filter(item => item !== id);
+    localStorage.setItem(key, JSON.stringify(newList));
     window.dispatchEvent(new CustomEvent('watchlist-updated', { detail: { account } }));
-    
     return isAdded;
 };
 
 export const isInWatchlist = (id: string, account?: string | null): boolean => {
     if (!account) return false;
-    const list = getWatchlist(account);
-    return list.some(item => item.toLowerCase() === id.toLowerCase());
-};
-// --------------------------------
-
-// --- Fallback Name Resolution ---
-export const fetchAtomNameFromChain = async (termId: string): Promise<string | null> => {
-    try {
-        const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-        const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-        
-        const data = await publicClient.readContract({
-            address: MULTI_VAULT_ADDRESS as `0x${string}`,
-            abi: MULTI_VAULT_ABI,
-            functionName: 'getAtom',
-            args: [termIdBytes32]
-        } as any) as Hex;
-
-        if (!data || data === '0x') return null;
-
-        const decoded = hexToString(data);
-        const clean = decoded.replace(/[\x00-\x1F\x7F-\x9F]/g, "").trim();
-        
-        return clean.length > 1 ? clean : null;
-    } catch (e) {
-        return null;
-    }
+    const list: string[] = JSON.parse(localStorage.getItem(`inturank_watchlist_${account.toLowerCase()}`) || '[]');
+    return list.includes(id);
 };
 
 export const getConnectedAccount = async (): Promise<string | null> => {
-  if (typeof window !== 'undefined') {
-    // Prevent auto-connect if user explicitly disconnected previously
-    if (!localStorage.getItem(WALLET_CONNECTED_KEY)) {
-        return null;
-    }
-
-    if ((window as any).ethereum) {
-        try {
-        const walletClient = createWalletClient({
-            chain: intuitionTestnet,
-            transport: custom((window as any).ethereum),
-        });
-        const [address] = await walletClient.getAddresses();
-        return address ? getAddress(address) : null;
-        } catch { return null; }
-    }
+  if (!localStorage.getItem(WALLET_PERSIST_KEY)) return null;
+  if ((window as any).ethereum) {
+    try {
+      const walletClient = createWalletClient({ chain: intuitionChain, transport: custom((window as any).ethereum) });
+      const [address] = await walletClient.getAddresses();
+      return address ? getAddress(address) : null;
+    } catch { return null; }
   }
   return null;
 };
 
-export const getClientChainId = async (): Promise<number> => {
-  if (typeof window !== 'undefined' && (window as any).ethereum) {
-    try {
-      const chainIdHex = await (window as any).ethereum.request({ method: 'eth_chainId' });
-      return parseInt(chainIdHex, 16);
-    } catch { return 0; }
+export const connectWallet = async (): Promise<string | null> => {
+  if (!(window as any).ethereum) return null;
+  try {
+    console.info("[INTERNAL_LOG] HANDSHAKE_START");
+    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom((window as any).ethereum) });
+    const [address] = await walletClient.requestAddresses();
+    localStorage.setItem(WALLET_PERSIST_KEY, 'true');
+    console.info("[INTERNAL_LOG] HANDSHAKE_SUCCESS:", address);
+    return address ? getAddress(address) : null;
+  } catch (err) { 
+    console.error("[INTERNAL_LOG] HANDSHAKE_FAILED", err);
+    return null; 
   }
-  return 0;
-};
-
-export const addNetwork = async () => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-        try {
-            await (window as any).ethereum.request({
-                method: 'wallet_addEthereumChain',
-                params: [{
-                    chainId: `0x${CHAIN_ID.toString(16)}`,
-                    chainName: 'Intuition Mainnet',
-                    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-                    rpcUrls: [RPC_URL],
-                    blockExplorerUrls: [EXPLORER_URL || 'https://explorer.intuition.systems'],
-                }],
-            });
-        } catch (error) {
-            console.error("Failed to add network:", error);
-        }
-    }
-};
-
-export const switchNetwork = async () => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-        try {
-            await (window as any).ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
-            });
-        } catch (switchError: any) {
-            if (
-                switchError.code === 4902 || 
-                switchError.data?.originalError?.code === 4902 ||
-                switchError.message?.toLowerCase().includes('unrecognized') ||
-                switchError.message?.toLowerCase().includes('unknown')
-            ) {
-                await addNetwork();
-            } else {
-                console.error("Switch network error:", switchError);
-                await addNetwork();
-            }
-        }
-    }
 };
 
 export const getWalletBalance = async (address: string): Promise<string> => {
   try {
     const balance = await publicClient.getBalance({ address: address as `0x${string}` });
     return formatEther(balance);
-  } catch (e) { return "0.00"; }
+  } catch { return "0.00"; }
 };
 
-export const getShareBalance = async (account: string, termId: string, curveId: number = 0): Promise<string> => {
+export const getShareBalance = async (account: string, termId: string, curveId: number = 1): Promise<string> => {
   try {
     const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
     const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-    const checksumAccount = getAddress(account);
-
     const shares = await publicClient.readContract({
       address: MULTI_VAULT_ADDRESS as `0x${string}`,
       abi: MULTI_VAULT_ABI,
       functionName: 'getShares',
-      args: [checksumAccount, termIdBytes32, BigInt(curveId)]
-    } as unknown as any);
-    return formatEther(shares as unknown as bigint);
-  } catch (e) { return "0"; }
+      args: [getAddress(account), termIdBytes32, BigInt(curveId || 1)]
+    } as any);
+    return formatEther(shares as bigint);
+  } catch { return "0"; }
+};
+
+export const getQuoteRedeem = async (sharesAmount: string, termId: string, account: string, curveId: number = 1): Promise<string> => {
+    try {
+        const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
+        const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+        const result = await publicClient.readContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'previewRedeem',
+            args: [termIdBytes32, BigInt(curveId || 1), parseEther(sharesAmount)]
+        } as any) as [bigint, bigint]; 
+        return formatEther(result[0]);
+    } catch { return "0"; }
 };
 
 export const getProtocolConfig = async () => {
@@ -233,213 +153,144 @@ export const getProtocolConfig = async () => {
             abi: MULTI_VAULT_ABI,
             functionName: 'getGeneralConfig',
         } as any);
-        
-        return {
-            minDeposit: formatEther(config.minDeposit),
-            minShare: formatEther(config.minShare)
-        };
-    } catch (e) {
-        return { minDeposit: '0.001', minShare: '0.001' }; 
-    }
+        return { minDeposit: formatEther(config.minDeposit), minShare: formatEther(config.minShare) };
+    } catch { return { minDeposit: '0.001', minShare: '0.001' }; }
 };
 
-export const getQuoteRedeem = async (sharesAmount: string, termId: string, account: string, curveId: number = 0): Promise<string> => {
-    try {
-        const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-        const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-        const sharesWei = parseEther(sharesAmount);
-        
-        const result = await publicClient.readContract({
-            address: MULTI_VAULT_ADDRESS as `0x${string}`,
-            abi: MULTI_VAULT_ABI,
-            functionName: 'previewRedeem',
-            args: [termIdBytes32, BigInt(curveId), sharesWei]
-        } as any) as [bigint, bigint]; 
-
-        return formatEther(result[0]);
-    } catch (e) {
-        return "0";
-    }
-};
-
-export const connectWallet = async (): Promise<string | null> => {
-  if (typeof window !== 'undefined') {
-    if ((window as any).ethereum) {
-      try {
-        const walletClient = createWalletClient({
-          chain: intuitionTestnet,
-          transport: custom((window as any).ethereum),
-        });
-        const [address] = await walletClient.requestAddresses();
-        try { 
-            await walletClient.switchChain({ id: intuitionTestnet.id }); 
-        } catch (e) { 
-            try { await switchNetwork(); } catch (e2) { console.warn("Auto-switch failed", e2); }
-        }
-        
-        // Persist connected state
-        if (address) {
-            localStorage.setItem(WALLET_CONNECTED_KEY, 'true');
-        }
-        
-        return address ? getAddress(address) : null;
-      } catch (error) {
-        console.error("Wallet connection failed:", error);
-        return null; 
-      }
-    } else {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        const currentUrl = window.location.href.split('//')[1];
-        const deepLink = `https://metamask.app.link/dapp/${currentUrl}`;
-        window.location.href = deepLink;
-        return null;
-      } else {
-        alert("Please install a wallet like MetaMask."); 
-        return null; 
-      }
-    }
-  }
-  return null;
-};
-
-export const depositToVault = async (amount: string, termId: string, receiver: string, curveId: number = 0) => {
-  if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error("No wallet");
+export const depositToVault = async (amount: string, termId: string, receiver: string, curveId: number = 1) => {
+  console.info("[INTERNAL_LOG] DEPOSIT_ATTEMPT:", { amount, termId });
   const checksumReceiver = getAddress(receiver);
-  const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-  const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-  const walletClient = createWalletClient({
-    chain: intuitionTestnet,
-    transport: custom((window as any).ethereum),
-    account: checksumReceiver,
-  });
+  const termIdBytes32 = pad((termId.startsWith('0x') ? termId : `0x${termId}`) as Hex, { size: 32 });
+  const walletClient = createWalletClient({ chain: intuitionChain, transport: custom((window as any).ethereum), account: checksumReceiver });
   const assets = parseEther(amount);
   
-  const { request, result } = await publicClient.simulateContract({
-    address: MULTI_VAULT_ADDRESS as `0x${string}`,
-    abi: MULTI_VAULT_ABI,
-    functionName: 'depositBatch',
-    account: checksumReceiver,
-    args: [checksumReceiver, [termIdBytes32], [BigInt(curveId)], [assets], [0n]],
-    value: assets,
-  });
-  
-  const hash = await walletClient.writeContract(request as any);
-  const shares = (result as unknown as bigint[])[0]; 
-  
-  return { hash, shares };
+  try {
+    const { request, result } = await publicClient.simulateContract({
+      address: MULTI_VAULT_ADDRESS as `0x${string}`,
+      abi: MULTI_VAULT_ABI,
+      functionName: 'depositBatch',
+      account: checksumReceiver,
+      args: [checksumReceiver, [termIdBytes32], [BigInt(curveId || 1)], [assets], [0n]],
+      value: assets,
+    });
+    const hash = await walletClient.writeContract(request as any);
+    console.info("[INTERNAL_LOG] DEPOSIT_SUBMITTED:", hash);
+    return { hash, shares: (result as bigint[])[0] };
+  } catch (err) {
+    console.error("[INTERNAL_LOG] DEPOSIT_REJECTED", err);
+    throw err;
+  }
 };
 
-export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, curveId: number = 0) => {
-  if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error("No wallet");
+export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, curveId: number = 1) => {
+  console.info("[INTERNAL_LOG] REDEEM_ATTEMPT:", { sharesAmount, termId });
   const checksumReceiver = getAddress(receiver);
-  const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
-  const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
-  const walletClient = createWalletClient({
-    chain: intuitionTestnet,
-    transport: custom((window as any).ethereum),
-    account: checksumReceiver,
-  });
+  const termIdBytes32 = pad((termId.startsWith('0x') ? termId : `0x${termId}`) as Hex, { size: 32 });
+  const walletClient = createWalletClient({ chain: intuitionChain, transport: custom((window as any).ethereum), account: checksumReceiver });
   const shares = parseEther(sharesAmount);
   
-  const { request, result } = await publicClient.simulateContract({
-    address: MULTI_VAULT_ADDRESS as `0x${string}`,
-    abi: MULTI_VAULT_ABI,
-    functionName: 'redeemBatch',
-    account: checksumReceiver,
-    args: [checksumReceiver, [termIdBytes32], [BigInt(curveId)], [shares], [0n]],
-  });
-  
-  const hash = await walletClient.writeContract(request as any);
-  const assets = (result as unknown as bigint[])[0];
-  
-  return { hash, assets };
+  try {
+    const { request, result } = await publicClient.simulateContract({
+      address: MULTI_VAULT_ADDRESS as `0x${string}`,
+      abi: MULTI_VAULT_ABI,
+      functionName: 'redeemBatch',
+      account: checksumReceiver,
+      args: [checksumReceiver, [termIdBytes32], [BigInt(curveId || 1)], [shares], [0n]],
+    });
+    const hash = await walletClient.writeContract(request as any);
+    console.info("[INTERNAL_LOG] REDEEM_SUBMITTED:", hash);
+    return { hash, assets: (result as bigint[])[0] };
+  } catch (err) {
+    console.error("[INTERNAL_LOG] REDEEM_REJECTED", err);
+    throw err;
+  }
 };
 
-export const publishOpinion = async (
-  text: string,
-  agentId: string,
-  side: "TRUST" | "DISTRUST",
-  wallet: string
-) => {
-  if (!(window as any).ethereum) throw new Error("No wallet");
-
+export const publishOpinion = async (text: string, agentId: string, side: "TRUST" | "DISTRUST", wallet: string) => {
+  console.info("[INTERNAL_LOG] OPINION_ATTEMPT:", { text, agentId, side });
   const checksumAddress = getAddress(wallet);
-  const walletClient = createWalletClient({
-    chain: intuitionTestnet,
-    transport: custom((window as any).ethereum),
-    account: checksumAddress,
-  });
-
+  const walletClient = createWalletClient({ chain: intuitionChain, transport: custom((window as any).ethereum), account: checksumAddress });
   const textHex = stringToHex(text);
-  const atomFee = parseEther("0.0001");
-  const tripleFee = parseEther("0.0001");
-
-  const commentAtomId = keccak256(textHex);
-
+  const fee = parseEther("0.0001");
+  const commentId = keccak256(textHex);
+  
   const exists = await publicClient.readContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
     functionName: 'isTermCreated',
-    args: [commentAtomId]
-  } as unknown as any) as boolean;
-
+    args: [commentId]
+  } as any);
+  
   if (!exists) {
-    try {
       const { request: atomReq } = await publicClient.simulateContract({
         address: MULTI_VAULT_ADDRESS as `0x${string}`,
         abi: MULTI_VAULT_ABI,
         functionName: 'createAtoms',
         account: checksumAddress,
-        args: [[textHex], [atomFee]],
-        value: atomFee
+        args: [[textHex], [fee]],
+        value: fee
       });
       const atomTx = await walletClient.writeContract(atomReq as any);
       await publicClient.waitForTransactionReceipt({ hash: atomTx });
-    } catch (e: any) {
-      console.warn("Atom creation skipped or failed:", e);
-    }
   }
-
-  const subjectId = pad(agentId as Hex, { size: 32 });
-  const genericPredHex = stringToHex("HAS_OPINION");
-  const predicateId = keccak256(genericPredHex);
   
-  const predExists = await publicClient.readContract({
-      address: MULTI_VAULT_ADDRESS as `0x${string}`,
-      abi: MULTI_VAULT_ABI,
-      functionName: 'isTermCreated',
-      args: [predicateId]
-  } as unknown as any) as boolean;
-
-  if (!predExists) {
-      try {
-        const { request: predReq } = await publicClient.simulateContract({
-            address: MULTI_VAULT_ADDRESS as `0x${string}`,
-            abi: MULTI_VAULT_ABI,
-            functionName: 'createAtoms',
-            account: checksumAddress,
-            args: [[genericPredHex], [atomFee]],
-            value: atomFee
-        });
-        const predTx = await walletClient.writeContract(predReq as any);
-        await publicClient.waitForTransactionReceipt({ hash: predTx });
-      } catch (e) { console.warn("Predicate creation skipped"); }
-  }
-
+  const subjectId = pad(agentId as Hex, { size: 32 });
+  const predicateId = keccak256(stringToHex("SIGNALED"));
+  
   const { request: tripleReq } = await publicClient.simulateContract({
     address: MULTI_VAULT_ADDRESS as `0x${string}`,
     abi: MULTI_VAULT_ABI,
     functionName: 'createTriples',
     account: checksumAddress,
-    args: [
-      [subjectId],       
-      [predicateId],     
-      [commentAtomId],   
-      [tripleFee]        
-    ],
-    value: tripleFee
+    args: [[subjectId], [predicateId], [commentId], [fee]],
+    value: fee
   });
   
-  return await walletClient.writeContract(tripleReq as any);
+  const hash = await walletClient.writeContract(tripleReq as any);
+  console.info("[INTERNAL_LOG] OPINION_SUBMITTED:", hash);
+  return hash;
+};
+
+export const switchNetwork = async () => {
+  if (!(window as any).ethereum) return;
+  try {
+    await (window as any).ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
+    });
+  } catch (error: any) {
+    if (error.code === 4902) {
+      await (window as any).ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: `0x${CHAIN_ID.toString(16)}`,
+          chainName: NETWORK_NAME,
+          nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+          rpcUrls: [RPC_URL],
+          blockExplorerUrls: [EXPLORER_URL],
+        }],
+      });
+    }
+  }
+};
+
+export const getClientChainId = async (): Promise<number> => {
+  try { return await publicClient.getChainId(); } catch { return 0; }
+};
+
+export const fetchAtomNameFromChain = async (atomId: string): Promise<string | null> => {
+  try {
+    const rawTermId = atomId.startsWith('0x') ? atomId : `0x${atomId}`;
+    const data = await publicClient.readContract({
+      address: MULTI_VAULT_ADDRESS as `0x${string}`,
+      abi: MULTI_VAULT_ABI,
+      functionName: 'getAtom',
+      args: [pad(rawTermId as Hex, { size: 32 })]
+    } as any);
+    if (data && data !== '0x') {
+        const decoded = hexToString(data as Hex);
+        return decoded.replace(/\0/g, '').trim() || null;
+    }
+    return null;
+  } catch { return null; }
 };
