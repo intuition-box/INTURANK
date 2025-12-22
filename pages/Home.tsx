@@ -274,7 +274,7 @@ const Home: React.FC = () => {
 
 const StatBox = ({ label, value, sub, delay, loading }: any) => (
   <div 
-    className="p-6 border border-intuition-border bg-intuition-card/50 clip-path-slant hover:border-intuition-primary/50 transition-all hover:-translate-y-2 group relative overflow-hidden box-glow-hover"
+    className="p-6 border border-intuition-border bg-intuition-card/50 clip-path-slant hover-glow transition-all hover:-translate-y-2 group relative overflow-hidden box-glow-hover"
     style={{ animationDelay: `${delay}ms` }}
   >
     <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-30 transition-opacity">
