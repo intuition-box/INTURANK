@@ -111,7 +111,8 @@ const Indexes: React.FC = () => {
         });
     }, []);
 
-    const categorizedAgents = useMemo(() => ({
+    // Explicitly type categorizedAgents to ensure correct inference for both its property access and Object.values() output
+    const categorizedAgents: Record<AgentCategory, Account[]> = useMemo(() => ({
         'FOUNDER': agents.filter(a => categorizeAgent(a) === 'FOUNDER'),
         'CREATOR': agents.filter(a => categorizeAgent(a) === 'CREATOR'),
         'MEME': agents.filter(a => categorizeAgent(a) === 'MEME'),
@@ -166,7 +167,8 @@ const Indexes: React.FC = () => {
                         </div>
                         <div className="bg-intuition-card p-6 border border-white/5 clip-path-slant min-w-[180px]">
                             <div className="text-[9px] text-slate-500 uppercase mb-2 font-bold tracking-widest">Active Corridors</div>
-                            <div className="text-2xl font-black text-white font-display">{Object.values(categorizedAgents).filter(a => a.length > 0).length} SECTORS</div>
+                            {/* Fix: Add explicit parameter type (a: Account[]) to the filter callback to avoid 'unknown' inference error */}
+                            <div className="text-2xl font-black text-white font-display">{Object.values(categorizedAgents).filter((a: Account[]) => a.length > 0).length} SECTORS</div>
                             <div className="text-[9px] text-intuition-primary font-bold mt-1">PRIMARY_LAYER</div>
                         </div>
                     </div>
@@ -258,7 +260,7 @@ const Indexes: React.FC = () => {
                                         <div className="flex items-center gap-8 relative z-10">
                                             <span className="font-mono text-slate-700 font-black text-lg w-8 tracking-tighter">{(i + 1).toString().padStart(2, '0')}</span>
                                             <div className="w-14 h-14 bg-black border-2 border-slate-800 flex items-center justify-center overflow-hidden clip-path-slant group-hover:border-intuition-primary transition-all">
-                                                {agent.image ? <img src={agent.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <Shield className="text-slate-700" />}
+                                                {agent.image ? <img src={agent.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <Shield size={24} className="text-slate-700" />}
                                             </div>
                                             <div>
                                                 <div className="text-xl font-black font-display tracking-tight uppercase leading-none mb-1 text-white group-hover:text-intuition-primary transition-colors">{agent.label}</div>

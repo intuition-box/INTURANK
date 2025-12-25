@@ -12,12 +12,7 @@ import TransactionModal from '../components/TransactionModal';
 import { playClick, playSuccess } from '../services/audio';
 import { CURRENCY_SYMBOL } from '../constants';
 import { AIBriefing, RealityCheck, ShieldScore } from '../components/AISuite';
-import { calculateTrustScore as computeTrust } from '../services/analytics';
-
-const calculatePrice = (assets: number, shares: number, spotPrice?: string) => {
-    if (spotPrice && spotPrice !== "0") { return parseFloat(formatEther(BigInt(spotPrice))); }
-    return shares > 0 ? assets / shares : 0.001; 
-};
+import { calculateTrustScore as computeTrust, calculateAgentPrice } from '../services/analytics';
 
 const generateAnchoredHistory = (currentScore: number, currentPrice: number) => {
     const data = [];
@@ -90,10 +85,8 @@ const MarketDetail: React.FC = () => {
           setTriples(triplesData || []);
           setActivityLog(activityData || []);
           
-          const currentAssets = parseFloat(formatEther(BigInt(agentData.totalAssets || '0')));
-          const currentShares = parseFloat(formatEther(BigInt(agentData.totalShares || '0')));
-          const nowPrice = calculatePrice(currentAssets, currentShares, agentData.currentSharePrice);
-          const currentScore = computeTrust(agentData.totalAssets || '0', agentData.totalShares || '0');
+          const nowPrice = calculateAgentPrice(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice);
+          const currentScore = computeTrust(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice);
           setChartData(generateAnchoredHistory(currentScore, nowPrice));
           
           if (acc) refreshBalances(acc, agentData.curveId);
@@ -155,7 +148,7 @@ const MarketDetail: React.FC = () => {
       </div>
   );
 
-  const currentScore = computeTrust(agent.totalAssets || '0', agent.totalShares || '0');
+  const currentScore = computeTrust(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const repTier = getReputationTier(currentScore, parseFloat(formatEther(BigInt(agent.totalAssets || '0'))));
   const displayPrice = hoverData ? hoverData.price : (chartData.length ? chartData[chartData.length - 1].price : '0.0000');
   const displayTrust = hoverData ? hoverData.trust : currentScore.toFixed(1);
@@ -372,7 +365,7 @@ const MarketDetail: React.FC = () => {
                                     {t.predicate?.label || 'LINKED_TO'}
                                 </div>
                                 <ArrowRight size={14} className="text-slate-700 hidden md:block" />
-                                <Link to={`/markets/${t.object?.term_id}`} onClick={playClick} className="px-3 py-1.5 bg-black border border-emerald-500/30 text-emerald-400 font-black uppercase tracking-widest hover:bg-emerald-500 hover:text-black transition-all flex items-center gap-2">
+                                <Link to={`/markets/${t.object?.term_id}`} onClick={playClick} className="px-3 py-1.5 bg-black border border-emerald-500/30 text-emerald-400 font-black uppercase tracking-widest hover:bg-emerald-500 hover:text-black transition-all flex items-center justify-center gap-2">
                                     {t.object?.label || 'TARGET_NODE'} <Share2 size={12} />
                                 </Link>
                             </div>

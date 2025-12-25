@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, ArrowDown, Star, LayoutGrid, Grid, Info, Hexagon, Network, Layers, ArrowRight, Shield, Share2, User, ChevronsRight } from 'lucide-react';
@@ -8,6 +7,7 @@ import { playHover, playClick } from '../services/audio';
 import { Account, Claim } from '../types';
 import { getWatchlist, getConnectedAccount } from '../services/web3';
 import { toast } from '../components/Toast';
+import { calculateTrustScore, calculateAgentPrice } from '../services/analytics';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
 type ViewMode = 'GRID' | 'HEATMAP';
@@ -33,7 +33,6 @@ const Markets: React.FC = () => {
   const sortRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<any>(null);
 
-  // --- Search Debouncing Logic ---
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -145,26 +144,20 @@ const Markets: React.FC = () => {
             });
         }
         return candidates.sort((a, b) => {
-            const getAssets = (x: Account) => parseFloat(formatEther(BigInt(x.totalAssets || '0')));
-            const getShares = (x: Account) => parseFloat(formatEther(BigInt(x.totalShares || '0')));
-            const getSpotPrice = (x: Account) => {
-                if (x.currentSharePrice && x.currentSharePrice !== "0") return parseFloat(formatEther(BigInt(x.currentSharePrice)));
-                return getShares(x) > 0 ? getAssets(x) / getShares(x) : 0;
-            };
-            const getMarketCap = (x: Account) => getShares(x) * getSpotPrice(x);
-            const getTrust = (x: Account) => {
-                 const p = getSpotPrice(x);
-                 if (p <= 0) return 50;
-                 return Math.min(99, Math.max(1, 50 + (Math.log10(p) * 25)));
+            const getPrice = (x: Account) => calculateAgentPrice(x.totalAssets || '0', x.totalShares || '0', x.currentSharePrice);
+            const getTrust = (x: Account) => calculateTrustScore(x.totalAssets || '0', x.totalShares || '0', x.currentSharePrice);
+            const getMarketCap = (x: Account) => {
+                const shares = parseFloat(formatEther(BigInt(x.totalShares || '0')));
+                return shares * getPrice(x);
             };
 
             switch (sortOption) {
                 case 'MCAP_DESC': return getMarketCap(b) - getMarketCap(a);
                 case 'MCAP_ASC': return getMarketCap(a) - getMarketCap(b);
-                case 'VOL_DESC': return getAssets(b) - getAssets(a);
-                case 'VOL_ASC': return getAssets(a) - getAssets(b);
-                case 'PRICE_DESC': return getSpotPrice(b) - getSpotPrice(a);
-                case 'PRICE_ASC': return getSpotPrice(a) - getSpotPrice(b);
+                case 'VOL_DESC': return parseFloat(formatEther(BigInt(b.totalAssets || '0'))) - parseFloat(formatEther(BigInt(a.totalAssets || '0')));
+                case 'VOL_ASC': return parseFloat(formatEther(BigInt(a.totalAssets || '0'))) - parseFloat(formatEther(BigInt(b.totalAssets || '0')));
+                case 'PRICE_DESC': return getPrice(b) - getPrice(a);
+                case 'PRICE_ASC': return getPrice(a) - getPrice(b);
                 case 'TRUST_DESC': return getTrust(b) - getTrust(a);
                 case 'TRUST_ASC': return getTrust(a) - getTrust(b);
                 default: return 0;
@@ -400,11 +393,9 @@ const Markets: React.FC = () => {
       ) : viewMode === 'HEATMAP' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2">
             {filteredItems.map(agent => {
-                const assets = agent.totalAssets ? parseFloat(formatEther(BigInt(agent.totalAssets))) : 0;
-                const shares = agent.totalShares ? parseFloat(formatEther(BigInt(agent.totalShares))) : 0;
-                const price = shares > 0 ? assets / shares : 0;
-                let strength = 50;
-                if (price > 0) strength = Math.min(99, Math.max(1, 50 + (Math.log10(price) * 25)));
+                const strength = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+                const price = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+                const shares = parseFloat(formatEther(BigInt(agent.totalShares || '0')));
                 const marketCap = shares * price;
                 let bgClass = 'bg-slate-800';
                 if (strength > 75) bgClass = 'bg-emerald-500';
@@ -432,11 +423,10 @@ const Markets: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
           {filteredItems.map((agent) => {
-             const assets = agent.totalAssets ? parseFloat(formatEther(BigInt(agent.totalAssets))) : 0;
-             const shares = agent.totalShares ? parseFloat(formatEther(BigInt(agent.totalShares))) : 0;
-             const price = agent.currentSharePrice && agent.currentSharePrice !== "0" ? parseFloat(formatEther(BigInt(agent.currentSharePrice))) : (shares > 0 ? assets / shares : 0);
+             const price = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+             const shares = parseFloat(formatEther(BigInt(agent.totalShares || '0')));
              const marketCap = shares * price;
-             const strength = Math.min(99, Math.max(1, 50 + (Math.log10(price > 0 ? price : 1) * 25)));
+             const strength = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
              
              let styles = { rank: 'D', textColor: 'text-slate-400', barGradient: 'bg-gradient-to-r from-slate-800 to-slate-500', barShadow: 'shadow-[0_0_10px_rgba(148,163,184,0.3)]', borderColor: 'border-slate-800', shadowHover: 'group-hover:shadow-[0_0_15px_rgba(148,163,184,0.3),inset_0_0_10px_rgba(148,163,184,0.1)]', borderHover: 'group-hover:border-slate-500', gradient: 'from-slate-900/20 via-black to-black' };
 

@@ -31,44 +31,9 @@ const initAudio = () => {
 };
 
 // --- HOVER: "Telemetry Chirp" ---
+// Removed at architect request to reduce sensory noise
 export const playHover = () => {
-  try {
-    // Attempt init/resume
-    const ctx = initAudio();
-    if (!ctx || !masterGain || ctx.state !== 'running') return;
-    
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    
-    // FM Synthesis for "Flutter" effect
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1200, t);
-    
-    const modulator = ctx.createOscillator();
-    modulator.type = 'square';
-    modulator.frequency.setValueAtTime(40, t); 
-
-    const modGain = ctx.createGain();
-    modGain.gain.setValueAtTime(300, t); 
-
-    modulator.connect(modGain);
-    modGain.connect(osc.frequency);
-    
-    osc.connect(gain);
-    gain.connect(masterGain);
-
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.15, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-
-    osc.start(t);
-    modulator.start(t);
-    osc.stop(t + 0.1);
-    modulator.stop(t + 0.1);
-  } catch (e) {
-    // Silent fail
-  }
+    // Operation Decommissioned
 };
 
 // --- CLICK: "Servo Lock" ---

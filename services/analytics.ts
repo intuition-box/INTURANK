@@ -1,4 +1,3 @@
-
 import { formatEther } from 'viem';
 import { Account, Transaction } from '../types';
 
@@ -21,15 +20,31 @@ export const categorizeAgent = (agent: Account): AgentCategory => {
 
 // --- METRIC CALCULATORS ---
 
-export const calculateTrustScore = (assetsWei: string, sharesWei: string): number => {
+/**
+ * Standardized Price Calculator
+ * Uses spot price from contract if available, otherwise calculates from vault reserves.
+ */
+export const calculateAgentPrice = (assetsWei: string, sharesWei: string, spotPriceWei?: string): number => {
+    if (spotPriceWei && spotPriceWei !== "0") {
+        return parseFloat(formatEther(BigInt(spotPriceWei)));
+    }
+    const assets = parseFloat(formatEther(BigInt(assetsWei || '0')));
+    const shares = parseFloat(formatEther(BigInt(sharesWei || '0')));
+    return shares > 0 ? assets / shares : 0.001;
+};
+
+/**
+ * Standardized Trust Score Calculator
+ * Maps spot price to a 1-99 probability range using a logarithmic scale centered at price 1.0 (50%).
+ */
+export const calculateTrustScore = (assetsWei: string, sharesWei: string, spotPriceWei?: string): number => {
     try {
-        const assets = parseFloat(formatEther(BigInt(assetsWei || '0')));
-        const shares = parseFloat(formatEther(BigInt(sharesWei || '0')));
-        if (!shares || shares === 0) return 50;
-        
-        const price = assets / shares;
-        // Logarithmic scale centered at 50
-        const strength = Math.min(99, Math.max(1, 50 + Math.log10(price * 10 + 1) * 25));
+        const price = calculateAgentPrice(assetsWei, sharesWei, spotPriceWei);
+        // Formula: 50 + log10(price) * 25
+        // Price 1.0 -> 50%
+        // Price 10.0 -> 75%
+        // Price 26.95 -> ~86%
+        const strength = Math.min(99, Math.max(1, 50 + (Math.log10(Math.max(0.000001, price)) * 25)));
         return isNaN(strength) ? 50 : strength;
     } catch {
         return 50;
@@ -56,7 +71,7 @@ export const calculateIndexValue = (agents: Account[]): IndexData => {
     let totalScore = 0;
     let totalAssets = 0;
     agents.forEach(a => {
-        totalScore += calculateTrustScore(a.totalAssets || '0', a.totalShares || '0');
+        totalScore += calculateTrustScore(a.totalAssets || '0', a.totalShares || '0', a.currentSharePrice);
         totalAssets += parseFloat(formatEther(BigInt(a.totalAssets || '0')));
     });
 
