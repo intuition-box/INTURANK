@@ -27,7 +27,7 @@ const ClaimCard: React.FC<{ claim: Claim }> = ({ claim }) => {
 
   return (
     <div 
-      className={`relative group border transition-all duration-300 bg-[#05080f]/80 backdrop-blur-md clip-path-slant overflow-hidden mb-1.5 ${expanded ? 'border-intuition-primary/40 shadow-[0_0_20px_rgba(0,243,255,0.05)]' : 'border-white/5 hover:border-white/10 hover:bg-white/5'}`}
+      className={`relative group border transition-all duration-200 bg-[#05080f] clip-path-slant overflow-hidden mb-1.5 ${expanded ? 'border-intuition-primary/40 shadow-[0_0_20px_rgba(0,243,255,0.05)]' : 'border-white/5 hover:border-white/10 hover:bg-white/5'}`}
     >
       <div 
         className="p-1.5 md:p-2.5 flex flex-col md:flex-row items-center gap-3 cursor-pointer relative z-10"
@@ -100,7 +100,7 @@ const ClaimCard: React.FC<{ claim: Claim }> = ({ claim }) => {
         </div>
       </div>
 
-      {/* Extended Context Panel (Details on Demand) */}
+      {/* Extended Context Panel */}
       {expanded && (
         <div className="bg-black/90 border-t border-white/5 p-3 animate-in slide-in-from-top-1 duration-300 relative">
            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 relative z-10">

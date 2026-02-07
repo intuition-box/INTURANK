@@ -6,31 +6,22 @@ const Logo: React.FC<{ className?: string }> = ({ className }) => {
       viewBox="0 0 100 100"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={className || "w-full h-full text-intuition-primary"}
+      className={className || "w-full h-full"}
+      aria-label="IntuRank Logo"
     >
-      {/* Outer Hex/Shield Shape */}
-      <path 
-        d="M 22 10 H 38 V 40 L 30 50 L 38 60 V 82 L 22 95 V 10 Z" 
-        fill="currentColor"
-        className="opacity-80"
+      {/* The "I" component of the logo - Cyan */}
+      <path
+        d="M22 10H38V40L30 50L38 60V82L22 95V10Z"
+        fill="#00f3ff"
+        fillOpacity="0.8"
       />
-      {/* Inner Circuit Path */}
-      <path 
+      {/* The "R" component of the logo - Pink */}
+      <path
         fillRule="evenodd"
         clipRule="evenodd"
-        d="M 44 10 H 75 L 88 23 V 47 L 75 60 H 60 L 80 95 H 60 L 48 65 H 44 V 10 Z M 54 22 V 45 H 72 V 22 H 54 Z" 
-        fill="currentColor"
+        d="M44 10H75L88 23V47L75 60H60L80 95H60L48 65H44V10ZM54 22V45H72V22H54Z"
+        fill="#ff1e6d"
       />
-      {/* Glow Effect Def */}
-      <defs>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-          <feMerge>
-            <feMergeNode in="coloredBlur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-      </defs>
     </svg>
   );
 };

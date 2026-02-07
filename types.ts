@@ -3,8 +3,10 @@ import React from 'react';
 export interface Account {
   id: string; // Mapped from term_id
   label?: string;
+  description?: string;
   image?: string;
   type?: string;
+  protocol_tier?: string;
   block_number?: number;
   creator?: {
     id: string;

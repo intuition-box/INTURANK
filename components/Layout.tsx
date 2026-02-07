@@ -1,15 +1,75 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Home as HomeIcon, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, PlusCircle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins } from 'lucide-react';
 import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
 import Logo from './Logo';
 import WalletModal from './WalletModal';
+import CreateModal from './CreateModal';
+import { toast } from './Toast';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
+
+const TRUST_SWAP_URL = "https://aero.drome.eth.limo/swap?from=0x833589fcd6edb6e08f4c7c32d4f71b54bda02913&to=0x6cd905df2ed214b22e0d48ff17cd4200c1c6d8a3&chain0=8453&chain1=8453";
+
+const MediumIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M13.54 12a6.8 6.8 0 01-6.77 6.82A6.8 6.8 0 010 12a6.8 6.8 0 016.77-6.82A6.8 6.8 0 0113.54 12zM20.96 12c0 3.54-1.51 6.42-3.38 6.42-1.87 0-3.39-2.88-3.39-6.42s1.52-6.42 3.39-6.42 3.38 2.88 3.38 6.42zM24 12c0 3.17-.53 5.75-1.19 5.75-.66 0-1.19-2.58-1.19-5.75s.53-5.75 1.19-5.75c.66 0 1.19 2.58 1.19 5.75z" />
+  </svg>
+);
+
+const DiscordIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+  </svg>
+);
+
+const IntuitionTargetLogo = () => (
+  <div className="relative w-14 h-14 flex items-center justify-center transition-all duration-700 group-hover/powered:scale-110">
+    {/* Outer dashed ring */}
+    <div className="absolute inset-0 border-2 border-white/10 rounded-full border-dashed animate-spin-slow group-hover/powered:border-intuition-primary/60 group-hover/powered:animate-spin"></div>
+    {/* Middle broken ring */}
+    <div className="absolute inset-[8px] border-2 border-transparent border-t-white/40 border-r-white/20 rounded-full animate-spin-reverse-slow group-hover/powered:border-t-intuition-primary group-hover/powered:animate-spin-reverse-fast"></div>
+    {/* Inner solid ring */}
+    <div className="absolute inset-[15px] border border-white/60 rounded-full group-hover/powered:border-intuition-primary transition-colors"></div>
+    {/* Center dot */}
+    <div className="w-2.5 h-2.5 bg-white rounded-full shadow-[0_0_12px_white] group-hover/powered:bg-intuition-primary group-hover/powered:shadow-[0_0_20px_#00f3ff]"></div>
+  </div>
+);
+
+interface NavItemProps {
+  to: string;
+  label: string;
+  icon: any;
+  active: boolean;
+  onClick: () => void;
+}
+
+const NavItem: React.FC<NavItemProps> = ({ to, label, icon, active, onClick }) => (
+  <Link
+    to={to}
+    onClick={() => { playClick(); onClick(); }}
+    onMouseEnter={playHover}
+    className={`group relative flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${
+      active
+        ? 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]'
+        : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
+    }`}
+  >
+    {/* Accenty Bar Indicator */}
+    <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-3 bg-white transition-all duration-500 ${active ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}></div>
+    
+    {icon}
+    <span>{label}</span>
+    
+    {/* Hover Accent Line */}
+    <div className={`absolute bottom-0 left-0 h-0.5 bg-white transition-all duration-500 ${active ? 'w-0' : 'w-0 group-hover:w-full'}`}></div>
+  </Link>
+);
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -18,10 +78,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isIntelOpen, setIsIntelOpen] = useState(false);
   const [chainId, setChainId] = useState<number>(0);
-  
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const intelRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -33,13 +94,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     checkConnection();
 
     if ((window as any).ethereum) {
-        (window as any).ethereum.on('chainChanged', (chainIdHex: string) => {
-            setChainId(parseInt(chainIdHex, 16));
-        });
-        (window as any).ethereum.on('accountsChanged', (accounts: string[]) => {
-             if (accounts.length > 0) setWalletAddress(accounts[0]);
-             else setWalletAddress(null);
-        });
+      (window as any).ethereum.on('chainChanged', (chainIdHex: string) => {
+        setChainId(parseInt(chainIdHex, 16));
+      });
+      (window as any).ethereum.on('accountsChanged', (accounts: string[]) => {
+        if (accounts.length > 0) setWalletAddress(accounts[0]);
+        else setWalletAddress(null);
+      });
     }
   }, []);
 
@@ -62,19 +123,23 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     playClick();
     const address = await connectWallet();
     if (address) {
-        setWalletAddress(address);
+      setWalletAddress(address);
+      setIsWalletModalOpen(false);
+      const cId = await getClientChainId();
+      setChainId(cId);
+      toast.success("UPLINK_ESTABLISHED: Identity synchronized.");
+    } else {
         setIsWalletModalOpen(false);
-        const cId = await getClientChainId();
-        setChainId(cId);
     }
   };
 
   const handleDisconnect = (e: React.MouseEvent) => {
     playClick();
     e.stopPropagation();
-    disconnectWallet(); // Clear persistence
+    disconnectWallet();
     setWalletAddress(null);
     setIsWalletDropdownOpen(false);
+    toast.info("NEURAL_LINK_TERMINATED");
   };
 
   const handleCopyAddress = (e: React.MouseEvent) => {
@@ -83,12 +148,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (walletAddress) {
       navigator.clipboard.writeText(walletAddress);
       setIsWalletDropdownOpen(false);
+      toast.success("IDENT_HASH_COPIED");
     }
   };
 
   const toggleDropdown = () => {
-      playClick();
-      setIsWalletDropdownOpen(prev => !prev);
+    playClick();
+    setIsWalletDropdownOpen(prev => !prev);
   };
 
   const openModal = () => {
@@ -96,29 +162,32 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     setIsWalletModalOpen(true);
   }
 
-  // Core Navigation
+  const handleNewSignal = () => {
+    playClick();
+    setIsMenuOpen(false);
+    navigate('/coming-soon');
+  };
+
   const mainNavItems = [
-    { label: 'SYSTEM_ROOT', path: '/', icon: <Home size={16} /> },
-    { label: 'MARKETS', path: '/markets', icon: <TrendingUp size={16} /> },
-    { label: 'PORTFOLIO', path: '/portfolio', icon: <Users size={16} /> },
-    { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={16} /> },
+    { label: 'SYSTEM_ROOT', path: '/', icon: <Home size={14} /> },
+    { label: 'MARKETS', path: '/markets', icon: <TrendingUp size={14} /> },
+    { label: 'PORTFOLIO', path: '/portfolio', icon: <Users size={14} /> },
+    { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
   ];
 
-  // Analytics Group (Intel)
   const intelItems = [
-    { label: 'FEED', path: '/feed', icon: <Globe size={16} /> },
-    { label: 'COMPARE', path: '/compare', icon: <ArrowRightLeft size={16} /> },
-    { label: 'INDEXES', path: '/indexes', icon: <Layers size={16} /> },
-    // Directory & Reputation
-    { label: 'TRADER_DIRECTORY', path: '/stats', icon: <Search size={16} /> }, 
+    { label: 'FEED', path: '/feed', icon: <Globe size={14} /> },
+    { label: 'COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
+    { label: 'INDEXES', path: '/indexes', icon: <Layers size={14} /> },
+    { label: 'DIRECTORY', path: '/stats', icon: <Search size={14} /> },
   ];
 
   if (walletAddress) {
-      intelItems.push({ 
-          label: 'MY_REPUTATION', 
-          path: `/profile/${walletAddress}`, 
-          icon: <UserCircle size={16} /> 
-      });
+    intelItems.push({
+      label: 'REPUTATION',
+      path: `/profile/${walletAddress}`,
+      icon: <UserCircle size={14} />
+    });
   }
 
   const isActive = (path: string) => {
@@ -130,224 +199,221 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-intuition-dark text-slate-300 flex flex-col font-sans selection:bg-intuition-primary selection:text-black">
-      
-      <WalletModal 
-        isOpen={isWalletModalOpen} 
-        onClose={() => setIsWalletModalOpen(false)} 
-        onConnect={handleConnect} 
+
+      <WalletModal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        onConnect={handleConnect}
       />
 
-      <nav className="fixed top-0 w-full z-50 border-b border-intuition-primary/30 bg-intuition-dark/90 backdrop-blur-md shadow-[0_0_20px_rgba(0,243,255,0.15)]">
+      <nav className="fixed top-0 w-full z-50 border-b-2 border-intuition-primary/10 bg-black/95 backdrop-blur-2xl shadow-[0_0_30px_rgba(0,243,255,0.05)]">
         <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            
-            {/* Logo */}
-            <div 
-              className="flex items-center flex-shrink-0 gap-3 group cursor-pointer hover-glitch"
+          <div className="flex items-center justify-between h-20">
+
+            {/* Logo Section */}
+            <div
+              className="flex items-center flex-shrink-0 gap-4 group cursor-pointer"
               onMouseEnter={playHover}
             >
-              <div className="relative">
-                <div className="w-10 h-10 rounded bg-intuition-dark border border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.5)] group-hover:shadow-[0_0_25px_rgba(0,243,255,0.8)] transition-all duration-500 group-hover:rotate-180 clip-path-slant">
-                  <Logo />
+              <div className="relative group-hover:scale-105 transition-transform duration-500">
+                <div className="w-11 h-11 rounded-none bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.3)] group-hover:shadow-[0_0_25px_rgba(0,243,255,0.5)] transition-all duration-500 clip-path-slant">
+                  <Logo className="w-6 h-6 text-intuition-primary group-hover:rotate-12 transition-transform" />
                 </div>
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-intuition-primary rounded-full animate-pulse shadow-[0_0_10px_#00f3ff]"></div>
+                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-intuition-secondary rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d]"></div>
               </div>
-              <div className="flex flex-col">
-                <Link to="/" onClick={playClick} className="text-xl font-black tracking-wider text-white font-display group-hover:text-intuition-primary transition-colors text-glow">
-                  INTU<span className="text-intuition-primary group-hover:text-white transition-colors">RANK</span>
+              <div className="flex flex-col group-hover:translate-x-1 transition-transform duration-300">
+                <Link to="/" onClick={playClick} className="text-xl font-black tracking-widest text-white font-display transition-all duration-500 text-glow-blue group-hover:text-intuition-primary">
+                  INTU<span className="text-intuition-primary group-hover:text-white">RANK</span>
                 </Link>
-                <span className="hidden md:block text-[10px] text-intuition-primary/70 font-mono tracking-[0.2em] group-hover:tracking-[0.3em] transition-all">V.1.2.0 STABLE</span>
+                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.3.0 STABLE</span>
               </div>
             </div>
 
-            {/* Desktop Nav */}
-            <div className="hidden md:flex items-center gap-2">
+            {/* Desktop Navigation */}
+            <div className="hidden lg:flex items-center gap-1.5">
               {mainNavItems.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onMouseEnter={playHover}
-                  onClick={playClick}
-                  className={`group relative flex items-center gap-2 px-4 py-2 text-xs font-bold tracking-wider font-mono transition-all duration-300 clip-path-slant border overflow-hidden ${
-                    isActive(item.path)
-                      ? 'text-intuition-dark bg-intuition-primary border-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.5)]'
-                      : 'text-slate-400 border-transparent bg-white/5 hover:bg-intuition-primary/10 hover:text-intuition-primary hover:border-intuition-primary/50 hover:shadow-[0_0_15px_rgba(0,243,255,0.2)]'
-                  }`}
-                >
-                  <div className="transition-transform duration-300 group-hover:-rotate-12 group-hover:scale-110 group-hover:text-intuition-primary">
-                    {item.icon}
-                  </div>
-                  {item.label}
-                  
-                  {!isActive(item.path) && (
-                    <div className="absolute bottom-0 left-0 h-[2px] w-full bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
-                  )}
-                </Link>
+                <NavItem 
+                  key={item.path} 
+                  to={item.path} 
+                  label={item.label} 
+                  icon={item.icon} 
+                  active={isActive(item.path)} 
+                  onClick={() => setIsMenuOpen(false)} 
+                />
               ))}
 
-              {/* INTEL Dropdown */}
               <div className="relative" ref={intelRef}>
-                  <button 
-                    onClick={() => { playClick(); setIsIntelOpen(!isIntelOpen); }}
-                    onMouseEnter={playHover}
-                    className={`group relative flex items-center gap-2 px-4 py-2 text-xs font-bold tracking-wider font-mono transition-all duration-300 clip-path-slant border overflow-hidden ${
-                        isIntelActive || isIntelOpen
-                          ? 'text-intuition-primary border-intuition-primary bg-intuition-primary/10 shadow-[0_0_20px_rgba(0,243,255,0.3)]'
-                          : 'text-slate-400 border-transparent bg-white/5 hover:bg-intuition-primary/10 hover:text-intuition-primary hover:border-intuition-primary/50 hover:shadow-[0_0_15px_rgba(0,243,255,0.2)]'
-                      }`}
-                  >
-                      <Activity size={16} /> INTEL <ChevronDown size={12} className={`transition-transform duration-300 ${isIntelOpen ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {isIntelOpen && (
-                      <div className="absolute top-full right-0 mt-2 w-72 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.3)] z-[60] clip-path-slant p-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                          {intelItems.map(item => (
-                              <Link 
-                                key={item.label}
-                                to={item.path}
-                                onClick={() => { playClick(); setIsIntelOpen(false); }}
-                                className={`flex items-center gap-3 px-4 py-3 text-xs font-bold font-mono hover:bg-intuition-primary/10 hover:text-intuition-primary transition-colors group ${isActive(item.path) ? 'text-intuition-primary' : 'text-slate-400'}`}
-                              >
-                                  {item.icon} {item.label}
-                              </Link>
-                          ))}
-                      </div>
-                  )}
-              </div>
-            </div>
-
-            {/* Wallet Button */}
-            <div className="flex items-center gap-3">
-              {walletAddress && chainId !== CHAIN_ID && (
-                  <button 
-                      onClick={async () => {
-                          playClick();
-                          await switchNetwork();
-                      }}
-                      className="hidden md:flex items-center gap-2 px-4 py-2 bg-intuition-danger text-black font-bold font-mono text-xs clip-path-slant hover:bg-white transition-colors animate-pulse shadow-[0_0_15px_rgba(255,0,85,0.5)]"
-                  >
-                      <AlertTriangle size={14} /> WRONG NET
-                  </button>
-              )}
-
-              <div className="hidden md:block relative" ref={dropdownRef}>
                 <button
-                  onClick={walletAddress ? toggleDropdown : openModal}
+                  onClick={() => { playClick(); setIsIntelOpen(!isIntelOpen); }}
                   onMouseEnter={playHover}
-                  className={`group relative flex items-center gap-2 px-6 py-2 font-mono text-xs font-bold tracking-wide transition-all duration-300 clip-path-slant border cursor-pointer z-50 ${
-                    walletAddress
-                      ? 'bg-intuition-success/10 border-intuition-success text-intuition-success shadow-[0_0_15px_rgba(0,255,157,0.4)] hover:shadow-[0_0_25px_rgba(0,255,157,0.6)]'
-                      : 'bg-intuition-primary/10 border-intuition-primary text-intuition-primary hover:bg-intuition-primary/20 shadow-[0_0_15px_rgba(0,243,255,0.3)] hover:shadow-[0_0_25px_rgba(0,243,255,0.5)]'
-                  }`}
+                  className={`group relative flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${isIntelActive || isIntelOpen
+                    ? 'text-intuition-primary border-intuition-primary/40 bg-white/5'
+                    : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
+                    }`}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-[200%] group-hover:translate-x-[200%] transition-transform duration-1000 ease-in-out"></div>
-                  
-                  <div className="transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110 relative z-10">
-                    <Wallet size={14} />
-                  </div>
-                  <span className="relative z-10">
-                    {walletAddress ? (
-                      <span className="flex items-center gap-2">
-                        {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                        <ChevronDown size={12} className={`transition-transform duration-300 ${isWalletDropdownOpen ? 'rotate-180' : ''}`}/>
-                      </span>
-                    ) : (
-                      <span>CONNECT_WALLET</span>
-                    )}
-                  </span>
+                  <Activity size={14} /> INTEL <ChevronDown size={10} className={`transition-transform duration-300 ${isIntelOpen ? 'rotate-180' : ''}`} />
+                  <div className={`absolute bottom-0 left-0 h-0.5 bg-intuition-primary transition-all duration-500 ${isIntelActive ? 'w-0' : 'w-0 group-hover:w-full'}`}></div>
                 </button>
 
-                {isWalletDropdownOpen && walletAddress && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border border-intuition-primary/50 shadow-[0_0_30px_rgba(0,243,255,0.3)] z-[60] clip-path-slant animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-1 space-y-1">
-                        <div className="px-4 py-2 border-b border-white/10 text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-1">
-                          System Access
-                        </div>
-                        <button 
-                          onClick={handleCopyAddress}
+                {isIntelOpen && (
+                  <div className="absolute top-full right-0 mt-2 w-56 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant p-1 animate-in slide-in-from-top-2">
+                    <div className="bg-[#080a12] p-1">
+                      {intelItems.map(item => (
+                        <Link
+                          key={item.label}
+                          to={item.path}
+                          onClick={() => { playClick(); setIsIntelOpen(false); }}
                           onMouseEnter={playHover}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-mono text-slate-300 hover:bg-intuition-primary/10 hover:text-intuition-primary transition-colors group"
+                          className={`flex items-center gap-3 px-4 py-3 text-[9px] font-black font-mono tracking-widest hover:bg-intuition-primary hover:text-black transition-colors uppercase ${isActive(item.path) ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
                         >
-                          <Copy size={14} className="group-hover:scale-110 transition-transform"/> 
-                          COPY_ADDRESS
-                        </button>
-                        <button 
-                          onClick={handleDisconnect}
-                          onMouseEnter={playHover}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors group border-t border-white/5"
-                        >
-                          <LogOut size={14} className="group-hover:translate-x-1 transition-transform"/> 
-                          DISCONNECT_SYSTEM
-                        </button>
+                          {item.icon} {item.label}
+                        </Link>
+                      ))}
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Mobile menu button */}
-            <div className="md:hidden">
-              <button
-                onClick={() => {
-                    playClick();
-                    setIsMenuOpen(!isMenuOpen);
-                }}
-                className="text-intuition-primary hover:text-white p-2 border border-intuition-primary/30 rounded bg-intuition-primary/10 hover-glow clip-path-slant group"
+            {/* Actions */}
+            <div className="flex items-center gap-3">
+              {/* GET TRUST BUTTON */}
+              <a
+                href={TRUST_SWAP_URL}
+                target="_blank"
+                rel="noreferrer"
+                onMouseEnter={playHover}
+                onClick={playClick}
+                className="group relative hidden md:flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 border-intuition-success/40 text-intuition-success hover:bg-intuition-success hover:text-black shadow-[0_0_15px_rgba(0,255,157,0.2)]"
               >
-                <div className="group-hover:rotate-180 transition-transform duration-500">
-                   {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                </div>
+                <Coins size={14} /> GET_TRUST
+              </a>
+
+              <button
+                onClick={handleNewSignal}
+                onMouseEnter={playHover}
+                className="group relative hidden md:flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant bg-intuition-secondary text-white shadow-[0_0_20px_rgba(255,30,109,0.4)] hover:bg-white hover:text-intuition-secondary active:scale-95 border-2 border-transparent"
+              >
+                <Plus size={16} /> NEW_SIGNAL
+              </button>
+
+              {walletAddress && chainId !== CHAIN_ID && (
+                <button
+                  onClick={async () => { playClick(); await switchNetwork(); }}
+                  className="hidden md:flex items-center gap-2 px-4 py-2.5 bg-intuition-danger text-white font-black font-mono text-[9px] clip-path-slant animate-pulse shadow-[0_0_15px_#ff1e6d]"
+                >
+                  <AlertTriangle size={14} /> WRONG_NET
+                </button>
+              )}
+
+              <div className="hidden md:block relative" ref={dropdownRef}>
+                <button
+                  onClick={walletAddress ? toggleDropdown : openModal}
+                  onMouseEnter={playHover}
+                  className={`group relative flex items-center gap-2 px-5 py-2.5 font-mono text-[10px] font-black tracking-widest transition-all duration-300 clip-path-slant border-2 cursor-pointer ${walletAddress
+                    ? 'bg-black border-intuition-success/40 text-intuition-success shadow-[0_0_15px_rgba(0,255,157,0.1)] hover:border-intuition-success'
+                    : 'bg-black border-slate-800 text-white hover:border-intuition-primary hover:text-intuition-primary'
+                    }`}
+                >
+                  <Wallet size={14} className={walletAddress ? "text-intuition-success" : "text-intuition-primary"} />
+                  <span>
+                    {walletAddress ? (
+                      <span className="flex items-center gap-2">
+                        {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                        <ChevronDown size={12} className={`transition-transform duration-300 ${isWalletDropdownOpen ? 'rotate-180' : ''}`} />
+                      </span>
+                    ) : (
+                      <span>UPLINK</span>
+                    )}
+                  </span>
+                </button>
+
+                {isWalletDropdownOpen && walletAddress && (
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant animate-in fade-in zoom-in duration-200">
+                    <div className="p-1 space-y-0.5 bg-[#080a12]">
+                      <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
+                        Terminal Access
+                      </div>
+                      <button
+                        onClick={handleCopyAddress}
+                        onMouseEnter={playHover}
+                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest"
+                      >
+                        <Copy size={14} /> COPY_IDENT_HASH
+                      </button>
+                      <button
+                        onClick={handleDisconnect}
+                        onMouseEnter={playHover}
+                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors border-t border-white/5 uppercase tracking-widest"
+                      >
+                        <LogOut size={14} /> TERMINATE_SYNC
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Mobile Button */}
+            <div className="lg:hidden">
+              <button
+                onClick={() => { playClick(); setIsMenuOpen(!isMenuOpen); }}
+                className="text-intuition-primary p-3 border-2 border-slate-900 rounded-none bg-black clip-path-slant shadow-lg active:scale-95 transition-transform"
+              >
+                {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Navigation */}
         {isMenuOpen && (
-          <div className="md:hidden bg-intuition-dark/95 backdrop-blur-xl border-b border-intuition-primary/30 absolute w-full z-[100] animate-in slide-in-from-top-2">
-            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+          <div className="lg:hidden bg-black/98 backdrop-blur-2xl border-b-2 border-intuition-primary/20 absolute w-full z-[100] animate-in slide-in-from-top-4 duration-300">
+            <div className="px-4 pt-4 pb-10 space-y-2">
               {[...mainNavItems, ...intelItems].map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
-                  onClick={() => {
-                      playClick();
-                      setIsMenuOpen(false);
-                  }}
-                  className={`group relative block px-3 py-3 rounded border text-sm font-bold font-mono clip-path-slant transition-all hover-glow overflow-hidden ${
-                    isActive(item.path)
-                      ? 'text-intuition-dark bg-intuition-primary border-intuition-primary shadow-[0_0_10px_rgba(0,243,255,0.2)]'
-                      : 'text-slate-400 border-transparent hover:text-intuition-primary hover:border-intuition-primary/30 bg-white/5'
-                  }`}
+                  onClick={() => { playClick(); setIsMenuOpen(false); }}
+                  className={`flex items-center gap-4 px-5 py-4 border-2 text-[10px] font-black font-mono tracking-widest clip-path-slant transition-all ${isActive(item.path)
+                    ? 'text-black bg-intuition-primary border-intuition-primary'
+                    : 'text-slate-400 border-slate-900 hover:text-white bg-white/5'
+                    }`}
                 >
-                  <div className="flex items-center gap-3 relative z-10">
-                    <div className="group-hover:rotate-12 transition-transform duration-300">
-                        {item.icon}
-                    </div>
-                    {item.label}
-                  </div>
+                  {item.icon} {item.label}
                 </Link>
               ))}
-              
+
+              <a
+                href={TRUST_SWAP_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => { playClick(); setIsMenuOpen(false); }}
+                className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest clip-path-slant mt-6 hover:bg-intuition-success hover:text-black transition-all"
+              >
+                <Coins size={18} /> ACQUIRE_$TRUST_TOKEN
+              </a>
+
+              <button
+                onClick={handleNewSignal}
+                className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest clip-path-slant shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform"
+              >
+                <Plus size={18} /> NEW_SIGNAL_INBOUND
+              </button>
+
               {walletAddress ? (
-                 <div className="space-y-2 mt-4 pt-4 border-t border-white/10">
-                    <button
-                      onClick={handleDisconnect}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-intuition-danger text-intuition-danger font-mono font-bold bg-intuition-danger/10 clip-path-slant hover-glow"
-                    >
-                      DISCONNECT
-                    </button>
-                 </div>
+                <button
+                  onClick={handleDisconnect}
+                  className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 clip-path-slant mt-2"
+                >
+                  EXIT_SECURE_SESSION
+                </button>
               ) : (
                 <button
-                  onClick={() => {
-                    playClick();
-                    setIsMenuOpen(false);
-                    connectWallet();
-                  }}
-                  className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 border border-intuition-primary text-intuition-primary font-mono font-bold bg-intuition-primary/10 clip-path-slant hover-glow"
+                  onClick={() => { playClick(); setIsMenuOpen(false); setIsWalletModalOpen(true); }}
+                  className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 clip-path-slant mt-2"
                 >
-                  CONNECT_WALLET
+                  ESTABLISH_NEURAL_LINK
                 </button>
               )}
             </div>
@@ -355,67 +421,131 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         )}
       </nav>
 
-      <main className="flex-grow pt-16 retro-grid relative z-10">
+      <main className="flex-grow pt-20 retro-grid relative z-10">
         {children}
       </main>
 
-      <footer className="border-t border-intuition-primary/20 bg-intuition-dark py-8 md:py-12 mt-auto z-20 relative shadow-[0_-5px_20px_rgba(0,243,255,0.05)]">
-        <div className="w-full px-4 md:px-8 flex flex-col md:flex-row justify-between items-center gap-8 text-center md:text-left">
-          
-          <div className="flex flex-col gap-2 items-center md:items-start">
-             <div className="flex items-center gap-2 text-[10px] font-mono text-intuition-primary/60 uppercase tracking-widest hover-glitch cursor-help" onMouseEnter={playHover}>
-                 <div className="w-2 h-2 bg-intuition-success animate-pulse shadow-[0_0_8px_rgba(0,255,157,0.8)]"></div>
-                 System Online
-             </div>
-             <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">
-                 Chain_ID [{CHAIN_ID}] :: {" >> "} v.1.2.0
-             </div>
-          </div>
+      <footer className="border-t border-white/5 bg-[#020308] py-24 mt-auto z-20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/[0.04] to-transparent pointer-events-none"></div>
+        <div className="max-w-[1600px] mx-auto px-10 relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-20 mb-24">
 
-          <div className="flex flex-col items-center justify-center gap-4 group cursor-pointer" onMouseEnter={playHover}>
-             <div className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em] group-hover:text-intuition-primary transition-colors">
-                Powered By
-             </div>
-             <a href="https://intuition.systems" target="_blank" rel="noreferrer" onClick={playClick} className="flex items-center gap-4">
-                <svg width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-white group-hover:text-intuition-primary transition-all duration-500 drop-shadow-[0_0_10px_rgba(255,255,255,0.4)] group-hover:drop-shadow-[0_0_20px_rgba(0,243,255,0.8)] group-hover:rotate-180">
-                    <circle cx="50" cy="50" r="45" stroke="currentColor" strokeWidth="4" strokeOpacity="0.3" strokeLinecap="round" strokeDasharray="10 5" />
-                    <path d="M50 10 A40 40 0 0 1 90 50" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-                    <path d="M50 90 A40 40 0 0 1 10 50" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
-                    <circle cx="50" cy="50" r="25" stroke="currentColor" strokeWidth="4" />
-                    <circle cx="50" cy="50" r="10" fill="currentColor" />
-                </svg>
-                <div className="flex flex-col text-left">
-                    <span className="text-3xl font-display font-bold tracking-[0.25em] text-white group-hover:text-intuition-primary transition-colors drop-shadow-lg leading-none text-glow">
-                        INTUITION
-                    </span>
-                    <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"></div>
+            <div className="md:col-span-2 space-y-10">
+              <div className="flex items-center gap-6 group cursor-pointer" onMouseEnter={playHover}>
+                <div className="w-16 h-16 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_30px_rgba(0,243,255,0.5)] group-hover:scale-110 transition-all duration-700 clip-path-slant">
+                  <Logo className="w-9 h-9 group-hover:rotate-12 transition-transform" />
                 </div>
-             </a>
+                <span className="text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
+                  INTU<span className="group-hover:text-white transition-colors">RANK</span>
+                </span>
+              </div>
+              <p className="text-slate-200 font-mono text-sm leading-relaxed max-w-lg uppercase tracking-wider font-black opacity-80">
+                Quantifying reputation as a tradable asset on the Intuition Network. Establishing the global source of truth via semantic dynamics.
+              </p>
+              <div className="flex flex-wrap gap-6">
+                <a href="https://x.com/inturank" target="_blank" rel="noreferrer" 
+                   onMouseEnter={playHover}
+                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
+                  <Twitter size={24} className="group-hover:scale-110 transition-transform" />
+                </a>
+                <a href="https://github.com/intuition-box/INTURANK" target="_blank" rel="noreferrer" 
+                   onMouseEnter={playHover}
+                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
+                  <Github size={24} className="group-hover:scale-110 transition-transform" />
+                </a>
+                <a href="https://discord.gg/gz62ER2e7a" target="_blank" rel="noreferrer" 
+                   onMouseEnter={playHover}
+                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
+                  <DiscordIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                </a>
+                <a href="https://t.me/inturank" target="_blank" rel="noreferrer" 
+                   onMouseEnter={playHover}
+                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
+                  <Send size={24} className="group-hover:scale-110 transition-transform" />
+                </a>
+                <a href="https://inturank.medium.com" target="_blank" rel="noreferrer" 
+                   onMouseEnter={playHover}
+                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
+                  <MediumIcon className="w-7 h-7 group-hover:scale-110 transition-transform" />
+                </a>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <h4 className="text-[12px] font-black font-display text-intuition-primary uppercase tracking-[0.6em]">Protocol_Nodes</h4>
+              <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
+                <Link to="/markets" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Market_Terminal
+                </Link>
+                <Link to="/feed" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Signal_Relay
+                </Link>
+                <Link to="/stats" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Network_Scores
+                </Link>
+                <Link to="/portfolio" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Asset_Ledger
+                </Link>
+              </nav>
+            </div>
+
+            <div className="space-y-8">
+              <h4 className="text-[12px] font-black font-display text-intuition-secondary uppercase tracking-[0.6em] text-glow-red">Ecosystem_Hub</h4>
+              <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
+                <a href={TRUST_SWAP_URL} target="_blank" rel="noreferrer" className="text-intuition-success hover:text-white transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0" /> Liquidity_Uplink ($TRUST) <ExternalLink size={12} />
+                </a>
+                <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Intuition_Home <ExternalLink size={12} />
+                </a>
+                <a href="https://docs.intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Documentation <BookOpen size={12} />
+                </a>
+                <a href="https://discord.gg/gz62ER2e7a" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Support_Node <MessageSquare size={12} />
+                </a>
+                <a href="https://explorer.intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Network_Explorer <Globe size={12} />
+                </a>
+              </nav>
+            </div>
+
           </div>
 
-          <div className="flex gap-6 items-center">
-             <a href="https://github.com/intuition-box/INTURANK" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="GitHub">
-                <Github size={24} />
-             </a>
-             <a href="https://x.com/inturank" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="X (Twitter)">
-                {/* X Logo SVG */}
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="w-6 h-6 fill-current"><g><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></g></svg>
-             </a>
-             <a href="https://t.me/inturank" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="Telegram">
-                {/* Telegram Logo SVG */}
-                <svg viewBox="0 0 24 24" className="w-6 h-6 fill-current" xmlns="http://www.w3.org/2000/svg"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 11.944 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-             </a>
-             <a href="https://inturank.medium.com" target="_blank" rel="noreferrer" className="text-slate-500 hover:text-intuition-primary transition-all duration-300 hover:scale-125 hover:drop-shadow-[0_0_15px_rgba(0,243,255,0.6)] hover:-translate-y-1" title="Medium">
-                {/* Medium Logo SVG */}
-                <svg viewBox="0 0 24 24" className="w-6 h-6 fill-current" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M13.54 12a6.8 6.8 0 1 1-6.77-6.82A6.8 6.8 0 0 1 13.54 12zM20.96 12c0 3.54-1.51 6.42-3.38 6.42s-3.38-2.88-3.38-6.42 1.51-6.42 3.38-6.42 3.38 2.88 3.38 6.42zM24 12c0 3.17-.31 5.75-.7 5.75s-.7-2.58-.7-5.75.31-5.75.7-5.75.7 2.58.7 5.75z"/>
-                </svg>
-             </a>
+          <div className="pt-16 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 items-center justify-items-center gap-12">
+            <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest font-black text-center md:text-left justify-self-start">
+              Sector_04_ARES // Version_1.3.0_STABLE // © 2025 IntuRank_Systems
+            </div>
+
+            {/* POWERED BY INTUITION SECTION - ABSOLUTELY CENTERED DESIGN */}
+            <div className="flex flex-col items-center group/powered relative">
+              <span className="text-[11px] font-black font-mono text-slate-500 uppercase tracking-[0.8em] mb-4 group-hover/powered:text-white transition-all duration-500">Powered By</span>
+              <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="flex items-center gap-8 no-underline">
+                <IntuitionTargetLogo />
+                <span className="text-6xl font-display font-black tracking-[0.25em] text-white group-hover/powered:text-intuition-primary transition-all duration-700 uppercase text-glow-blue">
+                  INTUITION
+                </span>
+              </a>
+              {/* Scanline line overlay for better integration */}
+              <div className="absolute -bottom-6 w-48 h-px bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent"></div>
+            </div>
+
+            <div className="flex items-center justify-center md:justify-end gap-3 text-[10px] font-black font-mono text-intuition-secondary uppercase tracking-[0.5em] text-glow-red justify-self-end">
+              <div className="w-2.5 h-2.5 bg-intuition-secondary animate-pulse shadow-[0_0_15px_#ff1e6d]"></div>
+              System_Broadcasting_Live
+            </div>
           </div>
         </div>
       </footer>
     </div>
   );
 };
+
+const ChevronsRight = ({ className, size }: { className: string, size: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <polyline points="13 17 18 12 13 7"></polyline>
+        <polyline points="6 17 11 12 6 7"></polyline>
+    </svg>
+);
 
 export default Layout;

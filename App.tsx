@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -10,6 +11,7 @@ import Compare from './pages/Compare';
 import Indexes from './pages/Indexes';
 import Portfolio from './pages/Portfolio';
 import PublicProfile from './pages/PublicProfile';
+import ComingSoon from './pages/ComingSoon';
 import { ToastContainer } from './components/Toast';
 
 const App: React.FC = () => {
@@ -34,6 +36,7 @@ const App: React.FC = () => {
           {/* New Features */}
           <Route path="/compare" element={<Compare />} />
           <Route path="/indexes" element={<Indexes />} />
+          <Route path="/coming-soon" element={<ComingSoon />} />
         </Routes>
       </Layout>
     </Router>

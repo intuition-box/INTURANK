@@ -1,313 +1,377 @@
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Shield, Database, Network, Cpu, ChevronRight, Activity, Globe, Lock, Terminal, Zap, Hash, TrendingUp, ChevronDown, Radio } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronDown, Binary, Box, HardDrive, Terminal, AlertCircle, Cpu, Network, Zap } from 'lucide-react';
 import { formatEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { getAllAgents, getNetworkStats } from '../services/graphql';
 
-// Ticker Component
+interface InViewOptions extends IntersectionObserverInit {
+  once?: boolean;
+}
+
+const useInView = (options: InViewOptions = {}) => {
+  const [isInView, setIsInView] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsInView(true);
+        if (options.once) observer.unobserve(entry.target);
+      } else if (!options.once) {
+        setIsInView(false);
+      }
+    }, { threshold: 0.1, ...options });
+
+    const currentRef = ref.current;
+    if (currentRef) observer.observe(currentRef);
+    return () => {
+      if (currentRef) observer.unobserve(currentRef);
+    };
+  }, [options.once]);
+
+  return [ref, isInView] as const;
+};
+
+const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: string; direction?: 'up' | 'down' | 'none' }> = ({ 
+    children, 
+    delay = 0, 
+    className = "",
+    direction = 'up'
+}) => {
+  const [ref, isInView] = useInView({ once: true });
+  
+  const getTransform = () => {
+      if (!isInView) {
+          if (direction === 'up') return 'translateY(20px)';
+          if (direction === 'down') return 'translateY(-20px)';
+          return 'scale(0.98)';
+      }
+      return 'translateY(0) scale(1)';
+  };
+
+  return (
+    <div
+      ref={ref}
+      className={`transition-all duration-[800ms] ease-out ${className} ${
+        isInView ? 'opacity-100 blur-none' : 'opacity-0 blur-sm'
+      }`}
+      style={{ transitionDelay: `${delay}ms`, transform: getTransform() }}
+    >
+      {children}
+    </div>
+  );
+};
+
 const TickerItem: React.FC<{ symbol: string, price: string, isUp: boolean }> = ({ symbol, price, isUp }) => (
-  <div className="flex items-center gap-4 px-6 py-3 border-r border-intuition-primary/10 text-sm font-mono whitespace-nowrap bg-black/40 backdrop-blur-sm hover:bg-intuition-primary/10 transition-colors group">
-    <span className="text-white font-black tracking-wider drop-shadow-[0_0_5px_rgba(255,255,255,0.3)] group-hover:text-intuition-primary transition-colors">{symbol}</span>
-    <span className="text-slate-400 font-bold">{price}</span>
-    <span className={`flex items-center gap-1 font-bold text-xs px-1.5 py-0.5 rounded ${isUp ? 'bg-intuition-success/10 text-intuition-success border border-intuition-success/30' : 'bg-intuition-danger/10 text-intuition-danger border border-intuition-danger/30'}`}>
-      {isUp ? <TrendingUp size={12} /> : <TrendingUp size={12} className="rotate-180" />}
-      {isUp ? '+' : ''}{Math.floor(Math.random() * 5)}.{Math.floor(Math.random() * 9)}%
+  <div className="flex items-center gap-4 px-8 py-4 border-r border-white/10 text-[10px] font-black font-mono whitespace-nowrap bg-black/40 hover:bg-intuition-secondary/10 transition-all group">
+    <span className="text-slate-300 tracking-[0.2em] group-hover:text-white transition-colors uppercase font-black">{symbol}</span>
+    <span className="text-white tracking-tighter text-sm font-black">{price}</span>
+    <span className={`px-1.5 py-0.5 rounded-sm font-black shadow-sm ${isUp ? 'text-intuition-success bg-intuition-success/10 text-glow-success' : 'text-intuition-secondary bg-intuition-secondary/20 shadow-[0_0_10px_rgba(255,0,85,0.2)] text-glow-red'}`}>
+      {isUp ? '▲' : '▼'}{Math.floor(Math.random() * 8)}.{Math.floor(Math.random() * 9)}%
     </span>
   </div>
 );
 
+const MissionTerminal: React.FC = () => {
+  return (
+    <div className="w-full max-w-5xl mx-auto px-6 py-32 relative">
+      <Reveal delay={200}>
+        <div className="bg-[#05080f] border-2 border-intuition-primary/40 rounded-xl overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.15)] clip-path-slant group">
+          {/* Window Header */}
+          <div className="flex items-center justify-between px-6 py-4 bg-black/60 border-b border-white/5">
+            <div className="flex gap-2">
+              <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+              <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+              <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+            </div>
+            <div className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em] font-black">mission_log.txt</div>
+            <div className="w-12"></div>
+          </div>
+          
+          {/* Body */}
+          <div className="p-8 md:p-16 font-mono space-y-10 relative">
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none opacity-20"></div>
+            
+            <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-3">
+              <span className="animate-pulse">>></span> SYSTEM BOOT SEQUENCE INITIATED ...
+            </div>
+            
+            <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
+              The internet is broken. Information is abundant, but <span className="inline-block px-2 py-0.5 bg-intuition-primary/10 border border-intuition-primary/30 text-white text-glow-blue rounded-sm">trust</span> is scarce. We are drowning in noise, deepfakes, and sybil attacks.
+            </p>
+            
+            <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
+              Intuition is the solution. A decentralized, semantic graph where reputation has a price. By attaching financial value to truth, we make lying expensive.
+            </p>
+            
+            <p className="text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
+              <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span> <span className="text-slate-300">Not controlled by a bank, but by you. The market decides what is true.</span>
+            </p>
+            
+            <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-2 pt-4 text-glow-blue">
+              <span>>></span> AWAITING INPUT<span className="w-2.5 h-6 bg-intuition-primary animate-[pulse_0.8s_infinite] shadow-glow-blue"></span>
+            </div>
+          </div>
+        </div>
+      </Reveal>
+      
+      {/* Decorative background elements for the terminal section */}
+      <div className="absolute -top-10 -right-10 w-40 h-40 bg-intuition-primary/5 rounded-full blur-[80px] -z-10 animate-pulse"></div>
+      <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-intuition-secondary/5 rounded-full blur-[80px] -z-10 animate-pulse delay-1000"></div>
+    </div>
+  );
+};
+
 const Home: React.FC = () => {
   const [tickerData, setTickerData] = useState<any[]>([]);
   const [stats, setStats] = useState({ tvl: "0", atoms: 0, signals: 0, positions: 0 });
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const initData = async () => {
       try {
-        // Fetch Real Top Agents for Ticker
-        const agents = await getAllAgents().catch(() => []); // Fallback to empty
-        const topAgents = agents.slice(0, 20).map(a => {
+        const agents = await getAllAgents().catch(() => []);
+        const topAgents = agents.slice(0, 15).map(a => {
            const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
            const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
-           const price = shares > 0 ? (assets / shares).toFixed(4) : "0.0000";
-           const isUp = Math.random() > 0.4; 
-           return {
-             symbol: a.label.toUpperCase().slice(0, 16),
-             price: `${price}`,
-             isUp
-           };
+           const price = shares > 0 ? (assets / shares).toFixed(4) : "0.0001";
+           return { symbol: (a.label || 'NODE').toUpperCase().slice(0, 12), price, isUp: Math.random() > 0.45 };
         });
         setTickerData(topAgents);
-
-        // Fetch Real Network Stats
         const netStats = await getNetworkStats().catch(() => ({ tvl: "0", atoms: 0, signals: 0, positions: 0 }));
         setStats(netStats);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { console.error(e); }
     };
     initData();
   }, []);
 
-  // Format TVL
-  const formattedTVL = (() => {
-    try {
-      const val = parseFloat(formatEther(BigInt(stats.tvl)));
-      if (val > 1000000) return `${(val / 1000000).toFixed(1)}M`;
-      if (val > 1000) return `${(val / 1000).toFixed(1)}K`;
-      return val.toFixed(2);
-    } catch {
-      return "0.00";
-    }
-  })();
+  const volumeValue = parseFloat(formatEther(BigInt(stats.tvl)));
+  const formattedVolume = volumeValue > 0 
+    ? volumeValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : "0.0";
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-x-hidden bg-[#02040a]">
+    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white">
       
       {/* --- HERO SECTION --- */}
-      <div className="relative min-h-[90vh] flex flex-col justify-center items-center overflow-hidden border-b border-intuition-primary/20">
-        {/* Animated Background Elements */}
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-intuition-primary/10 via-black to-black opacity-50"></div>
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 border border-intuition-primary/10 rounded-full animate-[spin_20s_linear_infinite] border-dashed pointer-events-none box-glow"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] border border-intuition-secondary/10 rounded-full animate-[spin_30s_linear_infinite_reverse] border-dotted pointer-events-none box-glow"></div>
+      <div className="relative h-[90vh] flex flex-col justify-center items-center overflow-hidden border-b border-white/10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,_rgba(0,243,255,0.1),_transparent_60%)]"></div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,_rgba(255,0,85,0.12),_transparent_40%)]"></div>
+        <div className="absolute top-0 left-0 w-full h-full opacity-[0.08] retro-grid pointer-events-none"></div>
         
-        <div className="relative z-10 text-center max-w-5xl px-4 mt-10">
-          <div 
-            onMouseEnter={playHover}
-            className="inline-flex items-center gap-2 md:gap-3 px-4 md:px-6 py-2 mb-8 md:mb-10 border border-intuition-primary/50 bg-black/80 backdrop-blur-md rounded-none text-intuition-primary font-mono text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] uppercase hover-glow cursor-help clip-path-slant shadow-[0_0_15px_rgba(0,243,255,0.2)]"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-intuition-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-intuition-primary shadow-[0_0_8px_#00f3ff]"></span>
-            </span>
-            INTUITION MAINNET ACTIVE
-          </div>
+        <div className="relative z-10 text-center max-w-6xl px-6 flex flex-col items-center">
+          <Reveal delay={100} direction="down">
+            <div className="inline-flex items-center gap-3 px-6 py-2 mb-8 bg-black border-2 border-intuition-secondary text-[10px] font-black font-mono tracking-[0.5em] text-intuition-secondary uppercase shadow-[0_0_30px_rgba(255,0,85,0.6)] clip-path-slant group">
+              <div className="absolute inset-0 bg-intuition-secondary/10 animate-pulse"></div>
+              <Terminal size={14} className="text-intuition-secondary" />
+              IDENTITY_PROTOCOL_ACTIVE // ARES_HIGH_STAKES
+            </div>
+          </Reveal>
 
-          <h1 className="text-4xl sm:text-6xl md:text-9xl font-black tracking-tighter text-white mb-6 md:mb-8 leading-[0.9] font-display drop-shadow-[0_0_35px_rgba(0,243,255,0.4)]">
-            SEMANTIC <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-intuition-primary via-white to-intuition-secondary hover-glitch text-glow">CAPITALISM</span>
-          </h1>
+          <Reveal delay={300}>
+            <div className="relative mb-8">
+               <h1 className="text-6xl sm:text-7xl lg:text-[8.5rem] font-black tracking-tighter text-white leading-[0.9] font-display text-glow-white uppercase">
+                 SEMANTIC<br />
+                 <span className="text-intuition-secondary text-glow-red animate-pulse">CAPITALISM</span>
+               </h1>
+            </div>
+          </Reveal>
 
-          <p className="max-w-2xl mx-auto text-base md:text-xl text-slate-400 mb-10 md:mb-12 font-mono leading-relaxed px-4">
-            <span className="text-intuition-primary text-glow">{" >> "}</span> The intelligence layer of the open web.<br/>
-            <span className="text-intuition-primary text-glow">{" >> "}</span> Stake on identity. Short the noise. Profit from truth.
-          </p>
+          <Reveal delay={500}>
+            <p className="max-w-2xl mx-auto text-base md:text-2xl text-slate-200 mb-12 font-mono leading-relaxed tracking-wide uppercase font-black">
+              Establishing the reputation protocol for a trustless world.<br/>
+              <span className="text-intuition-primary text-glow-blue underline decoration-intuition-secondary/50 underline-offset-8">QUANTIFY IDENTITY. ARBITRAGE TRUTH.</span>
+            </p>
+          </Reveal>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 md:gap-6 mb-24 w-full px-4">
-            <Link
-              to="/markets"
-              onClick={playClick}
-              onMouseEnter={playHover}
-              className="btn-cyber btn-cyber-cyan w-full sm:w-64 py-5 text-lg"
-            >
-              ENTER_MARKET <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" size={20} />
-            </Link>
-            
-            <Link
-              to="/stats"
-              onClick={playClick}
-              onMouseEnter={playHover}
-              className="btn-cyber btn-cyber-outline w-full sm:w-64 py-5 text-lg"
-            >
-              LEADERBOARD
-            </Link>
-          </div>
+          <Reveal delay={700}>
+            <div className="flex flex-col sm:flex-row items-center gap-8 mb-16">
+              <Link to="/markets" onClick={playClick} className="btn-cyber btn-cyber-secondary px-16 py-7 text-xl group shadow-[0_0_60px_rgba(255,30,109,0.7)]">
+                ENTER_TERMINAL <ArrowRight className="ml-4 group-hover:translate-x-3 transition-transform duration-300" />
+              </Link>
+              <Link to="/stats" onClick={playClick} className="btn-cyber btn-cyber-outline px-16 py-7 text-xl border-intuition-primary text-intuition-primary hover:text-white shadow-[0_0_30px_rgba(0,243,255,0.3)]">
+                NETWORK_STATS
+              </Link>
+            </div>
+          </Reveal>
         </div>
 
-        {/* Scroll Indicator */}
-        <div className="absolute bottom-10 animate-bounce text-intuition-primary flex flex-col items-center drop-shadow-[0_0_10px_#00f3ff]">
-          <ChevronDown size={32} />
+        <div className="absolute bottom-8 flex flex-col items-center gap-2 opacity-80 animate-bounce">
+            <span className="text-[10px] font-black font-mono tracking-[0.4em] text-intuition-secondary text-glow-red uppercase font-black">Scroll_For_Telemetry</span>
+            <ChevronDown size={24} className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]" />
         </div>
       </div>
 
-      {/* --- LIVE TICKER (SUPERB VERSION) --- */}
-      <div className="border-y border-intuition-primary/30 bg-black py-1 overflow-hidden relative z-20 h-14 flex items-center group shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-         {/* Live Indicator */}
-         <div className="absolute left-0 top-0 bottom-0 bg-black z-30 px-4 flex items-center gap-2 border-r border-intuition-primary/30 shadow-[10px_0_20px_rgba(0,0,0,1)]">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-            <span className="text-xs font-black font-display text-white tracking-widest text-glow-danger">LIVE</span>
+      {/* --- TELEMETRY TICKER --- */}
+      <div className="w-full border-y-2 border-intuition-secondary/20 bg-black/90 py-1 overflow-hidden flex items-center group relative z-20 shadow-2xl">
+         <div className="bg-black z-30 px-8 py-5 flex items-center gap-4 border-r-2 border-intuition-secondary/40 shadow-[25px_0_45px_rgba(0,0,0,1)]">
+            <div className="w-3 h-3 rounded-full bg-intuition-secondary animate-pulse-fast shadow-[0_0_15px_#ff0055]"></div>
+            <span className="text-[11px] font-black font-display text-white tracking-[0.3em] uppercase text-glow-white">SYSTEM_PULSE</span>
          </div>
-
-         {/* Gradients for smooth fade in/out */}
-         <div className="absolute top-0 left-[80px] w-32 h-full bg-gradient-to-r from-black to-transparent z-20 pointer-events-none"></div>
-         <div className="absolute top-0 right-0 w-32 h-full bg-gradient-to-l from-black to-transparent z-20 pointer-events-none"></div>
          
-         {/* Moving Content - Using gap-0 and duplicating for seamless loop */}
-         <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused] ml-24">
+         <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused]">
             <div className="flex shrink-0">
-               {loading ? (
-                  <span className="text-intuition-primary font-mono px-8 animate-pulse flex items-center gap-2">
-                      <Radio size={14} className="animate-spin" /> ESTABLISHING UPLINK TO INTUITION NETWORK...
-                  </span>
-               ) : tickerData.length > 0 ? (
-                  tickerData.map((item, i) => (
-                     <TickerItem key={i} symbol={item.symbol} price={item.price} isUp={item.isUp} />
-                  ))
-               ) : (
-                  <TickerItem symbol="INTUITION" price="ONLINE" isUp={true} />
-               )}
+               {tickerData.length > 0 ? tickerData.map((item, i) => (
+                  <TickerItem key={i} symbol={item.symbol} price={item.price} isUp={item.isUp} />
+               )) : <div className="px-20 text-[10px] font-mono text-slate-300 animate-pulse uppercase tracking-[0.5em] font-black">Establishing neural uplink...</div>}
             </div>
-            {/* Duplicate for Seamless Loop */}
             <div className="flex shrink-0">
-               {loading ? (
-                  <span className="text-intuition-primary font-mono px-8 animate-pulse flex items-center gap-2">
-                       <Radio size={14} className="animate-spin" /> ESTABLISHING UPLINK TO INTUITION NETWORK...
-                  </span>
-               ) : tickerData.length > 0 ? (
-                  tickerData.map((item, i) => (
-                     <TickerItem key={`dup-${i}`} symbol={item.symbol} price={item.price} isUp={item.isUp} />
-                  ))
-               ) : (
-                  <TickerItem symbol="INTUITION" price="ONLINE" isUp={true} />
-               )}
+               {tickerData.length > 0 ? tickerData.map((item, i) => (
+                  <TickerItem key={`d-${i}`} symbol={item.symbol} price={item.price} isUp={item.isUp} />
+               )) : null}
             </div>
          </div>
+      </div>
+
+      {/* --- CORE PILLARS --- */}
+      <div className="py-40 bg-[#04060b] relative overflow-hidden border-b border-white/5">
+        <div className="absolute top-0 right-0 w-[700px] h-[700px] bg-intuition-secondary/[0.06] rounded-full blur-[140px] pointer-events-none"></div>
+        
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="mb-24 flex flex-col md:flex-row justify-between items-end gap-10">
+            <Reveal className="max-w-3xl">
+                <div className="flex items-center gap-3 text-intuition-secondary font-black font-mono text-xs mb-8 tracking-[0.6em] uppercase text-glow-red">
+                    <Binary size={20} /> Protocol_Engineering
+                </div>
+                <h2 className="text-6xl md:text-8xl font-black text-white font-display leading-[0.85] tracking-tighter uppercase mb-6 text-glow-white">
+                  SEMANTIC<br/><span className="text-intuition-secondary text-glow-red">DYNAMICS</span>
+                </h2>
+                <p className="text-slate-200 text-xl font-mono uppercase tracking-widest leading-relaxed font-black">
+                  Mapping global consensus with cryptographic precision.
+                </p>
+            </Reveal>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+              {[
+                  { num: "01", icon: <Shield size={40}/>, color: "text-intuition-primary text-glow-blue", border: "border-intuition-primary/30", glow: "hover:border-intuition-primary hover:shadow-glow-blue", title: "VERIFIED_ATOMS", desc: "Every unique identity is anchored as a persistent primitive in the graph, ready for valuation." },
+                  { num: "02", icon: <Binary size={40}/>, color: "text-intuition-secondary text-glow-red", border: "border-intuition-secondary/40", glow: "hover:border-intuition-secondary hover:shadow-glow-red", title: "LOGIC_TRIPLES", desc: "Claims are structured as machine-readable semantic links, creating a network of truth." },
+                  { num: "03", icon: <Activity size={40}/>, color: "text-white text-glow-white", border: "border-white/20", glow: "hover:border-white hover:shadow-2xl", title: "STAKE_CONSENSUS", desc: "Conviction is quantified through capital allocation, making deception economically irrational." }
+              ].map((item, i) => (
+                  <Reveal key={i} delay={200 + (i * 150)}>
+                      <div className={`p-10 bg-black border-2 ${item.border} ${item.glow} transition-all duration-500 clip-path-slant group relative overflow-hidden h-full flex flex-col hover:shadow-[0_0_40px_rgba(255,0,85,0.25)]`}>
+                          <div className="absolute top-0 right-0 p-4 text-[7rem] font-black text-white/5 font-display italic pointer-events-none group-hover:text-intuition-secondary/10 transition-colors">{item.num}</div>
+                          <div className={`w-20 h-20 bg-white/5 border-2 ${item.border} flex items-center justify-center ${item.color} group-hover:scale-110 transition-all duration-700 mb-10 clip-path-slant shadow-2xl`}>
+                              {item.icon}
+                          </div>
+                          <h4 className={`text-2xl font-black font-display text-white mb-6 uppercase group-hover:text-intuition-secondary transition-all ${item.num === '02' ? 'text-glow-red' : 'group-hover:text-glow-white'}`}>{item.title}</h4>
+                          <p className="text-slate-300 font-mono text-sm leading-relaxed tracking-wider uppercase font-black opacity-100">{item.desc}</p>
+                      </div>
+                  </Reveal>
+              ))}
+          </div>
+        </div>
       </div>
 
       {/* --- NETWORK TELEMETRY --- */}
-      <div className="py-16 md:py-24 bg-[#03050a] relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-intuition-primary/5 to-transparent pointer-events-none"></div>
-        <div className="w-full max-w-[95%] mx-auto px-4 relative z-10">
-          <div className="flex items-center gap-4 mb-8 md:mb-12">
-            <Activity className="text-intuition-primary animate-pulse" size={24} />
-            <h2 className="text-2xl md:text-3xl font-display font-bold text-white tracking-wide text-glow">NETWORK_TELEMETRY</h2>
-          </div>
+      <div className="py-40 bg-intuition-dark relative border-y-2 border-white/10">
+        <div className="max-w-[1600px] mx-auto px-10">
+          <Reveal className="mb-20 flex items-center gap-6">
+            <div className="w-12 h-12 bg-intuition-secondary/10 border border-intuition-secondary flex items-center justify-center clip-path-slant shadow-glow-red">
+                <Activity className="text-intuition-secondary animate-pulse" size={24} />
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black font-display text-white tracking-tight uppercase text-glow-red">Network_Ingress</h2>
+          </Reveal>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-            <StatBox label="Total Value Locked" value={`${formattedTVL} TRUST`} sub="On-Chain Assets" delay="0" loading={loading} />
-            <StatBox label="Active Signals" value={stats.signals.toLocaleString()} sub="Semantic Triples" delay="100" loading={loading} />
-            <StatBox label="Identity Nodes" value={stats.atoms.toLocaleString()} sub="Verified Atoms" delay="200" loading={loading} />
-            <StatBox label="Active Positions" value={stats.positions.toLocaleString()} sub="Staked Claims" delay="300" loading={loading} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
+            <Reveal delay={100}><StatBox label="Protocol Volume" value={formattedVolume} sub="TRUST EQUITY" icon={<Box size={18}/>} color="secondary" /></Reveal>
+            <Reveal delay={200}><StatBox label="Semantic Nodes" value={stats.atoms.toLocaleString()} sub="VERIFIED ATOMS" icon={<HardDrive size={18}/>} color="primary" /></Reveal>
+            <Reveal delay={300}><StatBox label="Signal Density" value={stats.signals.toLocaleString()} sub="GRAPH TRIPLES" icon={<Binary size={18}/>} color="secondary" /></Reveal>
+            <Reveal delay={400}><StatBox label="Uplink Flux" value={`${stats.positions.toLocaleString()}Hz`} sub="THROUGHPUT" icon={<Activity size={18}/>} color="primary" /></Reveal>
           </div>
         </div>
       </div>
 
-      {/* --- HOW IT WORKS --- */}
-      <div className="py-20 md:py-32 border-t border-intuition-primary/10 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-intuition-secondary/5 rounded-full blur-[100px] pointer-events-none"></div>
-        
-        <div className="w-full max-w-[95%] mx-auto px-4 relative z-10">
-          <div className="text-center mb-12 md:mb-20">
-            <h2 className="text-3xl md:text-5xl font-black font-display text-white mb-4 md:mb-6 text-glow">THE PROTOCOL</h2>
-            <p className="text-slate-400 font-mono text-xs md:text-sm tracking-widest uppercase">Initializing Trust Algorithm...</p>
-          </div>
+      {/* --- MISSION TERMINAL SECTION --- */}
+      <MissionTerminal />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
-            <StepCard 
-              num="01" 
-              icon={<Shield className="text-intuition-primary" size={48} />}
-              title="IDENTIFY"
-              desc="Every person, organization, and concept is an 'Atom' on the graph. Find undervalued reputation assets."
-            />
-            <StepCard 
-              num="02" 
-              icon={<Zap className="text-intuition-warning" size={48} />}
-              title="SIGNAL"
-              desc="Stake TRUST tokens to vouch for (or against) an identity. Your stake creates a signal strength."
-            />
-            <StepCard 
-              num="03" 
-              icon={<Cpu className="text-intuition-success" size={48} />}
-              title="PROFIT"
-              desc="Earn yield as others signal on the same atoms. Early signalers capture the most value."
-            />
+      {/* --- CALL TO ACTION --- */}
+      <div className="py-64 text-center relative overflow-hidden bg-black border-t-2 border-intuition-secondary/30">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(255,0,85,0.15),_transparent_70%)]"></div>
+        <Reveal delay={200}>
+          <div className="inline-flex items-center gap-3 text-intuition-secondary font-black font-mono text-xs mb-12 tracking-[0.8em] uppercase text-glow-red font-black">
+             <AlertCircle size={18} /> Initializing_Final_Sequence
           </div>
-        </div>
-      </div>
-
-      {/* --- THE MANIFESTO (TERMINAL) --- */}
-      <div className="py-16 md:py-24 bg-black border-y border-intuition-primary/20 relative">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="w-full bg-[#0a0f1a] border border-intuition-border rounded-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] transform hover:scale-[1.01] transition-transform duration-500 box-glow-hover">
-            <div className="bg-[#1f2937] px-4 py-2 flex items-center gap-2 border-b border-black">
-              <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_5px_red]"></div>
-              <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-[0_0_5px_yellow]"></div>
-              <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_5px_lime]"></div>
-              <div className="ml-4 text-[10px] font-mono text-slate-400">mission_log.txt</div>
-            </div>
-            <div className="p-6 md:p-8 font-mono text-sm md:text-base leading-relaxed text-slate-300 relative">
-              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-              <p className="mb-4 text-intuition-primary text-glow">{" >> "} SYSTEM BOOT SEQUENCE INITIATED...</p>
-              <p className="mb-4">
-                The internet is broken. Information is abundant, but <span className="text-white font-bold text-glow">trust</span> is scarce. 
-                We are drowning in noise, deepfakes, and sybil attacks.
-              </p>
-              <p className="mb-4">
-                Intuition is the solution. A decentralized, semantic graph where reputation has a price. 
-                By attaching financial value to truth, we make lying expensive.
-              </p>
-              <p className="mb-6">
-                <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span> Not controlled by a bank, 
-                but by you. The market decides what is true.
-              </p>
-              <p className="animate-pulse text-intuition-primary">{" >> "} AWAITING INPUT_</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* --- CTA FOOTER --- */}
-      <div className="py-20 md:py-32 text-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
-        <div className="relative z-10 px-4">
-          <h2 className="text-4xl md:text-7xl font-black font-display text-white mb-8 tracking-tighter text-glow">
-            JOIN THE <span className="text-intuition-primary">VANGUARD</span>
+          <h2 className="text-6xl md:text-[10rem] font-black font-display text-white mb-16 tracking-tighter text-glow-white uppercase leading-[0.85]">
+            RECLAIM_THE<br/><span className="text-intuition-secondary text-glow-red">REPUTATION</span>
           </h2>
-          <div className="flex justify-center">
-            <Link 
-              to="/markets" 
-              onClick={playClick}
-              className="btn-cyber btn-cyber-white w-full sm:w-auto px-12 py-6 text-xl"
-            >
-              INITIALIZE_LINK
+          <div className="flex justify-center mb-24">
+            <Link to="/markets" onClick={playClick} className="btn-cyber btn-cyber-secondary px-24 py-10 text-3xl shadow-[0_0_100px_rgba(255,30,109,0.7)] active:scale-95 transition-transform">
+              SYNC_PROTOCOL
             </Link>
           </div>
-        </div>
+        </Reveal>
       </div>
 
     </div>
   );
 };
 
-const StatBox = ({ label, value, sub, delay, loading }: any) => (
-  <div 
-    className="p-6 border border-intuition-border bg-intuition-card/50 clip-path-slant hover-glow transition-all hover:-translate-y-2 group relative overflow-hidden box-glow-hover"
-    style={{ animationDelay: `${delay}ms` }}
-  >
-    <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-30 transition-opacity">
-        <TrendingUp size={40} />
-    </div>
-    <div className="text-slate-500 font-mono text-xs uppercase tracking-widest mb-2 relative z-10">{label}</div>
-    {loading ? (
-        <div className="h-8 w-24 bg-white/10 animate-pulse rounded mb-1"></div>
-    ) : (
-        <div className="text-2xl md:text-4xl font-black text-white font-display mb-1 group-hover:text-intuition-primary transition-colors relative z-10 text-glow">{value}</div>
-    )}
-    <div className="text-intuition-success font-mono text-xs relative z-10">{sub}</div>
-  </div>
-);
+const StatBox = ({ label, value, sub, icon, color }: any) => {
+    const isRed = color === 'secondary';
+    const borderClass = isRed ? 'border-intuition-secondary/40 hover:border-intuition-secondary' : 'border-intuition-primary/30 hover:border-intuition-primary';
+    const textClass = isRed ? 'group-hover:text-intuition-secondary' : 'group-hover:text-intuition-primary';
+    const glowClass = isRed ? 'text-glow-red' : 'text-glow-blue';
+    const bgClass = isRed ? 'bg-intuition-secondary shadow-glow-red' : 'bg-intuition-primary shadow-glow-blue';
 
-const StepCard = ({ num, icon, title, desc }: any) => (
-  <div 
-    onMouseEnter={playHover}
-    className="relative p-8 border border-intuition-border bg-black/50 hover:bg-intuition-primary/5 transition-all duration-500 group clip-path-slant box-glow-hover"
-  >
-    <div className="absolute -top-6 -left-6 text-8xl font-black text-intuition-border/20 font-display group-hover:text-intuition-primary/10 transition-colors select-none">
-      {num}
-    </div>
-    <div className="relative z-10">
-      <div className="mb-6 p-4 inline-block bg-black border border-intuition-border rounded-lg group-hover:border-intuition-primary group-hover:shadow-[0_0_30px_rgba(0,243,255,0.4)] transition-all">
-        {icon}
+    const valStr = value.toString();
+    const valLength = valStr.length;
+    
+    // Scale font size aggressively based on length to prevent overflow in fixed-width boxes
+    const getFontSize = () => {
+        if (valLength > 15) return 'text-xl sm:text-2xl md:text-3xl';
+        if (valLength > 12) return 'text-2xl sm:text-3xl md:text-4xl';
+        if (valLength > 10) return 'text-3xl sm:text-4xl md:text-5xl';
+        if (valLength > 8) return 'text-4xl sm:text-5xl md:text-6xl';
+        return 'text-5xl sm:text-6xl md:text-7xl';
+    };
+
+    return (
+      <div className={`relative p-8 bg-[#02040a] group transition-all duration-700 flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none`}>
+        {/* Futuristic Grid Background Overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-10 pointer-events-none"></div>
+        
+        {/* Corner Brackets */}
+        <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
+        <div className={`absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
+        
+        <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent opacity-40 pointer-events-none"></div>
+        
+        <div className="flex justify-between items-start mb-6 relative z-10">
+            <div className="flex flex-col gap-1.5">
+                <span className="text-slate-500 font-mono text-[9px] uppercase tracking-[0.4em] font-black group-hover:text-white transition-colors">{label}</span>
+                <div className={`h-[1px] w-12 ${isRed ? 'bg-intuition-secondary' : 'bg-intuition-primary'} opacity-40 group-hover:w-full transition-all duration-1000`}></div>
+            </div>
+            <div className={`p-3 bg-black border border-white/10 rounded-none clip-path-slant transition-all duration-500 group-hover:scale-110 group-hover:border-current shadow-inner ${textClass}`}>
+                {icon}
+            </div>
+        </div>
+
+        <div className="flex-1 flex items-center justify-start relative z-10 min-h-0 overflow-hidden">
+            <div className={`font-black text-white font-display transition-all duration-500 tracking-tighter w-full break-all leading-tight group-hover:scale-[1.02] ${getFontSize()} ${glowClass}`}>
+                {value}
+            </div>
+        </div>
+
+        <div className="mt-auto relative z-10 pt-4 flex items-center justify-between border-t border-white/5">
+            <div className="text-slate-500 font-mono text-[8px] uppercase tracking-[0.5em] font-black group-hover:text-white transition-colors flex items-center gap-2">
+                <div className={`w-2 h-2 ${bgClass.split(' ')[0]} animate-pulse shadow-[0_0_10px_currentColor] clip-path-slant`}></div>
+                {sub}
+            </div>
+            <div className="flex items-center gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
+                <div className="text-[7px] font-black font-mono text-slate-600 uppercase tracking-widest group-hover:text-slate-400">Ver_04_ARES</div>
+                <Network size={10} className="text-slate-600 group-hover:text-white" />
+            </div>
+        </div>
+        
+        {/* Hover decorative scanline */}
+        <div className={`absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-${isRed ? 'intuition-secondary' : 'intuition-primary'}/10 to-transparent -translate-y-full group-hover:animate-[scanline_3s_linear_infinite] pointer-events-none`}></div>
+
+        {/* Animated progressive fill bar on hover */}
+        <div className={`absolute bottom-0 left-0 h-1.5 w-full ${bgClass.split(' ')[0]} scale-x-0 group-hover:scale-x-100 transition-transform duration-700 origin-left shadow-[0_0_20px_currentColor]`}></div>
       </div>
-      <h3 className="text-2xl font-bold text-white mb-4 font-display tracking-wide group-hover:text-intuition-primary transition-colors">{title}</h3>
-      <p className="text-slate-400 font-mono text-sm leading-relaxed border-l-2 border-intuition-primary/20 pl-4 group-hover:border-intuition-primary/60 transition-colors">
-        {desc}
-      </p>
-    </div>
-  </div>
-);
+    );
+};
 
 export default Home;

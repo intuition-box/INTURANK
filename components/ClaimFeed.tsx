@@ -13,7 +13,6 @@ const ClaimFeed: React.FC = () => {
   const [debouncedTerm, setDebouncedTerm] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [sessionClaimCount, setSessionClaimCount] = useState(0);
   const intervalRef = useRef<any>(null);
   const searchTimeoutRef = useRef<any>(null);
 
@@ -42,11 +41,7 @@ const ClaimFeed: React.FC = () => {
               const blockDiff = (b.block || 0) - (a.block || 0);
               if (blockDiff !== 0) return blockDiff;
               return (b.timestamp || 0) - (a.timestamp || 0);
-          }).slice(0, 100);
-          
-          if (prev.length > 0 && sorted.length > prev.length) {
-              setSessionClaimCount(c => c + (sorted.length - prev.length));
-          }
+          }).slice(0, 80); // Capped list length for performance
           
           return sorted;
       });
@@ -61,13 +56,9 @@ const ClaimFeed: React.FC = () => {
 
   useEffect(() => {
     fetchClaims();
-    if (autoRefresh) {
-        intervalRef.current = setInterval(() => fetchClaims(true), 25000); 
-    }
+    intervalRef.current = setInterval(() => fetchClaims(true), 25000); 
     return () => clearInterval(intervalRef.current);
   }, [fetchClaims]);
-
-  const [autoRefresh] = useState(true);
 
   const filteredClaims = claims.filter(c => {
       const predicateLower = (c.predicate || '').toLowerCase();
@@ -85,8 +76,8 @@ const ClaimFeed: React.FC = () => {
 
   return (
     <div className="w-full">
-      {/* --- High Density Dashboard Filter Control --- */}
-      <div className="bg-[#0a0f1a]/90 border border-white/10 p-2 mb-6 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 clip-path-slant shadow-xl relative overflow-hidden group">
+      {/* --- Filter Control --- */}
+      <div className="bg-[#0a0f1a] border border-white/10 p-2 mb-6 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 clip-path-slant shadow-xl relative overflow-hidden group">
          <div className="absolute inset-0 bg-gradient-to-r from-intuition-primary/5 via-transparent to-transparent opacity-30"></div>
 
          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full lg:w-auto relative z-10">
@@ -163,7 +154,7 @@ const ClaimFeed: React.FC = () => {
                  <div className="tracking-[0.4em] uppercase font-black text-slate-600">NULL_SIGNAL_RECOVERED</div>
              </div>
          ) : (
-             <div className="space-y-1.5 pb-24">
+             <div className="space-y-1.5 pb-24" style={{ overflowAnchor: 'none' }}>
                  <div className="flex items-center justify-between px-4 py-1.5 bg-intuition-primary/5 border-l-2 border-intuition-primary mb-4 clip-path-slant">
                     <div className="flex items-center gap-2">
                         <Activity size={10} className="text-intuition-primary animate-pulse" />
@@ -173,11 +164,10 @@ const ClaimFeed: React.FC = () => {
                  </div>
                  
                  <div className="grid grid-cols-1 gap-0.5">
-                     {filteredClaims.map((claim, i) => (
+                     {filteredClaims.map((claim) => (
                         <div 
                             key={claim.id} 
-                            className="animate-in fade-in slide-in-from-right-2 duration-300 fill-mode-backwards"
-                            style={{ animationDelay: `${Math.min(i * 15, 600)}ms` }}
+                            className="animate-in fade-in slide-in-from-right-1 duration-200"
                         >
                             <ClaimCard claim={claim} />
                         </div>

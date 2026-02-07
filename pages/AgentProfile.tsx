@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Shield, Share2, Layers, ArrowUpRight, CheckCircle, User, AlertCircle, RefreshCw } from 'lucide-react';
 import { getAgentById, getAgentTriples } from '../services/graphql';
-import { depositToVault, connectWallet, getProtocolConfig, getWalletBalance } from '../services/web3';
+import { depositToVault, connectWallet, getProtocolConfig, getWalletBalance, parseProtocolError } from '../services/web3';
 import { Account, Triple } from '../types';
 import TransactionModal from '../components/TransactionModal';
 import { playClick, playSuccess } from '../services/audio';
@@ -31,20 +31,12 @@ const AgentProfile: React.FC = () => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
-      
-      // Create a timeout promise to prevent infinite hanging
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Network Timeout")), 10000)
-      );
-
       try {
-        const dataPromise = Promise.all([
+        const [agentData, triplesData, config] = await Promise.all([
           getAgentById(id),
           getAgentTriples(id),
           getProtocolConfig()
         ]);
-
-        const [agentData, triplesData, config] = await Promise.race([dataPromise, timeoutPromise]) as any;
         
         if (!agentData) throw new Error("Agent Not Found");
         
@@ -53,7 +45,7 @@ const AgentProfile: React.FC = () => {
         setMinDeposit(config?.minDeposit || '0.001');
       } catch (err: any) {
         console.error("Profile Fetch Error:", err);
-        setError("Unable to retrieve agent data. The network may be congested or the ID is invalid.");
+        setError("Unable to retrieve agent data. ID may be invalid or indexer is lagging.");
       } finally {
         setLoading(false);
       }
@@ -70,7 +62,7 @@ const AgentProfile: React.FC = () => {
     }
     
     playClick();
-    setTxModal({ isOpen: true, status: 'processing', title: 'PROCESSING PURCHASE', message: 'Please confirm the transaction in your wallet...' });
+    setTxModal({ isOpen: true, status: 'processing', title: 'PROCESSING PURCHASE', message: 'Initiating protocol handshake. Please confirm the transaction in your wallet...' });
 
     try {
       const wallet = await connectWallet();
@@ -79,32 +71,28 @@ const AgentProfile: React.FC = () => {
         return;
       }
 
-      // Pre-check balance
       const balance = await getWalletBalance(wallet);
       if (parseFloat(stakeAmount) >= parseFloat(balance)) {
-         setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus gas fees.` });
+         setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus fees (0.1 TRUST + 5%).` });
          return;
       }
       
-      const curveId = agent?.curveId ? Number(agent.curveId) : 0;
-      const { hash } = await depositToVault(stakeAmount, id, wallet, curveId);
+      // Fixed: Removed extra 'TRUST' argument as depositToVault expects 3 arguments
+      const { hash } = await depositToVault(stakeAmount, id, wallet);
       playSuccess();
       
       setTxModal({ 
         isOpen: true, 
         status: 'success', 
         title: 'PURCHASE SUCCESSFUL', 
-        message: 'You have successfully acquired shares.',
+        message: 'The signal has been recorded. Your conviction is now reflected in the trust graph.',
         hash: hash
       });
       setStakeAmount('');
     } catch (e: any) {
       console.error(e);
-      let msg = 'Transaction failed.';
-      if (e.message?.includes('MultiVault_DepositBelowMinimumDeposit')) msg = `Deposit amount too low. Minimum is ${minDeposit} ${CURRENCY_SYMBOL}.`;
-      else if (e.message?.includes('MultiVault_InsufficientBalance') || e.message?.includes('InsufficientBalance')) msg = `Insufficient balance to cover trade + gas.`;
-      
-      setTxModal({ isOpen: true, status: 'error', title: 'TRANSACTION FAILED', message: msg });
+      const friendlyMsg = parseProtocolError(e);
+      setTxModal({ isOpen: true, status: 'error', title: 'TRANSACTION FAILED', message: friendlyMsg });
     }
   };
 
@@ -112,7 +100,7 @@ const AgentProfile: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <RefreshCw className="text-intuition-primary animate-spin" size={32} />
-        <div className="text-intuition-primary animate-pulse font-mono tracking-widest">LOADING GRAPH DATA...</div>
+        <div className="text-intuition-primary animate-pulse font-mono tracking-widest text-xs uppercase">Decrypting_Global_Matrix...</div>
       </div>
     );
   }
@@ -123,11 +111,11 @@ const AgentProfile: React.FC = () => {
         <AlertCircle className="text-intuition-danger" size={48} />
         <div>
           <h2 className="text-xl font-bold text-white mb-2 font-display">CONNECTION INTERRUPTED</h2>
-          <p className="text-slate-400 font-mono text-sm max-w-md">{error || "Agent not found."}</p>
+          <p className="text-slate-400 font-mono text-sm max-w-md uppercase tracking-tighter">{error || "Agent not found."}</p>
         </div>
         <button 
           onClick={() => window.location.reload()} 
-          className="px-6 py-2 border border-intuition-primary text-intuition-primary font-mono text-xs hover:bg-intuition-primary hover:text-black transition-colors"
+          className="px-6 py-2 border border-intuition-primary text-intuition-primary font-mono text-xs hover:bg-intuition-primary hover:text-black transition-colors clip-path-slant"
         >
           RETRY UPLINK
         </button>
@@ -146,98 +134,99 @@ const AgentProfile: React.FC = () => {
          onClose={() => setTxModal(prev => ({ ...prev, isOpen: false }))} 
       />
 
-      {/* Header Profile */}
-      <div className="glass-panel rounded-2xl p-8 mb-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4 opacity-20">
+      <div className="glass-panel rounded-none border border-intuition-border p-8 mb-8 relative overflow-hidden clip-path-slant">
+        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
           <Shield size={200} />
         </div>
         
         <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center md:items-start">
-          <div className="w-32 h-32 rounded-full bg-gradient-to-br from-slate-800 to-black border-2 border-intuition-primary flex items-center justify-center text-4xl font-bold text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] overflow-hidden">
+          <div className="w-32 h-32 bg-black border-2 border-intuition-primary flex items-center justify-center text-4xl font-bold text-white shadow-[0_0_20px_rgba(6,182,212,0.3)] overflow-hidden clip-path-slant group">
             {agent.image ? (
-                <img src={agent.image} alt={agent.label} className="w-full h-full rounded-full object-cover" />
+                <img src={agent.image} alt={agent.label} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
             ) : (
-                <User size={48} className="text-slate-400"/>
+                <User size={48} className="text-slate-700"/>
             )}
           </div>
           
           <div className="flex-1 text-center md:text-left">
-            <h1 className="text-4xl font-bold text-white mb-2">{agent.label || 'Anonymous Atom'}</h1>
-            <div className="flex flex-col md:flex-row gap-4 text-sm text-slate-400 font-mono mb-6">
-              <span className="bg-black/30 px-3 py-1 rounded border border-slate-800 break-all">ID: {agent.id}</span>
+            <h1 className="text-4xl font-black text-white font-display uppercase tracking-tight text-glow mb-2">{agent.label || 'Anonymous Atom'}</h1>
+            <div className="flex flex-col md:flex-row gap-4 text-[10px] text-slate-500 font-mono mb-6 uppercase">
+              <span className="bg-black/30 px-3 py-1 border border-slate-800 break-all">UID: {agent.id}</span>
               {agent.block_number && (
-                <span className="bg-black/30 px-3 py-1 rounded border border-slate-800">Block: {agent.block_number}</span>
+                <span className="bg-black/30 px-3 py-1 border border-slate-800">Block: {agent.block_number}</span>
               )}
             </div>
             
             <div className="flex flex-wrap gap-3 justify-center md:justify-start">
-               <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 flex items-center gap-2">
-                 <CheckCircle size={16} /> {agent.type || 'Atom'}
+               <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs flex items-center gap-2 font-bold uppercase tracking-widest">
+                 <CheckCircle size={14} /> {agent.type || 'Atom'}
                </div>
-               <div className="px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 flex items-center gap-2">
-                 <Layers size={16} /> {triples.length} Triples
+               <div className="px-4 py-2 bg-blue-500/10 border border-blue-500/30 text-blue-400 font-mono text-xs flex items-center gap-2 font-bold uppercase tracking-widest">
+                 <Layers size={14} /> {triples.length} Semantic Links
                </div>
             </div>
           </div>
 
-          {/* Betting Card */}
-          <div className="w-full md:w-80 bg-black/40 rounded-xl p-6 border border-intuition-border backdrop-blur-xl">
-            <h3 className="text-lg font-semibold text-white mb-4">Buy Shares</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between text-sm text-slate-400">
-                <span>Current Price</span>
-                <span className="text-white">1.2 {CURRENCY_SYMBOL}</span>
+          <div className="w-full md:w-80 bg-black/40 border border-intuition-primary/30 p-6 clip-path-slant shadow-2xl relative group hover:border-intuition-primary transition-all duration-300">
+            <div className="absolute inset-0 bg-intuition-primary/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <h3 className="text-xs font-black font-display text-white uppercase tracking-widest mb-6 border-b border-white/10 pb-2">Acquire_Signals</h3>
+            <div className="space-y-5 relative z-10">
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] font-mono text-slate-500 uppercase font-black">Market_Price</span>
+                <span className="text-white font-bold font-mono">1.2 {CURRENCY_SYMBOL}</span>
               </div>
-              <input 
-                type="number" 
-                placeholder={`Min: ${minDeposit}`}
-                className="w-full bg-slate-900 border border-slate-700 rounded p-3 text-white focus:border-intuition-primary outline-none"
-                value={stakeAmount}
-                onChange={(e) => setStakeAmount(e.target.value)}
-              />
+              <div className="relative group/input">
+                <input 
+                  type="number" 
+                  placeholder={`Min: ${minDeposit}`}
+                  className="w-full bg-black border border-slate-800 p-4 text-white font-mono text-xl focus:outline-none focus:border-intuition-primary transition-all clip-path-slant text-right"
+                  value={stakeAmount}
+                  onChange={(e) => setStakeAmount(e.target.value)}
+                />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-600 uppercase tracking-widest pointer-events-none group-focus-within/input:text-intuition-primary">Value_Input</div>
+              </div>
               <button 
                 onClick={handleStake}
                 disabled={txModal.status === 'processing'}
-                className="w-full py-3 bg-intuition-primary text-intuition-dark font-bold rounded hover:bg-cyan-400 transition-colors disabled:opacity-50"
+                className="btn-cyber btn-cyber-cyan w-full py-4 text-sm font-black tracking-[0.2em]"
               >
-                {txModal.status === 'processing' ? 'Processing...' : 'Purchase Support'}
+                {txModal.status === 'processing' ? 'EXECUTING...' : 'CONFIRM_STAKE'}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Triples / Claims Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         <div className="lg:col-span-2">
-          <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+          <h2 className="text-2xl font-black font-display text-white mb-6 flex items-center gap-3 uppercase tracking-tighter text-glow">
             <Share2 className="text-intuition-primary" />
-            Semantic Claims (Triples)
+            Semantic_Ingress_Logs
           </h2>
           
-          <div className="space-y-4">
+          <div className="space-y-2">
             {triples.length === 0 ? (
-              <div className="p-8 rounded-xl glass-panel text-center text-slate-500">
-                No triples found for this agent.
+              <div className="p-20 text-center text-slate-700 font-mono border border-dashed border-slate-900 clip-path-slant bg-black/20 uppercase tracking-widest text-xs">
+                NULL_SIGNAL_DETECTED
               </div>
             ) : (
               triples.map((triple, index) => (
-                <div key={index} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-intuition-border transition-all flex items-center justify-between">
-                  <div className="flex flex-wrap items-center gap-3 text-sm font-mono">
-                    <span className="px-3 py-1.5 rounded bg-slate-800/80 text-blue-300 border border-slate-700/50">
-                      {triple.subject?.label || triple.subject?.term_id?.slice(0,6) || 'Unknown'}
+                <div key={index} className="p-4 bg-[#05080f] border border-white/5 hover:border-intuition-primary/20 transition-all flex items-center justify-between group clip-path-slant">
+                  <div className="flex flex-wrap items-center gap-4 text-[10px] font-mono font-black uppercase tracking-tight">
+                    <span className="px-3 py-1.5 bg-black border border-blue-500/20 text-blue-400 group-hover:border-blue-400 transition-colors">
+                      {triple.subject?.label || triple.subject?.term_id?.slice(0,8) || 'Unknown'}
                     </span>
-                    <ArrowUpRight size={14} className="text-slate-600" />
-                    <span className="px-3 py-1.5 rounded bg-slate-800/80 text-purple-300 border border-slate-700/50">
-                      {triple.predicate?.label || triple.predicate?.term_id?.slice(0,6) || 'Unknown'}
+                    <ArrowUpRight size={14} className="text-slate-800 group-hover:text-intuition-primary transition-colors" />
+                    <span className="px-3 py-1.5 bg-black border border-purple-500/20 text-purple-400 group-hover:border-purple-400 transition-colors italic">
+                      {triple.predicate?.label || triple.predicate?.term_id?.slice(0,8) || 'Unknown'}
                     </span>
-                    <ArrowUpRight size={14} className="text-slate-600" />
-                    <span className="px-3 py-1.5 rounded bg-slate-800/80 text-emerald-300 border border-slate-700/50">
-                      {triple.object?.label || triple.object?.term_id?.slice(0,6) || 'Unknown'}
+                    <ArrowUpRight size={14} className="text-slate-800 group-hover:text-intuition-primary transition-colors" />
+                    <span className="px-3 py-1.5 bg-black border border-emerald-500/20 text-emerald-400 group-hover:border-emerald-400 transition-colors">
+                      {triple.object?.label || triple.object?.term_id?.slice(0,8) || 'Unknown'}
                     </span>
                   </div>
-                  <div className="text-xs text-slate-500 hidden sm:block">
-                    Block {triple.block_number || '-'}
+                  <div className="text-[8px] text-slate-700 hidden sm:block font-mono group-hover:text-slate-400 transition-colors">
+                    INDEX_ID: {triple.block_number || 'SYNCED'}
                   </div>
                 </div>
               ))
@@ -245,25 +234,31 @@ const AgentProfile: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats Sidebar */}
         <div>
-           <h2 className="text-2xl font-bold text-white mb-6">Market Stats</h2>
-           <div className="glass-panel rounded-xl p-6 space-y-6">
-              <div>
-                <div className="text-sm text-slate-500 mb-1">Total Staked</div>
-                <div className="text-2xl font-mono text-white">-- {CURRENCY_SYMBOL}</div>
+           <h2 className="text-2xl font-black font-display text-white mb-6 uppercase tracking-tighter">Market_Telemetry</h2>
+           <div className="bg-[#05080f] border border-intuition-border p-8 space-y-8 clip-path-slant shadow-2xl relative overflow-hidden">
+              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
+              
+              <div className="group/stat">
+                <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-2 font-black group-hover/stat:text-intuition-primary transition-colors">Total_Global_Stake</div>
+                <div className="text-3xl font-black font-mono text-white tracking-tighter">-- <span className="text-xs text-slate-600">{CURRENCY_SYMBOL}</span></div>
               </div>
-              <div>
-                <div className="text-sm text-slate-500 mb-1">Stakers</div>
-                <div className="text-2xl font-mono text-white">--</div>
+
+              <div className="group/stat">
+                <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-2 font-black group-hover/stat:text-intuition-primary transition-colors">Node_Validators</div>
+                <div className="text-3xl font-black font-mono text-white tracking-tighter">--</div>
               </div>
-              <div>
-                <div className="text-sm text-slate-500 mb-1">Market Cap</div>
-                <div className="text-2xl font-mono text-white">--</div>
+
+              <div className="group/stat">
+                <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-2 font-black group-hover/stat:text-intuition-primary transition-colors">Capital_Concentration</div>
+                <div className="text-3xl font-black font-mono text-white tracking-tighter">--</div>
               </div>
-              <p className="text-xs text-slate-500 italic">
-                * Market data integration pending Indexer V2 updates.
-              </p>
+
+              <div className="pt-6 border-t border-white/5">
+                <p className="text-[9px] text-slate-600 italic font-mono leading-relaxed uppercase">
+                  * Sector Analytics pending Indexer L3 neural convergence. Standby for real-time telemetry.
+                </p>
+              </div>
            </div>
         </div>
       </div>

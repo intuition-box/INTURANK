@@ -1,12 +1,13 @@
 
 import React, { useEffect, useState } from 'react';
-import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle } from 'lucide-react';
+import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle, ShieldAlert } from 'lucide-react';
 import { getTopPositions, getAllAgents, getTopClaims } from '../services/graphql';
 import { fetchAtomNameFromChain, resolveENS } from '../services/web3';
 import { formatEther, isAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
+import { formatMarketValue } from '../services/analytics';
 
 type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS';
 
@@ -117,8 +118,6 @@ const Stats: React.FC = () => {
             const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
             const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
             // Controversy Score = Volatility Entropy Index
-            // We measure the ratio of Volume to Liquidity Depth. 
-            // High Volume with shallow liquidity = high price sensitivity = High Controversy.
             const volumeToDepth = shares > 0 ? (assets / shares) : 0;
             const entropyIndex = (Math.log10(volumeToDepth + 1) * 100) + (assets * 0.05);
             return { ...a, heuristic: entropyIndex };
@@ -140,8 +139,8 @@ const Stats: React.FC = () => {
               id: c.id,
               label: '', 
               subLabel: 'SEMANTIC_LINK_WEIGHT',
-              value: parseFloat(formatEther(BigInt(c.value))).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' TRUST',
-              rawValue: parseFloat(formatEther(BigInt(c.value))),
+              value: formatMarketValue(c.value) + ' TRUST',
+              rawValue: c.value,
               subject: c.subject,
               predicate: c.predicate,
               object: c.object
@@ -149,7 +148,7 @@ const Stats: React.FC = () => {
           setData(sorted);
       }
     } catch (e) {
-        console.error(e);
+        console.error("LEADERBOARD_RECON_FAILURE", e);
         setError(true);
     } finally {
         setLoading(false);
@@ -176,53 +175,51 @@ const Stats: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#02040a] pt-24 pb-20 relative overflow-hidden font-mono">
-      {/* Background Elements */}
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-intuition-primary/5 rounded-full blur-[100px] animate-pulse pointer-events-none"></div>
+    <div className="min-h-screen bg-[#020308] pt-24 pb-40 relative overflow-hidden font-mono selection:bg-intuition-primary selection:text-black">
+      {/* HUD OVERLAY EFFECTS */}
+      <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
+      <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-intuition-primary/5 rounded-full blur-[150px] animate-pulse pointer-events-none"></div>
       
-      <div className="w-full max-w-7xl mx-auto px-4 relative z-10">
+      <div className="w-full max-w-[1600px] mx-auto px-6 relative z-10">
         
-        {/* Header with Glow */}
-        <div className="text-center mb-12 relative">
+        {/* Header with High-Intensity Glow */}
+        <div className="text-center mb-20 relative">
           <div className="inline-block relative">
-             <h1 className="text-5xl md:text-7xl font-black text-white font-display uppercase tracking-tight mb-2 text-glow relative z-10">
-                Leaderboards
+             <h1 className="text-6xl md:text-8xl font-black text-white font-display uppercase tracking-tight mb-4 text-glow-white relative z-10">
+                LEADERBOARDS
              </h1>
-             <div className="absolute -inset-4 bg-intuition-primary/20 blur-xl opacity-50 z-0 rounded-full"></div>
+             <div className="absolute -inset-8 bg-intuition-primary/10 blur-3xl opacity-50 z-0 rounded-full"></div>
           </div>
-          <p className="text-intuition-primary font-mono text-sm tracking-[0.3em] uppercase flex items-center justify-center gap-2 text-glow opacity-80">
-            <Trophy size={14} /> Competition drives Intelligence
-          </p>
+          <div className="flex items-center justify-center gap-4 text-intuition-primary font-mono text-sm tracking-[0.6em] uppercase">
+            <Trophy size={18} className="animate-bounce" /> 
+            COMPETITION_DRIVES_INTELLIGENCE
+          </div>
         </div>
 
-        {/* Navigation Tabs - Cyber Deck Style */}
-        <div className="flex flex-wrap justify-center gap-2 mb-12 bg-black/50 p-2 border border-white/5 rounded-lg backdrop-blur-sm relative z-50">
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-intuition-primary/5 to-transparent pointer-events-none"></div>
+        {/* Navigation Tabs - ARES HUD DECK */}
+        <div className="flex flex-wrap justify-center gap-3 mb-16 bg-black/40 p-2 border-2 border-slate-900 clip-path-slant backdrop-blur-xl relative z-20 shadow-2xl">
             {[
-                { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'intuition-primary' },
-                { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'intuition-success' },
-                { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'CONTROVERSIAL', color: 'intuition-danger' },
-                { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'purple-500' }
+                { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-glow-blue' },
+                { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_25px_#00ff9d]' },
+                { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'CONTROVERSIAL', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
+                { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-glow-purple' }
             ].map((tab) => {
                 const isActive = activeTab === tab.id;
                 const Icon = tab.icon;
-                // Dynamic class construction
-                let styleClass = 'bg-transparent text-slate-500 border-transparent hover:text-white hover:bg-white/5';
-                if (isActive) {
-                    if (tab.id === 'STAKERS') styleClass = 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.4)]';
-                    if (tab.id === 'AGENTS_SUPPORT') styleClass = 'bg-intuition-success text-black border-intuition-success shadow-[0_0_20px_rgba(0,255,157,0.4)]';
-                    if (tab.id === 'AGENTS_CONTROVERSY') styleClass = 'bg-intuition-danger text-black border-intuition-danger shadow-[0_0_20px_rgba(255,0,85,0.4)]';
-                    if (tab.id === 'CLAIMS') styleClass = 'bg-purple-500 text-black border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.4)]';
-                }
 
                 return (
                     <button 
                         key={tab.id}
                         onClick={() => { playClick(); setActiveTab(tab.id as any); setSearchQuery(''); }}
-                        className={`px-6 py-3 border clip-path-slant font-bold font-display text-xs tracking-wider transition-all duration-300 hover:-translate-y-1 flex items-center gap-2 ${styleClass}`}
+                        onMouseEnter={playHover}
+                        className={`px-8 py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
+                            isActive 
+                            ? `${tab.color} ${tab.text} ${tab.glow} border-transparent`
+                            : 'bg-black/40 border-slate-800 text-slate-500 hover:text-white hover:border-white/40'
+                        }`}
                     >
-                        <Icon size={16} /> {tab.label}
+                        <Icon size={16} className={isActive ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} /> 
+                        {tab.label}
                     </button>
                 );
             })}
@@ -230,17 +227,17 @@ const Stats: React.FC = () => {
 
         {/* SEARCH BAR - COMMAND LINE STYLE */}
         {activeTab === 'STAKERS' && (
-            <div className="max-w-2xl mx-auto mb-16 relative z-20 group perspective-1000">
-                <div className="bg-black border border-intuition-primary/50 p-1 clip-path-slant shadow-[0_0_40px_rgba(0,243,255,0.1)] group-hover:shadow-[0_0_60px_rgba(0,243,255,0.2)] transition-all duration-500 transform group-hover:scale-[1.01]">
+            <div className="max-w-3xl mx-auto mb-20 relative z-20 group">
+                <div className="bg-black border-2 border-slate-900 p-1 clip-path-slant shadow-2xl group-hover:border-intuition-primary/40 transition-all duration-500">
                     <div className="flex items-center gap-0 bg-[#05080f]">
-                        <div className="bg-intuition-primary/10 h-14 flex items-center px-5 border-r border-intuition-primary/30">
-                            <Terminal size={20} className="text-intuition-primary animate-pulse" />
+                        <div className="bg-intuition-primary/10 h-16 flex items-center px-6 border-r-2 border-slate-900">
+                            <Terminal size={24} className="text-intuition-primary animate-pulse" />
                         </div>
                         <div className="flex-1 relative">
                             <input 
                                 type="text" 
                                 placeholder="QUERY_DATABASE: [WALLET_ADDRESS | ENS_NAME]" 
-                                className="w-full h-14 bg-transparent text-white font-mono text-sm px-6 outline-none placeholder-intuition-primary/30 uppercase tracking-widest"
+                                className="w-full h-16 bg-transparent text-white font-mono text-sm px-8 outline-none placeholder-slate-700 uppercase tracking-widest font-black"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -250,13 +247,13 @@ const Stats: React.FC = () => {
                         <button 
                             onClick={handleSearch}
                             disabled={isResolving || (!isAddress(searchQuery.trim()) && !searchQuery.trim().endsWith('.eth'))}
-                            className={`h-14 px-8 font-black font-display text-sm tracking-widest flex items-center justify-center gap-2 transition-all duration-300 hover:tracking-[0.2em] ${
+                            className={`h-16 px-10 font-black font-display text-sm tracking-widest flex items-center justify-center gap-3 transition-all duration-300 ${
                                 (isAddress(searchQuery.trim()) || searchQuery.trim().endsWith('.eth'))
-                                ? 'bg-intuition-primary text-black hover:bg-white hover:shadow-[0_0_20px_white] cursor-pointer' 
-                                : 'bg-transparent text-intuition-primary/40 cursor-not-allowed border-l border-intuition-primary/10'
+                                ? 'bg-intuition-primary text-black hover:bg-white cursor-pointer shadow-glow-blue' 
+                                : 'bg-transparent text-slate-800 cursor-not-allowed border-l-2 border-slate-900'
                             }`}
                         >
-                            {isResolving ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                            {isResolving ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}
                         </button>
                     </div>
                 </div>
@@ -265,138 +262,154 @@ const Stats: React.FC = () => {
 
         {/* Content Area */}
         {loading ? (
-           <div className="flex flex-col items-center justify-center h-96 gap-6">
+           <div className="flex flex-col items-center justify-center h-[500px] gap-8">
               <div className="relative">
-                  <div className="w-20 h-20 border-4 border-intuition-primary/30 border-t-intuition-primary rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="text-intuition-primary animate-pulse" size={24}/></div>
+                  <div className="w-24 h-24 border-4 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Loader2 className="text-intuition-primary animate-pulse" size={32}/>
+                  </div>
               </div>
-              <div className="text-intuition-primary font-bold text-xl animate-pulse font-display tracking-widest text-glow">COMPUTING GLOBAL RANKINGS...</div>
+              <div className="text-intuition-primary font-black text-xl animate-pulse font-display tracking-[0.5em] text-glow-blue">COMPUTING_GLOBAL_RANKINGS...</div>
            </div>
         ) : error ? (
-           <div className="flex flex-col items-center justify-center h-64 gap-4 text-center border border-intuition-danger/30 bg-intuition-danger/5 p-8 clip-path-slant">
-              <AlertTriangle className="text-intuition-danger animate-bounce" size={48} />
-              <div className="text-intuition-danger font-bold text-xl font-display">DATA UPLINK SEVERED</div>
-              <button onClick={fetchData} className="px-6 py-2 bg-intuition-danger text-black font-bold hover:bg-white transition-colors font-mono uppercase text-xs flex items-center gap-2 clip-path-slant">
-                 <RefreshCw size={14} /> RE-INITIALIZE
+           <div className="flex flex-col items-center justify-center h-[500px] gap-10 text-center border-2 border-intuition-secondary/20 bg-[#050505] p-20 clip-path-slant shadow-glow-red">
+              <ShieldAlert className="text-intuition-secondary animate-pulse" size={80} />
+              <div className="space-y-4">
+                <h2 className="text-4xl font-black text-white font-display tracking-widest text-glow-red">DATA_UPLINK_SEVERED</h2>
+                <p className="text-slate-500 font-mono text-xs uppercase tracking-widest">Core reconciliation failure detected in Sector_04.</p>
+              </div>
+              <button onClick={fetchData} className="px-12 py-5 bg-intuition-secondary text-white font-black hover:bg-white hover:text-black transition-all font-display uppercase text-sm flex items-center gap-4 clip-path-slant shadow-glow-red active:scale-95">
+                 <RefreshCw size={18} /> RE-INITIALIZE_HANDSHAKE
               </button>
            </div>
         ) : data.length === 0 ? (
-           <div className="text-center py-24 text-slate-500 font-mono border border-dashed border-slate-800 bg-black/50 clip-path-slant">
-              [NULL SET] NO DATA FOUND FOR THIS PARAMETER.
+           <div className="text-center py-40 text-slate-800 font-mono border-2 border-dashed border-slate-900 bg-black/40 clip-path-slant font-black tracking-[0.5em] uppercase">
+              [NULL_SET] NO_SIGNAL_DATA_RECOVERED
            </div>
         ) : activeTab === 'CLAIMS' ? (
-            <div className="bg-black border border-intuition-border rounded-none overflow-hidden neon-panel shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-                <table className="w-full text-left">
-                    <thead className="bg-intuition-card text-xs font-mono text-slate-500 uppercase tracking-wider border-b border-intuition-border">
-                        <tr>
-                            <th className="px-6 py-4 w-16 text-center">Rank</th>
-                            <th className="px-6 py-4">Semantic Triple (Subject &rarr; Predicate &rarr; Object)</th>
-                            <th className="px-6 py-4 text-right">Market Cap</th>
-                            <th className="px-6 py-4 text-right">Protocol</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                        {data.map((item, i) => (
-                            <tr key={item.id} className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 50}ms` }}>
-                                <td className="px-6 py-4 text-center font-mono text-slate-500 font-bold group-hover:text-intuition-primary transition-colors">#{item.rank}</td>
-                                <td className="px-6 py-4">
-                                    <div className="flex flex-col md:flex-row items-center gap-2">
-                                        <div className="flex items-center gap-2 bg-slate-900/50 pr-3 rounded-full border border-slate-800 group-hover:border-slate-600 transition-colors">
-                                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-600">
-                                                {item.subject?.image ? <img src={item.subject.image} className="w-full h-full object-cover" /> : <div className="text-[10px]">{item.subject?.label?.[0]}</div>}
-                                            </div>
-                                            <span className="font-bold text-white text-xs whitespace-nowrap max-w-[120px] truncate">{item.subject?.label}</span>
-                                        </div>
-                                        <div className="px-2 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/30 rounded text-[10px] font-bold uppercase whitespace-nowrap shadow-[0_0_10px_rgba(168,85,247,0.2)]">
-                                            {item.predicate || 'LINK'}
-                                        </div>
-                                        <div className="flex items-center gap-2 bg-slate-900/50 pr-3 rounded-full border border-slate-800 group-hover:border-slate-600 transition-colors">
-                                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-600">
-                                                {item.object?.image ? <img src={item.object.image} className="w-full h-full object-cover" /> : <div className="text-[10px]">{item.object?.label?.[0]}</div>}
-                                            </div>
-                                            <span className="font-bold text-white text-xs whitespace-nowrap max-w-[120px] truncate">{item.object?.label}</span>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                    <div className="font-mono font-bold text-white text-glow group-hover:text-intuition-secondary transition-colors">{item.value}</div>
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                    <Link to={`/markets/${item.id}`} className="inline-flex px-4 py-1.5 bg-intuition-primary/10 border border-intuition-primary/50 text-intuition-primary font-bold text-[10px] uppercase clip-path-slant hover:bg-intuition-primary hover:text-black hover:shadow-[0_0_15px_rgba(0,243,255,0.6)] transition-all">
-                                        Trade
-                                    </Link>
-                                </td>
+            <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">
+                <div className="p-8 border-b-2 border-slate-900 bg-white/5 flex justify-between items-center">
+                   <div className="flex items-center gap-4">
+                        <Activity size={24} className="text-[#a855f7] animate-pulse" />
+                        <h3 className="font-black text-white font-display tracking-[0.3em] uppercase text-xl">Semantic_Triple_Leaderboard</h3>
+                   </div>
+                   <div className="text-[10px] text-slate-700 font-black uppercase tracking-[0.3em]">L3_Network_Convergence</div>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left font-mono border-collapse min-w-[1000px]">
+                        <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                            <tr>
+                                <th className="px-10 py-6 w-24 text-center">RANK</th>
+                                <th className="px-10 py-6">SEMANTIC_TRIPLE (SUBJECT &rarr; PREDICATE &rarr; OBJECT)</th>
+                                <th className="px-10 py-6 text-right">MARKET_CAPITALIZATION</th>
+                                <th className="px-10 py-6 text-right">HANDSHAKE</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {data.map((item, i) => (
+                                <tr key={item.id} className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 30}ms` }}>
+                                    <td className="px-10 py-8 text-center font-black text-slate-700 text-lg group-hover:text-[#a855f7] transition-colors">#{(i+1).toString().padStart(2, '0')}</td>
+                                    <td className="px-10 py-8">
+                                        <div className="flex flex-col md:flex-row items-center gap-4">
+                                            <div className="flex items-center gap-4 bg-slate-900/50 pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-[#a855f7]/40 transition-colors">
+                                                <div className="w-12 h-12 rounded-none bg-black flex items-center justify-center overflow-hidden border-r border-slate-800">
+                                                    {item.subject?.image ? <img src={item.subject.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-lg font-black text-slate-700">{item.subject?.label?.[0]}</div>}
+                                                </div>
+                                                <span className="font-black text-white text-sm uppercase whitespace-nowrap max-w-[140px] truncate tracking-tighter leading-none">{item.subject?.label}</span>
+                                            </div>
+                                            
+                                            <div className="px-4 py-1 bg-[#a855f7]/10 text-[#a855f7] border border-[#a855f7]/40 text-[9px] font-black uppercase whitespace-nowrap shadow-[0_0_15px_rgba(168,85,247,0.3)] clip-path-slant animate-pulse">
+                                                {item.predicate || 'LINK'}
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-4 bg-slate-900/50 pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-[#a855f7]/40 transition-colors">
+                                                <div className="w-12 h-12 rounded-none bg-black flex items-center justify-center overflow-hidden border-r border-slate-800">
+                                                    {item.object?.image ? <img src={item.object.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-lg font-black text-slate-700">{item.object?.label?.[0]}</div>}
+                                                </div>
+                                                <span className="font-black text-white text-sm uppercase whitespace-nowrap max-w-[140px] truncate tracking-tighter leading-none">{item.object?.label}</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="px-10 py-8 text-right">
+                                        <div className="font-display font-black text-white text-xl group-hover:text-[#a855f7] group-hover:text-glow-purple transition-all tracking-normal leading-none mb-1">{item.value}</div>
+                                        <div className="text-[8px] text-slate-700 font-black uppercase">TRUST_UNITS</div>
+                                    </td>
+                                    <td className="px-10 py-8 text-right">
+                                        <Link to={`/markets/${item.id}`} className="inline-flex px-8 py-2.5 bg-[#a855f7] text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black shadow-glow-purple transition-all active:scale-95 tracking-widest">
+                                            TRADE
+                                        </Link>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         ) : (
-          <div className="space-y-4">
-             {/* TOP 3 PODIUM - GLOW UP */}
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16 mt-20 items-end">
+          <div className="space-y-12">
+             {/* TOP 3 PODIUM - ARCADE HUD STYLE */}
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mb-24 mt-36 items-end relative">
                 {[1, 0, 2].map(orderIdx => {
                     const item = data[orderIdx];
                     if (!item) return null;
                     const isFirst = orderIdx === 0;
                     
-                    // Special Neon Styles for Top 3
                     let rankStyles = { border: '', shadow: '', text: '', glow: '', bg: '' };
-                    
+                    let accentColorClass = activeTab === 'AGENTS_CONTROVERSY' ? 'text-intuition-secondary text-glow-red' : activeTab === 'AGENTS_SUPPORT' ? 'text-intuition-success text-glow-success' : 'text-intuition-primary text-glow-blue';
+
                     if (isFirst) { // GOLD
                         rankStyles = { 
-                            border: 'border-yellow-500', 
-                            shadow: 'shadow-[0_0_50px_rgba(234,179,8,0.4),inset_0_0_20px_rgba(234,179,8,0.2)]', 
-                            text: 'text-yellow-400', 
+                            border: 'border-intuition-warning', 
+                            shadow: 'shadow-[0_0_80px_rgba(250,204,21,0.2)]', 
+                            text: 'text-intuition-warning', 
                             glow: 'text-glow-gold', 
-                            bg: 'bg-yellow-500/10'
+                            bg: 'bg-intuition-warning/5'
                         };
                     } else if (orderIdx === 1) { // SILVER
                         rankStyles = { 
                             border: 'border-slate-300', 
-                            shadow: 'shadow-[0_0_30px_rgba(203,213,225,0.3),inset_0_0_10px_rgba(203,213,225,0.1)]', 
+                            shadow: 'shadow-[0_0_50px_rgba(255,255,255,0.1)]', 
                             text: 'text-slate-200', 
-                            glow: 'text-shadow', 
-                            bg: 'bg-slate-500/10'
+                            glow: 'text-glow-white', 
+                            bg: 'bg-slate-500/5'
                         };
                     } else { // BRONZE
                         rankStyles = { 
-                            border: 'border-orange-600', 
-                            shadow: 'shadow-[0_0_30px_rgba(234,88,12,0.3),inset_0_0_10px_rgba(234,88,12,0.1)]', 
-                            text: 'text-orange-500', 
+                            border: 'border-[#ff5f00]', 
+                            shadow: 'shadow-[0_0_50px_rgba(255,95,0,0.1)]', 
+                            text: 'text-[#ff5f00]', 
                             glow: 'text-shadow', 
-                            bg: 'bg-orange-600/10'
+                            bg: 'bg-[#ff5f00]/5'
                         };
                     }
 
                     return (
-                        <div key={item.id} className={`${isFirst ? '-mt-12 z-20 scale-110' : 'z-10'} transform transition-all duration-500 hover:-translate-y-2 hover:scale-[1.05]`}>
-                            {/* Crown for #1 */}
+                        <div key={item.id} className={`${isFirst ? '-mt-16 z-20 scale-110' : 'z-10'} transform transition-all duration-700 hover:-translate-y-2`}>
                             {isFirst && (
-                                <div className="flex justify-center mb-4 animate-bounce">
-                                    <Crown size={48} className="text-yellow-400 fill-yellow-400 drop-shadow-[0_0_15px_rgba(234,179,8,0.8)]" />
+                                <div className="flex justify-center mb-4">
+                                    <Crown size={56} className="text-intuition-warning fill-intuition-warning drop-shadow-[0_0_15px_rgba(250,204,21,0.6)] animate-pulse" />
                                 </div>
                             )}
                             
-                            <div className={`relative bg-black border-2 p-8 flex flex-col items-center clip-path-slant h-full group ${rankStyles.border} ${rankStyles.shadow} ${rankStyles.bg}`}>
-                                <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 flex items-center justify-center font-black font-display rounded-full border-2 bg-black text-xl ${rankStyles.text} ${rankStyles.border} shadow-[0_0_15px_currentColor]`}>
+                            <div className={`relative bg-black border-4 p-8 flex flex-col items-center clip-path-slant h-full group ${rankStyles.border} ${rankStyles.shadow} ${rankStyles.bg} transition-all duration-500`}>
+                                <div className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center font-black font-display rounded-full border-4 bg-black text-xl ${rankStyles.text} ${rankStyles.border} shadow-[0_0_15px_currentColor] z-30`}>
                                     {orderIdx + 1}
                                 </div>
                                 
-                                <div className={`w-32 h-32 mb-6 rounded-full overflow-hidden border-2 ${rankStyles.border} bg-slate-900 flex items-center justify-center text-3xl shadow-[0_0_30px_currentColor] group-hover:scale-110 transition-transform duration-500`}>
-                                    {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : (activeTab === 'STAKERS' ? '👤' : '🛡️')}
+                                <div className={`w-32 h-32 mb-8 rounded-none clip-path-slant overflow-hidden border-2 bg-slate-900 flex items-center justify-center text-4xl shadow-2xl group-hover:scale-110 transition-transform duration-1000 ${rankStyles.border}`}>
+                                    {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-1000" /> : <div className="text-3xl font-black text-slate-800">{item.label?.[0]}</div>}
                                 </div>
                                 
-                                <h3 className={`font-black text-white text-xl truncate max-w-full mb-1 group-hover:${rankStyles.glow} transition-all`}>{item.label}</h3>
-                                <p className="text-xs text-slate-400 font-mono mb-6 uppercase tracking-widest">{item.subLabel}</p>
+                                <h3 className={`font-black text-white text-xl truncate max-w-full mb-2 group-hover:text-intuition-primary transition-all uppercase tracking-tighter leading-none`}>{item.label}</h3>
+                                <p className="text-[9px] text-slate-500 font-mono mb-8 uppercase tracking-[0.4em] font-black">{item.subLabel}</p>
                                 
-                                <div className={`mt-auto font-black font-display text-3xl ${rankStyles.text} ${rankStyles.glow}`}>
+                                <div className={`mt-auto font-black font-display text-3xl tracking-tighter leading-none ${accentColorClass}`}>
                                     {item.value}
                                 </div>
                                 
                                 <Link 
                                     to={activeTab === 'STAKERS' ? `/profile/${item.id}` : `/markets/${item.id}`} 
-                                    className="absolute inset-0" 
+                                    className="absolute inset-0 z-40" 
                                     onClick={playClick} 
                                 />
                             </div>
@@ -405,49 +418,56 @@ const Stats: React.FC = () => {
                 })}
              </div>
 
-             {/* The List (Rank 4+) - Animated Rows */}
-             <div className="bg-black border border-intuition-border overflow-hidden neon-panel relative">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-intuition-primary to-transparent opacity-50"></div>
+             {/* The List (Rank 4+) - MONOLITHIC ARES TABLE */}
+             <div className="bg-black border-2 border-slate-900 overflow-hidden clip-path-slant relative shadow-2xl">
+                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent opacity-50"></div>
                 
-                <table className="w-full text-left">
-                    <thead className="bg-intuition-card text-xs font-mono text-slate-500 uppercase tracking-wider border-b border-intuition-border">
+                <table className="w-full text-left font-mono">
+                    <thead className="bg-[#080808] text-[10px] font-black text-slate-700 uppercase tracking-[0.4em] border-b-2 border-slate-900">
                         <tr>
-                            <th className="px-6 py-4 w-20 text-center">Rank</th>
-                            <th className="px-6 py-4">Entity</th>
-                            <th className="px-6 py-4 text-right">Metric</th>
+                            <th className="px-10 py-6 w-24 text-center">RANK</th>
+                            <th className="px-10 py-6">ENTITY_IDENTITY</th>
+                            <th className="px-10 py-6 text-right">METRIC_VOLUME</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
-                        {data.slice(3).map((item, i) => (
-                            <tr 
-                                key={item.id} 
-                                className="hover:bg-intuition-primary/5 transition-all group relative animate-in fade-in slide-in-from-bottom-4" 
-                                style={{ animationDelay: `${i * 30}ms` }}
-                            >
-                                <td className="px-6 py-4 text-center font-mono text-slate-500 font-bold text-lg group-hover:text-intuition-primary transition-colors">
-                                    #{item.rank}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded bg-slate-800 flex items-center justify-center text-xs overflow-hidden border border-slate-700 group-hover:border-intuition-primary transition-colors shadow-lg">
-                                            {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : (activeTab === 'STAKERS' ? '👤' : '🛡️')}
+                        {data.slice(3).map((item, i) => {
+                            let accentColorClass = activeTab === 'AGENTS_CONTROVERSY' ? 'text-intuition-secondary text-glow-red' : activeTab === 'AGENTS_SUPPORT' ? 'text-intuition-success text-glow-success' : 'text-intuition-primary text-glow-blue';
+                            
+                            return (
+                                <tr 
+                                    key={item.id} 
+                                    className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-4" 
+                                    style={{ animationDelay: `${i * 20}ms` }}
+                                >
+                                    <td className="px-10 py-8 text-center font-black text-slate-700 text-xl group-hover:text-intuition-primary transition-colors">
+                                        #{(i+4).toString().padStart(2, '0')}
+                                    </td>
+                                    <td className="px-10 py-8">
+                                        <div className="flex items-center gap-6">
+                                            <div className="w-12 h-12 rounded-none clip-path-slant bg-slate-950 flex items-center justify-center text-xs overflow-hidden border-2 border-slate-800 group-hover:border-intuition-primary transition-all duration-500 shadow-xl">
+                                                {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-lg font-black text-slate-800">{item.label?.[0]}</div>}
+                                            </div>
+                                            <div>
+                                                <div className="font-black text-white text-xl group-hover:text-intuition-primary transition-colors uppercase tracking-tight leading-none mb-1.5">{item.label}</div>
+                                                <div className="text-[8px] text-slate-600 font-mono uppercase tracking-[0.3em] font-black">{item.subLabel}</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div className="font-bold text-white text-lg group-hover:text-intuition-primary group-hover:text-glow transition-colors">{item.label}</div>
-                                            <div className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">{item.subLabel}</div>
+                                        <Link 
+                                            to={activeTab === 'STAKERS' ? `/profile/${item.id}` : `/markets/${item.id}`} 
+                                            className="absolute inset-0" 
+                                            onClick={playClick} 
+                                        />
+                                    </td>
+                                    <td className="px-10 py-8 text-right">
+                                        <div className={`font-display font-black text-2xl tracking-tighter leading-none mb-1 ${accentColorClass} group-hover:text-white transition-colors`}>
+                                            {item.value}
                                         </div>
-                                    </div>
-                                    <Link 
-                                        to={activeTab === 'STAKERS' ? `/profile/${item.id}` : `/markets/${item.id}`} 
-                                        className="absolute inset-0" 
-                                        onClick={playClick} 
-                                    />
-                                </td>
-                                <td className="px-6 py-4 text-right font-mono font-bold text-intuition-secondary text-lg group-hover:text-white transition-colors">
-                                    {item.value}
-                                </td>
-                            </tr>
-                        ))}
+                                        <div className="text-[8px] text-slate-700 font-black uppercase tracking-widest">PROTOCOL_MAGNITUDE</div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
              </div>
