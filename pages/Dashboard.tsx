@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
@@ -9,6 +10,7 @@ import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
 import { Link } from 'react-router-dom';
 import { CURRENCY_SYMBOL } from '../constants';
+import { formatDisplayedShares } from '../services/analytics';
 
 const Dashboard: React.FC = () => {
   const [account, setAccount] = useState<string | null>(null);
@@ -39,20 +41,17 @@ const Dashboard: React.FC = () => {
       const bal = await getWalletBalance(address);
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      // 1. Fetch History (Safely)
       const chainHistory = await getUserHistory(address).catch(e => []);
       const localHistory = getLocalTransactions(address);
 
-      // Deduplicate: Check if local tx hash is part of the graph ID
       const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
       const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
 
       const mergedHistory = [...uniqueLocal, ...chainHistory]
-        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // Ascending for calc
+        .sort((a, b) => (a.timestamp || 0) - (a.timestamp || 0)); 
       
-      setHistory(mergedHistory.slice().reverse()); // Descending for display
+      setHistory(mergedHistory.slice().reverse());
 
-      // Calculate Running Capital for Chart & PnL
       let runningDeposit = 0;
       let runningRedeem = 0;
       
@@ -70,52 +69,66 @@ const Dashboard: React.FC = () => {
       if (historyPoints.length > 0) historyPoints.unshift({ name: 0, val: 0 });
       setChartData(historyPoints);
 
-      // 2. Identify Vaults to Scan
-      const uniqueVaultIds = Array.from(new Set([
-          ...localHistory.map(tx => tx.vaultId?.toLowerCase()),
-          ...chainHistory.map(tx => tx.vaultId?.toLowerCase()),
-          ...(await getUserPositions(address).catch(() => [])).map((p:any) => p.vault?.term_id?.toLowerCase())
-      ])).filter(Boolean) as string[];
+      const graphPositions = await getUserPositions(address).catch(() => []);
 
-      // 3. Fetch Metadata
-      const metadata = await getVaultsByIds(uniqueVaultIds).catch(e => []);
-
-      // 4. Check Live On-Chain Balances & VALUES
       const livePositionsData = await Promise.all(
-        uniqueVaultIds.map(async (id) => {
+        graphPositions.map(async (p: any) => {
           try {
-            const meta = metadata.find(m => (m.id || '').toLowerCase() === (id || '').toLowerCase());
-            const curveId = meta?.curveId ? Number(meta.curveId) : 0; 
+            const atom = p.vault.term.atom;
+            const triple = p.vault.term.triple;
+            const id = atom?.term_id || triple?.term_id;
+            if (!id) return null;
+
+            const curveId = atom ? 1 : 2;
             
-            // Get Shares
             const sharesStr = await getShareBalance(address, id, curveId);
             const shares = parseFloat(sharesStr || '0');
             
-            // Get Value (On-Chain Simulation)
-            let valueStr = "0";
-            if (shares > 0.000001) {
-                valueStr = await getQuoteRedeem(sharesStr, id, address, curveId);
+            // STRICT FILTER
+            if (shares <= 0.000001) return null;
+
+            const valueStr = await getQuoteRedeem(sharesStr, id, address, curveId);
+            const value = parseFloat(valueStr);
+
+            if (value <= 0.000001) return null;
+
+            let label = `Node ${id.slice(0, 6)}`;
+            let image = null;
+
+            if (atom) {
+              label = atom.label || label;
+              image = atom.image;
+            } else if (triple) {
+              const s = triple.subject?.label || '...';
+              const pred = triple.predicate?.label || 'LINK';
+              const o = triple.object?.label || '...';
+              label = `${s} ${pred} ${o}`;
+              image = triple.subject?.image;
             }
 
-            return { id, shares, meta, sharesStr, valueStr };
+            return { 
+                id, 
+                shares, 
+                value, 
+                label, 
+                image 
+            };
           } catch (e) {
-            return { id, shares: 0, meta: undefined, sharesStr: '0', valueStr: '0' };
+            return null;
           }
         })
       );
 
-      // 5. Construct Final List
-      const activePositions = livePositionsData.filter(p => p.shares > 0.000001);
+      const activePositions = (livePositionsData.filter(Boolean) as any[]);
 
       const finalPositions = activePositions.map(item => {
-          const val = parseFloat(item.valueStr);
           return {
             id: item.id,
-            shares: item.sharesStr,
-            value: val,
+            shares: item.shares,
+            value: item.value,
             atom: { 
-                label: item.meta?.label || `Agent ${item.id.slice(0, 6)}...`, 
-                image: item.meta?.image 
+                label: item.label, 
+                image: item.image 
             },
             isPending: false,
           };
@@ -123,11 +136,8 @@ const Dashboard: React.FC = () => {
 
       setPositions(finalPositions);
 
-      // 6. Calculate PnL
       const currentVal = finalPositions.reduce((acc, cur) => acc + (cur.value || 0), 0);
       setPortfolioValue(currentVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
-      
-      // PnL = (Current Value + Total Redeemed) - Total Deposited
       setNetPnL((currentVal + runningRedeem) - runningDeposit);
 
     } catch (e) {
@@ -256,7 +266,7 @@ const Dashboard: React.FC = () => {
                     </Link>
                   </td>
                   <td className="px-6 py-4 text-[10px] text-slate-500 font-mono">{pos.id.slice(0, 8)}...</td>
-                  <td className="px-6 py-4 text-white font-bold font-display text-lg">{parseFloat(pos.shares || '0').toFixed(4)}</td>
+                  <td className="px-6 py-4 text-white font-bold font-display text-lg">{formatDisplayedShares(pos.shares)}</td>
                   <td className="px-6 py-4 text-intuition-success">{(pos.value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} {CURRENCY_SYMBOL}</td>
                   <td className="px-6 py-4 text-right"><span className="text-intuition-success text-xs font-bold border border-intuition-success/30 px-2 py-1 bg-intuition-success/10 rounded flex items-center justify-end gap-1"><ExternalLink size={10} /> ON-CHAIN</span></td>
                 </tr>

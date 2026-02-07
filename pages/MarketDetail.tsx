@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -86,13 +85,13 @@ const generateAnchoredHistory = (assetsWei: string, sharesWei: string, currentSh
 };
 
 const AgentShareModal: React.FC<{ 
+    isOpen: boolean; 
+    onClose: () => void; 
     agent: Account; 
     mktCap: number; 
     price: number; 
     holders: number; 
-    tags: { label: string }[];
-    isOpen: boolean;
-    onClose: () => void;
+    tags: { label: string }[] 
 }> = ({ isOpen, onClose, agent, mktCap, price, holders, tags }) => {
     const cardRef = useRef<HTMLDivElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -180,20 +179,20 @@ const AgentShareModal: React.FC<{
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12 relative z-10">
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-primary/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-primary transition-colors">Mkt_Cap</div>
-                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(mktCap)}</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-primary transition-colors">Mkt_Cap</div>
+                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover/stat:text-glow-white">{formatMarketValue(mktCap)}</div>
                         </div>
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-primary/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-primary transition-colors">Spot_Price</div>
-                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(price)}</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-primary transition-colors">Spot_Price</div>
+                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover/stat:text-glow-white">{formatMarketValue(price)}</div>
                         </div>
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-success/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-success transition-colors">Conviction</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-success transition-colors">Conviction</div>
                             <div className="text-xl font-black text-intuition-success font-display tracking-tight leading-none text-glow-success">{computeTrust(agent.totalAssets || '0', agent.totalShares || '0').toFixed(1)}%</div>
                         </div>
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-primary/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-primary transition-colors">Holders</div>
-                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatLargeNumber(holders)}</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-primary transition-colors">Holders</div>
+                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover/stat:text-glow-white">{formatLargeNumber(holders)}</div>
                         </div>
                     </div>
 
@@ -234,10 +233,12 @@ const MarketDetail: React.FC = () => {
   const [followersCount, setFollowersCount] = useState(0);
   const [lists, setLists] = useState<any[]>([]);
   const [engagedIdentities, setEngagedIdentities] = useState<any[]>([]);
+  const [followingPositions, setFollowingPositions] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<DetailTab>('OVERVIEW');
   const [timeframe, setTimeframe] = useState<Timeframe>('1D');
+  const [isWatched, setIsWatched] = useState(false);
   const [action, setAction] = useState<'ACQUIRE' | 'LIQUIDATE'>('ACQUIRE');
   const [sentiment, setSentiment] = useState<'TRUST' | 'DISTRUST'>('TRUST');
   const [inputAmount, setInputAmount] = useState('');
@@ -256,8 +257,10 @@ const MarketDetail: React.FC = () => {
       try {
           const acc = await getConnectedAccount();
           setWallet(acc);
-          if (acc) checkProxyApproval(acc).then(setIsApproved);
-          
+          if (acc) {
+              setIsWatched(isInWatchlist(id, acc));
+              checkProxyApproval(acc).then(setIsApproved);
+          }
           const [agentData, triplesData, activityData, holderResult, listData, engagedData, incomingResult] = await Promise.all([
               getAgentById(id),
               getAgentTriples(id),
@@ -280,7 +283,13 @@ const MarketDetail: React.FC = () => {
           
           if (acc) {
             setWalletBalance(await getWalletBalance(acc));
-            setShareBalance(await getShareBalance(acc, id, OFFSET_PROGRESSIVE_CURVE_ID));
+            const sharesRaw = await getShareBalance(acc, id, OFFSET_PROGRESSIVE_CURVE_ID);
+            setShareBalance(sharesRaw);
+          }
+
+          if (agentData.type === 'ACCOUNT' || id.startsWith('0x')) {
+              const following = await getUserPositions(id);
+              setFollowingPositions(following || []);
           }
       } catch (e) { console.error(e); } finally { setLoading(false); }
   };
@@ -387,6 +396,8 @@ const MarketDetail: React.FC = () => {
                     href={`${EXPLORER_URL}/address/${agent.creator.id}`}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={playClick}
+                    onMouseEnter={playHover}
                     className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full hover:border-intuition-primary/40 transition-all cursor-pointer group/creator"
                   >
                       <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/20 overflow-hidden shrink-0 shadow-glow-blue">
@@ -406,7 +417,9 @@ const MarketDetail: React.FC = () => {
             <div className="flex items-center gap-5 lg:ml-auto">
                 <button 
                     onClick={() => { playClick(); setIsShareModalOpen(true); }}
+                    onMouseEnter={playHover}
                     className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue"
+                    title="SHARE_NODE_SIGNAL"
                 >
                     <Share2 size={20} className="group-hover:scale-110 transition-transform" />
                 </button>
@@ -414,7 +427,9 @@ const MarketDetail: React.FC = () => {
                     href={`${EXPLORER_URL}/address/${agent.id}`} 
                     target="_blank" 
                     rel="noreferrer"
+                    onMouseEnter={playHover}
                     className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue"
+                    title="INITIALIZE_NODE_RECON"
                 >
                     <ScanSearch size={20} className="group-hover:scale-110 transition-transform" />
                 </a>
@@ -560,6 +575,7 @@ const MarketDetail: React.FC = () => {
                     <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">Linear_Curve_Handshake_Active</div>
                 </div>
 
+                {/* --- UPDATED EXECUTION DECK --- */}
                 <div className={`bg-black border-2 p-1 clip-path-slant shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 ${action === 'ACQUIRE' ? 'border-intuition-primary/30 hover:border-intuition-primary' : 'border-intuition-secondary/30 hover:border-intuition-secondary'}`}>
                     <div className="bg-[#050505] p-8 border border-white/5 relative overflow-hidden">
                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
@@ -568,11 +584,13 @@ const MarketDetail: React.FC = () => {
                             <div className={`w-2 h-2 rounded-full animate-ping ${action === 'ACQUIRE' ? 'bg-intuition-primary shadow-[0_0_12px_#00f3ff]' : 'bg-intuition-secondary shadow-[0_0_12px_#ff1e6d]'}`}></div>
                         </div>
 
+                        {/* ACQUIRE / LIQUIDATE TABS */}
                         <div className="flex gap-1.5 mb-10">
                             <button onClick={() => { setAction('ACQUIRE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'ACQUIRE' ? 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>ACQUIRE</button>
                             <button onClick={() => { setAction('LIQUIDATE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'LIQUIDATE' ? 'bg-intuition-secondary text-white border-intuition-secondary shadow-[0_0_25px_rgba(255,30,109,0.3)]' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>LIQUIDATE</button>
                         </div>
 
+                        {/* TRUST / DISTRUST SELECTOR */}
                         <div className="mb-10">
                             <div className="flex justify-between items-end mb-4 px-1">
                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">TARGET_POSITION</span>
@@ -596,6 +614,7 @@ const MarketDetail: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* VOLUME INPUT */}
                         <div className="mb-8">
                              <div className="flex justify-between items-center mb-4 px-1">
                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{action === 'ACQUIRE' ? 'TRANSMISSION_VOLUME' : 'VOLUME_LIQUIDATE'}</span>
@@ -617,6 +636,7 @@ const MarketDetail: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* COMMIT BUTTON */}
                         <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 ${action === 'ACQUIRE' ? 'bg-white text-black border-white hover:bg-black hover:text-white hover:shadow-glow-blue' : 'bg-[#1a080d] text-intuition-secondary border-intuition-secondary hover:bg-intuition-secondary hover:text-white hover:shadow-glow-red'}`}>
                             {!isApproved && action === 'ACQUIRE' ? 'ENABLE_PROTOCOL' : action === 'ACQUIRE' ? 'COMMIT_SIGNAL' : 'EXIT_POSITION'}
                         </button>
@@ -654,14 +674,11 @@ const MarketDetail: React.FC = () => {
                         <div className="space-y-12">
                             <div>
                                 <h4 className="text-[11px] font-black text-intuition-primary uppercase tracking-[0.6em] mb-6 flex items-center gap-3 text-glow-blue">
-                                    <Terminal size={14}/> Node_Biography
+                                    <Terminal size={14}/> Core_Alignment_Matrix
                                 </h4>
-                                <div className="p-8 bg-white/5 border border-white/10 clip-path-slant relative group">
-                                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-intuition-primary/30 group-hover:bg-intuition-primary transition-colors"></div>
-                                    <p className="text-slate-200 text-sm leading-relaxed font-mono font-bold uppercase tracking-tight">
-                                        {agent.description || `Node identity ${agent.label} stabilized in Sector_04. Semantic weight currently projected at ${triples.length} unique synapses. Linear Curve Utility engaged for predictable conviction pricing.`}
-                                    </p>
-                                </div>
+                                <p className="text-slate-400 text-base leading-relaxed font-mono font-bold uppercase tracking-tight group-hover:text-white transition-colors">
+                                    Node <strong className="text-white text-glow-white">{agent.label}</strong> stabilized in Sector_04. Semantic weight currently projected at {triples.length} unique synapses. Linear Curve Utility (ID: 1) engaged.
+                                </p>
                             </div>
                             <div className="grid grid-cols-2 gap-6">
                                 <div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-intuition-primary/40 transition-all hover:shadow-glow-blue">
@@ -807,16 +824,24 @@ const MarketDetail: React.FC = () => {
                                     style={{ 
                                         clipPath: 'polygon(50% 0%, 100% 15%, 100% 85%, 50% 100%, 0% 85%, 0% 15%)' 
                                     }}
+                                    onClick={playClick}
+                                    onMouseEnter={playHover}
                                 >
                                     <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.1)_1px,transparent_1px)] bg-[size:15px_15px] opacity-0 group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none"></div>
                                     <div className="absolute inset-0 bg-gradient-to-tr from-intuition-primary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
                                     
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] bg-gradient-to-r from-transparent via-white/[0.1] to-transparent -rotate-45 -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-[1400ms] ease-in-out pointer-events-none"></div>
+
                                     <div className="flex flex-col items-center justify-center flex-1 relative z-10 mb-10">
                                         <div className="relative mb-10 group-hover:scale-110 transition-transform duration-700">
                                             <div className="absolute inset-0 bg-intuition-primary blur-3xl opacity-0 group-hover:opacity-40 transition-all duration-700 rounded-full scale-150"></div>
+                                            
+                                            <div className="absolute -inset-6 border-2 border-dashed border-intuition-primary/30 rounded-full animate-spin-slow opacity-0 group-hover:opacity-100 group-hover:animate-spin-fast transition-all"></div>
+
                                             <div className="w-28 h-28 bg-black border-2 border-slate-800 flex items-center justify-center overflow-hidden transition-all group-hover:border-intuition-primary shadow-xl group-hover:shadow-glow-blue relative"
                                                  style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}>
                                                 {list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={36} className="text-slate-700" />}
+                                                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-intuition-primary/30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                             </div>
                                         </div>
                                         <div className="relative z-10">
@@ -828,6 +853,12 @@ const MarketDetail: React.FC = () => {
                                             <div className="text-[9px] text-slate-600 uppercase font-black tracking-[0.4em] mb-4 group-hover:text-white transition-colors">ACTIVE_NODES: {list.totalItems || 'SYNCING'}</div>
                                         </div>
                                     </div>
+                                    
+                                    <div className="absolute bottom-6 right-8 text-slate-800 group-hover:text-intuition-primary/60 group-hover:translate-x-1 transition-all group-hover:drop-shadow-[0_0_10px_#00f3ff]">
+                                        <ArrowRight size={28} />
+                                    </div>
+
+                                    <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-1000 origin-center opacity-50 shadow-[0_0_20px_#00f3ff]"></div>
                                 </Link>
                             )) : (
                                 <div className="col-span-full py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_VECTORS_DETECTED</div>
