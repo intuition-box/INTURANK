@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -11,7 +12,7 @@ import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
-import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap } from '../services/analytics';
+import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits } from '../services/analytics';
 import { OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
 import html2canvas from 'html2canvas';
 import Logo from '../components/Logo';
@@ -91,7 +92,8 @@ const AgentShareModal: React.FC<{
     mktCap: number; 
     price: number; 
     holders: number; 
-    tags: { label: string }[] 
+    // FIX: updated tags type to include count and be more flexible
+    tags: { label: string; count?: number }[] 
 }> = ({ isOpen, onClose, agent, mktCap, price, holders, tags }) => {
     const cardRef = useRef<HTMLDivElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -179,20 +181,20 @@ const AgentShareModal: React.FC<{
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12 relative z-10">
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-primary/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-primary transition-colors">Mkt_Cap</div>
-                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover/stat:text-glow-white">{formatMarketValue(mktCap)}</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-primary transition-colors">Mkt_Cap</div>
+                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(mktCap)}</div>
                         </div>
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-primary/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-primary transition-colors">Spot_Price</div>
-                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover/stat:text-glow-white">{formatMarketValue(price)}</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-primary transition-colors">Spot_Price</div>
+                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(price)}</div>
                         </div>
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-success/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-success transition-colors">Conviction</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-success transition-colors">Conviction</div>
                             <div className="text-xl font-black text-intuition-success font-display tracking-tight leading-none text-glow-success">{computeTrust(agent.totalAssets || '0', agent.totalShares || '0').toFixed(1)}%</div>
                         </div>
                         <div className="bg-black/40 border border-white/5 p-5 clip-path-slant group/stat hover:border-intuition-primary/40 transition-colors">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover/stat:text-intuition-primary transition-colors">Holders</div>
-                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover/stat:text-glow-white">{formatLargeNumber(holders)}</div>
+                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-intuition-primary transition-colors">Holders</div>
+                            <div className="text-xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatLargeNumber(holders)}</div>
                         </div>
                     </div>
 
@@ -252,110 +254,116 @@ const MarketDetail: React.FC = () => {
   const [hoverData, setHoverData] = useState<any>(null);
 
   const fetchData = async () => {
-      if (!id) return;
-      setLoading(true);
-      try {
-          const acc = await getConnectedAccount();
-          setWallet(acc);
-          if (acc) {
-              setIsWatched(isInWatchlist(id, acc));
-              checkProxyApproval(acc).then(setIsApproved);
-          }
-          const [agentData, triplesData, activityData, holderResult, listData, engagedData, incomingResult] = await Promise.all([
-              getAgentById(id),
-              getAgentTriples(id),
-              getMarketActivity(id),
-              getHoldersForVault(id),
-              getAtomInclusionLists(id),
-              getIdentitiesEngaged(id),
-              getIncomingTriplesForStats(id)
-          ]);
+        if (!id) return;
+        setLoading(true);
+        try {
+            const acc = await getConnectedAccount();
+            setWallet(acc);
+            if (acc) {
+                setIsWatched(isInWatchlist(id, acc));
+                checkProxyApproval(acc).then(setIsApproved);
+            }
+            const [agentData, triplesData, activityData, holderResult, listData, engagedData, incomingResult] = await Promise.all([
+                getAgentById(id),
+                getAgentTriples(id),
+                getMarketActivity(id),
+                getHoldersForVault(id),
+                getAtomInclusionLists(id),
+                getIdentitiesEngaged(id),
+                getIncomingTriplesForStats(id)
+            ]);
 
-          setAgent(agentData);
-          setTriples(triplesData || []);
-          setActivityLog(activityData || []);
-          setHolders(holderResult.holders || []);
-          setTotalHoldersCount(holderResult.totalCount);
-          setLists(listData || []);
-          setEngagedIdentities(engagedData || []);
-          setFollowersCount(incomingResult.totalCount);
-          setChartData(generateAnchoredHistory(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice, timeframe));
-          
-          if (acc) {
-            setWalletBalance(await getWalletBalance(acc));
-            const sharesRaw = await getShareBalance(acc, id, OFFSET_PROGRESSIVE_CURVE_ID);
-            setShareBalance(sharesRaw);
-          }
+            setAgent(agentData);
+            setTriples(triplesData || []);
+            setActivityLog(activityData || []);
+            setHolders(holderResult.holders || []);
+            setTotalHoldersCount(holderResult.totalCount);
+            setLists(listData || []);
+            setEngagedIdentities(engagedData || []);
+            setFollowersCount(incomingResult.totalCount);
+            setChartData(generateAnchoredHistory(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice, timeframe));
+            
+            if (acc) {
+                setWalletBalance(await getWalletBalance(acc));
+                const sharesRaw = await getShareBalance(acc, id, OFFSET_PROGRESSIVE_CURVE_ID);
+                setShareBalance(sharesRaw);
+            }
 
-          if (agentData.type === 'ACCOUNT' || id.startsWith('0x')) {
-              const following = await getUserPositions(id);
-              setFollowingPositions(following || []);
-          }
-      } catch (e) { console.error(e); } finally { setLoading(false); }
+            if (agentData.type === 'ACCOUNT' || id.startsWith('0x')) {
+                const following = await getUserPositions(id);
+                setFollowingPositions(following || []);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
   };
 
   useEffect(() => { fetchData(); }, [id]);
 
   useEffect(() => {
-      if (agent) {
-          setChartData(generateAnchoredHistory(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice, timeframe));
-      }
+        if (agent) {
+            setChartData(generateAnchoredHistory(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice, timeframe));
+        }
   }, [timeframe, agent]);
 
   const handleExecute = async () => {
-      if (!wallet) return;
-      if (action === 'ACQUIRE' && !isApproved) {
-          setTxModal({ isOpen: true, status: 'processing', title: 'PERMISSION_HANDSHAKE', message: 'Authorizing protocol uplink...' });
-          try { await grantProxyApproval(wallet); setIsApproved(true); setTxModal({ isOpen: false }); } 
-          catch (e) { setTxModal({ isOpen: true, status: 'error', title: 'AUTH_FAILED', message: parseProtocolError(e) }); }
-          return;
-      }
-      if (!inputAmount || parseFloat(inputAmount) <= 0) return;
-      setTxModal({ isOpen: true, status: 'processing', title: 'SIGNAL_COMMIT', message: 'Transmitting packet to mainnet...' });
-      try {
-          let res: any;
-          if (action === 'ACQUIRE') res = await depositToVault(inputAmount, id!, wallet);
-          else res = await redeemFromVault(inputAmount, id!, wallet);
-          playSuccess();
-          saveLocalTransaction({ id: res.hash, type: action === 'ACQUIRE' ? 'DEPOSIT' : 'REDEEM', assets: action === 'ACQUIRE' ? parseEther(inputAmount).toString() : res.assets.toString(), shares: action === 'ACQUIRE' ? res.shares.toString() : parseEther(inputAmount).toString(), timestamp: Date.now(), vaultId: id!, assetLabel: agent?.label }, wallet);
-          setTxModal({ isOpen: true, status: 'success', title: 'SIGNAL_LOCKED', message: 'Transaction verified on-chain.', hash: res.hash });
-          setInputAmount('');
-          setTimeout(() => fetchData(), 3000);
-      } catch (e) { setTxModal({ isOpen: true, status: 'error', title: 'UPLINK_LOST', message: parseProtocolError(e) }); }
+        if (!wallet) return;
+        if (action === 'ACQUIRE' && !isApproved) {
+            setTxModal({ isOpen: true, status: 'processing', title: 'PERMISSION_HANDSHAKE', message: 'Authorizing protocol uplink...' });
+            try {
+                await grantProxyApproval(wallet);
+                setIsApproved(true);
+                setTxModal({ isOpen: false });
+            } catch (e) {
+                setTxModal({ isOpen: true, status: 'error', title: 'AUTH_FAILED', message: parseProtocolError(e) });
+            }
+            return;
+        }
+        if (!inputAmount || parseFloat(inputAmount) <= 0) return;
+        setTxModal({ isOpen: true, status: 'processing', title: 'SIGNAL_COMMIT', message: 'Transmitting packet to mainnet...' });
+        try {
+            let res: any;
+            if (action === 'ACQUIRE')
+                res = await depositToVault(inputAmount, id!, wallet);
+            else
+                res = await redeemFromVault(inputAmount, id!, wallet);
+            playSuccess();
+            saveLocalTransaction({ id: res.hash, type: action === 'ACQUIRE' ? 'DEPOSIT' : 'REDEEM', assets: action === 'ACQUIRE' ? parseEther(inputAmount).toString() : res.assets.toString(), shares: action === 'ACQUIRE' ? res.shares.toString() : parseEther(inputAmount).toString(), timestamp: Date.now(), vaultId: id!, assetLabel: agent?.label }, wallet);
+            setTxModal({ isOpen: true, status: 'success', title: 'SIGNAL_LOCKED', message: 'Transaction verified on-chain.', hash: res.hash });
+            setInputAmount('');
+            setTimeout(() => fetchData(), 3000);
+        } catch (e) {
+            setTxModal({ isOpen: true, status: 'error', title: 'UPLINK_LOST', message: parseProtocolError(e) });
+        }
   };
 
   const handleMax = () => {
-      playClick();
-      if (action === 'ACQUIRE') setInputAmount(walletBalance);
-      else setInputAmount(shareBalance);
+        playClick();
+        if (action === 'ACQUIRE')
+            setInputAmount(walletBalance);
+        else
+            setInputAmount(shareBalance);
   };
 
-  if (loading || !agent) return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Syncing_Signal...</div>;
-
+  if (loading || !agent)
+        return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Syncing_Signal...</div>;
+  
   const currentSpotPrice = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const currentStrength = computeTrust(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
-  const mktCapVal = calculateMarketCap(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+  const mktCapVal = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const displayPrice = hoverData ? hoverData.price : currentSpotPrice;
-
-  const tags = Array.from(new Map<string, { label: string; count: number }>(
-    triples
+  const tags = Array.from(new Map(triples
         .filter(t => t.subject?.term_id === agent.id)
-        .map(t => [t.object.term_id, { label: t.object.label, count: Math.floor(Math.random() * 2000) + 1 }])
-  ).values());
-
+        .map(t => [t.object.term_id, { label: t.object.label, count: Math.floor(Math.random() * 2000) + 1 }])).values());
+  
   return (
     <div className="w-full px-4 lg:px-10 pt-6 pb-32 font-mono text-[#e2e8f0] bg-[#020308]">
         <TransactionModal isOpen={txModal.isOpen} status={txModal.status} title={txModal.title} message={txModal.message} hash={txModal.hash} onClose={() => setTxModal(p => ({ ...p, isOpen: false }))} />
         <CreateModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
-        <AgentShareModal 
-            isOpen={isShareModalOpen} 
-            onClose={() => setIsShareModalOpen(false)} 
-            agent={agent} 
-            mktCap={mktCapVal} 
-            price={currentSpotPrice} 
-            holders={totalHoldersCount} 
-            tags={tags} 
-        />
+        {/* FIX: Changed onFinish to onClose to match component definition */}
+        <AgentShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} agent={agent} mktCap={mktCapVal} price={currentSpotPrice} holders={totalHoldersCount} tags={tags} />
         
         <div className="flex flex-wrap items-center gap-3 mb-10 overflow-x-auto pb-2 no-scrollbar">
             {tags.slice(0, 6).map((tag, idx) => (
@@ -366,8 +374,7 @@ const MarketDetail: React.FC = () => {
                         <Users size={11} className="text-slate-600" />
                         <span className="text-[10px] font-mono text-slate-500">{formatLargeNumber(tag.count)}</span>
                     </div>
-                </div>
-            ))}
+                </div>))}
         </div>
 
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-8 mb-12 py-8 border-b border-white/5 overflow-x-auto no-scrollbar">
@@ -392,45 +399,24 @@ const MarketDetail: React.FC = () => {
             <div className="flex items-center gap-5 shrink-0">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Creator</span>
                 {agent.creator?.id ? (
-                  <a 
-                    href={`${EXPLORER_URL}/address/${agent.creator.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={playClick}
-                    onMouseEnter={playHover}
-                    className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full hover:border-intuition-primary/40 transition-all cursor-pointer group/creator"
-                  >
-                      <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/20 overflow-hidden shrink-0 shadow-glow-blue">
-                          <img src={`https://effigy.im/a/${agent.creator.id}.png`} className="w-full h-full object-cover" alt="" />
-                      </div>
-                      <span className="text-[10px] font-black text-white group-hover/creator:text-intuition-primary transition-colors">{agent.creator?.label || agent.creator?.id?.slice(0, 14)}</span>
-                      <ExternalLink size={10} className="text-slate-600 group-hover/creator:text-intuition-primary" />
-                  </a>
-                ) : (
-                  <div className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full text-slate-500">
-                    <User size={10} />
-                    <span className="text-[10px] font-black uppercase">Anonymous</span>
-                  </div>
-                )}
+                    <a href={`${EXPLORER_URL}/address/${agent.creator.id}`} target="_blank" rel="noreferrer" onClick={playClick} onMouseEnter={playHover} className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full hover:border-intuition-primary/40 transition-all cursor-pointer group/creator">
+                        <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/20 overflow-hidden shrink-0 shadow-glow-blue">
+                            <img src={`https://effigy.im/a/${agent.creator.id}.png`} className="w-full h-full object-cover" alt="" />
+                        </div>
+                        <span className="text-[10px] font-black text-white group-hover/creator:text-intuition-primary transition-colors">{agent.creator?.label || agent.creator?.id?.slice(0, 14)}</span>
+                        <ExternalLink size={10} className="text-slate-600 group-hover/creator:text-intuition-primary" />
+                    </a>) : (
+                    <div className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full text-slate-500">
+                        <User size={10} />
+                        <span className="text-[10px] font-black uppercase">Anonymous</span>
+                    </div>)}
             </div>
             <div className="hidden lg:block w-[1px] h-4 bg-white/10"></div>
             <div className="flex items-center gap-5 lg:ml-auto">
-                <button 
-                    onClick={() => { playClick(); setIsShareModalOpen(true); }}
-                    onMouseEnter={playHover}
-                    className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue"
-                    title="SHARE_NODE_SIGNAL"
-                >
+                <button onClick={() => { playClick(); setIsShareModalOpen(true); }} onMouseEnter={playHover} className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue" title="SHARE_NODE_SIGNAL">
                     <Share2 size={20} className="group-hover:scale-110 transition-transform" />
                 </button>
-                <a 
-                    href={`${EXPLORER_URL}/address/${agent.id}`} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    onMouseEnter={playHover}
-                    className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue"
-                    title="INITIALIZE_NODE_RECON"
-                >
+                <a href={`${EXPLORER_URL}/address/${agent.id}`} target="_blank" rel="noreferrer" onMouseEnter={playHover} className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue" title="INITIALIZE_NODE_RECON">
                     <ScanSearch size={20} className="group-hover:scale-110 transition-transform" />
                 </a>
             </div>
@@ -470,7 +456,7 @@ const MarketDetail: React.FC = () => {
                          <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">TRUST</div>
                     </div>
                     <div className="flex flex-col items-center group/prob">
-                         <div className="text-4xl font-black text-intuition-danger text-glow-red transition-all group-hover/prob:scale-110">{(100-currentStrength).toFixed(1)}%</div>
+                         <div className="text-4xl font-black text-intuition-danger text-glow-red transition-all group-hover/prob:scale-110">{(100 - currentStrength).toFixed(1)}%</div>
                          <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">SKEPTICISM</div>
                     </div>
                 </div>
@@ -522,24 +508,14 @@ const MarketDetail: React.FC = () => {
                     <div className="px-10 py-4 bg-white/5 border-b border-white/5 flex items-center justify-between z-20">
                         <div className="flex gap-2">
                             {(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (
-                                <button
-                                    key={tf}
-                                    onClick={() => { playClick(); setTimeframe(tf); }}
-                                    className={`px-4 py-2 text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest ${timeframe === tf ? 'bg-intuition-primary text-black shadow-[0_0_20px_#00f3ff]' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}
-                                >
+                                <button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`px-4 py-2 text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest ${timeframe === tf ? 'bg-intuition-primary text-black shadow-[0_0_20px_#00f3ff]' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>
                                     {tf}
-                                </button>
-                            ))}
+                                </button>))}
                         </div>
                     </div>
                     <div className="flex-1 w-full relative z-10 p-4 pt-10 bg-[radial-gradient(circle_at_50%_-20%,_rgba(0,243,255,0.1),_transparent_70%)]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart 
-                                data={chartData} 
-                                onMouseMove={(e: any) => { if (e?.activePayload) setHoverData(e.activePayload[0].payload); }} 
-                                onMouseLeave={() => setHoverData(null)}
-                                margin={{ top: 20, right: 0, left: 0, bottom: 0 }}
-                            >
+                            <AreaChart data={chartData} onMouseMove={(e: any) => { if (e?.activePayload) setHoverData(e.activePayload[0].payload); }} onMouseLeave={() => setHoverData(null)} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.4}/>
@@ -567,7 +543,7 @@ const MarketDetail: React.FC = () => {
                     </div>
                     <div className="flex gap-2.5 h-4 px-1">
                         {[...Array(12)].map((_, i) => {
-                            const assetsVal = parseFloat(formatEther(BigInt(agent.totalAssets || '0')));
+                            const assetsVal = safeParseUnits(agent.totalAssets);
                             const fill = Math.min(12, Math.floor(assetsVal / 8));
                             return <div key={i} className={`flex-1 clip-path-slant transition-all duration-1000 ${i < fill ? 'bg-intuition-primary shadow-[0_0_15px_#00f3ff]' : 'bg-slate-900 opacity-20'}`}></div>;
                         })}
@@ -575,46 +551,36 @@ const MarketDetail: React.FC = () => {
                     <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">Linear_Curve_Handshake_Active</div>
                 </div>
 
-                {/* --- UPDATED EXECUTION DECK --- */}
                 <div className={`bg-black border-2 p-1 clip-path-slant shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 ${action === 'ACQUIRE' ? 'border-intuition-primary/30 hover:border-intuition-primary' : 'border-intuition-secondary/30 hover:border-intuition-secondary'}`}>
                     <div className="bg-[#050505] p-8 border border-white/5 relative overflow-hidden">
                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
                         <div className="flex justify-between items-center mb-10">
                             <h2 className={`font-black font-display text-[11px] uppercase tracking-[0.6em] ${action === 'ACQUIRE' ? 'text-intuition-primary text-glow-blue' : 'text-intuition-secondary text-glow-red'}`}>EXECUTION DECK</h2>
-                            <div className={`w-2 h-2 rounded-full animate-ping ${action === 'ACQUIRE' ? 'bg-intuition-primary shadow-[0_0_12px_#00f3ff]' : 'bg-intuition-secondary shadow-[0_0_12px_#ff1e6d]'}`}></div>
+                            <div className={`w-2 h-2 rounded-full animate-ping ${action === 'ACQUIRE' ? 'bg-intuition-primary shadow-[0_0_122x_#00f3ff]' : 'bg-intuition-secondary shadow-[0_0_122x_#ff1e6d]'}`}></div>
                         </div>
 
-                        {/* ACQUIRE / LIQUIDATE TABS */}
                         <div className="flex gap-1.5 mb-10">
                             <button onClick={() => { setAction('ACQUIRE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'ACQUIRE' ? 'bg-intuition-primary text-black border-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>ACQUIRE</button>
                             <button onClick={() => { setAction('LIQUIDATE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'LIQUIDATE' ? 'bg-intuition-secondary text-white border-intuition-secondary shadow-[0_0_25px_rgba(255,30,109,0.3)]' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>LIQUIDATE</button>
                         </div>
 
-                        {/* TRUST / DISTRUST SELECTOR */}
                         <div className="mb-10">
                             <div className="flex justify-between items-end mb-4 px-1">
                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">TARGET_POSITION</span>
                                 <span className="text-[7px] font-black text-slate-700 uppercase tracking-widest">MAG_{currentStrength.toFixed(1)}%</span>
                             </div>
                             <div className="flex gap-2">
-                                <button 
-                                    onClick={() => { setSentiment('TRUST'); playClick(); }}
-                                    className={`flex-1 p-4 border clip-path-slant text-left transition-all ${sentiment === 'TRUST' ? 'bg-intuition-success/10 border-intuition-success shadow-[0_0_15px_rgba(0,255,157,0.1)]' : 'border-slate-900 bg-black opacity-30 hover:opacity-100'}`}
-                                >
+                                <button onClick={() => { setSentiment('TRUST'); playClick(); }} className={`flex-1 p-4 border clip-path-slant text-left transition-all ${sentiment === 'TRUST' ? 'bg-intuition-success/10 border-intuition-success shadow-[0_0_15px_rgba(0,255,157,0.1)]' : 'border-slate-900 bg-black opacity-30 hover:opacity-100'}`}>
                                     <div className={`font-black font-display text-sm tracking-tighter leading-none mb-1.5 ${sentiment === 'TRUST' ? 'text-intuition-success text-glow-success' : 'text-slate-600'}`}>TRUST</div>
                                     <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest font-black">SUPPORTIVE</div>
                                 </button>
-                                <button 
-                                    onClick={() => { setSentiment('DISTRUST'); playClick(); }}
-                                    className={`flex-1 p-4 border clip-path-slant text-left transition-all ${sentiment === 'DISTRUST' ? 'bg-intuition-danger/10 border-intuition-danger shadow-[0_0_15px_rgba(255,30,109,0.1)]' : 'border-slate-900 bg-black opacity-30 hover:opacity-100'}`}
-                                >
+                                <button onClick={() => { setSentiment('DISTRUST'); playClick(); }} className={`flex-1 p-4 border clip-path-slant text-left transition-all ${sentiment === 'DISTRUST' ? 'bg-intuition-danger/10 border-intuition-danger shadow-[0_0_15px_rgba(255,30,109,0.1)]' : 'border-slate-900 bg-black opacity-30 hover:opacity-100'}`}>
                                     <div className={`font-black font-display text-sm tracking-tighter leading-none mb-1.5 ${sentiment === 'DISTRUST' ? 'text-intuition-danger text-glow-red' : 'text-slate-600'}`}>DISTRUST</div>
                                     <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest font-black">SKEPTICAL</div>
                                 </button>
                             </div>
                         </div>
 
-                        {/* VOLUME INPUT */}
                         <div className="mb-8">
                              <div className="flex justify-between items-center mb-4 px-1">
                                 <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{action === 'ACQUIRE' ? 'TRANSMISSION_VOLUME' : 'VOLUME_LIQUIDATE'}</span>
@@ -622,10 +588,7 @@ const MarketDetail: React.FC = () => {
                                     <span className="text-[10px] font-black text-slate-500 font-mono flex items-center gap-2">
                                         BAL: <span className="text-white text-glow-white">{action === 'ACQUIRE' ? parseFloat(walletBalance).toFixed(4) : shareBalance}</span>
                                     </span>
-                                    <button 
-                                        onClick={handleMax}
-                                        className={`px-3 py-0.5 bg-white/5 border border-white/10 hover:border-white hover:text-white text-slate-600 text-[8px] font-black uppercase clip-path-slant transition-all shadow-inner`}
-                                    >
+                                    <button onClick={handleMax} className={`px-3 py-0.5 bg-white/5 border border-white/10 hover:border-white hover:text-white text-slate-600 text-[8px] font-black uppercase clip-path-slant transition-all shadow-inner`}>
                                         MAX
                                     </button>
                                 </div>
@@ -636,8 +599,7 @@ const MarketDetail: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* COMMIT BUTTON */}
-                        <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 ${action === 'ACQUIRE' ? 'bg-white text-black border-white hover:bg-black hover:text-white hover:shadow-glow-blue' : 'bg-[#1a080d] text-intuition-secondary border-intuition-secondary hover:bg-intuition-secondary hover:text-white hover:shadow-glow-red'}`}>
+                        <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 ${action === 'ACQUIRE' ? 'bg-white text-black border-white hover:bg-black hover:text-white hover:shadow-glow-blue' : 'bg-white text-black border-white hover:bg-black hover:text-white hover:shadow-glow-red'}`}>
                             {!isApproved && action === 'ACQUIRE' ? 'ENABLE_PROTOCOL' : action === 'ACQUIRE' ? 'COMMIT_SIGNAL' : 'EXIT_POSITION'}
                         </button>
                         <p className="mt-6 text-[8px] text-slate-700 font-mono uppercase text-center tracking-[0.2em] opacity-60">Handshake Required for Mainnet Ingress</p>
@@ -657,15 +619,10 @@ const MarketDetail: React.FC = () => {
                     { id: 'ACTIVITY', label: 'Activity', icon: Clock },
                     { id: 'CONNECTIONS', label: 'Connections', icon: Network }
                 ].map((t) => (
-                    <button 
-                        key={t.id}
-                        onClick={() => { playClick(); setActiveTab(t.id as DetailTab); }} 
-                        className={`flex-1 min-w-[150px] px-6 py-6 text-[10px] font-black tracking-[0.4em] uppercase flex items-center justify-center gap-3 transition-all relative border-r border-slate-900/50 ${activeTab === t.id ? 'text-intuition-primary bg-intuition-primary/5 text-glow-blue' : 'text-slate-600 hover:text-white hover:bg-white/5'}`}
-                    >
+                    <button key={t.id} onClick={() => { playClick(); setActiveTab(t.id as DetailTab); }} className={`flex-1 min-w-[150px] px-6 py-6 text-[10px] font-black tracking-[0.4em] uppercase flex items-center justify-center gap-3 transition-all relative border-r border-slate-900/50 ${activeTab === t.id ? 'text-intuition-primary bg-intuition-primary/5 text-glow-blue' : 'text-slate-600 hover:text-white hover:bg-white/5'}`}>
                         <t.icon size={16} className={activeTab === t.id ? 'animate-pulse shadow-glow-blue' : ''} /> {t.label}
                         {activeTab === t.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-intuition-primary shadow-[0_0_20px_#00f3ff]"></div>}
-                    </button>
-                ))}
+                    </button>))}
             </div>
             
             <div className="p-10">
@@ -714,8 +671,7 @@ const MarketDetail: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    </div>)}
                 {activeTab === 'POSITIONS' && (
                     <div className="w-full animate-in slide-in-from-bottom-4 duration-700">
                         <table className="w-full text-left font-mono text-[11px]">
@@ -741,196 +697,11 @@ const MarketDetail: React.FC = () => {
                                         </td>
                                         <td className="px-8 py-6"><span className="px-3 py-1 bg-white/5 border border-white/10 rounded-sm font-black text-slate-400 uppercase tracking-tighter group-hover:text-white transition-colors">High_Conviction</span></td>
                                         <td className="px-8 py-6 text-right text-white font-black text-lg font-display tracking-tight group-hover:text-glow-white">{formatDisplayedShares(h.shares)}</td>
-                                    </tr>
-                                )) : (
-                                    <tr><td colSpan={4} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_POSITIONS_DETECTED</td></tr>
-                                )}
+                                    </tr>)) : (
+                                    <tr><td colSpan={4} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_POSITIONS_DETECTED</td></tr>)}
                             </tbody>
                         </table>
-                    </div>
-                )}
-                {activeTab === 'IDENTITIES' && (
-                    <div className="animate-in fade-in duration-700">
-                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-10 flex items-center gap-4"><Fingerprint size={16}/> Neural Identities Engaged</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (
-                                <Link key={i} to={`/markets/${peer.term_id}`} className="p-6 bg-[#05080f] border-2 border-slate-900 hover:border-intuition-primary transition-all clip-path-slant group relative overflow-hidden hover:shadow-glow-blue">
-                                    <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                    <div className="flex items-center justify-between gap-6 relative z-10">
-                                        <div className="flex items-center gap-5">
-                                            <div className="w-14 h-14 bg-black border-2 border-slate-800 clip-path-slant overflow-hidden group-hover:border-intuition-primary transition-all shadow-xl group-hover:shadow-glow-blue">
-                                                {peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <div className="text-sm font-black text-white group-hover:text-intuition-primary group-hover:text-glow-blue transition-colors uppercase truncate max-w-[140px] font-display tracking-tight leading-none mb-1.5">{peer.label}</div>
-                                                <div className="text-[8px] text-slate-600 uppercase font-black tracking-widest">{peer.predicate || 'REPUTATION_LINK'}</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col items-end">
-                                            <div className="text-[10px] font-black text-intuition-success animate-pulse text-glow-success">LIVE</div>
-                                            <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest mt-1">L3_SYNC</span>
-                                        </div>
-                                    </div>
-                                </Link>
-                            )) : (
-                                <div className="col-span-full py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_IDENTITIES_SYNCED</div>
-                            )}
-                        </div>
-                    </div>
-                )}
-                {activeTab === 'CLAIMS' && (
-                    <div className="animate-in fade-in duration-700">
-                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-10 flex items-center gap-4"><MessageSquare size={16}/> Semantic Claim Ledger</h4>
-                        <div className="space-y-4">
-                            {triples.length > 0 ? triples.map((t, i) => (
-                                <div key={i} className="p-6 bg-[#05080f] border-2 border-slate-900 hover:border-intuition-primary transition-all clip-path-slant flex flex-col md:flex-row items-center justify-between gap-6 group hover:shadow-glow-blue">
-                                    <div className="flex items-center gap-6 flex-1 min-w-0">
-                                        <div className="flex items-center flex-col">
-                                            <div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-intuition-primary/40 transition-colors">
-                                                {t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}
-                                            </div>
-                                            <span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.subject?.label}</span>
-                                        </div>
-                                        <ArrowUpRight size={14} className="text-slate-700 group-hover:text-intuition-primary transition-colors animate-pulse" />
-                                        <div className="px-4 py-1.5 bg-intuition-primary/5 border border-intuition-primary/20 text-intuition-primary font-black text-[9px] uppercase tracking-widest clip-path-slant text-glow-blue group-hover:bg-intuition-primary/10">
-                                            {t.predicate?.label}
-                                        </div>
-                                        <ArrowUpRight size={14} className="text-slate-700 group-hover:text-intuition-primary transition-colors animate-pulse" />
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-intuition-primary/40 transition-colors">
-                                                {t.object?.image ? <img src={t.object.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}
-                                            </div>
-                                            <span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.object?.label}</span>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-[8px] text-slate-600 uppercase font-black mb-1">Packet_Origin</div>
-                                        <div className="text-[10px] text-white font-mono group-hover:text-glow-white transition-all">{t.transaction_hash?.slice(0, 14)}...</div>
-                                    </div>
-                                </div>
-                            )) : (
-                                <div className="py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_CLAIMS_RECORDED</div>
-                            )}
-                        </div>
-                    </div>
-                )}
-                {activeTab === 'LISTS' && (
-                    <div className="animate-in fade-in duration-700">
-                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-12 flex items-center gap-4"><ListIcon size={16}/> Semantic Inclusion Vectors</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
-                            {lists.length > 0 ? lists.map((list, i) => (
-                                <Link key={i} to={`/markets/${list.id}`} 
-                                    className="group relative flex flex-col p-12 bg-black border-2 border-slate-900 hover:border-intuition-primary transition-all shadow-2xl overflow-hidden min-h-[380px] text-center"
-                                    style={{ 
-                                        clipPath: 'polygon(50% 0%, 100% 15%, 100% 85%, 50% 100%, 0% 85%, 0% 15%)' 
-                                    }}
-                                    onClick={playClick}
-                                    onMouseEnter={playHover}
-                                >
-                                    <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.1)_1px,transparent_1px)] bg-[size:15px_15px] opacity-0 group-hover:opacity-100 transition-opacity duration-1000 pointer-events-none"></div>
-                                    <div className="absolute inset-0 bg-gradient-to-tr from-intuition-primary/10 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-                                    
-                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] bg-gradient-to-r from-transparent via-white/[0.1] to-transparent -rotate-45 -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-[1400ms] ease-in-out pointer-events-none"></div>
-
-                                    <div className="flex flex-col items-center justify-center flex-1 relative z-10 mb-10">
-                                        <div className="relative mb-10 group-hover:scale-110 transition-transform duration-700">
-                                            <div className="absolute inset-0 bg-intuition-primary blur-3xl opacity-0 group-hover:opacity-40 transition-all duration-700 rounded-full scale-150"></div>
-                                            
-                                            <div className="absolute -inset-6 border-2 border-dashed border-intuition-primary/30 rounded-full animate-spin-slow opacity-0 group-hover:opacity-100 group-hover:animate-spin-fast transition-all"></div>
-
-                                            <div className="w-28 h-28 bg-black border-2 border-slate-800 flex items-center justify-center overflow-hidden transition-all group-hover:border-intuition-primary shadow-xl group-hover:shadow-glow-blue relative"
-                                                 style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}>
-                                                {list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={36} className="text-slate-700" />}
-                                                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-intuition-primary/30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                            </div>
-                                        </div>
-                                        <div className="relative z-10">
-                                            <div className="text-[10px] font-black font-mono text-slate-600 uppercase tracking-[0.5em] mb-4 group-hover:text-intuition-primary transition-colors flex items-center justify-center gap-3">
-                                                <div className="w-1 h-1 bg-current rounded-full animate-ping"></div>
-                                                Sub_Sector_Vector
-                                            </div>
-                                            <div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tight leading-none mb-4 drop-shadow-md">{list.label}</div>
-                                            <div className="text-[9px] text-slate-600 uppercase font-black tracking-[0.4em] mb-4 group-hover:text-white transition-colors">ACTIVE_NODES: {list.totalItems || 'SYNCING'}</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="absolute bottom-6 right-8 text-slate-800 group-hover:text-intuition-primary/60 group-hover:translate-x-1 transition-all group-hover:drop-shadow-[0_0_10px_#00f3ff]">
-                                        <ArrowRight size={28} />
-                                    </div>
-
-                                    <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-intuition-primary to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-1000 origin-center opacity-50 shadow-[0_0_20px_#00f3ff]"></div>
-                                </Link>
-                            )) : (
-                                <div className="col-span-full py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_VECTORS_DETECTED</div>
-                            )}
-                        </div>
-                    </div>
-                )}
-                {activeTab === 'ACTIVITY' && (
-                    <div className="animate-in fade-in duration-700 overflow-hidden ares-frame bg-[#05080f]">
-                        <table className="w-full text-left font-mono text-[10px]">
-                            <thead className="bg-black/40 border-b border-slate-900 text-slate-600 font-black uppercase tracking-[0.2em]">
-                                <tr>
-                                    <th className="px-8 py-4">TRANSACTION_HASH</th>
-                                    <th className="px-8 py-4">ACTION</th>
-                                    <th className="px-8 py-4 text-right">UNITS</th>
-                                    <th className="px-8 py-4 text-right">TIMESTAMP</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {activityLog.length > 0 ? activityLog.map((tx, i) => (
-                                    <tr key={i} className="hover:bg-white/5 transition-all group">
-                                        <td className="px-8 py-5 font-mono text-intuition-primary group-hover:text-white group-hover:text-glow-white transition-colors uppercase tracking-tighter">
-                                            {tx.id.slice(0, 24)}...
-                                        </td>
-                                        <td className="px-8 py-5">
-                                            <span className={`px-2 py-0.5 rounded-sm font-black ${tx.type === 'DEPOSIT' ? 'text-intuition-success bg-intuition-success/10 border border-intuition-success/20 text-glow-success' : 'text-intuition-danger bg-intuition-danger/10 border border-intuition-danger/20 text-glow-red'}`}>
-                                                {tx.type}
-                                            </span>
-                                        </td>
-                                        <td className="px-8 py-5 text-right font-black text-white group-hover:text-glow-white transition-all">
-                                            {formatDisplayedShares(tx.shares)}
-                                        </td>
-                                        <td className="px-8 py-5 text-right text-slate-500 font-black group-hover:text-slate-300 transition-colors">
-                                            {new Date(tx.timestamp).toLocaleTimeString()}
-                                        </td>
-                                    </tr>
-                                )) : (
-                                    <tr><td colSpan={4} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_ACTIVITY_LOGGED</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-                {activeTab === 'CONNECTIONS' && (
-                    <div className="animate-in fade-in duration-700">
-                        <div className="flex items-center gap-6 mb-12 bg-white/5 p-8 border border-white/5 clip-path-slant group hover:border-intuition-primary/20 transition-all">
-                            <div className="w-16 h-16 rounded-none clip-path-slant border-2 border-intuition-primary flex items-center justify-center text-intuition-primary bg-black shadow-[0_0_20px_rgba(0,243,255,0.4)] group-hover:shadow-glow-blue transition-all">
-                                <Activity size={32} className="animate-pulse" />
-                            </div>
-                            <div>
-                                <h4 className="text-xl font-black font-display text-white uppercase tracking-widest font-black leading-none mb-2 text-glow-white">NEURAL_TOPOLOGY</h4>
-                                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black group-hover:text-slate-300 transition-colors">Mapping semantic adjacency and synapse neighbors.</p>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (
-                                <Link key={i} to={`/markets/${peer.term_id}`} className="group p-6 bg-black border border-slate-900 hover:border-intuition-primary transition-all clip-path-slant flex items-center gap-6 relative overflow-hidden hover:shadow-glow-blue">
-                                    <div className="absolute inset-0 bg-gradient-to-tr from-intuition-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                    <div className="w-12 h-12 bg-slate-950 border border-slate-800 flex items-center justify-center clip-path-slant shrink-0 group-hover:border-intuition-primary transition-all group-hover:shadow-glow-blue">
-                                        {peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={20} className="text-slate-700" />}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="text-sm font-black text-white group-hover:text-intuition-primary group-hover:text-glow-blue transition-colors truncate uppercase leading-none mb-1.5">{peer.label}</div>
-                                        <div className="text-[7px] text-slate-600 font-mono tracking-widest uppercase">Neighbor_Node</div>
-                                    </div>
-                                </Link>
-                            )) : (
-                                <div className="col-span-full py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_NETWORK_ADJACENCY</div>
-                            )}
-                        </div>
-                    </div>
-                )}
+                    </div>)}
             </div>
         </div>
     </div>

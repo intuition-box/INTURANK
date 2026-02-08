@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -12,13 +13,12 @@ import ShareCard from '../components/ShareCard';
 const calculateTrustScore = (assetsWei: string, sharesWei: string) => {
   try {
     const assets = parseFloat(formatEther(BigInt(assetsWei || '0')));
-    const shares = parseFloat(formatEther(BigInt(sharesWei || '0')));
-    if (!shares || shares === 0) return 50;
-    const price = assets / shares;
-    const strength = Math.min(99, Math.max(1, Math.log10(price * 10 + 1) * 50));
-    return isNaN(strength) ? 50 : strength;
+    if (assets <= 0) return 15.0; 
+    // Consistent balanced scale for reputation distribution
+    const score = 15 + (Math.log10(assets + 1) / 5.8) * 85;
+    return Math.min(99.0, Math.max(1.0, score));
   } catch {
-    return 50;
+    return 50.0;
   }
 };
 
@@ -174,25 +174,23 @@ const MarketDetail: React.FC = () => {
     }
     try {
       if (tradeMode === 'Buy') {
-        // use destructured hash and shares from the updated web3 service
         const { hash, shares } = await depositToVault(inputAmount, id, wallet);
         saveLocalTransaction({
           id: hash,
           type: 'DEPOSIT',
           assets: parseEther(inputAmount).toString(),
-          shares: shares.toString(), // Save exact simulated shares
+          shares: shares.toString(),
           timestamp: Date.now(),
           vaultId: id,
           assetLabel: agent?.label,
         }, wallet);
         toast.success('ACQUIRED POSITION SUCCESSFULLY');
       } else {
-        // use destructured hash and assets from the updated web3 service
         const { hash, assets } = await redeemFromVault(inputAmount, id, wallet);
         saveLocalTransaction({
           id: hash,
           type: 'REDEEM',
-          assets: assets.toString(), // Save exact simulated assets received
+          assets: assets.toString(),
           shares: parseEther(inputAmount).toString(),
           timestamp: Date.now(),
           vaultId: id,

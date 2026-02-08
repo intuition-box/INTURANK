@@ -1,4 +1,3 @@
-
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256 } from 'viem';
 import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR } from '../constants';
 import { Transaction } from '../types';
@@ -156,12 +155,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       } as any);
 
       const hash = await walletClient.writeContract(request);
-      
-      // Calculate estimated shares for local PnL before indexer catch-up
-      // Heuristic: Current slope + assets -> shares approx. 
-      // Portal ratio typically ~1 TRUST = 0.066 portal units (varies by curve position)
       const estShares = parseEther((parseFloat(amount) / 15).toString());
-      
       return { hash, shares: estShares };
   } catch (error: any) {
       console.error("DEPOSIT_ERROR:", error);
@@ -200,12 +194,54 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
   }
 };
 
+/**
+ * --- PROXY APPROVAL LOGIC ---
+ * Ensures the FeeProxy can interact with MultiVault on behalf of the user.
+ */
+
+export const checkProxyApproval = async (walletAddress: string): Promise<boolean> => {
+    try {
+        const approved = await publicClient.readContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'isApproved',
+            args: [getAddress(walletAddress), getAddress(FEE_PROXY_ADDRESS), 1] // Type 1 is for Proxy
+        } as any);
+        return Boolean(approved);
+    } catch (e) {
+        console.warn("APPROVAL_CHECK_FAIL", e);
+        return false;
+    }
+};
+
+export const grantProxyApproval = async (walletAddress: string): Promise<void> => {
+    const checksumAccount = getAddress(walletAddress);
+    const provider = getProvider();
+    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumAccount });
+    
+    try {
+        const { request } = await publicClient.simulateContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'approve',
+            account: checksumAccount,
+            args: [getAddress(FEE_PROXY_ADDRESS), 1],
+        } as any);
+
+        const hash = await walletClient.writeContract(request);
+        await publicClient.waitForTransactionReceipt({ hash });
+        toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
+    } catch (e: any) {
+        console.error("APPROVAL_GRANT_FAIL", e);
+        throw e;
+    }
+};
+
 const LOCAL_TX_KEY = 'inturank_ledger_v3';
 export const saveLocalTransaction = (tx: Transaction, account: string) => {
   const key = `${LOCAL_TX_KEY}_${account.toLowerCase()}`;
   const current: Transaction[] = JSON.parse(localStorage.getItem(key) || '[]');
   localStorage.setItem(key, JSON.stringify([tx, ...current].slice(0, 50)));
-  // Dispatch event to trigger portfolio/dashboard refresh immediately
   window.dispatchEvent(new Event('local-tx-updated'));
 };
 
@@ -238,9 +274,14 @@ export const toggleWatchlist = (id: string, account: string): boolean => {
 };
 
 export const switchNetworkManual = async () => switchNetwork();
-export const parseProtocolError = (error: any) => error?.message || "TRANSACTION_FAILED";
-export const checkProxyApproval = async (wallet: string) => true;
-export const grantProxyApproval = async (wallet: string) => {};
+export const parseProtocolError = (error: any) => {
+    const msg = error?.message || error?.toString() || "";
+    if (msg.includes("0xD76F6FF8")) return "PROTOCOL_APPROVAL_REQUIRED: Please 'Enable Protocol' first.";
+    if (msg.includes("insufficient funds")) return "INSUFFICIENT_TRUST_BALANCE";
+    if (msg.includes("User rejected")) return "USER_REJECTED_HANDSHAKE";
+    return msg.slice(0, 80) + "...";
+};
+
 export const publishOpinion = async (text: string, agentId: string, side: string, wallet: string): Promise<string | undefined> => {
     try {
         return keccak256(stringToHex(`${text}-${agentId}-${side}-${Date.now()}`));
@@ -288,10 +329,6 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
     }
 };
 
-/**
- * Calculates the protocol cost for creating an atom.
- */
-// FIX: Added getAtomCreationCost to support CreateModal functionality
 export const getAtomCreationCost = async (metadata: any, depositAmount: string) => {
     const dataHex = stringToHex(JSON.stringify(metadata));
     const depositBigInt = parseEther(depositAmount);
@@ -305,10 +342,6 @@ export const getAtomCreationCost = async (metadata: any, depositAmount: string) 
     } as any) as bigint;
 };
 
-/**
- * Estimates gas for atom creation.
- */
-// FIX: Added estimateAtomGas to support CreateModal functionality
 export const estimateAtomGas = async (account: string, metadata: any, depositAmount: string) => {
     const checksumAccount = getAddress(account);
     const dataHex = stringToHex(JSON.stringify(metadata));

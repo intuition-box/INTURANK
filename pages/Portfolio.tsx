@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatEther } from 'viem';
@@ -7,7 +8,7 @@ import { Wallet, Activity, RefreshCw, Zap, Shield, User, Loader2, TrendingUp, Co
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
-import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue } from '../services/analytics';
+import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue, safeParseUnits } from '../services/analytics';
 import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID } from '../constants';
 import { Link } from 'react-router-dom';
 
@@ -53,7 +54,7 @@ const Portfolio: React.FC = () => {
       const bal = await getWalletBalance(address);
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
 
-      // 1. DISCOVERY & DEEP DEDUPLICATION
+      // 1. NETWORK DISCOVERY & HASH DEDUPLICATION
       const chainHistory = await getUserHistory(address).catch(() => []);
       const localHistory = getLocalTransactions(address);
       const graphPositionsRaw = await getUserPositions(address).catch(() => []);
@@ -69,12 +70,13 @@ const Portfolio: React.FC = () => {
 
       const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
       const filteredLocal = localHistory.filter(tx => !chainHashes.has(tx.id.split('-')[0].toLowerCase()));
+      
       const mergedHistory = [...filteredLocal, ...chainHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       
       setHistory(mergedHistory);
       setSentimentBias(calculateSentimentBias(mergedHistory));
 
-      // 2. RECONCILE POSITIONS
+      // 2. POSITION RECONCILIATION
       let aggregatedValue = 0;
       let aggregatedPnL = 0;
 
@@ -134,17 +136,15 @@ const Portfolio: React.FC = () => {
       setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
       setNetPnL(aggregatedPnL);
 
-      // 3. --- TEMPORAL CHART CONSTRUCTION ---
+      // 3. TEMPORAL EQUITY CHART CONSTRUCTION
       let currentEquity = 0;
-      // We sort ascending for the line flow
-      const historyPoints = [...mergedHistory].sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0)).map(tx => {
-          let val = 0;
-          try { 
-              const raw = tx.assets ? tx.assets.toString() : '0';
-              val = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw))); 
-          } catch(e) {}
+      const historyPoints = [...mergedHistory]
+        .sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0))
+        .map(tx => {
+          const val = safeParseUnits(tx.assets);
           if (tx.type === 'DEPOSIT') currentEquity += val;
           else currentEquity -= val;
+          
           return { 
             timestamp: tx.timestamp, 
             val: currentEquity,
@@ -152,7 +152,6 @@ const Portfolio: React.FC = () => {
           };
       });
       
-      // Ensure we have at least one point at current time to show a flat line to present
       if (historyPoints.length > 0) {
         historyPoints.push({ 
           timestamp: Date.now(), 
@@ -313,11 +312,11 @@ const Portfolio: React.FC = () => {
                     {history.map((tx, idx) => (
                         <div key={tx.id + idx} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 clip-path-slant group hover:border-white/10 transition-all">
                             <div className="flex items-center gap-5">
-                                <div className={`w-1 h-8 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success' : 'bg-intuition-danger'}`}></div>
+                                <div className={`w-1 h-8 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'}`}></div>
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <span className={`text-[10px] font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
-                                        <span className="text-white font-black text-xs uppercase">{tx.assetLabel || 'NODE'}</span>
+                                        <span className="text-white font-black text-xs uppercase">{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
                                     </div>
                                     <div className="text-[8px] text-slate-600 font-mono">TX: {tx.id.slice(0, 24)}...</div>
                                 </div>
@@ -325,21 +324,24 @@ const Portfolio: React.FC = () => {
                             <div className="text-right">
                                 <div className="text-white font-black text-sm">{(() => {
                                     try {
-                                        const raw = tx.assets ? tx.assets.toString() : '0';
-                                        const val = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw)));
-                                        return val.toFixed(4);
+                                        return safeParseUnits(tx.assets).toFixed(4);
                                     } catch { return '0.0000'; }
                                 })()} {CURRENCY_SYMBOL}</div>
                                 <div className="text-[8px] text-slate-600 font-mono uppercase">{new Date(tx.timestamp).toLocaleString()}</div>
                             </div>
                         </div>
                     ))}
+                    {history.length === 0 && (
+                        <div className="text-center py-20 text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                            AWAITING_INGRESS_SIGNALS...
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
 
         <div className="lg:col-span-4 space-y-10">
-            {/* --- IMPROVED EQUITY CHART MATCHING INSPO --- */}
+            {/* EQUITY CHART */}
             <div className="bg-[#02040a] border border-slate-900 p-10 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all h-[520px] flex flex-col">
                 <div className="flex justify-between items-start mb-12 relative z-10">
                     <div className="flex items-center gap-3">

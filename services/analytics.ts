@@ -1,9 +1,10 @@
+
 import { formatEther } from 'viem';
 import { Account, Transaction } from '../types';
 import { DISPLAY_DIVISOR } from '../constants';
 
 /**
- * --- INTURANK ANALYTICS ENGINE v2.0.0 ---
+ * --- INTURANK ANALYTICS ENGINE v2.1.4 ---
  * MISSION: Maximum stability and unit-parity across the Intuition Network ecosystem.
  */
 
@@ -11,16 +12,14 @@ import { DISPLAY_DIVISOR } from '../constants';
  * Robustly parses strings that might be Wei (BigInt) or Ether (Float) 
  * into a usable number for mathematical operations.
  */
-const safeParseUnits = (val: string | undefined): number => {
+export const safeParseUnits = (val: string | undefined): number => {
     if (!val || val === '0') return 0;
     try {
         // If it already has a decimal, it's an Ether float string
         if (val.includes('.')) return parseFloat(val);
         // If it has no decimal and is long, it's likely a Wei BigInt string
-        // We use BigInt and formatEther for precision
         return parseFloat(formatEther(BigInt(val)));
     } catch (e) {
-        // Fallback for weirdly formatted strings
         const p = parseFloat(val);
         return isNaN(p) ? 0 : p;
     }
@@ -60,18 +59,26 @@ export const calculateAgentPrice = (assetsWei: string, sharesWei: string, curren
     }
 };
 
+/**
+ * Recalibrated for balanced reputation distribution.
+ */
 export const calculateTrustScore = (assetsWei: string, sharesWei: string, currentSharePriceWei?: string): number => {
     try {
         const assets = safeParseUnits(assetsWei);
-        if (assets <= 0) return 47.0; 
-        const score = 47 + (Math.pow(assets / 375000, 0.4) * 53);
-        return Math.min(100.0, Math.max(0.1, score));
+        if (assets <= 0) return 15.0; 
+        const score = 15 + (Math.log10(assets + 1) / 5.8) * 85;
+        return Math.min(99.0, Math.max(1.0, score));
     } catch {
         return 50.0;
     }
 };
 
+/**
+ * FIXED: Market Cap returns the pre-aggregated value if it's already a float string.
+ * This supports the multi-curve summation (Shares_L * Price_L + Shares_E * Price_E).
+ */
 export const calculateMarketCap = (assetsWei: string, sharesWei: string, priceWei?: string): number => {
+    if (assetsWei.includes('.')) return parseFloat(assetsWei);
     try {
         const price = calculateAgentPrice(assetsWei, sharesWei, priceWei);
         const shares = safeParseUnits(sharesWei);
@@ -86,17 +93,14 @@ export type AgentCategory = 'FOUNDER' | 'CREATOR' | 'MEME' | 'PROTOCOL' | 'AI' |
 export const categorizeAgent = (agent: Account): AgentCategory => {
     const label = (agent.label || '').toUpperCase();
     const type = (agent.type || '').toUpperCase();
-    
     if (type === 'AI' || label.includes('BOT') || label.includes('AGENT') || label.includes('GPT') || label.includes('LLM')) return 'AI';
     if (type === 'PERSON' || label.endsWith('.ETH') || label.includes('DEV') || label.includes('BUILDER') || label.includes('FOUNDER')) return 'PERSON';
     if (label.includes('SWAP') || label.includes('DEX') || label.includes('DAO') || label.includes('FINANCE') || label.includes('CHAIN') || label.includes('PROTOCOL') || label.includes('L2') || label.includes('BRIDGE')) return 'PROTOCOL';
     if (label.includes('PEPE') || label.includes('DOGE') || label.includes('INU') || label.includes('MOON') || label.includes('CAT') || label.includes('WIF') || label.includes('ELON')) return 'MEME';
     if (label.includes('ART') || label.includes('MUSIC') || label.includes('BLOG') || label.includes('PODCAST') || label.includes('MEDIA') || label.includes('NEWS')) return 'CREATOR';
     if (label.includes('CAPITAL') || label.includes('VENTURE') || label.includes('FUND') || label.includes('VC')) return 'INVESTOR';
-    
     if (type === 'ORGANIZATION') return 'PROTOCOL';
     if (type === 'ACCOUNT') return 'PERSON';
-    
     return 'UNKNOWN';
 };
 
@@ -111,20 +115,12 @@ export const formatDisplayedShares = (val: string | bigint | number): string => 
     return safeParseUnits(val.toString()).toFixed(6);
 };
 
-/**
- * Calculates Profit/Loss for a position.
- * Cross-device stability is achieved by ensuring the `history` argument
- * includes transactions from both local storage and the indexer.
- */
 export const calculatePositionPnL = (sharesHeld: number, currentValue: number, unifiedHistory: Transaction[], vaultId: string) => {
     if (sharesHeld <= 0) return { profit: 0, pnlPercent: 0, avgEntryPrice: 0, costBasis: 0 };
-    
     const normalizedId = vaultId.toLowerCase();
     const filteredHistory = unifiedHistory.filter(tx => tx.vaultId?.toLowerCase() === normalizedId);
-    
     let totalSpent = 0;
     let totalSharesBought = 0;
-    
     filteredHistory.forEach(tx => {
         if (tx.type === 'DEPOSIT') {
             const assetVal = safeParseUnits(tx.assets);
@@ -135,18 +131,11 @@ export const calculatePositionPnL = (sharesHeld: number, currentValue: number, u
             }
         }
     });
-    
-    // Fallback: If no purchase history is found (common on new devices before indexer syncs),
-    // we assume current price as entry to avoid showing massive fake gains or losses.
-    if (totalSharesBought === 0) {
-        return { profit: 0, pnlPercent: 0, avgEntryPrice: currentValue / sharesHeld, costBasis: currentValue };
-    }
-    
+    if (totalSharesBought === 0) return { profit: 0, pnlPercent: 0, avgEntryPrice: currentValue / sharesHeld, costBasis: currentValue };
     const avgEntryPrice = totalSpent / totalSharesBought;
     const costBasis = sharesHeld * avgEntryPrice;
     const profit = currentValue - costBasis;
     const pnlPercent = costBasis > 0 ? (profit / costBasis) * 100 : 0;
-    
     return { profit, pnlPercent, avgEntryPrice, costBasis };
 };
 

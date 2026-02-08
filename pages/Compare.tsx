@@ -241,7 +241,8 @@ const ComparisonRow: React.FC<{
             
             <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0">
                 <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-intuition-primary border-intuition-primary/40' : rightWins ? 'text-intuition-secondary border-intuition-secondary/40' : 'text-slate-700'}`}>
-                    {React.cloneElement(icon as React.ReactElement, { size: 16 })}
+                    {/* Fixed: Cast icon to ReactElement with expected props for cloneElement compatibility */}
+                    {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 16 })}
                 </div>
                 <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] text-center whitespace-nowrap">{label}</div>
             </div>
