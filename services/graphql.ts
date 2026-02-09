@@ -1,4 +1,3 @@
-
 import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID } from '../constants';
 import { Transaction, Claim } from '../types';
 import { hexToString, formatEther, parseEther } from 'viem';
@@ -255,7 +254,6 @@ export const getAgentById = async (termId: string) => {
 
 export const getUserHistory = async (userAddress: string): Promise<Transaction[]> => {
   const ids = [userAddress, userAddress.toLowerCase()];
-  // High-integrity "events" schema as recommended by Intuition team
   const q = `query ($ids: [String!]!) {
       events(where: { account_id: { _in: $ids } }, order_by: { created_at: desc }, limit: 100) {
         id
@@ -287,7 +285,6 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
         if (atom) label = resolveMetadata(atom).label;
         else if (triple) label = `${resolveMetadata(triple.subject).label} ${triple.predicate?.label || 'LINK'} ${resolveMetadata(triple.object).label}`;
 
-        // name is usually 'Deposit' or 'Redeem'
         const type = ev.name?.toUpperCase().includes('REDEEM') ? 'REDEEM' : 'DEPOSIT';
 
         return { 
@@ -445,7 +442,6 @@ export const getAtomInclusionLists = async (atomId: string) => {
             const meta = resolveMetadata(s);
             const totalItems = s.subject_triples_aggregate?.aggregate?.count || 0;
             
-            // Only count as a "List" if it has at least 2 items or a human label
             if (!uniqueMap.has(normalize(s.term_id)) && (totalItems > 1 || !meta.label.startsWith('0x'))) {
                 const aggregatedVault = aggregateVaultData(s.vaults || [])[0];
                 uniqueMap.set(normalize(s.term_id), { 
@@ -454,7 +450,7 @@ export const getAtomInclusionLists = async (atomId: string) => {
                     image: s.image,
                     totalItems: totalItems, 
                     value: aggregatedVault ? parseFloat(formatEther(aggregatedVault.total_assets)) : 0,
-                    items: [] // Placeholder for preview
+                    items: [] 
                 });
             }
         });
@@ -537,7 +533,6 @@ export const getGlobalClaims = async (limit = 40, offset = 0) => {
 
 export const getMarketActivity = async (termId: string): Promise<Transaction[]> => {
   const ids = prepareQueryIds(termId);
-  // Using events for market activity is also more reliable
   const q = `query ($ids: [String!]!) {
       events(
         where: { vault: { term_id: { _in: $ids } } }, 
@@ -564,50 +559,69 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
 };
 
 export const getTopClaims = async (limit = 40, offset = 0) => {
-  const query = `query GetTopClaims($limit: Int!, $offset: Int!) { 
-    triples(limit: $limit, offset: $offset, order_by: { term: { vaults_aggregate: { sum: { total_assets: desc } } } }) { 
-      term_id 
-      subject { label term_id image data type value { thing { description } person { description } organization { description } } } 
-      predicate { label term_id } 
-      object { label term_id image data type value { thing { description } person { description } organization { description } } } 
-      term { 
-        vaults { total_assets total_shares position_count curve_id } 
-      } 
-      counter_term { 
-        vaults { total_assets total_shares position_count curve_id } 
+  /**
+   * REFINED STRATEGY:
+   * To get "Top" claims, we query the high-TVL vaults and filter for those 
+   * associated with semantic triples. This is more reliable than complex triple joins.
+   */
+  const query = `query GetTopTripleVaults($limit: Int!, $offset: Int!) {
+    vaults(
+      where: { term: { triple: { term_id: { _is_null: false } } } },
+      order_by: { total_assets: desc },
+      limit: $limit,
+      offset: $offset
+    ) {
+      total_assets
+      position_count
+      term_id
+      term {
+        triple {
+          term_id
+          subject { label term_id image data type }
+          predicate { label term_id }
+          object { label term_id image data type }
+          counter_term {
+            vaults { total_assets position_count }
+          }
+        }
       }
-    } 
+    }
   }`;
   
   try {
     const data = await fetchGraphQL(query, { limit, offset });
-    const triples = data?.triples ?? [];
+    const vaults = data?.vaults ?? [];
     
-    const items = triples.map((t: any) => {
+    const items = vaults.map((v: any) => {
+        const t = v.term?.triple;
+        if (!t) return null;
+
         // AGGREGATE PRO SIDE (Support)
-        const supportVaults = t.term?.vaults || [];
-        const supportAssets = supportVaults.reduce((acc: number, v: any) => acc + parseFloat(formatEther(BigInt(v.total_assets || '0'))), 0);
-        const supportHolders = supportVaults.reduce((acc: number, v: any) => acc + Number(v.position_count || 0), 0);
+        const supportAssets = parseFloat(formatEther(BigInt(v.total_assets || '0')));
+        const supportHolders = Number(v.position_count || 0);
 
         // AGGREGATE COUNTER SIDE (Oppose)
         const counterVaults = t.counter_term?.vaults || [];
-        const opposeAssets = counterVaults.reduce((acc: number, v: any) => acc + parseFloat(formatEther(BigInt(v.total_assets || '0'))), 0);
-        const opposeHolders = counterVaults.reduce((acc: number, v: any) => acc + Number(v.position_count || 0), 0);
+        const opposeAssets = counterVaults.reduce((acc: number, cv: any) => acc + parseFloat(formatEther(BigInt(cv.total_assets || '0'))), 0);
+        const opposeHolders = counterVaults.reduce((acc: number, cv: any) => acc + Number(cv.position_count || 0), 0);
 
         return {
             id: t.term_id,
             subject: { label: resolveMetadata(t.subject).label, id: t.subject.term_id, image: t.subject.image },
-            predicate: t.predicate?.label || 'LINK',
+            predicate: (t.predicate?.label || 'LINK').toUpperCase(),
             object: { label: resolveMetadata(t.object).label, id: t.object.term_id, image: t.object.image },
             value: supportAssets,
             holders: supportHolders,
             opposeValue: opposeAssets,
             opposeHolders: opposeHolders
         };
-    });
+    }).filter(Boolean);
 
-    return { items, hasMore: triples.length === limit };
-  } catch (e) { return { items: [], hasMore: false }; }
+    return { items, hasMore: vaults.length === limit };
+  } catch (e) { 
+    console.error("GET_TOP_CLAIMS_ERROR:", e);
+    return { items: [], hasMore: false }; 
+  }
 };
 
 export const getLists = async (limit = 40, offset = 0) => {

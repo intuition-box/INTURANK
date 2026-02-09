@@ -1,11 +1,10 @@
-
 import { formatEther } from 'viem';
 import { Account, Transaction } from '../types';
 import { DISPLAY_DIVISOR } from '../constants';
 
 /**
- * --- INTURANK ANALYTICS ENGINE v2.1.8 ---
- * MISSION: Precision parity across the Intuition Network ecosystem.
+ * --- INTURANK ANALYTICS ENGINE v2.1.9 ---
+ * MISSION: Precision parity and spread-aware UX.
  */
 
 /**
@@ -106,9 +105,10 @@ export const formatDisplayedShares = (val: string | bigint | number): string => 
 };
 
 /**
- * Calculates accurate PnL by strictly matching historical spent assets to acquired shares.
+ * Calculates accurate PnL. 
+ * Unrealized PnL should use Spot Price (valuation) to avoid spread red ink on new positions.
  */
-export const calculatePositionPnL = (sharesHeld: number, redeemableValue: number, unifiedHistory: Transaction[], vaultId: string) => {
+export const calculatePositionPnL = (sharesHeld: number, valuationPrice: number, unifiedHistory: Transaction[], vaultId: string) => {
     const normalizedId = vaultId.toLowerCase();
     const filteredHistory = unifiedHistory.filter(tx => tx.vaultId?.toLowerCase() === normalizedId);
     
@@ -130,14 +130,17 @@ export const calculatePositionPnL = (sharesHeld: number, redeemableValue: number
         return { 
             profit: 0, 
             pnlPercent: 0, 
-            avgEntryPrice: sharesHeld > 0 ? (redeemableValue / sharesHeld) : 0, 
-            costBasis: redeemableValue 
+            avgEntryPrice: valuationPrice, 
+            costBasis: sharesHeld * valuationPrice 
         };
     }
 
     const avgEntryPrice = totalSpent / totalSharesBought;
     const costBasisOfHeldShares = sharesHeld * avgEntryPrice;
-    const profit = redeemableValue - costBasisOfHeldShares;
+    
+    // Valuation is derived from valuationPrice (usually Spot Price for unrealized UX)
+    const currentValue = sharesHeld * valuationPrice;
+    const profit = currentValue - costBasisOfHeldShares;
     const pnlPercent = costBasisOfHeldShares > 0 ? (profit / costBasisOfHeldShares) * 100 : 0;
     
     return { profit, pnlPercent, avgEntryPrice, costBasis: costBasisOfHeldShares };
