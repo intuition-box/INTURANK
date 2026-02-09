@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Activity, RefreshCw, Search, Terminal, Database, ShieldAlert, SignalHigh, Loader2 } from 'lucide-react';
 import { getGlobalClaims } from '../services/graphql';
@@ -8,13 +9,19 @@ import { playClick, playHover } from '../services/audio';
 const ClaimFeed: React.FC = () => {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'TRUST' | 'DISTRUST'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 40;
+
   const intervalRef = useRef<any>(null);
   const searchTimeoutRef = useRef<any>(null);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   // Search Debouncing
   useEffect(() => {
@@ -25,40 +32,93 @@ const ClaimFeed: React.FC = () => {
     return () => clearTimeout(searchTimeoutRef.current);
   }, [searchTerm]);
 
-  const fetchClaims = useCallback(async (isBackground = false) => {
-    if (isSyncing) return;
-    if (!isBackground) setLoading(true);
-    else setIsSyncing(true);
+  const fetchClaims = useCallback(async (isBackground = false, reset = false) => {
+    if (isSyncing || (loadingMore && !reset)) return;
+    
+    if (reset) {
+        setLoading(true);
+        setOffset(0);
+        setHasMore(true);
+    } else if (!isBackground) {
+        setIsSyncing(true);
+    }
 
     try {
-      const data = await getGlobalClaims();
+      const currentOffset = reset ? 0 : offset;
+      const data = await getGlobalClaims(PAGE_SIZE, currentOffset);
+      
       setClaims(prev => {
-          const combined = [...data, ...prev];
+          // Fix: Access the 'items' property from the result of getGlobalClaims()
+          const combined = reset ? data.items : [...prev, ...data.items];
           const uniqueMap = new Map();
+          // Fix: Accessing 'forEach' on 'combined' array
           combined.forEach(item => uniqueMap.set(item.id, item));
           const uniqueArray = Array.from(uniqueMap.values()) as Claim[];
-          const sorted = uniqueArray.sort((a, b) => {
+          return uniqueArray.sort((a, b) => {
               const blockDiff = (b.block || 0) - (a.block || 0);
               if (blockDiff !== 0) return blockDiff;
               return (b.timestamp || 0) - (a.timestamp || 0);
-          }).slice(0, 80); // Capped list length for performance
-          
-          return sorted;
+          });
       });
+
+      // Fix: Access 'length' property from 'data.items'
+      if (data.items.length < PAGE_SIZE) setHasMore(false);
       setLastUpdated(new Date());
     } catch (e) {
       console.warn("[INTERNAL_LOG] FEED_SYNC_FAILURE:", e);
     } finally {
-      if (!isBackground) setLoading(false);
+      setLoading(false);
       setIsSyncing(false);
+      setLoadingMore(false);
     }
-  }, [isSyncing]);
+  }, [isSyncing, offset, loadingMore]);
+
+  const fetchMore = async () => {
+      if (loadingMore || !hasMore || loading) return;
+      setLoadingMore(true);
+      const nextOffset = offset + PAGE_SIZE;
+      try {
+          const data = await getGlobalClaims(PAGE_SIZE, nextOffset);
+          setClaims(prev => {
+              // Fix: Access 'items' property and spread into combined array
+              const combined = [...prev, ...data.items];
+              const uniqueMap = new Map();
+              combined.forEach(item => uniqueMap.set(item.id, item));
+              return Array.from(uniqueMap.values()) as Claim[];
+          });
+          // Fix: Access 'length' property from 'data.items'
+          if (data.items.length < PAGE_SIZE) setHasMore(false);
+          setOffset(nextOffset);
+      } catch (e) {
+          console.warn("[INTERNAL_LOG] FEED_LOAD_MORE_FAILURE:", e);
+      } finally {
+          setLoadingMore(false);
+      }
+  };
 
   useEffect(() => {
-    fetchClaims();
-    intervalRef.current = setInterval(() => fetchClaims(true), 25000); 
+    fetchClaims(false, true);
+    intervalRef.current = setInterval(() => fetchClaims(true, false), 25000); 
     return () => clearInterval(intervalRef.current);
-  }, [fetchClaims]);
+  }, []);
+
+  // Infinite Scroll Observer
+  useEffect(() => {
+      const observer = new IntersectionObserver(
+          entries => {
+              if (entries[0].isIntersecting && hasMore && !loading && !loadingMore && debouncedTerm.trim().length === 0) {
+                  fetchMore();
+              }
+          },
+          { threshold: 0.1 }
+      );
+
+      if (observerTarget.current) {
+          observer.observe(observerTarget.current);
+      }
+
+      return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, offset]);
 
   const filteredClaims = claims.filter(c => {
       const predicateLower = (c.predicate || '').toLowerCase();
@@ -107,7 +167,7 @@ const ClaimFeed: React.FC = () => {
                     </div>
                  </div>
                  <button 
-                    onClick={() => { playClick(); fetchClaims(); }}
+                    onClick={() => { playClick(); fetchClaims(false, true); }}
                     onMouseEnter={playHover}
                     className="p-1.5 bg-white/5 border border-white/10 text-slate-500 hover:text-intuition-primary hover:border-intuition-primary transition-all rounded-sm"
                  >
@@ -172,6 +232,19 @@ const ClaimFeed: React.FC = () => {
                             <ClaimCard claim={claim} />
                         </div>
                      ))}
+                 </div>
+
+                 {/* INFINITE SCROLL SENTINEL */}
+                 <div ref={observerTarget} className="h-24 flex items-center justify-center mt-6 w-full">
+                    {loadingMore && (
+                        <div className="flex flex-col items-center gap-4">
+                            <Loader2 size={24} className="text-intuition-primary animate-spin" />
+                            <span className="text-[7px] font-black font-mono text-intuition-primary tracking-[0.4em] uppercase">SYNCING_DEEP_BUFFER...</span>
+                        </div>
+                    )}
+                    {!hasMore && !loading && (
+                        <span className="text-[6px] font-black font-mono text-slate-800 uppercase tracking-[1em]">END_OF_SIGNAL_STREAM</span>
+                    )}
                  </div>
              </div>
          )}

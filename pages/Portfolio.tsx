@@ -1,15 +1,14 @@
-
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatEther } from 'viem';
-import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
+import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
 import { Wallet, Activity, RefreshCw, Zap, Shield, User, Loader2, TrendingUp, Coins, Lock, Radio, ChevronRight, AlertCircle, Clock, CheckCircle2, Binary, Terminal } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
 import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue, safeParseUnits } from '../services/analytics';
-import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID } from '../constants';
+import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID, DISTRUST_ATOM_ID } from '../constants';
 import { Link } from 'react-router-dom';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
@@ -40,7 +39,7 @@ const Portfolio: React.FC = () => {
   const [balance, setBalance] = useState('0.00');
   const [portfolioValue, setPortfolioValue] = useState('0.00');
   const [netPnL, setNetPnL] = useState(0);
-  const [sentimentBias, setSentimentBias] = useState({ trust: 64, distrust: 36 }); 
+  const [sentimentBias, setSentimentBias] = useState({ trust: 50, distrust: 50 }); 
   const [exposureData, setExposureData] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const isRefreshingRef = useRef(false);
@@ -51,65 +50,53 @@ const Portfolio: React.FC = () => {
     setLoading(true);
     
     try {
+      // Balance check
       const bal = await getWalletBalance(address);
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
 
-      // 1. NETWORK DISCOVERY & HASH DEDUPLICATION
+      // Fetch network records (Using the high-integrity "events" schema)
       const chainHistory = await getUserHistory(address).catch(() => []);
       const localHistory = getLocalTransactions(address);
-      const graphPositionsRaw = await getUserPositions(address).catch(() => []);
-
-      const uniqueGraphPositionsMap = new Map();
-      graphPositionsRaw.forEach((p: any) => {
-        const id = p.vault?.term?.atom?.term_id || p.vault?.term?.triple?.term_id;
-        if (id && !uniqueGraphPositionsMap.has(id.toLowerCase())) {
-          uniqueGraphPositionsMap.set(id.toLowerCase(), p);
-        }
-      });
-      const graphPositions = Array.from(uniqueGraphPositionsMap.values());
-
-      const chainHashes = new Set(chainHistory.map(tx => tx.id.split('-')[0].toLowerCase()));
-      const filteredLocal = localHistory.filter(tx => !chainHashes.has(tx.id.split('-')[0].toLowerCase()));
       
-      const mergedHistory = [...filteredLocal, ...chainHistory].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      const chainHashes = new Set(chainHistory.map(tx => tx.id.toLowerCase()));
+      const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
+      const mergedHistory = [...uniqueLocal, ...chainHistory].sort((a, b) => b.timestamp - a.timestamp);
       
       setHistory(mergedHistory);
       setSentimentBias(calculateSentimentBias(mergedHistory));
 
-      // 2. POSITION RECONCILIATION
+      // Reconcile holdings
+      const graphPositionsRaw = await getUserPositions(address).catch(() => []);
+      const uniqueVaultIds = Array.from(new Set(graphPositionsRaw.map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean))) as string[];
+      const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
+
       let aggregatedValue = 0;
       let aggregatedPnL = 0;
 
-      const livePositions = await Promise.all(graphPositions.map(async (p: any) => {
+      const livePositions = await Promise.all(uniqueVaultIds.map(async (id) => {
           try {
-              const atom = p.vault.term.atom;
-              const triple = p.vault.term.triple;
-              const id = atom?.term_id || triple?.term_id;
-              if (!id) return null;
-
-              const curveId = atom ? 1 : 2;
-              const sharesRaw = await getShareBalance(address, id, curveId);
+              // Direct chain lookup for balance truth
+              const sharesRaw = await getShareBalance(address, id, OFFSET_PROGRESSIVE_CURVE_ID);
               const sharesNum = parseFloat(sharesRaw);
               
-              if (sharesNum <= 0.000001) return null;
+              if (sharesNum <= 0.0001) return null;
 
-              const valueStr = await getQuoteRedeem(sharesRaw, id, address, curveId);
+              const valueStr = await getQuoteRedeem(sharesRaw, id, address, OFFSET_PROGRESSIVE_CURVE_ID);
               const value = parseFloat(valueStr);
 
-              if (value <= 0.000001) return null;
+              // Resolve label and metadata
+              let meta = metadata.find(m => m.id.toLowerCase() === id.toLowerCase());
+              let label = meta?.label || `Node_${id.slice(0, 8)}`;
+              let image = meta?.image;
+              let type = meta?.type || 'ATOM';
 
-              let label = `Node ${id.slice(0, 6)}`;
-              let image = null;
-
-              if (atom) {
-                  label = atom.label || label;
-                  image = atom.image;
-              } else if (triple) {
-                  const s = triple.subject?.label || '...';
-                  const pred = triple.predicate?.label || 'LINK';
-                  const o = triple.object?.label || '...';
-                  label = `${s} ${pred} ${o}`;
+              // Check for Distrust semantics
+              const graphPos = graphPositionsRaw.find((p: any) => p.vault?.term_id?.toLowerCase() === id.toLowerCase());
+              const triple = graphPos?.vault?.term?.triple;
+              if (triple && triple.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(2))) {
+                  label = `Opposing_${triple.subject?.label || triple.subject?.id.slice(0, 6)}`;
                   image = triple.subject?.image;
+                  type = 'CLAIM';
               }
 
               const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, mergedHistory, id);
@@ -122,7 +109,7 @@ const Portfolio: React.FC = () => {
                   shares: sharesNum,
                   value: value, 
                   pnl: pnlPercent,
-                  atom: { label, id, image }
+                  atom: { label, id, image, type }
               };
           } catch (e) {
               return null;
@@ -131,40 +118,38 @@ const Portfolio: React.FC = () => {
 
       const finalPositions = livePositions.filter(Boolean) as any[];
       setPositions(finalPositions);
-      setExposureData(calculateCategoryExposure(finalPositions));
+      
+      // Calculate exposure using categorized metadata
+      const categorized = calculateCategoryExposure(finalPositions);
+      setExposureData(categorized);
       
       setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
       setNetPnL(aggregatedPnL);
 
-      // 3. TEMPORAL EQUITY CHART CONSTRUCTION
-      let currentEquity = 0;
-      const historyPoints = [...mergedHistory]
-        .sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0))
-        .map(tx => {
-          const val = safeParseUnits(tx.assets);
-          if (tx.type === 'DEPOSIT') currentEquity += val;
-          else currentEquity -= val;
-          
-          return { 
-            timestamp: tx.timestamp, 
-            val: currentEquity,
-            dateLabel: new Date(tx.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-          };
-      });
+      // Generate temporal data from history
+      // To prevent negative axes and handle partial history, 
+      // we anchor the current point to actual current value and backtrack.
+      const historySorted = [...mergedHistory].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+      let runner = aggregatedValue;
+      const points = [];
       
-      if (historyPoints.length > 0) {
-        historyPoints.push({ 
-          timestamp: Date.now(), 
-          val: currentEquity, 
-          dateLabel: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) 
-        });
-      } else {
-        historyPoints.push({ timestamp: Date.now(), val: 0, dateLabel: 'NOW' });
+      // Current point
+      points.push({ timestamp: Date.now(), val: runner });
+
+      for (const tx of historySorted) {
+          // Double points for step visualization
+          points.push({ timestamp: tx.timestamp, val: runner });
+          const val = safeParseUnits(tx.assets);
+          if (tx.type === 'DEPOSIT') runner -= val;
+          else runner += val;
+          points.push({ timestamp: tx.timestamp, val: runner });
       }
-      setChartData(historyPoints);
+      
+      // Reverse back to chronological for chart
+      setChartData(points.reverse());
 
     } catch (e) {
-      console.error("NEURAL_SYNC_FAILURE", e);
+      console.error("NETWORK_SYNC_FAILURE", e);
     } finally {
       setLoading(false);
       isRefreshingRef.current = false;
@@ -250,6 +235,7 @@ const Portfolio: React.FC = () => {
                         <Zap size={20} className="text-intuition-primary animate-pulse" />
                         <h3 className="text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings</h3>
                     </div>
+                    {/* Fix: Use 'account' instead of undefined 'address' */}
                     <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors">
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>
@@ -295,7 +281,12 @@ const Portfolio: React.FC = () => {
                             )) : (
                                 <tr>
                                     <td colSpan={4} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
-                                        {loading ? 'SYNCHRONIZING_CHAIN_DATA...' : 'NULL_POSITIONS_DETECTED'}
+                                        {loading ? (
+                                            <div className="flex flex-col items-center gap-4">
+                                                <Loader2 size={24} className="animate-spin text-intuition-primary" />
+                                                SYNCHRONIZING_NETWORK_DATA...
+                                            </div>
+                                        ) : 'NULL_POSITIONS_DETECTED'}
                                     </td>
                                 </tr>
                             )}
@@ -341,7 +332,7 @@ const Portfolio: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-10">
-            {/* EQUITY CHART */}
+            {/* TACTICAL EQUITY CHART - MATCHES SCREENSHOT AESTHETICS */}
             <div className="bg-[#02040a] border border-slate-900 p-10 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all h-[520px] flex flex-col">
                 <div className="flex justify-between items-start mb-12 relative z-10">
                     <div className="flex items-center gap-3">
@@ -366,20 +357,12 @@ const Portfolio: React.FC = () => {
                         <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="temporalGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.15}/>
+                                    <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.05}/>
                                     <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 6" stroke="#ffffff05" vertical={true} />
-                            <XAxis 
-                                dataKey="timestamp" 
-                                stroke="#475569" 
-                                fontSize={10} 
-                                tickLine={false} 
-                                axisLine={false} 
-                                tickMargin={20}
-                                hide
-                            />
+                            <CartesianGrid strokeDasharray="3 6" stroke="#ffffff08" vertical={true} horizontal={true} />
+                            <XAxis dataKey="timestamp" hide />
                             <YAxis 
                                 orientation="right" 
                                 stroke="#475569" 
@@ -387,7 +370,6 @@ const Portfolio: React.FC = () => {
                                 tickLine={false} 
                                 axisLine={false} 
                                 domain={['auto', 'auto']}
-                                padding={{ top: 20, bottom: 20 }}
                                 tickFormatter={(v) => v.toFixed(2)}
                             />
                             <RechartTooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
@@ -395,60 +377,73 @@ const Portfolio: React.FC = () => {
                                 type="stepAfter" 
                                 dataKey="val" 
                                 stroke="#00f3ff" 
-                                strokeWidth={3} 
+                                strokeWidth={2} 
                                 fill="url(#temporalGrad)" 
-                                dot={{ r: 4, fill: '#00f3ff', strokeWidth: 0, stroke: '#00f3ff' }}
-                                activeDot={{ r: 6, fill: '#fff', stroke: '#00f3ff', strokeWidth: 2 }}
                                 isAnimationActive={true} 
+                                animationDuration={1000}
+                                activeDot={{ r: 4, fill: '#00f3ff', strokeWidth: 0 }}
                             />
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
 
-                <div className="mt-8 pt-8 border-t border-white/5 flex items-center justify-between opacity-50 relative z-10">
+                <div className="mt-8 pt-8 border-t border-white/5 flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-3">
-                        <div className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em]">MAINNET_NEURAL_TELEMETRY_SYNCHRONIZED</div>
-                    </div>
-                    <div className="flex gap-1.5">
-                        {[...Array(5)].map((_, i) => <div key={i} className="w-1.5 h-1.5 bg-slate-800 rounded-full"></div>)}
+                        <div className="text-[9px] font-black font-mono text-slate-700 uppercase tracking-[0.3em]">MAINNET_NEURAL_TELEMETRY_SYNCHRONIZED</div>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-black border border-slate-900 p-10 clip-path-slant h-[400px] flex flex-col relative overflow-hidden group hover:border-white/10 transition-all">
-                <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
-                    <Activity size={120} />
+            <div className="bg-black border border-slate-900 p-10 clip-path-slant min-h-[480px] flex flex-col relative overflow-hidden group hover:border-white/10 transition-all shadow-2xl">
+                <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-1000 text-intuition-primary">
+                    <Activity size={180} />
                 </div>
-                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mb-10">Asset_Exposure_Index</h4>
-                <div className="h-[220px] relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie 
-                                data={exposureData.length > 0 ? exposureData : [{ name: 'Empty', value: 1 }]} 
-                                innerRadius={60} 
-                                outerRadius={90} 
-                                paddingAngle={5} 
-                                dataKey="value"
-                            >
-                                {exposureData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                                {exposureData.length === 0 && <Cell fill="#1a1a1a" />}
-                            </Pie>
-                            <RechartTooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-                <div className="mt-auto space-y-2 max-h-[100px] overflow-y-auto custom-scrollbar">
-                    {exposureData.map((e, i) => (
-                        <div key={i} className="flex justify-between items-center text-[9px] font-black font-mono">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>
-                                <span className="text-slate-400 uppercase">{e.name}</span>
+                
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mb-12 relative z-10">Asset_Exposure_Index</h4>
+                
+                <div className="flex-1 flex flex-col items-center justify-center relative z-10">
+                    <div className="w-full h-[220px] mb-12">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie 
+                                    data={exposureData.length > 0 ? exposureData : [{ name: 'AWAITING_SIGNAL', value: 1 }]} 
+                                    innerRadius={70} 
+                                    outerRadius={95} 
+                                    paddingAngle={8} 
+                                    dataKey="value"
+                                    nameKey="name"
+                                    stroke="none"
+                                >
+                                    {exposureData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} className="outline-none" />
+                                    ))}
+                                    {exposureData.length === 0 && <Cell fill="#111111" />}
+                                </Pie>
+                                <RechartTooltip 
+                                    contentStyle={{ backgroundColor: '#000', border: '1px solid #333', borderRadius: '0', fontSize: '10px' }}
+                                    itemStyle={{ color: '#fff', fontFamily: 'monospace' }}
+                                    formatter={(v: number) => `${v.toFixed(1)}%`}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    <div className="w-full space-y-4 overflow-y-auto max-h-[180px] custom-scrollbar pr-2">
+                        {exposureData.length > 0 ? exposureData.map((entry, index) => (
+                            <div key={index} className="flex items-center justify-between group/item">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-3 h-3 rounded-none clip-path-slant shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                    <span className="text-[10px] font-black text-slate-400 group-hover/item:text-white transition-colors uppercase tracking-widest">{entry.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs font-black font-mono text-white text-glow-white">{entry.value.toFixed(1)}%</span>
+                                    <div className="w-1 h-3 bg-intuition-danger/40 opacity-0 group-hover/item:opacity-100 transition-opacity"></div>
+                                </div>
                             </div>
-                            <span className="text-white">{e.value.toFixed(1)}%</span>
-                        </div>
-                    ))}
+                        )) : (
+                            <div className="text-center py-10 opacity-20 text-[8px] font-black font-mono uppercase tracking-[0.5em]">Awaiting_Neural_Sync...</div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

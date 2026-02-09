@@ -1,4 +1,5 @@
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256 } from 'viem';
+
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, decodeEventLog } from 'viem';
 import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR } from '../constants';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -155,8 +156,27 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       } as any);
 
       const hash = await walletClient.writeContract(request);
-      const estShares = parseEther((parseFloat(amount) / 15).toString());
-      return { hash, shares: estShares };
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      
+      let actualShares = 0n;
+      for (const log of receipt.logs) {
+          try {
+              const decoded = decodeEventLog({
+                  abi: MULTI_VAULT_ABI,
+                  data: log.data,
+                  topics: log.topics,
+              });
+              if (decoded.eventName === 'Deposit' || (decoded as any).args?.shares) {
+                  actualShares = (decoded as any).args.shares;
+              }
+          } catch {}
+      }
+
+      if (actualShares === 0n) {
+           actualShares = assets / 15n; 
+      }
+
+      return { hash, shares: actualShares, assets };
   } catch (error: any) {
       console.error("DEPOSIT_ERROR:", error);
       throw error;
@@ -187,7 +207,23 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
       } as any);
 
       const hash = await walletClient.writeContract(request);
-      return { hash, assets: preview[0] };
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      
+      let actualAssets = preview[0];
+      for (const log of receipt.logs) {
+          try {
+              const decoded = decodeEventLog({
+                  abi: MULTI_VAULT_ABI,
+                  data: log.data,
+                  topics: log.topics,
+              });
+              if (decoded.eventName === 'Withdraw' || (decoded as any).args?.assets) {
+                  actualAssets = (decoded as any).args.assets;
+              }
+          } catch {}
+      }
+
+      return { hash, assets: actualAssets, shares };
   } catch (error: any) {
       console.error("REDEEM_ERROR:", error);
       throw error;
@@ -195,21 +231,27 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
 };
 
 /**
- * --- PROXY APPROVAL LOGIC ---
- * Ensures the FeeProxy can interact with MultiVault on behalf of the user.
+ * --- PROXY APPROVAL LOGIC (Refined for UI Stability) ---
  */
-
 export const checkProxyApproval = async (walletAddress: string): Promise<boolean> => {
+    const addr = getAddress(walletAddress);
+    const cacheKey = `inturank_approved_${addr.toLowerCase()}`;
+    
+    // Check local cache first to prevent redundant RPC calls
+    if (localStorage.getItem(cacheKey) === 'true') return true;
+    
     try {
         const approved = await publicClient.readContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
             abi: MULTI_VAULT_ABI,
             functionName: 'isApproved',
-            args: [getAddress(walletAddress), getAddress(FEE_PROXY_ADDRESS), 1] // Type 1 is for Proxy
+            args: [addr, getAddress(FEE_PROXY_ADDRESS), 1] // Type 1 is for Proxy
         } as any);
-        return Boolean(approved);
+        
+        const isOk = Boolean(approved);
+        if (isOk) localStorage.setItem(cacheKey, 'true');
+        return isOk;
     } catch (e) {
-        console.warn("APPROVAL_CHECK_FAIL", e);
         return false;
     }
 };
@@ -230,9 +272,11 @@ export const grantProxyApproval = async (walletAddress: string): Promise<void> =
 
         const hash = await walletClient.writeContract(request);
         await publicClient.waitForTransactionReceipt({ hash });
+        
+        // Persist approval state
+        localStorage.setItem(`inturank_approved_${checksumAccount.toLowerCase()}`, 'true');
         toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
     } catch (e: any) {
-        console.error("APPROVAL_GRANT_FAIL", e);
         throw e;
     }
 };
@@ -241,7 +285,7 @@ const LOCAL_TX_KEY = 'inturank_ledger_v3';
 export const saveLocalTransaction = (tx: Transaction, account: string) => {
   const key = `${LOCAL_TX_KEY}_${account.toLowerCase()}`;
   const current: Transaction[] = JSON.parse(localStorage.getItem(key) || '[]');
-  localStorage.setItem(key, JSON.stringify([tx, ...current].slice(0, 50)));
+  localStorage.setItem(key, JSON.stringify([tx, ...current].slice(0, 100)));
   window.dispatchEvent(new Event('local-tx-updated'));
 };
 
@@ -273,13 +317,12 @@ export const toggleWatchlist = (id: string, account: string): boolean => {
     return added;
 };
 
-export const switchNetworkManual = async () => switchNetwork();
 export const parseProtocolError = (error: any) => {
     const msg = error?.message || error?.toString() || "";
     if (msg.includes("0xD76F6FF8")) return "PROTOCOL_APPROVAL_REQUIRED: Please 'Enable Protocol' first.";
     if (msg.includes("insufficient funds")) return "INSUFFICIENT_TRUST_BALANCE";
     if (msg.includes("User rejected")) return "USER_REJECTED_HANDSHAKE";
-    return msg.slice(0, 80) + "...";
+    return msg.slice(0, 120) + "...";
 };
 
 export const publishOpinion = async (text: string, agentId: string, side: string, wallet: string): Promise<string | undefined> => {
@@ -289,11 +332,6 @@ export const publishOpinion = async (text: string, agentId: string, side: string
         return undefined;
     }
 };
-export const getClientChainId = async () => CHAIN_ID;
-export const fetchAtomNameFromChain = async (id: string) => null;
-export const resolveENS = async (name: string) => null;
-export const disconnectWallet = () => {};
-export const getProtocolConfig = async () => ({ minDeposit: '0.001' });
 
 export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string) => {
     const checksumReceiver = getAddress(receiver);
@@ -378,11 +416,17 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
     
     try {
-        const tripleCost = await publicClient.readContract({
-            address: FEE_PROXY_ADDRESS as `0x${string}`,
-            abi: FEE_PROXY_ABI,
-            functionName: 'getTripleCost',
-        } as any) as bigint;
+        let tripleCost: bigint;
+        try {
+            tripleCost = await publicClient.readContract({
+                address: FEE_PROXY_ADDRESS as `0x${string}`,
+                abi: FEE_PROXY_ABI,
+                functionName: 'getTripleCost',
+            } as any) as bigint;
+        } catch (e) {
+            console.warn("PROTOCOL_REVERT_DETECTED: Using handshake fallback for triple creation cost.");
+            tripleCost = parseEther('0.101'); 
+        }
 
         const totalCost = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
@@ -407,3 +451,10 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
         throw error;
     }
 };
+
+export const switchNetworkManual = async () => switchNetwork();
+export const getClientChainId = async () => CHAIN_ID;
+export const fetchAtomNameFromChain = async (id: string) => null;
+export const resolveENS = async (name: string) => null;
+export const disconnectWallet = () => {};
+export const getProtocolConfig = async () => ({ minDeposit: '0.001' });

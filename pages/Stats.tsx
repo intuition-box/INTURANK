@@ -96,7 +96,9 @@ const Stats: React.FC = () => {
         setData(sorted);
 
       } else if (activeTab === 'AGENTS_SUPPORT') {
-        const agents = await getAllAgents();
+        // Fix: Access the 'items' property from the result of getAllAgents()
+        const agentsData = await getAllAgents();
+        const agents = agentsData.items;
         const sorted = agents.sort((a, b) => {
             const valA = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
             const valB = parseFloat(formatEther(BigInt(b.totalAssets || '0')));
@@ -113,7 +115,9 @@ const Stats: React.FC = () => {
         setData(sorted);
 
       } else if (activeTab === 'AGENTS_CONTROVERSY') {
-        const agents = await getAllAgents();
+        // Fix: Access the 'items' property from the result of getAllAgents()
+        const agentsData = await getAllAgents();
+        const agents = agentsData.items;
         const sorted = agents.map(a => {
             const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
             const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
@@ -133,7 +137,9 @@ const Stats: React.FC = () => {
         setData(sorted);
         
       } else if (activeTab === 'CLAIMS') {
-          const claims = await getTopClaims();
+          // Fix: Access the 'items' property from the result of getTopClaims()
+          const claimsData = await getTopClaims();
+          const claims = claimsData.items;
           const sorted = claims.slice(0, 100).map((c: any, idx: number) => ({
               rank: idx + 1,
               id: c.id,

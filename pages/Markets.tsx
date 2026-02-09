@@ -1,14 +1,14 @@
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users } from 'lucide-react';
 import { formatEther } from 'viem';
 import { getAllAgents, searchGlobalAgents, getLists, getTopClaims } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
 import { Account } from '../types';
 import { getWatchlist, getConnectedAccount } from '../services/web3';
 import { toast } from '../components/Toast';
-import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap } from '../services/analytics';
+import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber } from '../services/analytics';
 import { CURRENCY_SYMBOL } from '../constants';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
@@ -16,10 +16,12 @@ type ViewMode = 'GRID' | 'HEATMAP';
 type MarketSegment = 'NODES' | 'SYNAPSES' | 'VECTORS';
 
 const Markets: React.FC = () => {
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<Account[]>([]);
   const [lists, setLists] = useState<any[]>([]); 
   const [claims, setClaims] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
   const [serverResults, setServerResults] = useState<Account[]>([]);
@@ -32,8 +34,15 @@ const Markets: React.FC = () => {
   
   const [sortOption, setSortOption] = useState<SortOption>('MCAP_DESC');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  
+  // Pagination State
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 40;
+
   const sortRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<any>(null);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -43,21 +52,63 @@ const Markets: React.FC = () => {
     return () => clearTimeout(debounceRef.current);
   }, [searchTerm]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const data = await getAllAgents();
-        setAgents(data);
-      } catch (error) {
-        console.warn("[INTERNAL_LOG] AGENT_FETCH_ERROR", error);
-      } finally {
+  const fetchInitialData = useCallback(async () => {
+    setLoading(true);
+    setOffset(0);
+    setHasMore(true);
+    try {
+        if (activeSegment === 'NODES') {
+            const res = await getAllAgents(PAGE_SIZE, 0);
+            setAgents(res.items);
+            setHasMore(res.hasMore);
+        } else if (activeSegment === 'SYNAPSES') {
+            const res = await getTopClaims(PAGE_SIZE, 0);
+            setClaims(res.items);
+            setHasMore(res.hasMore);
+        } else if (activeSegment === 'VECTORS') {
+            const res = await getLists(PAGE_SIZE, 0);
+            setLists(res.items);
+            setHasMore(res.hasMore);
+        }
+    } catch (error) {
+        console.warn("[INTERNAL_LOG] INITIAL_FETCH_ERROR", error);
+    } finally {
         setLoading(false);
-      }
-    };
-    fetchData();
-    
-    getConnectedAccount().then(setAccount);
+    }
+  }, [activeSegment]);
 
+  const fetchMoreData = useCallback(async () => {
+      if (loadingMore || !hasMore || loading || debouncedTerm.trim().length > 0) return;
+      setLoadingMore(true);
+      const nextOffset = offset + PAGE_SIZE;
+      try {
+          let res: { items: any[], hasMore: boolean } = { items: [], hasMore: false };
+          if (activeSegment === 'NODES') {
+              res = await getAllAgents(PAGE_SIZE, nextOffset);
+              setAgents(prev => [...prev, ...res.items]);
+          } else if (activeSegment === 'SYNAPSES') {
+              res = await getTopClaims(PAGE_SIZE, nextOffset);
+              setClaims(prev => [...prev, ...res.items]);
+          } else if (activeSegment === 'VECTORS') {
+              res = await getLists(PAGE_SIZE, nextOffset);
+              setLists(prev => [...prev, ...res.items]);
+          }
+          
+          setHasMore(res.hasMore);
+          setOffset(nextOffset);
+      } catch (error) {
+          console.warn("[INTERNAL_LOG] FETCH_MORE_ERROR", error);
+      } finally {
+          setLoadingMore(false);
+      }
+  }, [activeSegment, offset, hasMore, loading, loadingMore, debouncedTerm]);
+
+  useEffect(() => {
+      fetchInitialData();
+  }, [fetchInitialData, sortOption]);
+
+  useEffect(() => {
+    getConnectedAccount().then(setAccount);
     if (account) setWatchlistIds(getWatchlist(account));
 
     const handleWatchUpdate = (e: any) => {
@@ -81,26 +132,6 @@ const Markets: React.FC = () => {
   }, [account]);
 
   useEffect(() => {
-      const fetchSegmentData = async () => {
-          if (activeSegment === 'VECTORS' && lists.length === 0) {
-              setLoading(true);
-              try {
-                  const listData = await getLists();
-                  setLists(listData);
-              } catch (e) { console.warn(e); } finally { setLoading(false); }
-          }
-          if (activeSegment === 'SYNAPSES' && claims.length === 0) {
-              setLoading(true);
-              try {
-                  const claimData = await getTopClaims();
-                  setClaims(claimData);
-              } catch (e) { console.warn(e); } finally { setLoading(false); }
-          }
-      };
-      fetchSegmentData();
-  }, [activeSegment]);
-
-  useEffect(() => {
      const term = debouncedTerm.trim();
      if (term.length < 2) {
          setServerResults([]);
@@ -113,6 +144,24 @@ const Markets: React.FC = () => {
         .catch(() => setServerResults([]))
         .finally(() => setIsSearching(false));
   }, [debouncedTerm]);
+
+  // Infinite Scroll Observer
+  useEffect(() => {
+      const observer = new IntersectionObserver(
+          entries => {
+              if (entries[0].isIntersecting && hasMore && !loading && !loadingMore && debouncedTerm.trim().length === 0) {
+                  fetchMoreData();
+              }
+          },
+          { threshold: 0.1 }
+      );
+
+      if (observerTarget.current) {
+          observer.observe(observerTarget.current);
+      }
+
+      return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, fetchMoreData, debouncedTerm]);
 
   const filteredItems = useMemo(() => {
     const term = debouncedTerm.trim().toLowerCase();
@@ -138,10 +187,11 @@ const Markets: React.FC = () => {
                 return label.includes(term) || id.includes(term);
             });
         }
+        // Client-side sort remains for the loaded buffer
         return candidates.sort((a, b) => {
             const getPrice = (x: Account) => calculateAgentPrice(x.totalAssets || '0', x.totalShares || '0', x.currentSharePrice);
             const getTrust = (x: Account) => calculateTrustScore(x.totalAssets || '0', x.totalShares || '0', x.currentSharePrice);
-            const getMarketCapVal = (x: Account) => calculateMarketCap(x.totalAssets || '0', x.totalShares || '0', x.currentSharePrice);
+            const getMarketCapVal = (x: Account) => calculateMarketCap(x.marketCap || x.totalAssets || '0', x.totalShares || '0', x.currentSharePrice);
 
             switch (sortOption) {
                 case 'MCAP_DESC': return getMarketCapVal(b) - getMarketCapVal(a);
@@ -314,7 +364,7 @@ const Markets: React.FC = () => {
             )}
       </div>
 
-      {loading ? (
+      {loading && offset === 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
            {[...Array(8)].map((_, i) => (
              <div key={i} className="h-[320px] bg-black border-2 border-white/5 animate-pulse relative overflow-hidden clip-path-slant">
@@ -356,7 +406,7 @@ const Markets: React.FC = () => {
                               <div className="absolute -inset-8 border border-dashed border-intuition-primary/15 rounded-full animate-spin-slow group-hover:border-intuition-primary/30 transition-all"></div>
                               <div className="absolute -inset-4 border border-white/5 rounded-full opacity-30 group-hover:scale-110 transition-all"></div>
                               
-                              <div className="w-22 h-22 bg-black border border-slate-700 flex items-center justify-center text-slate-500 group-hover:text-intuition-primary group-hover:border-intuition-primary transition-all shadow-[0_0_30px_rgba(0,0,0,0.8)] overflow-hidden relative" 
+                              <div className="w-22 h-22 bg-black border border-slate-700 flex items-center justify-center text-slate-500 group-hover:text-intuition-primary group-hover:border-intuition-primary transition-all shadow-[0_0_30px_rgba(0,243,255,0.8)] overflow-hidden relative" 
                                    style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}>
                                   
                                   <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,243,255,0.05)_50%)] bg-[length:100%_4px] group-hover:bg-[length:100%_2px] transition-all pointer-events-none"></div>
@@ -377,8 +427,7 @@ const Markets: React.FC = () => {
                                   <div className="w-1 h-1 bg-intuition-primary rounded-full animate-ping"></div>
                                   SEC_AGGREGATE
                               </div>
-                              <h3 className="text-lg md:text-xl font-black font-display text-white group-hover:text-glow-blue transition-all uppercase tracking-tighter leading-tight mb-4 drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]">
-                                  {list.label || 'UNTITLED_LIST'}
+                              <h3 className="text-lg md:text-xl font-black font-display text-white group-hover:text-glow-blue transition-all uppercase tracking-tighter leading-tight mb-4 drop-shadow-md">{list.label || 'UNTITLED_LIST'}
                               </h3>
                               
                               <div className="inline-flex items-center justify-center gap-2 py-1 px-3 bg-white/5 border border-white/5 clip-path-slant group-hover:border-intuition-primary/20 transition-all">
@@ -412,57 +461,85 @@ const Markets: React.FC = () => {
               ))}
           </div>
       ) : activeSegment === 'SYNAPSES' ? (
-          <div className="grid grid-cols-1 gap-4 relative z-10">
-              {filteredItems.map((claim) => {
-                  const pred = (claim.predicate || 'LINK').toUpperCase();
-                  let colorClass = 'text-white border-white/20 bg-white/5';
-                  if (pred.includes('TRUST')) colorClass = 'text-intuition-success border-intuition-success bg-intuition-success/10 shadow-[0_0_15px_#00ff9d1a]';
-                  else if (pred.includes('DISTRUST')) colorClass = 'text-intuition-danger border-intuition-danger bg-intuition-danger/10 shadow-[0_0_15px_#ff00551a]';
+          <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono border-collapse min-w-[1000px]">
+                    <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                        <tr>
+                            <th className="px-8 py-6">CLAIM_IDENTITY</th>
+                            <th className="px-8 py-6">SUPPORT</th>
+                            <th className="px-8 py-6">OPPOSE</th>
+                            <th className="px-8 py-6 text-right">HANDSHAKE</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                        {filteredItems.map((claim) => (
+                            <tr 
+                              key={claim.id} 
+                              onClick={() => { playClick(); navigate(`/markets/${claim.id}`); }}
+                              className="hover:bg-white/5 transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
+                            >
+                                <td className="px-8 py-8">
+                                    <div className="flex flex-col md:flex-row items-center gap-3">
+                                        <div className="flex items-center gap-3 bg-white/5 pr-4 border border-white/5 clip-path-slant">
+                                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border-r border-white/5">
+                                                {claim.subject.image ? <img src={claim.subject.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
+                                            </div>
+                                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[120px]">{claim.subject.label}</span>
+                                        </div>
+                                        
+                                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest px-2">{claim.predicate}</span>
+                                        
+                                        <div className="flex items-center gap-3 bg-white/5 pr-4 border border-white/5 clip-path-slant">
+                                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border-r border-white/5">
+                                                {claim.object.image ? <img src={claim.object.image} className="w-full h-full object-cover" /> : <div className="text-[10px] font-black text-slate-700">{claim.object.label?.[0]}</div>}
+                                            </div>
+                                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[120px]">{claim.object.label}</span>
+                                        </div>
+                                    </div>
+                                </td>
+                                
+                                <td className="px-8 py-8">
+                                    <div className="flex items-center gap-6">
+                                        <div className="flex items-center gap-2">
+                                            <Users size={14} className="text-intuition-primary opacity-50" />
+                                            <span className="text-sm font-black text-intuition-primary">{formatLargeNumber(claim.holders)}</span>
+                                        </div>
+                                        <div className="text-lg font-black text-white">{formatMarketValue(claim.value)} <span className="text-[10px] text-slate-600">TRUST</span></div>
+                                    </div>
+                                </td>
+                                
+                                <td className="px-8 py-8">
+                                    <div className="flex items-center gap-6">
+                                        <div className="flex items-center gap-2">
+                                            <Users size={14} className="text-intuition-danger opacity-50" />
+                                            <span className="text-sm font-black text-intuition-danger">{formatLargeNumber(claim.opposeHolders || 0)}</span>
+                                        </div>
+                                        <div className="text-lg font-black text-white">{formatMarketValue(claim.opposeValue || 0)} <span className="text-[10px] text-slate-600">TRUST</span></div>
+                                    </div>
+                                </td>
 
-                  return (
-                    <div key={claim.id} className="relative bg-black border-2 border-slate-900 hover:border-intuition-primary transition-all group overflow-hidden ares-frame p-6">
-                        <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
-                            <div className="flex items-center gap-5 w-full md:w-[38%] shrink-0">
-                                <div className="w-14 h-14 bg-slate-900 border-2 border-slate-800 flex items-center justify-center overflow-hidden shrink-0 clip-path-slant group-hover:border-intuition-primary transition-all">
-                                    {claim.subject.image ? <img src={claim.subject.image} className="w-full h-full object-cover"/> : <User size={24} className="text-slate-700" />}
-                                </div>
-                                <div className="min-w-0">
-                                    <div className="text-[8px] text-slate-600 font-black font-mono uppercase tracking-[0.4em] mb-1">Origin_Node</div>
-                                    <div className="text-lg font-black font-display text-white truncate group-hover:text-intuition-primary transition-colors uppercase tracking-tight">{claim.subject.label || 'Unknown Agent'}</div>
-                                </div>
-                            </div>
-                            <div className="flex-shrink-0">
-                                <div className={`px-6 py-2 text-[9px] font-black font-mono border clip-path-slant ${colorClass} uppercase tracking-[0.3em] transition-all group-hover:scale-110 shadow-2xl`}>
-                                    {claim.predicate}
-                                </div>
-                            </div>
-                            <div className="flex items-center justify-end gap-5 w-full md:w-[38%] shrink-0 text-right">
-                                <div className="text-right min-w-0">
-                                    <div className="text-[8px] text-slate-600 font-black font-mono uppercase tracking-[0.4em] mb-1">Target_Node</div>
-                                    <div className="text-lg font-black font-display text-white truncate group-hover:text-intuition-primary transition-colors uppercase tracking-tight">{claim.object.label || 'Unknown Target'}</div>
-                                </div>
-                                <div className="w-14 h-14 bg-slate-900 border-2 border-slate-800 flex items-center justify-center overflow-hidden shrink-0 clip-path-slant group-hover:border-intuition-primary transition-all">
-                                    {claim.object.image ? <img src={claim.object.image} className="w-full h-full object-cover"/> : <Shield size={24} className="text-slate-700" />}
-                                </div>
-                            </div>
-                            <div className="w-full md:w-auto md:ml-auto flex items-center justify-between md:flex-col md:items-end gap-4">
-                                <div className="text-sm font-black font-mono text-intuition-success text-glow-success">
-                                    {formatMarketValue(claim.value)} T
-                                </div>
-                                <Link to={`/markets/${claim.id}`} className="btn-cyber btn-cyber-primary py-2 px-6 text-[9px] font-black">
-                                    TRADE
-                                </Link>
-                            </div>
-                        </div>
-                    </div>
-                  );
-              })}
+                                <td className="px-8 py-8 text-right">
+                                    <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-6 py-2.5 bg-intuition-primary text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white transition-all shadow-glow-blue">
+                                            SUPPORT
+                                        </Link>
+                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-6 py-2.5 bg-intuition-danger text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black transition-all shadow-glow-red">
+                                            OPPOSE
+                                        </Link>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+              </div>
           </div>
       ) : viewMode === 'HEATMAP' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 relative z-10">
             {filteredItems.map(agent => {
                 const strength = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
-                const mktVal = calculateMarketCap(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+                const mktVal = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
                 let bgClass = 'bg-slate-900';
                 if (strength > 75) bgClass = 'bg-emerald-600';
                 else if (strength > 60) bgClass = 'bg-emerald-800';
@@ -491,7 +568,7 @@ const Markets: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8 relative z-10">
           {filteredItems.map((agent) => {
              const price = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
-             const mktCap = calculateMarketCap(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+             const mktCap = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
              const strength = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
              
              let dynamicLabel = 'CREDIBLE';
@@ -592,6 +669,26 @@ const Markets: React.FC = () => {
           })}
         </div>
       )}
+
+      {/* INFINITE SCROLL SENTINEL */}
+      <div ref={observerTarget} className="h-48 flex items-center justify-center mt-12 w-full">
+          {loadingMore && (
+              <div className="flex flex-col items-center gap-4 animate-in fade-in duration-500">
+                  <div className="relative">
+                      <div className="w-12 h-12 border-2 border-intuition-primary/20 border-t-intuition-primary rounded-full animate-spin"></div>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                          <Activity size={16} className="text-intuition-primary animate-pulse" />
+                      </div>
+                  </div>
+                  <span className="text-[8px] font-black font-mono text-intuition-primary/60 uppercase tracking-[0.6em]">NEURAL_BUFFERING_SECTOR_04...</span>
+              </div>
+          )}
+          {!hasMore && !loading && (
+              <div className="text-[8px] font-black font-mono text-slate-800 uppercase tracking-[1em] border-t border-slate-900 pt-8 w-full text-center">
+                  END_OF_GLOBAL_DATABASE_REACHED
+              </div>
+          )}
+      </div>
     </div>
   );
 };

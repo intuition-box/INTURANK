@@ -14,17 +14,11 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
     useEffect(() => {
         const generateBrief = async () => {
             if (!agent.id) return;
-            const apiKey = process.env.API_KEY;
             
-            if (!apiKey) {
-                setBrief('Neural uplink restricted. Environment variable [API_KEY] not detected in local context.');
-                setLoading(false);
-                return;
-            }
-
             setLoading(true);
             try {
-                const ai = new GoogleGenAI({ apiKey });
+                // Fix: Always use process.env.API_KEY directly as per initialization guidelines
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 const triplesContext = (triples || [])
                     .slice(0, 5)
                     .map(t => `${t.subject?.label || 'Subject'} -> ${t.predicate?.label || 'Link'} -> ${t.object?.label || 'Object'}`)

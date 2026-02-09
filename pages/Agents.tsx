@@ -13,7 +13,8 @@ const Agents: React.FC = () => {
     const fetchData = async () => {
       try {
         const data = await getAllAgents();
-        setAgents(data);
+        /* FIXED: getAllAgents returns an object { items, hasMore }, need to set items array */
+        setAgents(data.items);
       } catch (error) {
         console.error(error);
       } finally {

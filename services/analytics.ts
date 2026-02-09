@@ -4,23 +4,20 @@ import { Account, Transaction } from '../types';
 import { DISPLAY_DIVISOR } from '../constants';
 
 /**
- * --- INTURANK ANALYTICS ENGINE v2.1.4 ---
- * MISSION: Maximum stability and unit-parity across the Intuition Network ecosystem.
+ * --- INTURANK ANALYTICS ENGINE v2.1.8 ---
+ * MISSION: Precision parity across the Intuition Network ecosystem.
  */
 
 /**
- * Robustly parses strings that might be Wei (BigInt) or Ether (Float) 
- * into a usable number for mathematical operations.
+ * Robustly parses strings that might be Wei (BigInt) or Ether (Float).
  */
-export const safeParseUnits = (val: string | undefined): number => {
+export const safeParseUnits = (val: string | undefined | null): number => {
     if (!val || val === '0') return 0;
     try {
-        // If it already has a decimal, it's an Ether float string
-        if (val.includes('.')) return parseFloat(val);
-        // If it has no decimal and is long, it's likely a Wei BigInt string
+        if (typeof val === 'string' && val.includes('.')) return parseFloat(val);
         return parseFloat(formatEther(BigInt(val)));
     } catch (e) {
-        const p = parseFloat(val);
+        const p = parseFloat(val as string);
         return isNaN(p) ? 0 : p;
     }
 };
@@ -59,9 +56,6 @@ export const calculateAgentPrice = (assetsWei: string, sharesWei: string, curren
     }
 };
 
-/**
- * Recalibrated for balanced reputation distribution.
- */
 export const calculateTrustScore = (assetsWei: string, sharesWei: string, currentSharePriceWei?: string): number => {
     try {
         const assets = safeParseUnits(assetsWei);
@@ -73,12 +67,8 @@ export const calculateTrustScore = (assetsWei: string, sharesWei: string, curren
     }
 };
 
-/**
- * FIXED: Market Cap returns the pre-aggregated value if it's already a float string.
- * This supports the multi-curve summation (Shares_L * Price_L + Shares_E * Price_E).
- */
 export const calculateMarketCap = (assetsWei: string, sharesWei: string, priceWei?: string): number => {
-    if (assetsWei.includes('.')) return parseFloat(assetsWei);
+    if (typeof assetsWei === 'string' && assetsWei.includes('.')) return parseFloat(assetsWei);
     try {
         const price = calculateAgentPrice(assetsWei, sharesWei, priceWei);
         const shares = safeParseUnits(sharesWei);
@@ -115,12 +105,16 @@ export const formatDisplayedShares = (val: string | bigint | number): string => 
     return safeParseUnits(val.toString()).toFixed(6);
 };
 
-export const calculatePositionPnL = (sharesHeld: number, currentValue: number, unifiedHistory: Transaction[], vaultId: string) => {
-    if (sharesHeld <= 0) return { profit: 0, pnlPercent: 0, avgEntryPrice: 0, costBasis: 0 };
+/**
+ * Calculates accurate PnL by strictly matching historical spent assets to acquired shares.
+ */
+export const calculatePositionPnL = (sharesHeld: number, redeemableValue: number, unifiedHistory: Transaction[], vaultId: string) => {
     const normalizedId = vaultId.toLowerCase();
     const filteredHistory = unifiedHistory.filter(tx => tx.vaultId?.toLowerCase() === normalizedId);
+    
     let totalSpent = 0;
     let totalSharesBought = 0;
+    
     filteredHistory.forEach(tx => {
         if (tx.type === 'DEPOSIT') {
             const assetVal = safeParseUnits(tx.assets);
@@ -131,12 +125,54 @@ export const calculatePositionPnL = (sharesHeld: number, currentValue: number, u
             }
         }
     });
-    if (totalSharesBought === 0) return { profit: 0, pnlPercent: 0, avgEntryPrice: currentValue / sharesHeld, costBasis: currentValue };
+
+    if (totalSharesBought === 0) {
+        return { 
+            profit: 0, 
+            pnlPercent: 0, 
+            avgEntryPrice: sharesHeld > 0 ? (redeemableValue / sharesHeld) : 0, 
+            costBasis: redeemableValue 
+        };
+    }
+
     const avgEntryPrice = totalSpent / totalSharesBought;
-    const costBasis = sharesHeld * avgEntryPrice;
-    const profit = currentValue - costBasis;
-    const pnlPercent = costBasis > 0 ? (profit / costBasis) * 100 : 0;
-    return { profit, pnlPercent, avgEntryPrice, costBasis };
+    const costBasisOfHeldShares = sharesHeld * avgEntryPrice;
+    const profit = redeemableValue - costBasisOfHeldShares;
+    const pnlPercent = costBasisOfHeldShares > 0 ? (profit / costBasisOfHeldShares) * 100 : 0;
+    
+    return { profit, pnlPercent, avgEntryPrice, costBasis: costBasisOfHeldShares };
+};
+
+/**
+ * Calculates realized PnL for a specific sell transaction.
+ */
+export const calculateRealizedPnL = (sharesSold: number, assetsReceived: number, unifiedHistory: Transaction[], vaultId: string) => {
+    const normalizedId = vaultId.toLowerCase();
+    const historyBeforeSell = unifiedHistory.filter(tx => tx.vaultId?.toLowerCase() === normalizedId && tx.type === 'DEPOSIT');
+    
+    let totalSpent = 0;
+    let totalSharesBought = 0;
+    
+    historyBeforeSell.forEach(tx => {
+        const assetVal = safeParseUnits(tx.assets);
+        const shareVal = safeParseUnits(tx.shares);
+        totalSpent += assetVal;
+        totalSharesBought += shareVal;
+    });
+
+    if (totalSharesBought === 0) return { profit: 0, pnlPercent: 0, entry: 0, exit: 0 };
+
+    const avgEntryPrice = totalSpent / totalSharesBought;
+    const costBasisOfSoldShares = sharesSold * avgEntryPrice;
+    const profit = assetsReceived - costBasisOfSoldShares;
+    const pnlPercent = (profit / costBasisOfSoldShares) * 100;
+
+    return {
+        profit,
+        pnlPercent: pnlPercent.toFixed(2),
+        entry: avgEntryPrice.toFixed(4),
+        exit: (assetsReceived / sharesSold).toFixed(4)
+    };
 };
 
 export interface IndexData {

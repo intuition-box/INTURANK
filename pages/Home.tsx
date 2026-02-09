@@ -95,7 +95,7 @@ const MissionTerminal: React.FC = () => {
             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none opacity-20"></div>
             
             <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-3">
-              <span className="animate-pulse">{" >> "}</span> SYSTEM BOOT SEQUENCE INITIATED ...
+              <span className="animate-pulse">>></span> SYSTEM BOOT SEQUENCE INITIATED ...
             </div>
             
             <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
@@ -111,7 +111,7 @@ const MissionTerminal: React.FC = () => {
             </p>
             
             <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-2 pt-4 text-glow-blue">
-              <span>{" >> "}</span> AWAITING INPUT<span className="w-2.5 h-6 bg-intuition-primary animate-[pulse_0.8s_infinite] shadow-glow-blue"></span>
+              <span>>></span> AWAITING INPUT<span className="w-2.5 h-6 bg-intuition-primary animate-[pulse_0.8s_infinite] shadow-glow-blue"></span>
             </div>
           </div>
         </div>
@@ -131,7 +131,9 @@ const Home: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
       try {
-        const agents = await getAllAgents().catch(() => []);
+        // Fix: Access the 'items' property from the result of getAllAgents()
+        const agentsData = await getAllAgents().catch(() => ({ items: [], hasMore: false }));
+        const agents = agentsData.items;
         const topAgents = agents.slice(0, 15).map(a => {
            const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
            const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));

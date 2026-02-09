@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export interface Account {
@@ -16,6 +17,7 @@ export interface Account {
   totalAssets?: string; // Real Volume (in Wei)
   totalShares?: string; // Total Supply (in Wei)
   currentSharePrice?: string; // Spot Price (in Wei)
+  marketCap?: string; // Calculated Multi-Curve Market Cap
 }
 
 export interface Triple {
