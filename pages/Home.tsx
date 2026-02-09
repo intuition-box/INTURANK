@@ -79,7 +79,6 @@ const MissionTerminal: React.FC = () => {
     <div className="w-full max-w-5xl mx-auto px-6 py-32 relative">
       <Reveal delay={200}>
         <div className="bg-[#05080f] border-2 border-intuition-primary/40 rounded-xl overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.15)] clip-path-slant group">
-          {/* Window Header */}
           <div className="flex items-center justify-between px-6 py-4 bg-black/60 border-b border-white/5">
             <div className="flex gap-2">
               <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
@@ -90,12 +89,11 @@ const MissionTerminal: React.FC = () => {
             <div className="w-12"></div>
           </div>
           
-          {/* Body */}
           <div className="p-8 md:p-16 font-mono space-y-10 relative">
             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none opacity-20"></div>
             
             <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-3">
-              <span className="animate-pulse">>></span> SYSTEM BOOT SEQUENCE INITIATED ...
+              <span className="animate-pulse">{">>"}</span> SYSTEM BOOT SEQUENCE INITIATED ...
             </div>
             
             <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
@@ -111,13 +109,12 @@ const MissionTerminal: React.FC = () => {
             </p>
             
             <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-2 pt-4 text-glow-blue">
-              <span>>></span> AWAITING INPUT<span className="w-2.5 h-6 bg-intuition-primary animate-[pulse_0.8s_infinite] shadow-glow-blue"></span>
+              <span>{">>"}</span> AWAITING INPUT<span className="w-2.5 h-6 bg-intuition-primary animate-[pulse_0.8s_infinite] shadow-glow-blue"></span>
             </div>
           </div>
         </div>
       </Reveal>
       
-      {/* Decorative background elements for the terminal section */}
       <div className="absolute -top-10 -right-10 w-40 h-40 bg-intuition-primary/5 rounded-full blur-[80px] -z-10 animate-pulse"></div>
       <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-intuition-secondary/5 rounded-full blur-[80px] -z-10 animate-pulse delay-1000"></div>
     </div>
@@ -131,7 +128,6 @@ const Home: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
       try {
-        // Fix: Access the 'items' property from the result of getAllAgents()
         const agentsData = await getAllAgents().catch(() => ({ items: [], hasMore: false }));
         const agents = agentsData.items;
         const topAgents = agents.slice(0, 15).map(a => {
@@ -156,7 +152,6 @@ const Home: React.FC = () => {
   return (
     <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white">
       
-      {/* --- HERO SECTION --- */}
       <div className="relative h-[90vh] flex flex-col justify-center items-center overflow-hidden border-b border-white/10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,_rgba(0,243,255,0.1),_transparent_60%)]"></div>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,_rgba(255,0,85,0.12),_transparent_40%)]"></div>
@@ -205,7 +200,6 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* --- TELEMETRY TICKER --- */}
       <div className="w-full border-y-2 border-intuition-secondary/20 bg-black/90 py-1 overflow-hidden flex items-center group relative z-20 shadow-2xl">
          <div className="bg-black z-30 px-8 py-5 flex items-center gap-4 border-r-2 border-intuition-secondary/40 shadow-[25px_0_45px_rgba(0,0,0,1)]">
             <div className="w-3 h-3 rounded-full bg-intuition-secondary animate-pulse-fast shadow-[0_0_15px_#ff0055]"></div>
@@ -226,7 +220,6 @@ const Home: React.FC = () => {
          </div>
       </div>
 
-      {/* --- CORE PILLARS --- */}
       <div className="py-40 bg-[#04060b] relative overflow-hidden border-b border-white/5">
         <div className="absolute top-0 right-0 w-[700px] h-[700px] bg-intuition-secondary/[0.06] rounded-full blur-[140px] pointer-events-none"></div>
         
@@ -266,7 +259,6 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* --- NETWORK TELEMETRY --- */}
       <div className="py-40 bg-intuition-dark relative border-y-2 border-white/10">
         <div className="max-w-[1600px] mx-auto px-10">
           <Reveal className="mb-20 flex items-center gap-6">
@@ -285,10 +277,8 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* --- MISSION TERMINAL SECTION --- */}
       <MissionTerminal />
 
-      {/* --- CALL TO ACTION --- */}
       <div className="py-64 text-center relative overflow-hidden bg-black border-t-2 border-intuition-secondary/30">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(255,0,85,0.15),_transparent_70%)]"></div>
         <Reveal delay={200}>
@@ -320,7 +310,6 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
     const valStr = value.toString();
     const valLength = valStr.length;
     
-    // Scale font size aggressively based on length to prevent overflow in fixed-width boxes
     const getFontSize = () => {
         if (valLength > 15) return 'text-xl sm:text-2xl md:text-3xl';
         if (valLength > 12) return 'text-2xl sm:text-3xl md:text-4xl';
@@ -331,10 +320,8 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
 
     return (
       <div className={`relative p-8 bg-[#02040a] group transition-all duration-700 flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none`}>
-        {/* Futuristic Grid Background Overlay */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-10 pointer-events-none"></div>
         
-        {/* Corner Brackets */}
         <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
         <div className={`absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
         
@@ -367,10 +354,8 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
             </div>
         </div>
         
-        {/* Hover decorative scanline */}
         <div className={`absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-${isRed ? 'intuition-secondary' : 'intuition-primary'}/10 to-transparent -translate-y-full group-hover:animate-[scanline_3s_linear_infinite] pointer-events-none`}></div>
 
-        {/* Animated progressive fill bar on hover */}
         <div className={`absolute bottom-0 left-0 h-1.5 w-full ${bgClass.split(' ')[0]} scale-x-0 group-hover:scale-x-100 transition-transform duration-700 origin-left shadow-[0_0_20px_currentColor]`}></div>
       </div>
     );

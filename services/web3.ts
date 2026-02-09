@@ -161,12 +161,14 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       let actualShares = 0n;
       for (const log of receipt.logs) {
           try {
+              // Cast log to any to bypass 'topics' property error detected by TypeScript
               const decoded = decodeEventLog({
                   abi: MULTI_VAULT_ABI,
                   data: log.data,
-                  topics: log.topics,
+                  topics: (log as any).topics,
               });
-              if (decoded.eventName === 'Deposit' || (decoded as any).args?.shares) {
+              // Cast decoded to any to bypass 'eventName' unknown type check
+              if ((decoded as any).eventName === 'Deposit' || (decoded as any).args?.shares) {
                   actualShares = (decoded as any).args.shares;
               }
           } catch {}
@@ -212,12 +214,14 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
       let actualAssets = preview[0];
       for (const log of receipt.logs) {
           try {
+              // Cast log to any to bypass 'topics' property error detected by TypeScript
               const decoded = decodeEventLog({
                   abi: MULTI_VAULT_ABI,
                   data: log.data,
-                  topics: log.topics,
+                  topics: (log as any).topics,
               });
-              if (decoded.eventName === 'Withdraw' || (decoded as any).args?.assets) {
+              // Cast decoded to any to bypass 'eventName' unknown type check
+              if ((decoded as any).eventName === 'Withdraw' || (decoded as any).args?.assets) {
                   actualAssets = (decoded as any).args.assets;
               }
           } catch {}

@@ -1,3 +1,4 @@
+
 import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID } from '../constants';
 import { Transaction, Claim } from '../types';
 import { hexToString, formatEther, parseEther } from 'viem';
@@ -559,11 +560,6 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
 };
 
 export const getTopClaims = async (limit = 40, offset = 0) => {
-  /**
-   * REFINED STRATEGY:
-   * To get "Top" claims, we query the high-TVL vaults and filter for those 
-   * associated with semantic triples. This is more reliable than complex triple joins.
-   */
   const query = `query GetTopTripleVaults($limit: Int!, $offset: Int!) {
     vaults(
       where: { term: { triple: { term_id: { _is_null: false } } } },
@@ -596,11 +592,9 @@ export const getTopClaims = async (limit = 40, offset = 0) => {
         const t = v.term?.triple;
         if (!t) return null;
 
-        // AGGREGATE PRO SIDE (Support)
         const supportAssets = parseFloat(formatEther(BigInt(v.total_assets || '0')));
         const supportHolders = Number(v.position_count || 0);
 
-        // AGGREGATE COUNTER SIDE (Oppose)
         const counterVaults = t.counter_term?.vaults || [];
         const opposeAssets = counterVaults.reduce((acc: number, cv: any) => acc + parseFloat(formatEther(BigInt(cv.total_assets || '0'))), 0);
         const opposeHolders = counterVaults.reduce((acc: number, cv: any) => acc + Number(cv.position_count || 0), 0);
@@ -666,9 +660,6 @@ export const getAgentOpinions = async (termId: string) => {
     return [];
 };
 
-/**
- * Fetches the specific "Opposition" (Distrust) triple for a given subject atom.
- */
 export const getOppositionTriple = async (subjectId: string) => {
     const sIds = prepareQueryIds(subjectId);
     const pIds = prepareQueryIds(IS_PREDICATE_ID);
