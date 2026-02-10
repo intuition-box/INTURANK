@@ -1,348 +1,531 @@
-
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, Activity, Zap, Trophy, Brain, Sword, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3 } from 'lucide-react';
 import { getAllAgents } from '../services/graphql';
 import { Account } from '../types';
-import { categorizeAgent, calculateIndexValue, AgentCategory, calculateTrustScore } from '../services/analytics';
-import { TrendingUp, Layers, ChevronRight, Activity, Globe, User, Users, Hash, Info, ExternalLink, Shield, Zap, ArrowRight, BarChart3, AlertCircle, Database, Network, Brain, Wallet } from 'lucide-react';
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
-import { Link } from 'react-router-dom';
+import { calculateTrustScore, calculateVolatility, formatMarketValue } from '../services/analytics';
+import { formatEther } from 'viem';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { playClick, playHover } from '../services/audio';
+import { Link } from 'react-router-dom';
+import { GoogleGenAI } from "@google/genai";
 
-const IndexCard: React.FC<{ 
-    category: AgentCategory,
-    title: string, 
-    agents: Account[], 
-    icon: React.ReactNode, 
-    onSelect: () => void 
-}> = ({ category, title, agents, icon, onSelect }) => {
-    const { value, change } = calculateIndexValue(agents);
-    const isUp = change >= 0;
-    
-    const sparkData = useMemo(() => {
-        const data = [];
-        let walker = value - (change * 2);
-        for (let i = 0; i < 24; i++) {
-            walker += (change / 24) + (Math.random() - 0.5) * (value * 0.002);
-            data.push({ val: walker });
+const MODEL_NAME = 'gemini-3-pro-preview';
+
+// --- TACTICAL CONFLICT SIMULATION COMPONENT (Updated to V3 Inspo) ---
+const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number; rScore: number }> = ({ left, right, lScore, rScore }) => {
+    const [analysis, setAnalysis] = useState<string>('');
+    const [loading, setLoading] = useState(false);
+    const [displayedText, setDisplayedText] = useState('');
+
+    useEffect(() => {
+        if (analysis) {
+            let i = 0;
+            setDisplayedText('');
+            const interval = setInterval(() => {
+                setDisplayedText(analysis.slice(0, i));
+                i++;
+                if (i > analysis.length) clearInterval(interval);
+            }, 8);
+            return () => clearInterval(interval);
         }
-        return data;
-    }, [value, change]);
+    }, [analysis]);
 
-    const totalSentiment = useMemo(() => {
-        if (agents.length === 0) return 50;
-        const sum = agents.reduce((acc, a) => acc + calculateTrustScore(a.totalAssets || '0', a.totalShares || '0'), 0);
-        return sum / agents.length;
-    }, [agents]);
+    const generateAnalysis = async () => {
+        setLoading(true);
+        try {
+            // Fix: Always use process.env.API_KEY directly as per initialization guidelines
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const prompt = `
+                Perform an aggressive, high-stakes tactical comparison between two competing reputation-based assets in a decentralized trust-graph combat arena.
+                
+                ENTITY_ALPHA: ${left.label} (Magnitude: ${lScore.toFixed(1)}, Sector: ${left.type})
+                ENTITY_OMEGA: ${right.label} (Magnitude: ${rScore.toFixed(1)}, Sector: ${right.type})
+                
+                SCENARIO: They are in a zero-sum semantic collision for global consensus dominance.
+                DOMINANT_NODE: ${lScore > rScore ? left.label : right.label}
+                
+                Provide a "Combat Report" paragraph.
+                Style: Brutalist cypherpunk, military intelligence, high-frequency finance.
+                Terms: "Liquidity Bleed", "Protocol Incursion", "Semantic Fragging", "Neural Arbitrage", "Consensus Overload".
+            `;
+
+            const response = await ai.models.generateContent({
+                model: MODEL_NAME,
+                contents: [{ parts: [{ text: prompt }] }],
+            });
+            setAnalysis(response.text || 'ERROR: SYNTHESIS_FRAGMENTED.');
+        } catch (e) {
+            setAnalysis('ERROR: NEURAL_LINK_SEVERED_BY_FIREWALL.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
-        <div 
-            onClick={() => { playClick(); onSelect(); }}
-            onMouseEnter={playHover}
-            className="group relative transition-all duration-500 cursor-pointer overflow-visible hover:z-20"
-        >
-            {/* The Hex-Chassis Body */}
-            <div 
-                className="relative bg-[#080a12] border-2 border-slate-900 group-hover:border-intuition-primary/50 p-10 pt-12 transition-all duration-500 shadow-2xl flex flex-col min-h-[380px]"
-                style={{ 
-                    clipPath: 'polygon(15% 0, 85% 0, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0 85%, 0 15%)'
-                }}
-            >
-                <div className={`absolute inset-0 bg-gradient-to-tr ${isUp ? 'from-intuition-success/5' : 'from-intuition-danger/5'} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`}></div>
-                
-                <div className="flex justify-between items-start mb-8 relative z-10">
-                    <div className="flex items-center gap-5">
-                        <div className="relative">
-                            {/* Gravity Ring */}
-                            <div className="absolute -inset-4 border border-dashed border-intuition-primary/20 rounded-full animate-spin-slow opacity-20 group-hover:opacity-100 group-hover:animate-spin transition-all"></div>
-                            <div className="w-16 h-16 bg-black border-2 border-slate-800 flex items-center justify-center text-slate-500 group-hover:text-intuition-primary group-hover:border-intuition-primary transition-all shadow-xl rotate-45 overflow-hidden">
-                                <div className="-rotate-45">{icon}</div>
-                                <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,243,255,0.05)_50%)] bg-[length:100%_4px] pointer-events-none"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="text-2xl font-black font-display text-white group-hover:text-intuition-primary transition-colors tracking-tight uppercase leading-none mb-2">{title}</h3>
-                            <div className="text-[7px] font-mono text-slate-600 uppercase tracking-[0.4em] font-black">Core_Sector_Module</div>
-                        </div>
-                    </div>
-                    <div className={`text-[9px] font-black font-mono px-3 py-1 border transition-all ${isUp ? 'text-intuition-success border-intuition-success/30 bg-intuition-success/5' : 'text-intuition-danger border-intuition-danger/30 bg-intuition-danger/5'}`}>
-                        {isUp ? 'STABLE_UP' : 'VOL_FLUX'}
-                    </div>
-                </div>
-                
-                <div className="flex items-end justify-between mb-10 relative z-10">
-                    <div>
-                        <div className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.3em] mb-2 font-black">Composite_Score</div>
-                        <div className="text-5xl font-black text-white font-mono tracking-tighter text-glow-white leading-none">
-                            {value.toFixed(0)}
-                        </div>
-                    </div>
-                    <div className="text-right">
-                        <div className={`text-2xl font-black font-mono leading-none ${isUp ? 'text-intuition-success' : 'text-intuition-danger'}`}>
-                            {isUp ? '+' : ''}{change.toFixed(2)}%
-                        </div>
-                        <div className="text-[8px] font-mono text-slate-600 uppercase mt-1 font-black">24H_DELTA</div>
-                    </div>
-                </div>
-
-                <div className="h-16 w-full mb-8 opacity-20 group-hover:opacity-100 transition-opacity">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={sparkData}>
-                            <Line type="monotone" dataKey="val" stroke={isUp ? '#00ff9d' : '#ff1e6d'} strokeWidth={3} dot={false} isAnimationActive={true} />
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="relative z-10 pt-6 border-t border-white/5 mt-auto">
-                    <div className="flex justify-between items-center mb-3">
-                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.3em]">Neural_Density</span>
-                        <span className="text-[9px] font-black font-mono text-white tracking-widest">{agents.length} NODES_ACTIVE</span>
-                    </div>
-                    <div className="flex gap-1.5 h-2">
-                        {[...Array(10)].map((_, i) => (
-                            <div 
-                                key={i} 
-                                className={`flex-1 transition-all duration-700 clip-path-slant ${i < Math.floor(totalSentiment / 10) ? (isUp ? 'bg-intuition-success shadow-[0_0_10px_#00ff9d]' : 'bg-intuition-primary shadow-[0_0_10px_#00f3ff]') : 'bg-slate-900 opacity-20'}`}
-                            ></div>
-                        ))}
-                    </div>
-                </div>
+        <div className="bg-[#020308] border border-intuition-primary/40 p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-8">
+            {/* Background Brain Icon Decal as per Inspo */}
+            <div className="absolute -top-12 -right-12 opacity-[0.08] text-intuition-primary pointer-events-none group-hover:scale-110 transition-transform duration-1000">
+                <Brain size={280} />
             </div>
             
-            {/* perspective shadow floor */}
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3/4 h-4 bg-black/40 blur-xl -z-10 group-hover:bg-intuition-primary/10 transition-colors"></div>
+            <div className="relative z-10">
+                <div className="flex items-center gap-4 mb-8">
+                    <div className="w-10 h-10 bg-black border border-intuition-primary/40 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
+                        <Sword size={20} />
+                    </div>
+                    <h3 className="text-[12px] font-black font-display text-white tracking-[0.5em] uppercase">CONFLICT_SIMULATION_V3</h3>
+                </div>
+                
+                {!analysis && !loading ? (
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-8 pl-4 border-l-2 border-slate-900">
+                        <p className="text-slate-500 font-mono text-[11px] uppercase tracking-widest leading-relaxed max-w-2xl">
+                            // Standby for semantic projection. Initialize AI synthesis to project takeover probability and identify consensus vulnerabilities.
+                        </p>
+                        <button 
+                            onClick={() => { playClick(); generateAnalysis(); }}
+                            className="px-8 py-3 bg-intuition-primary text-black font-black text-[10px] tracking-widest hover:bg-white transition-all shadow-glow-blue uppercase whitespace-nowrap active:scale-95"
+                        >
+                            INITIATE_PROJECTION
+                        </button>
+                    </div>
+                ) : loading ? (
+                    <div className="flex items-center gap-3 text-intuition-primary font-mono text-[11px] animate-pulse font-black py-4 pl-4 border-l-2 border-intuition-primary/20">
+                        <Loader2 size={16} className="animate-spin" /> RUNNING_NEURAL_WAR_GAMES...
+                    </div>
+                ) : (
+                    <div className="flex gap-6 items-start animate-in fade-in duration-500 pl-4 border-l-2 border-intuition-primary/40">
+                        <Quote size={24} className="text-intuition-primary shrink-0 opacity-40 mt-1" />
+                        <p className="text-slate-200 font-mono text-xs leading-relaxed font-bold uppercase tracking-tight italic">
+                            {displayedText}
+                            <span className="inline-block w-2 h-3.5 bg-intuition-primary ml-1 animate-pulse shadow-glow-blue"></span>
+                        </p>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
 
-const Indexes: React.FC = () => {
-    const [agents, setAgents] = useState<Account[]>([]);
-    const [selectedCategory, setSelectedCategory] = useState<AgentCategory | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        setLoading(true);
-        getAllAgents().then(data => {
-            setAgents(data);
-            setLoading(false);
-        });
-    }, []);
-
-    // FIX: Included missing 'PERSON' property to exhaustively cover AgentCategory type.
-    const categorizedAgents: Record<AgentCategory, Account[]> = useMemo(() => ({
-        'FOUNDER': agents.filter(a => categorizeAgent(a) === 'FOUNDER'),
-        'PERSON': agents.filter(a => categorizeAgent(a) === 'PERSON'),
-        'CREATOR': agents.filter(a => categorizeAgent(a) === 'CREATOR'),
-        'MEME': agents.filter(a => categorizeAgent(a) === 'MEME'),
-        'PROTOCOL': agents.filter(a => categorizeAgent(a) === 'PROTOCOL'),
-        'AI': agents.filter(a => categorizeAgent(a) === 'AI'),
-        'INVESTOR': agents.filter(a => categorizeAgent(a) === 'INVESTOR'),
-        'UNKNOWN': []
-    }), [agents]);
-
-    const activeAgents = selectedCategory ? categorizedAgents[selectedCategory] : [];
-    const indexMeta = useMemo(() => calculateIndexValue(activeAgents), [activeAgents]);
-
-    const activeCategories = useMemo(() => {
-        return (Object.entries(categorizedAgents) as [AgentCategory, Account[]][])
-            .filter(([_, list]) => list.length > 0)
-            .map(([cat]) => cat);
-    }, [categorizedAgents]);
-
-    // FIX: Included missing 'PERSON' mapping to satisfy Record<AgentCategory, T> requirement.
-    const CATEGORY_META: Record<AgentCategory, { title: string, icon: any }> = {
-        'FOUNDER': { title: 'FOUNDERS_50', icon: User },
-        'PERSON': { title: 'INDIVIDUALS', icon: Users },
-        'PROTOCOL': { title: 'PROTOCOL_ALPHA', icon: Globe },
-        'CREATOR': { title: 'CREATOR_ECON', icon: Activity },
-        'MEME': { title: 'MEME_VELOCITY', icon: Hash },
-        'AI': { title: 'NEURAL_MODELS', icon: Brain },
-        'INVESTOR': { title: 'CAPITAL_NODES', icon: Wallet },
-        'UNKNOWN': { title: 'UNKNOWN', icon: Shield }
-    };
-
-    if (loading) return (
-        <div className="min-h-screen flex flex-col items-center justify-center gap-8 text-intuition-primary font-mono bg-black">
-            <div className="relative">
-                <div className="w-24 h-24 border-2 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
-                <div className="absolute inset-0 flex items-center justify-center"><Network size={32} className="animate-pulse" /></div>
+// --- DYNAMIC COLLISION VISUAL (Updated to Inspo) ---
+const NeuralCollision: React.FC<{ tension: number, arbitrage: number, onSwap: () => void }> = ({ tension, arbitrage, onSwap }) => {
+    return (
+        <div className="flex flex-col items-center justify-between min-w-[140px] relative h-full py-4">
+            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-gradient-to-b from-transparent via-slate-800 to-transparent"></div>
+            
+            <div className="flex flex-col items-center gap-2 z-10">
+                <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em]">Tension_Index</div>
+                <div className={`text-2xl font-black font-mono transition-all duration-700 ${tension > 30 ? 'text-intuition-danger text-glow-red' : 'text-white'}`}>
+                    {tension.toFixed(1)}
+                </div>
             </div>
-            <div className="animate-pulse tracking-[0.6em] uppercase text-[11px] font-black text-glow-blue">Synchronizing_Market_Segments...</div>
+
+            <div className="relative group z-20 my-2">
+                <div className={`absolute inset-0 bg-intuition-primary rounded-full blur-2xl opacity-10 group-hover:opacity-40 transition-all duration-1000 animate-pulse`}></div>
+                
+                <button 
+                    onClick={() => { playClick(); onSwap(); }}
+                    onMouseEnter={playHover}
+                    className={`relative w-16 h-16 bg-black border-2 rounded-full flex items-center justify-center text-white hover:text-black hover:bg-intuition-primary transition-all duration-700 hover:scale-110 shadow-2xl group-hover:shadow-glow-blue ${tension > 30 ? 'border-intuition-danger' : 'border-intuition-primary'}`}
+                >
+                    <span className="font-black font-display text-xl italic tracking-tighter">VS</span>
+                </button>
+            </div>
+
+            <div className="flex flex-col items-center gap-2 z-10">
+                <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em]">Arbitrage_Delta</div>
+                <div className="text-sm font-black font-mono text-white tracking-tighter">
+                    {arbitrage.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </div>
+            </div>
         </div>
     );
+};
+
+const AgentCard: React.FC<{ 
+    agent: Account | null, 
+    onSelect: () => void, 
+    isWinner?: boolean,
+    isLoser?: boolean,
+    position: 'LEFT' | 'RIGHT'
+}> = ({ agent, onSelect, isWinner, isLoser, position }) => {
+    const score = agent ? calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0') : 0;
+    
+    return (
+        <div 
+            className={`relative flex-1 bg-[#02040a] border-2 p-10 flex flex-col items-center justify-center min-h-[380px] transition-all duration-500 hover:bg-slate-900/10 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success/40 shadow-[0_0_50px_rgba(0,255,157,0.05)]' : isLoser ? 'border-intuition-danger/10 opacity-60 grayscale' : 'border-slate-900 hover:border-intuition-primary/40'}`}
+            onClick={() => { playClick(); onSelect(); }}
+            onMouseEnter={playHover}
+        >
+            <div className={`absolute top-4 ${position === 'LEFT' ? 'left-4' : 'right-4'} text-[8px] font-black font-mono uppercase tracking-[0.5em] px-2 py-0.5 border ${isWinner ? 'bg-intuition-success/10 text-intuition-success border-intuition-success/20' : 'bg-black text-slate-600 border-slate-900'}`}>
+                {isWinner ? 'DOMINANT' : isLoser ? 'SUBORDINATE' : `NODE_${position}`}
+            </div>
+            
+            {agent ? (
+                <>
+                    <div className="relative mb-8">
+                        <div className={`absolute inset-0 rounded-full blur-[40px] opacity-10 ${isWinner ? 'bg-intuition-success' : 'bg-intuition-primary'}`}></div>
+                        <div className={`relative w-28 h-28 md:w-32 md:h-32 rounded-none border-2 flex items-center justify-center overflow-hidden transition-all duration-700 group-hover:scale-105 shadow-2xl ${isWinner ? 'border-intuition-success shadow-glow-success' : 'border-white/10'}`}>
+                            {agent.image ? <img src={agent.image} className="w-full h-full object-cover" /> : (
+                                <div className="w-full h-full bg-slate-900 flex items-center justify-center text-3xl text-slate-700 font-black">?</div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <h2 className="text-xl md:text-3xl font-black font-display text-white text-center mb-8 uppercase tracking-tighter leading-tight drop-shadow-md">{agent.label}</h2>
+                    
+                    <div className="flex flex-col items-center gap-1 mb-8">
+                        <div className={`text-5xl md:text-6xl font-black font-mono tracking-tighter ${isWinner ? 'text-intuition-success text-glow-success' : 'text-white'}`}>
+                            {score.toFixed(1)}
+                        </div>
+                        <div className="text-[8px] text-slate-600 font-mono font-black uppercase tracking-[0.6em]">Signal_Magnitude</div>
+                    </div>
+                    
+                    <Link 
+                        to={`/markets/${agent.id}`} 
+                        onClick={(e) => e.stopPropagation()}
+                        className={`px-8 py-3 border font-display text-[9px] font-black tracking-[0.3em] transition-all ${isWinner ? 'bg-intuition-success text-black border-intuition-success shadow-glow-success' : 'bg-black border-slate-700 text-slate-500 hover:text-white'}`}
+                    >
+                        TERMINAL_ACCESS
+                    </Link>
+                </>
+            ) : (
+                <div className="flex flex-col items-center text-slate-800 group-hover:text-intuition-primary transition-all duration-500">
+                    <div className="w-24 h-24 rounded-none border-2 border-dashed border-slate-900 flex items-center justify-center group-hover:border-intuition-primary transition-all mb-6">
+                        <Crosshair size={32} className="opacity-10 group-hover:opacity-60" />
+                    </div>
+                    <span className="font-display font-black text-xs tracking-[0.5em] uppercase">CONNECT_NODE</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- UPDATED COMPARISON ROW WITH WEIGHT BARS ---
+const ComparisonRow: React.FC<{ 
+    label: string, 
+    leftVal: string | number, 
+    rightVal: string | number, 
+    unit?: string,
+    icon: React.ReactNode 
+}> = ({ label, leftVal, rightVal, unit = '', icon }) => {
+    const lNum = parseFloat(leftVal.toString());
+    const rNum = parseFloat(rightVal.toString());
+    const total = lNum + rNum;
+    
+    // Percentage for background bars (min 5% for visibility)
+    const lPct = total > 0 ? Math.max(5, (lNum / total) * 100) : 50;
+    const rPct = total > 0 ? Math.max(5, (rNum / total) * 100) : 50;
+
+    const leftWins = lNum > rNum;
+    const rightWins = rNum > lNum;
 
     return (
-        <div className="min-h-screen bg-intuition-dark pt-12 pb-40 px-6 max-w-[1500px] mx-auto relative font-mono">
-            <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none -z-10"></div>
+        <div className="flex items-center justify-between py-6 px-10 transition-all group relative overflow-hidden min-h-[100px] border-b border-white/5">
+            {/* Asymmetrical Background Weight Bars */}
+            <div className="absolute inset-0 flex pointer-events-none opacity-[0.08] group-hover:opacity-[0.12] transition-opacity">
+                <div className="h-full bg-intuition-primary transition-all duration-1000 ease-out" style={{ width: `${lPct}%` }}></div>
+                <div className="h-full bg-intuition-secondary transition-all duration-1000 ease-out" style={{ width: `${rPct}%` }}></div>
+            </div>
 
-            <div className="mb-16 relative z-10 border-b border-white/5 pb-12">
-                <div className="flex items-center gap-4 text-intuition-primary mb-6">
-                    <Database size={20} className="animate-pulse shadow-[0_0_15px_rgba(0,243,255,0.4)]" />
-                    <span className="text-[11px] font-black tracking-[0.8em] uppercase">Protocol_Aggregate_v42.S</span>
+            <div className={`relative z-10 w-1/3 text-right pr-12 transition-all duration-500 ${leftWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
+                <div className={`font-mono font-black text-3xl tracking-tighter ${leftWins ? 'text-intuition-primary text-glow-blue' : 'text-white'}`}>
+                    {Number(leftVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
-                <h1 className="text-5xl md:text-8xl font-black text-white font-display tracking-tighter mb-8 text-glow-white uppercase leading-none">
-                    REPUTATION_INDEXES
-                </h1>
-                
-                <div className="flex flex-col lg:flex-row gap-12 items-end justify-between">
-                    <div className="flex-1 max-w-3xl">
-                        <p className="text-slate-400 font-mono text-sm leading-relaxed uppercase tracking-[0.2em] mb-8 font-bold">
-                            // Analyzing aggregate performance across primary semantic sectors. track the collective conviction of influential entities in the trust graph.
-                        </p>
-                        
-                        <div className="flex items-center gap-6">
-                            <div className="bg-black/80 border border-slate-800 p-5 clip-path-slant flex flex-col min-w-[200px] group hover:border-intuition-primary transition-all shadow-xl">
-                                <span className="text-[9px] text-slate-600 uppercase font-black tracking-widest mb-2 group-hover:text-slate-300">Macro_System_Health</span>
-                                <div className="flex items-center gap-3">
-                                    <div className="w-2.5 h-2.5 bg-intuition-success rounded-full animate-pulse shadow-[0_0_10px_#00ff9d]"></div>
-                                    <span className="text-2xl font-black text-white font-display uppercase tracking-tight group-hover:text-glow-white">STABLE</span>
-                                </div>
-                                <span className="text-[7px] text-intuition-success uppercase mt-1.5 font-black tracking-[0.3em]">UPLINK_SECURE</span>
-                            </div>
-                            <div className="bg-black/80 border border-slate-800 p-5 clip-path-slant flex flex-col min-w-[200px] group hover:border-intuition-secondary transition-all shadow-xl">
-                                <span className="text-[9px] text-slate-600 uppercase font-black tracking-widest mb-2 group-hover:text-slate-300">Active_Corridors</span>
-                                <div className="flex items-center gap-3">
-                                    <Activity size={20} className="text-intuition-primary" />
-                                    <span className="text-2xl font-black text-white font-display uppercase tracking-tight group-hover:text-glow-red">{activeCategories.length} SECTORS</span>
-                                </div>
-                                <span className="text-[7px] text-intuition-primary uppercase mt-1.5 font-black tracking-[0.3em]">PRIMARY_LAYER_V2</span>
-                            </div>
+                <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">{unit}</span>
+            </div>
+            
+            <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0">
+                <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-intuition-primary border-intuition-primary/40' : rightWins ? 'text-intuition-secondary border-intuition-secondary/40' : 'text-slate-700'}`}>
+                    {/* Fixed: Cast icon to ReactElement with expected props for cloneElement compatibility */}
+                    {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 16 })}
+                </div>
+                <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] text-center whitespace-nowrap">{label}</div>
+            </div>
+
+            <div className={`relative z-10 w-1/3 text-left pl-12 transition-all duration-500 ${rightWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
+                <div className={`font-mono font-black text-3xl tracking-tighter ${rightWins ? 'text-intuition-secondary text-glow-red' : 'text-white'}`}>
+                    {Number(rightVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </div>
+                <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">{unit}</span>
+            </div>
+        </div>
+    );
+};
+
+const Compare: React.FC = () => {
+    const [agents, setAgents] = useState<Account[]>([]);
+    const [leftAgent, setLeftAgent] = useState<Account | null>(null);
+    const [rightAgent, setRightAgent] = useState<Account | null>(null);
+    const [isSelectorOpen, setIsSelectorOpen] = useState<'LEFT' | 'RIGHT' | null>(null);
+    const [search, setSearch] = useState('');
+
+    // Fix: Access the 'items' property from the result of getAllAgents()
+    useEffect(() => {
+        getAllAgents().then(data => setAgents(data.items));
+    }, []);
+
+    const handleSelect = (agent: Account) => {
+        if (isSelectorOpen === 'LEFT') setLeftAgent(agent);
+        if (isSelectorOpen === 'RIGHT') setRightAgent(agent);
+        setIsSelectorOpen(null);
+        setSearch('');
+        playClick();
+    };
+
+    const handleSwap = () => {
+        const temp = leftAgent;
+        setLeftAgent(rightAgent);
+        setRightAgent(temp);
+        playClick();
+    };
+
+    const lScore = useMemo(() => leftAgent ? calculateTrustScore(leftAgent.totalAssets || '0', leftAgent.totalShares || '0') : 50, [leftAgent]);
+    const rScore = useMemo(() => rightAgent ? calculateTrustScore(rightAgent.totalAssets || '0', rightAgent.totalShares || '0') : 50, [rightAgent]);
+
+    // --- ENHANCED CHART DATA (Fixed "Bad" Look) ---
+    const chartData = useMemo(() => {
+        const data = [];
+        let lBase = lScore;
+        let rBase = rScore;
+        for (let i = 40; i >= 0; i--) {
+            // Simulate "Neural Drift"
+            lBase += (Math.random() - 0.5) * 1.5;
+            rBase += (Math.random() - 0.5) * 1.5;
+            lBase = Math.max(10, Math.min(95, lBase));
+            rBase = Math.max(10, Math.min(95, rBase));
+            data.push({
+                time: i,
+                left: parseFloat(lBase.toFixed(2)),
+                right: parseFloat(rBase.toFixed(2)),
+            });
+        }
+        return data;
+    }, [lScore, rScore]);
+
+    const tensionIndex = Math.abs(lScore - rScore);
+    const arbitrageDelta = useMemo(() => {
+        if (!leftAgent || !rightAgent) return 0;
+        const lAssets = parseFloat(formatEther(BigInt(leftAgent.totalAssets || '0')));
+        const rAssets = parseFloat(formatEther(BigInt(rightAgent.totalAssets || '0')));
+        return Math.abs(lAssets - rAssets) * 0.42; // Simplified delta logic for visual
+    }, [leftAgent, rightAgent]);
+
+    const filteredAgents = agents.filter(a => (a.label || '').toLowerCase().includes(search.toLowerCase()) || a.id.includes(search));
+
+    return (
+        <div className="min-h-screen bg-[#020308] pt-12 pb-32 px-6 max-w-[1500px] mx-auto relative font-mono selection:bg-intuition-primary selection:text-black">
+            <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
+
+            <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-900 pb-10 relative z-10">
+                <div className="flex items-center gap-6">
+                    <div className="w-16 h-16 bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
+                        <BarChart3 size={32} />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 text-intuition-primary font-black font-mono text-[9px] tracking-[0.5em] uppercase mb-1">
+                             <Zap size={10} className="animate-pulse" /> Signal_Parity_Module
                         </div>
+                        <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tight uppercase leading-none text-glow-white">
+                            COMPARISON<span className="text-intuition-secondary text-glow-red">_DECK</span>
+                        </h1>
+                    </div>
+                </div>
+                
+                <div className="flex flex-wrap gap-4">
+                    <div className="px-6 py-3 bg-black border border-slate-800 font-mono text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
+                        <Terminal size={14} className="text-intuition-primary" /> TARGET_LOCK: <span className="text-white text-glow-white">{leftAgent && rightAgent ? 'SYNCHRONIZED' : 'AWAITING_UPLINK'}</span>
+                    </div>
+                    <div className="px-6 py-3 bg-intuition-secondary text-white font-black font-mono text-[10px] uppercase tracking-widest shadow-glow-red active:scale-95 transition-all">
+                        UPLINK: ACTIVE
                     </div>
                 </div>
             </div>
 
-            {selectedCategory ? (
-                <div className="animate-in fade-in slide-in-from-bottom-12 duration-700 relative z-10">
-                    <button 
-                        onClick={() => { playClick(); setSelectedCategory(null); }} 
-                        className="mb-10 flex items-center gap-3 text-slate-500 hover:text-white font-mono text-[10px] font-black hover:tracking-[0.4em] transition-all group border-b border-transparent hover:border-white pb-1.5"
-                    >
-                        <ArrowRight size={14} className="rotate-180" /> BACK_TO_PRIMARY_DECK
-                    </button>
-                    
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
-                        <div className="lg:col-span-2 bg-[#020408] border-2 border-intuition-primary p-12 clip-path-slant relative overflow-hidden shadow-[0_0_100px_rgba(0,0,0,1)] group">
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(0,243,255,0.12),transparent)]"></div>
-                            <div className="absolute bottom-0 right-0 p-10 opacity-5 group-hover:scale-110 transition-transform">
-                                <Database size={160} />
+            <div className="flex flex-col lg:flex-row gap-6 mb-12 items-stretch z-10">
+                <AgentCard 
+                    position="LEFT"
+                    agent={leftAgent} 
+                    onSelect={() => setIsSelectorOpen('LEFT')} 
+                    isWinner={!!(leftAgent && rightAgent && lScore > rScore)}
+                    isLoser={!!(leftAgent && rightAgent && lScore < rScore)}
+                />
+                
+                <NeuralCollision tension={tensionIndex} arbitrage={arbitrageDelta} onSwap={handleSwap} />
+
+                <AgentCard 
+                    position="RIGHT"
+                    agent={rightAgent} 
+                    onSelect={() => setIsSelectorOpen('RIGHT')} 
+                    isWinner={!!(rightAgent && leftAgent && rScore > lScore)}
+                    isLoser={!!(rightAgent && leftAgent && rScore < lScore)}
+                />
+            </div>
+
+            {leftAgent && rightAgent ? (
+                <div className="space-y-12 animate-in fade-in zoom-in-95 duration-700 relative z-10">
+                    <RivalryAnalysis left={leftAgent} right={rightAgent} lScore={lScore} rScore={rScore} />
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                        {/* RAW SECTOR COMPARISON TABLE */}
+                        <div className="bg-[#03040a] border border-white/5 shadow-2xl relative overflow-hidden clip-path-slant">
+                            <div className="bg-black py-4 border-b border-white/5 flex justify-center items-center relative z-20">
+                                <div className="text-[11px] font-black font-display text-intuition-primary uppercase tracking-[0.6em] text-glow-blue">RAW_SECTOR_COMPARISON</div>
                             </div>
-                            <div className="relative z-10">
-                                <div className="text-xs font-black font-mono text-intuition-primary mb-4 uppercase tracking-[0.5em]">Sector_Telemetry_Online</div>
-                                <h2 className="text-5xl md:text-6xl font-black font-display text-white mb-10 tracking-tighter uppercase leading-none">{selectedCategory}_CLUSTER</h2>
-                                <div className="flex flex-wrap gap-12 md:gap-16">
-                                    <div className="group/stat">
-                                        <div className="text-[9px] text-slate-600 uppercase font-black tracking-[0.4em] mb-3 group-hover/stat:text-slate-400">Current_Index_Composite</div>
-                                        <div className="text-7xl font-black text-white font-mono tracking-tighter text-glow-white leading-none">
-                                            {indexMeta.value.toFixed(0)}
-                                        </div>
-                                    </div>
-                                    <div className="pt-4">
-                                        <div className="text-[9px] text-slate-600 uppercase font-black tracking-[0.4em] mb-4">Price_Velocity</div>
-                                        <div className={`text-3xl font-black font-mono flex items-center gap-3 ${indexMeta.change >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
-                                            {indexMeta.change >= 0 ? '▲' : '▼'} {Math.abs(indexMeta.change).toFixed(2)}%
-                                        </div>
-                                        <div className="mt-3 h-1 w-full bg-slate-900 rounded-full overflow-hidden max-w-[150px]">
-                                            <div style={{ width: '65%' }} className={`h-full ${indexMeta.change >= 0 ? 'bg-intuition-success' : 'bg-intuition-danger'} animate-pulse`}></div>
-                                        </div>
-                                    </div>
-                                </div>
+                            
+                            <div className="bg-black/40">
+                                <ComparisonRow 
+                                    label="PROTOCOL_VOLUME" 
+                                    leftVal={parseFloat(formatEther(BigInt(leftAgent.totalAssets || '0')))} 
+                                    rightVal={parseFloat(formatEther(BigInt(rightAgent.totalAssets || '0')))}
+                                    unit="TRUST"
+                                    icon={<Shield />}
+                                />
+                                <ComparisonRow 
+                                    label="MARKET_ENTROPY" 
+                                    leftVal={calculateVolatility(leftAgent.totalAssets || '0')} 
+                                    rightVal={calculateVolatility(rightAgent.totalAssets || '0')}
+                                    unit="E"
+                                    icon={<Activity />}
+                                />
+                                <ComparisonRow 
+                                    label="STAKE_HOLDERS" 
+                                    leftVal={Math.floor(Math.random() * 800) + 200} // Mocked for visual density
+                                    rightVal={Math.floor(Math.random() * 800) + 200}
+                                    unit="QTY"
+                                    icon={<Users />}
+                                />
+                                <ComparisonRow 
+                                    label="SEMANTIC_REACH" 
+                                    leftVal={(lScore * 1.2).toFixed(0)} 
+                                    rightVal={(rScore * 1.2).toFixed(0)}
+                                    unit="SYNC"
+                                    icon={<Network />}
+                                />
                             </div>
                         </div>
 
-                        <div className="bg-black border-2 border-slate-900 p-10 clip-path-slant flex flex-col justify-between shadow-2xl relative group hover:border-white/20 transition-all">
-                             <div className="space-y-8">
-                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-3">
-                                    <BarChart3 size={16} className="text-intuition-primary"/> Intelligence_Digest
-                                </h4>
-                                <p className="text-sm text-slate-300 leading-relaxed font-bold italic font-mono border-l-2 border-intuition-primary/40 pl-6 py-3 bg-white/5 clip-path-slant uppercase tracking-wider">
-                                    {indexMeta.forecast}
-                                </p>
-                             </div>
-                             <div className="mt-12 pt-8 border-t border-white/5">
-                                <div className="flex justify-between items-end mb-4 px-1">
-                                    <span className="text-[9px] text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Vol_Vector_Intensity</span>
-                                    <span className="text-xl font-black text-white font-display uppercase tracking-tight">{indexMeta.volatility}</span>
+                        {/* LIVE TELEMETRY CHART (Fixed with Inspo Styling) */}
+                        <div className="bg-[#03040a] border border-white/10 p-10 h-[520px] relative group shadow-2xl overflow-hidden clip-path-slant">
+                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none"></div>
+                            
+                            <div className="flex justify-between items-center mb-10 relative z-10">
+                                <div className="flex gap-8 text-[10px] font-black font-mono">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3 h-3 bg-intuition-primary shadow-glow-blue clip-path-slant"></div>
+                                        <span className="text-white uppercase tracking-widest">{leftAgent.label}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3 h-3 bg-intuition-secondary shadow-glow-red clip-path-slant"></div>
+                                        <span className="text-white uppercase tracking-widest">{rightAgent.label}</span>
+                                    </div>
                                 </div>
-                                <div className="flex gap-1.5">
-                                    {[1,2,3,4,5].map(i => (
-                                        <div 
-                                            key={i} 
-                                            className={`flex-1 h-8 clip-path-slant transition-all duration-1000 ${i <= indexMeta.volatilityLevel ? 'bg-intuition-primary shadow-[0_0_15px_#00f3ff]' : 'bg-slate-900 opacity-20'}`}
-                                        ></div>
-                                    ))}
+                                <div className="px-4 py-2 bg-black border border-white/10 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] shadow-xl">
+                                    LIVE_TELEMETRY
                                 </div>
-                             </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-black border border-white/10 clip-path-slant overflow-hidden shadow-2xl">
-                        <div className="px-10 py-6 bg-white/5 border-b border-white/10 flex justify-between items-center">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.6em] flex items-center gap-4"><Users size={16}/> Synapse_Nodes_Active ({activeAgents.length})</span>
-                            <div className="flex items-center gap-2 text-[8px] font-mono text-slate-700 uppercase font-black">
-                                <Activity size={10} /> Realtime_Gravity_Sync
                             </div>
-                        </div>
-                        <div className="divide-y divide-white/5">
-                            {activeAgents.map((agent, i) => {
-                                const trust = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0');
-                                return (
-                                    <Link 
-                                        key={agent.id} 
-                                        to={`/markets/${agent.id}`}
-                                        className="flex items-center justify-between px-10 py-8 hover:bg-white/5 transition-all group relative overflow-hidden"
-                                    >
-                                        <div className="absolute left-0 top-0 h-full w-1 bg-intuition-primary scale-y-0 group-hover:scale-y-100 transition-transform duration-700"></div>
-                                        <div className="flex items-center gap-8 relative z-10">
-                                            <span className="font-mono text-slate-800 font-black text-xl w-10 group-hover:text-intuition-primary transition-colors">{(i + 1).toString().padStart(2, '0')}</span>
-                                            <div className="w-16 h-16 bg-slate-900 border-2 border-slate-800 flex items-center justify-center overflow-hidden clip-path-slant group-hover:border-intuition-primary transition-all shadow-2xl">
-                                                {agent.image ? <img src={agent.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-1000" /> : <User size={24} className="text-slate-700" />}
-                                            </div>
-                                            <div>
-                                                <div className="text-xl font-black font-display tracking-tight uppercase text-white group-hover:text-intuition-primary transition-colors mb-1">{agent.label}</div>
-                                                <div className="flex items-center gap-4 text-[9px] font-mono font-black text-slate-500 uppercase tracking-widest">
-                                                    <span className="text-intuition-success">CONVICTION: {trust.toFixed(1)}%</span>
-                                                    <div className="w-1 h-1 rounded-full bg-slate-800"></div>
-                                                    <span>UID: {agent.id.slice(0, 14)}...</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="text-right relative z-10">
-                                            <div className="text-2xl font-black text-white font-mono tracking-tighter group-hover:text-glow-white">
-                                                {(100 / activeAgents.length).toFixed(2)}%
-                                            </div>
-                                            <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1 group-hover:text-intuition-primary transition-colors">SECTOR_INFLUENCE</div>
-                                        </div>
-                                    </Link>
-                                );
-                            })}
+
+                            <div className="h-[280px] w-full relative z-10">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData}>
+                                        <defs>
+                                            <linearGradient id="colorL" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
+                                            </linearGradient>
+                                            <linearGradient id="colorR" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#ff1e6d" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#ff1e6d" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 6" stroke="#ffffff08" vertical={false} />
+                                        <XAxis dataKey="time" hide />
+                                        <YAxis domain={[0, 100]} hide />
+                                        <Tooltip 
+                                            contentStyle={{ backgroundColor: 'rgba(0,0,0,0.95)', border: '1px solid #333', fontSize: '10px', fontWeight: 'bold' }}
+                                        />
+                                        <Area type="monotone" dataKey="left" stroke="#00f3ff" strokeWidth={4} fillOpacity={1} fill="url(#colorL)" animationDuration={2000} />
+                                        <Area type="monotone" dataKey="right" stroke="#ff1e6d" strokeWidth={4} fillOpacity={1} fill="url(#colorR)" animationDuration={2000} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
+                                <div className="text-[10px] font-black font-mono text-slate-700 uppercase tracking-[0.6em] animate-pulse">
+                                    SIMULATING NEURAL DRIFT SEQUENCE
+                                </div>
+                                <div className="flex gap-2 h-1 w-48 bg-white/5 overflow-hidden rounded-full">
+                                    <div className="h-full bg-intuition-primary animate-marquee w-1/3 shadow-glow-blue"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-16 relative z-10">
-                    {activeCategories.map(cat => (
-                        <IndexCard 
-                            key={cat}
-                            category={cat}
-                            title={CATEGORY_META[cat].title} 
-                            agents={categorizedAgents[cat]} 
-                            icon={React.createElement(CATEGORY_META[cat].icon, { size: 28 })} 
-                            onSelect={() => setSelectedCategory(cat)}
-                        />
-                    ))}
+                <div className="max-w-3xl mx-auto text-center py-32 border-2 border-dashed border-slate-900 bg-black/20 clip-path-slant relative group transition-all">
+                    <Crosshair size={64} className="mx-auto text-slate-800 mb-8 opacity-20 group-hover:text-intuition-primary group-hover:opacity-100 transition-all duration-1000 animate-spin-slow" />
+                    <h3 className="text-2xl font-black font-display text-slate-700 uppercase tracking-[0.5em] mb-4 group-hover:text-white transition-colors">AWAITING_CHALLENGERS</h3>
+                    <p className="text-slate-800 font-mono text-[9px] uppercase tracking-[0.4em] px-8 leading-relaxed max-w-lg mx-auto font-black">
+                        Select two identity nodes to initiate lethal semantic collision analysis and project arbitrage deltas across active corridors.
+                    </p>
                 </div>
             )}
-            
-            <div className="mt-32 p-12 bg-black/40 border-2 border-dashed border-slate-900 text-center clip-path-slant relative overflow-hidden group shadow-inner">
-                 <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(0,243,255,0.02),transparent)] -translate-x-full group-hover:animate-[marquee_4s_linear_infinite]"></div>
-                 <AlertCircle size={40} className="mx-auto text-slate-800 mb-6 opacity-40 group-hover:text-intuition-primary group-hover:opacity-100 transition-all duration-1000" />
-                 <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.8em] mb-4">Semantic_Expansion_Protocol_Pending</h4>
-                 <p className="text-slate-800 font-mono text-[9px] uppercase tracking-[0.3em] max-w-xl mx-auto leading-relaxed font-bold">
-                     Sector constituent weights are derived from verified on-chain semantic atoms. establish new corridors by utilizing the "Define_Synapse" protocol from the command deck.
-                 </p>
-            </div>
+
+            {isSelectorOpen && (
+                <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setIsSelectorOpen(null)}>
+                    <div className="w-full max-w-2xl bg-[#050508] border border-intuition-primary/40 p-10 clip-path-slant relative overflow-hidden shadow-[0_0_100px_rgba(0,0,0,1)]" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-5 mb-10">
+                             <div className="p-3 bg-intuition-primary/10 border border-intuition-primary/30 text-intuition-primary clip-path-slant shadow-glow-blue">
+                                 <Search size={24} />
+                             </div>
+                             <div>
+                                 <h4 className="text-xl font-black font-display text-white uppercase leading-none mb-1 tracking-widest">Target_Acquisition</h4>
+                                 <div className="text-[9px] font-mono text-intuition-primary/60 tracking-[0.4em] uppercase font-black">Mainnet_Node_Directory</div>
+                             </div>
+                        </div>
+
+                        <div className="mb-10 group">
+                            <input 
+                                type="text" 
+                                placeholder="QUERY_IDENT_HASH..." 
+                                autoFocus
+                                className="w-full bg-black border-b border-slate-800 p-6 text-white font-mono text-sm focus:border-intuition-primary outline-none transition-all placeholder-slate-800 uppercase tracking-widest font-black"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="max-h-[45vh] overflow-y-auto space-y-2 pr-4 custom-scrollbar">
+                            {filteredAgents.map(a => (
+                                <button 
+                                    key={a.id}
+                                    onClick={() => handleSelect(a)}
+                                    className="w-full flex items-center justify-between p-5 bg-white/5 border border-slate-900 hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all group text-left clip-path-slant"
+                                >
+                                    <div className="flex items-center gap-5">
+                                        <div className="w-12 h-12 bg-black border border-slate-800 flex items-center justify-center overflow-hidden shrink-0 group-hover:border-intuition-primary transition-all shadow-xl">
+                                            {a.image ? <img src={a.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0"/> : <div className="text-xs font-black text-slate-700">{a.label?.[0]}</div>}
+                                        </div>
+                                        <div>
+                                            <div className="font-black text-sm text-white group-hover:text-intuition-primary transition-colors uppercase leading-none mb-1.5 tracking-tight">{a.label}</div>
+                                            <div className="text-[7px] text-slate-600 font-mono tracking-[0.2em] uppercase font-bold">UID: {a.id.slice(0,20)}...</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xl font-black font-mono text-white group-hover:text-intuition-primary leading-none mb-1">{calculateTrustScore(a.totalAssets || '0', a.totalShares || '0').toFixed(1)}</div>
+                                        <div className="text-[7px] text-slate-700 font-mono uppercase font-black tracking-widest">MAGNITUDE</div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        
+                        <div className="mt-10 pt-8 border-t border-white/5 flex justify-center">
+                            <button onClick={() => setIsSelectorOpen(null)} className="text-[10px] font-black font-mono text-slate-700 hover:text-white uppercase tracking-[0.6em] transition-colors">TERMINATE_SEARCH</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
-export default Indexes;
+export default Compare;

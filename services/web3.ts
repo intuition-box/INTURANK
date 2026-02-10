@@ -1,5 +1,7 @@
 
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, decodeEventLog } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, encodePacked, decodeEventLog } from 'viem';
+import { mainnet } from 'viem/chains';
+import { normalize } from 'viem/ens';
 import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR } from '../constants';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -20,6 +22,12 @@ export const publicClient = createPublicClient({
   transport: http(RPC_URL),
 });
 
+// Dedicated client for ENS resolution (Ethereum Mainnet) using a more robust public RPC
+const mainnetClient = createPublicClient({
+  chain: mainnet,
+  transport: http('https://eth.llamarpc.com'),
+});
+
 const getProvider = () => {
   if (typeof window === 'undefined') return null;
   const ethereum = (window as any).ethereum;
@@ -28,6 +36,23 @@ const getProvider = () => {
     return ethereum.providers.find((p: any) => p.isMetaMask) || ethereum.providers[0];
   }
   return ethereum;
+};
+
+/**
+ * Deterministically calculates a Triple ID from components.
+ */
+export const calculateTripleId = (subjectId: string, predicateId: string, objectId: string): Hex => {
+    const s = pad(subjectId as Hex, { size: 32 });
+    const p = pad(predicateId as Hex, { size: 32 });
+    const o = pad(objectId as Hex, { size: 32 });
+    return keccak256(encodePacked(['bytes32', 'bytes32', 'bytes32'], [s, p, o]));
+};
+
+/**
+ * Deterministically calculates a Counter Triple ID.
+ */
+export const calculateCounterTripleId = (tripleId: string): Hex => {
+    return keccak256(encodePacked(['bytes32', 'string'], [tripleId as Hex, 'counter']));
 };
 
 export const getConnectedAccount = async (): Promise<string | null> => {
@@ -161,13 +186,11 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       let actualShares = 0n;
       for (const log of receipt.logs) {
           try {
-              // Cast log to any to bypass 'topics' property error detected by TypeScript
               const decoded = decodeEventLog({
                   abi: MULTI_VAULT_ABI,
                   data: log.data,
                   topics: (log as any).topics,
               });
-              // Cast decoded to any to bypass 'eventName' unknown type check
               if ((decoded as any).eventName === 'Deposit' || (decoded as any).args?.shares) {
                   actualShares = (decoded as any).args.shares;
               }
@@ -214,13 +237,11 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
       let actualAssets = preview[0];
       for (const log of receipt.logs) {
           try {
-              // Cast log to any to bypass 'topics' property error detected by TypeScript
               const decoded = decodeEventLog({
                   abi: MULTI_VAULT_ABI,
                   data: log.data,
                   topics: (log as any).topics,
               });
-              // Cast decoded to any to bypass 'eventName' unknown type check
               if ((decoded as any).eventName === 'Withdraw' || (decoded as any).args?.assets) {
                   actualAssets = (decoded as any).args.assets;
               }
@@ -234,37 +255,27 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
   }
 };
 
-/**
- * --- PROXY APPROVAL LOGIC (Refined for UI Stability) ---
- */
 export const checkProxyApproval = async (walletAddress: string): Promise<boolean> => {
     const addr = getAddress(walletAddress);
     const cacheKey = `inturank_approved_${addr.toLowerCase()}`;
-    
-    // Check local cache first to prevent redundant RPC calls
     if (localStorage.getItem(cacheKey) === 'true') return true;
-    
     try {
         const approved = await publicClient.readContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
             abi: MULTI_VAULT_ABI,
             functionName: 'isApproved',
-            args: [addr, getAddress(FEE_PROXY_ADDRESS), 1] // Type 1 is for Proxy
+            args: [addr, getAddress(FEE_PROXY_ADDRESS), 1]
         } as any);
-        
         const isOk = Boolean(approved);
         if (isOk) localStorage.setItem(cacheKey, 'true');
         return isOk;
-    } catch (e) {
-        return false;
-    }
+    } catch (e) { return false; }
 };
 
 export const grantProxyApproval = async (walletAddress: string): Promise<void> => {
     const checksumAccount = getAddress(walletAddress);
     const provider = getProvider();
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumAccount });
-    
     try {
         const { request } = await publicClient.simulateContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
@@ -273,16 +284,11 @@ export const grantProxyApproval = async (walletAddress: string): Promise<void> =
             account: checksumAccount,
             args: [getAddress(FEE_PROXY_ADDRESS), 1],
         } as any);
-
         const hash = await walletClient.writeContract(request);
         await publicClient.waitForTransactionReceipt({ hash });
-        
-        // Persist approval state
         localStorage.setItem(`inturank_approved_${checksumAccount.toLowerCase()}`, 'true');
         toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
-    } catch (e: any) {
-        throw e;
-    }
+    } catch (e: any) { throw e; }
 };
 
 const LOCAL_TX_KEY = 'inturank_ledger_v3';
@@ -332,9 +338,7 @@ export const parseProtocolError = (error: any) => {
 export const publishOpinion = async (text: string, agentId: string, side: string, wallet: string): Promise<string | undefined> => {
     try {
         return keccak256(stringToHex(`${text}-${agentId}-${side}-${Date.now()}`));
-    } catch (e) {
-        return undefined;
-    }
+    } catch (e) { return undefined; }
 };
 
 export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string) => {
@@ -342,10 +346,8 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
     const dataHex = stringToHex(JSON.stringify(metadata));
     const depositBigInt = parseEther(depositAmount);
     const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
-    
     const provider = getProvider();
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
-    
     try {
         const totalCost = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
@@ -353,7 +355,6 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
             functionName: 'getAtomCost',
             args: [dataHex, depositBigInt, curveIdBigInt]
         } as any) as bigint;
-
         const { request } = await publicClient.simulateContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
@@ -362,20 +363,16 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
             args: [checksumReceiver, [dataHex], [depositBigInt], [curveIdBigInt]],
             value: totalCost, 
         } as any);
-
         const hash = await walletClient.writeContract(request);
         window.dispatchEvent(new Event('local-tx-updated'));
         return hash;
-    } catch (error: any) {
-        throw error;
-    }
+    } catch (error: any) { throw error; }
 };
 
 export const getAtomCreationCost = async (metadata: any, depositAmount: string) => {
     const dataHex = stringToHex(JSON.stringify(metadata));
     const depositBigInt = parseEther(depositAmount);
     const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
-    
     return await publicClient.readContract({
         address: FEE_PROXY_ADDRESS as `0x${string}`,
         abi: FEE_PROXY_ABI,
@@ -389,10 +386,8 @@ export const estimateAtomGas = async (account: string, metadata: any, depositAmo
     const dataHex = stringToHex(JSON.stringify(metadata));
     const depositBigInt = parseEther(depositAmount);
     const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
-    
     try {
         const totalCost = await getAtomCreationCost(metadata, depositAmount);
-
         const gas = await publicClient.estimateContractGas({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
@@ -401,12 +396,9 @@ export const estimateAtomGas = async (account: string, metadata: any, depositAmo
             args: [checksumAccount, [dataHex], [depositBigInt], [curveIdBigInt]],
             value: totalCost,
         } as any);
-        
         const gasPrice = await publicClient.getGasPrice();
         return gas * gasPrice;
-    } catch (error) {
-        return parseEther('0.0008'); 
-    }
+    } catch (error) { return parseEther('0.0008'); }
 };
 
 export const createSemanticTriple = async (subjectId: string, predicateId: string, objectId: string, depositAmount: string, receiver: string) => {
@@ -415,10 +407,8 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
     const pId = pad((predicateId.startsWith('0x') ? predicateId : `0x${predicateId}`) as Hex, { size: 32 });
     const oId = pad((objectId.startsWith('0x') ? objectId : `0x${objectId}`) as Hex, { size: 32 });
     const assets = parseEther(depositAmount);
-    
     const provider = getProvider();
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
-    
     try {
         let tripleCost: bigint;
         try {
@@ -427,18 +417,13 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
                 abi: FEE_PROXY_ABI,
                 functionName: 'getTripleCost',
             } as any) as bigint;
-        } catch (e) {
-            console.warn("PROTOCOL_REVERT_DETECTED: Using handshake fallback for triple creation cost.");
-            tripleCost = parseEther('0.101'); 
-        }
-
+        } catch (e) { tripleCost = parseEther('0.101'); }
         const totalCost = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
             functionName: 'getTotalCreationCost',
             args: [1n, assets, tripleCost]
         } as any) as bigint;
-
         const { request } = await publicClient.simulateContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
@@ -447,18 +432,44 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
             args: [checksumReceiver, [sId], [pId], [oId], [assets], BigInt(OFFSET_PROGRESSIVE_CURVE_ID)],
             value: totalCost, 
         } as any);
-
         const hash = await walletClient.writeContract(request);
         window.dispatchEvent(new Event('local-tx-updated'));
         return hash;
-    } catch (error: any) {
-        throw error;
-    }
+    } catch (error: any) { throw error; }
 };
 
 export const switchNetworkManual = async () => switchNetwork();
 export const getClientChainId = async () => CHAIN_ID;
 export const fetchAtomNameFromChain = async (id: string) => null;
-export const resolveENS = async (name: string) => null;
+
+/**
+ * Resolves an ENS name to an Ethereum address using Mainnet.
+ */
+export const resolveENS = async (name: string): Promise<string | null> => {
+    if (!name || !name.endsWith('.eth')) return null;
+    try {
+        // Use normalized name to satisfy ENS protocol requirements
+        const normalizedName = normalize(name.toLowerCase());
+        const address = await mainnetClient.getEnsAddress({ name: normalizedName });
+        return address || null;
+    } catch (e) {
+        console.error("ENS_RESOLUTION_FAILURE:", e);
+        // Explicit fallback for common "Internal error" from specific RPCs
+        return null;
+    }
+};
+
+/**
+ * Reverse resolves an Ethereum address to an ENS name.
+ */
+export const reverseResolveENS = async (address: string): Promise<string | null> => {
+    try {
+        const ensName = await mainnetClient.getEnsName({ address: getAddress(address) });
+        return ensName;
+    } catch (e) {
+        return null;
+    }
+};
+
 export const disconnectWallet = () => {};
 export const getProtocolConfig = async () => ({ minDeposit: '0.001' });

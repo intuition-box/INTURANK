@@ -1,10 +1,10 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, ChevronsRight, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp } from 'lucide-react';
+import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert } from 'lucide-react';
 import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionLists, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple } from '../services/graphql';
-import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient } from '../services/web3';
+import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { formatEther, parseEther } from 'viem';
 import { toast } from '../components/Toast';
@@ -315,6 +315,12 @@ const MarketDetail: React.FC = () => {
   const [estimatedProceeds, setEstimatedProceeds] = useState<string>('0.00');
   const [isQuoting, setIsQuoting] = useState(false);
 
+  // Determine if sentiment toggle should be available (Strictly Claims and Lists)
+  const isPolarityAvailable = useMemo(() => {
+    if (!agent) return false;
+    return agent.type === 'CLAIM' || agent.type === 'LIST';
+  }, [agent]);
+
   const fetchData = async () => {
         if (!id) return;
         setLoading(true);
@@ -344,7 +350,7 @@ const MarketDetail: React.FC = () => {
             let mergedActivity = activityData || [];
             if (acc) {
                 const localHistory = getLocalTransactions(acc);
-                const relevantLocal = localHistory.filter(tx => tx.vaultId?.toLowerCase() === id.toLowerCase() || (oppoData && tx.vaultId?.toLowerCase() === oppoData.id.toLowerCase()));
+                const relevantLocal = localHistory.filter(tx => tx.vaultId?.toLowerCase() === id.toLowerCase() || (oppoData && tx.vaultId?.toLowerCase() === oppoData.id.toLowerCase()) || (agentData?.counterTermId && tx.vaultId?.toLowerCase() === agentData.counterTermId.toLowerCase()));
                 const onChainHashes = new Set(mergedActivity.map(tx => tx.id.toLowerCase()));
                 const uniqueLocal = relevantLocal.filter(tx => !onChainHashes.has(tx.id.toLowerCase()));
                 mergedActivity = [...uniqueLocal, ...mergedActivity].sort((a, b) => b.timestamp - a.timestamp);
@@ -360,22 +366,20 @@ const MarketDetail: React.FC = () => {
             
             if (acc) {
                 setWalletBalance(await getWalletBalance(acc));
+                
                 const tShares = await getShareBalance(acc, id, OFFSET_PROGRESSIVE_CURVE_ID);
                 setTrustBalance(tShares);
 
-                if (oppoData) {
-                    const dShares = await getShareBalance(acc, oppoData.id, OFFSET_PROGRESSIVE_CURVE_ID);
-                    setDistrustBalance(dShares);
-                } else {
-                    setDistrustBalance('0.00');
+                let dShares = '0.00';
+                if (agentData.type === 'CLAIM') {
+                    const cId = agentData.counterTermId || calculateCounterTripleId(id!);
+                    dShares = await getShareBalance(acc, cId, OFFSET_PROGRESSIVE_CURVE_ID);
+                } else if (oppoData) {
+                    dShares = await getShareBalance(acc, oppoData.id, OFFSET_PROGRESSIVE_CURVE_ID);
                 }
+                setDistrustBalance(dShares);
 
-                updatePositionSummary(acc, 'TRUST', mergedActivity, agentData, oppoData);
-            }
-
-            if (agentData.type === 'ACCOUNT' || id.startsWith('0x')) {
-                const following = await getUserPositions(id);
-                setFollowingPositions(following || []);
+                updatePositionSummary(acc, sentiment, mergedActivity, agentData, oppoData);
             }
         } catch (e) {
             console.error(e);
@@ -385,7 +389,11 @@ const MarketDetail: React.FC = () => {
   };
 
   const updatePositionSummary = async (acc: string, side: 'TRUST' | 'DISTRUST', activity: Transaction[], agentData: any, oppoData: any) => {
-    const currentVaultId = id;
+    let currentVaultId = id;
+    if (side === 'DISTRUST') {
+        currentVaultId = agentData?.type === 'CLAIM' ? (agentData.counterTermId || calculateCounterTripleId(id!)) : oppoData?.id;
+    }
+    
     if (!currentVaultId) {
         setUserPosition(null);
         return;
@@ -420,11 +428,28 @@ const MarketDetail: React.FC = () => {
   }, [timeframe, agent]);
 
   useEffect(() => {
-    if (action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && wallet && id) {
+      if (wallet && agent) {
+          updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent);
+      }
+  }, [sentiment, wallet, activityLog]);
+
+  // Lock sentiment to TRUST for standard atoms
+  useEffect(() => {
+    if (agent && !isPolarityAvailable && sentiment !== 'TRUST') {
+      setSentiment('TRUST');
+    }
+  }, [agent, isPolarityAvailable, sentiment]);
+
+  useEffect(() => {
+    const activeTargetId = sentiment === 'TRUST' 
+        ? id 
+        : (agent?.type === 'CLAIM' ? (agent?.counterTermId || calculateCounterTripleId(id!)) : oppositionAgent?.id);
+
+    if (action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && wallet && activeTargetId) {
         const timer = setTimeout(async () => {
             setIsQuoting(true);
             try {
-                const quote = await getQuoteRedeem(inputAmount, id, wallet, OFFSET_PROGRESSIVE_CURVE_ID);
+                const quote = await getQuoteRedeem(inputAmount, activeTargetId, wallet, OFFSET_PROGRESSIVE_CURVE_ID);
                 setEstimatedProceeds(parseFloat(quote).toFixed(4));
             } catch (e) {
                 setEstimatedProceeds('0.0000');
@@ -436,12 +461,24 @@ const MarketDetail: React.FC = () => {
     } else {
         setEstimatedProceeds('0.0000');
     }
-  }, [inputAmount, action, wallet, id]);
+  }, [inputAmount, action, wallet, id, sentiment, agent, oppositionAgent]);
 
   const handleExecute = async () => {
         if (!wallet) return;
 
         let activeTargetId = id!;
+        if (sentiment === 'DISTRUST') {
+            if (agent?.type === 'CLAIM') {
+                activeTargetId = agent.counterTermId || calculateCounterTripleId(id!);
+            } else {
+                activeTargetId = oppositionAgent?.id;
+            }
+        }
+
+        if (!activeTargetId) {
+            toast.error("VAULT_NOT_FOUND: Opposition node not initialized.");
+            return;
+        }
 
         if (action === 'ACQUIRE' && !isApproved) {
             setTxModal({ isOpen: true, status: 'processing', title: 'PERMISSION_HANDSHAKE', message: 'Authorizing protocol uplink...' });
@@ -468,14 +505,19 @@ const MarketDetail: React.FC = () => {
             
             playSuccess();
             
+            const tickerName = (agent?.label || 'NODE').toUpperCase();
+            const assetLabel = sentiment === 'TRUST' 
+                ? `TRUSTING_${tickerName}` 
+                : `OPPOSING_${tickerName}`;
+            
             const localTx: Transaction = { 
                 id: res.hash, 
                 type: action === 'ACQUIRE' ? 'DEPOSIT' : 'REDEEM', 
-                assets: res.assets.toString(),
+                assets: res.assets ? res.assets.toString() : parseEther(inputAmount).toString(),
                 shares: res.shares.toString(),
                 timestamp: Date.now(), 
                 vaultId: activeTargetId, 
-                assetLabel: agent?.label 
+                assetLabel: assetLabel
             };
             
             saveLocalTransaction(localTx, wallet);
@@ -499,20 +541,16 @@ const MarketDetail: React.FC = () => {
         return;
     }
 
-    const { pnlPercent, entry, exit } = calculateRealizedPnL(sharesNum, assetsNum, activityLog, id!);
+    const { pnlPercent, entry, exit } = calculateRealizedPnL(sharesNum, assetsNum, activityLog, tx.vaultId);
     
-    setCardStats({
-        pnl: pnlPercent,
-        entry: entry,
-        exit: exit
-    });
+    setCardStats({ pnl: pnlPercent, entry, exit });
     setShowShareCard(true);
   };
 
   const handleMax = () => {
         playClick();
         if (action === 'ACQUIRE') setInputAmount(walletBalance);
-        else setInputAmount(trustBalance);
+        else setInputAmount(sentiment === 'TRUST' ? trustBalance : distrustBalance);
   };
 
   const getConvictionMetadata = (shares: string | number) => {
@@ -539,7 +577,7 @@ const MarketDetail: React.FC = () => {
         .filter(t => t.subject?.term_id === agent.id)
         .map(t => [t.object.term_id, { label: t.object.label, count: Math.floor(Math.random() * 2000) + 1 }])).values());
   
-  const activeBalance = trustBalance;
+  const activeBalance = sentiment === 'TRUST' ? trustBalance : distrustBalance;
 
   return (
     <div className="w-full px-4 lg:px-10 pt-6 pb-32 font-mono text-[#e2e8f0] bg-[#020308]">
@@ -558,8 +596,8 @@ const MarketDetail: React.FC = () => {
                 currentPrice={cardStats.exit} 
                 assetName={agent?.label || 'Unknown'} 
                 assetImage={agent?.image} 
-                side={'TRUST'} 
-                themeColor={theme.color} 
+                side={sentiment} 
+                themeColor={sentiment === 'DISTRUST' ? '#ff1e6d' : theme.color} 
               />
               <div className="text-center mt-6 text-slate-600 text-[8px] font-black font-mono uppercase tracking-[0.8em] animate-pulse">CLICK_OUTSIDE_TO_CLOSE</div>
             </div>
@@ -698,17 +736,32 @@ const MarketDetail: React.FC = () => {
                     <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">Linear_Curve_Handshake_Active</div>
                 </div>
 
-                <div className={`bg-black border-2 p-1 clip-path-slant shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 hover:border-white/40`} style={{ borderColor: `${theme.color}44` }}>
+                <div className={`bg-black border-2 p-1 clip-path-slant shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 hover:border-white/40 ${sentiment === 'DISTRUST' ? 'border-intuition-danger/40' : ''}`} style={{ borderColor: sentiment === 'TRUST' ? `${theme.color}44` : '' }}>
                     <div className="bg-[#050505] p-8 border border-white/5 relative overflow-hidden">
                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
                         <div className="flex justify-between items-center mb-10">
-                            <h2 className={`font-black font-display text-[11px] uppercase tracking-[0.6em] text-glow transition-colors duration-700`} style={{ color: theme.color }}>EXECUTION DECK</h2>
-                            <div className={`w-2 h-2 rounded-full animate-ping shadow-glow transition-all duration-700`} style={{ backgroundColor: theme.color }}></div>
+                            <h2 className={`font-black font-display text-[11px] uppercase tracking-[0.6em] text-glow transition-colors duration-700 ${sentiment === 'DISTRUST' ? 'text-intuition-danger text-glow-red' : ''}`} style={{ color: sentiment === 'TRUST' ? theme.color : '' }}>EXECUTION DECK</h2>
+                            <div className={`w-2 h-2 rounded-full animate-ping shadow-glow transition-all duration-700 ${sentiment === 'DISTRUST' ? 'bg-intuition-danger shadow-glow-red' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '' }}></div>
                         </div>
                         <div className="flex gap-1.5 mb-10">
                             <button onClick={() => { setAction('ACQUIRE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'ACQUIRE' ? 'bg-white text-black border-white shadow-glow-white' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>ACQUIRE</button>
                             <button onClick={() => { setAction('LIQUIDATE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'LIQUIDATE' ? 'bg-intuition-secondary text-white border-intuition-secondary shadow-glow-red' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>LIQUIDATE</button>
                         </div>
+                        
+                        {isPolarityAvailable && (
+                            <div className="mb-10 animate-in fade-in slide-in-from-top-2 duration-500">
+                                <div className="flex justify-between items-center mb-4 px-1">
+                                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Signal_Polarity</span>
+                                    {sentiment === 'DISTRUST' && (
+                                        <span className="text-[8px] font-black text-intuition-danger uppercase tracking-tighter">Opposing Node active</span>
+                                    )}
+                                </div>
+                                <div className="flex gap-1.5 p-1 bg-black border border-white/5 clip-path-slant">
+                                    <button onClick={() => { setSentiment('TRUST'); playClick(); }} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'text-slate-600 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'SUPPORT' : 'TRUST'}</button>
+                                    <button onClick={() => { setSentiment('DISTRUST'); playClick(); }} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'DISTRUST' ? 'bg-intuition-danger text-white' : 'text-slate-600 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'OPPOSE' : 'DISTRUST'}</button>
+                                </div>
+                            </div>
+                        )}
                         
                         <div className="mb-8">
                             <div className="flex justify-between items-center mb-4 px-1">
@@ -718,7 +771,7 @@ const MarketDetail: React.FC = () => {
                                     <button onClick={handleMax} className={`px-3 py-0.5 bg-white/5 border border-white/10 hover:border-white hover:text-white text-slate-600 text-[8px] font-black uppercase clip-path-slant transition-all shadow-inner`}>MAX</button>
                                 </div>
                             </div>
-                            <div className={`relative group/input border-2 p-1 clip-path-slant transition-all duration-300 border-slate-900 group-focus-within:border-white/40`}>
+                            <div className={`relative group/input border-2 p-1 clip-path-slant transition-all duration-300 border-slate-900 focus-within:border-white/40`}>
                                 <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-5 text-right text-white font-black font-mono text-3xl focus:outline-none transition-all shadow-inner" placeholder="0.00" />
                                 <div className={`absolute left-5 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase pointer-events-none z-20 transition-all text-slate-700 group-focus-within/input:text-white`}>{action === 'ACQUIRE' ? CURRENCY_SYMBOL : 'SHARES'}</div>
                             </div>
@@ -735,10 +788,12 @@ const MarketDetail: React.FC = () => {
                             )}
                         </div>
                         
-                        <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 group/btn`} style={{ backgroundColor: theme.color, borderColor: theme.color, color: '#000' }}>
-                            <span className="group-hover/btn:scale-105 transition-transform block">{!isApproved && action === 'ACQUIRE' ? 'ENABLE_PROTOCOL' : action === 'ACQUIRE' ? `SUPPORT_IDENTITY` : `LIQUIDATE_STAKE`}</span>
+                        <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 group/btn ${sentiment === 'DISTRUST' ? 'bg-intuition-danger border-intuition-danger text-white hover:bg-white hover:text-intuition-danger' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '', borderColor: sentiment === 'TRUST' ? theme.color : '', color: sentiment === 'TRUST' ? '#000' : '' }}>
+                            <span className="group-hover/btn:scale-105 transition-transform block">
+                                {!isApproved && action === 'ACQUIRE' ? 'ENABLE_PROTOCOL' : 
+                                 action === 'ACQUIRE' ? `SIGNAL_${sentiment}` : `LIQUIDATE_${sentiment}`}
+                            </span>
                         </button>
-                        <p className="mt-6 text-[8px] text-slate-700 font-mono uppercase text-center tracking-[0.2em] opacity-60">Handshake Required for Mainnet Ingress</p>
                     </div>
                 </div>
 
@@ -830,7 +885,7 @@ const MarketDetail: React.FC = () => {
                 {activeTab === 'LISTS' && (
                     <div className="animate-in fade-in duration-700">
                         <div className="flex items-center justify-between mb-12"><h4 className="text-[11px] font-black uppercase tracking-[0.6em] flex items-center gap-4" style={{ color: theme.color }}><ListIcon size={16} className="animate-pulse" /> SEMANTIC_INCLUSION_VECTORS</h4><span className="text-[8px] font-mono text-slate-600 uppercase">Buffer: {lists.length} Linked Clusters</span></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">{lists.length > 0 ? lists.map((list, i) => (<Link key={i} to={`/markets/${list.id}`} className="group relative flex flex-col p-10 bg-white/[0.02] border-2 border-slate-800 hover:border-white transition-all shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden min-h-[340px] text-center backdrop-blur-xl clip-path-slant" onClick={playClick} onMouseEnter={playHover}><div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] opacity-10 pointer-events-none"></div><div className="flex flex-col items-center justify-center flex-1 relative z-10"><div className="relative mb-10 group-hover:scale-110 transition-transform duration-700"><div className="absolute -inset-6 border-2 border-dashed border-white/10 rounded-full animate-spin-slow opacity-40 group-hover:opacity-100 transition-all"></div><div className="w-24 h-24 bg-black border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-white shadow-2xl relative clip-path-slant group-hover:shadow-glow-white">{list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={32} className="text-slate-600 group-hover:text-white" />}</div></div><div className="relative z-10"><div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] mb-4 group-hover:text-white transition-colors">SUB_SECTOR_VECTOR</div><div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tighter leading-none mb-6 drop-shadow-md">{list.label}</div><div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/5 border border-white/5 clip-path-slant text-[9px] font-black text-slate-400 group-hover:text-white transition-all"><Database size={12} className="text-slate-600 group-hover:text-white" />CONSTITUENTS: {list.totalItems || 0}</div></div></div><div className="absolute bottom-6 right-6 text-slate-800 group-hover:text-white group-hover:translate-x-1 transition-all"><ArrowRight size={24} /></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 clip-path-slant">NULL_VECTORS_DETECTED</div>)}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">{lists.length > 0 ? lists.map((list, i) => (<Link key={i} to={`/markets/${list.id}`} className="group relative flex flex-col p-10 bg-white/[0.02] border-2 border-slate-800 hover:border-white transition-all shadow-[0_0_40px_rgba(0,243,255,0.5)] overflow-hidden min-h-[340px] text-center backdrop-blur-xl clip-path-slant" onClick={playClick} onMouseEnter={playHover}><div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] opacity-10 pointer-events-none"></div><div className="flex flex-col items-center justify-center flex-1 relative z-10"><div className="relative mb-10 group-hover:scale-110 transition-transform duration-700"><div className="absolute -inset-6 border-2 border-dashed border-white/10 rounded-full animate-spin-slow opacity-40 group-hover:opacity-100 transition-all"></div><div className="w-24 h-24 bg-black border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-white shadow-2xl relative clip-path-slant group-hover:shadow-glow-white">{list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={32} className="text-slate-600 group-hover:text-white" />}</div></div><div className="relative z-10"><div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] mb-4 group-hover:text-white transition-colors">SUB_SECTOR_VECTOR</div><div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tighter leading-none mb-6 drop-shadow-md">{list.label}</div><div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/5 border border-white/5 clip-path-slant text-[9px] font-black text-slate-400 group-hover:text-white transition-all"><Database size={12} className="text-slate-600 group-hover:text-white" />CONSTITUENTS: {list.totalItems || 0}</div></div></div><div className="absolute bottom-6 right-6 text-slate-800 group-hover:text-white group-hover:translate-x-1 transition-all"><ArrowRight size={24} /></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 clip-path-slant">NULL_VECTORS_DETECTED</div>)}</div>
                     </div>)}
                 {activeTab === 'ACTIVITY' && (
                     <div className="animate-in fade-in duration-700 overflow-hidden ares-frame bg-white/[0.01] border-2 border-slate-900 clip-path-slant shadow-2xl backdrop-blur-sm">
@@ -840,7 +895,8 @@ const MarketDetail: React.FC = () => {
                                     <th className="px-8 py-5">TRANSACTION_HASH</th>
                                     <th className="px-8 py-5">ACTION</th>
                                     <th className="px-8 py-5 text-right">UNITS</th>
-                                    <th className="px-8 py-5 text-right">RECONCILE</th>
+                                    <th className="px-8 py-5 text-right">TIMESTAMP</th>
+                                    <th className="px-8 py-5 text-right">HANDSHAKE</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
@@ -858,21 +914,33 @@ const MarketDetail: React.FC = () => {
                                         <td className="px-8 py-6 text-right font-black text-white text-lg group-hover:text-glow-white transition-all">
                                             {formatDisplayedShares(tx.shares)}
                                         </td>
+                                        <td className="px-8 py-6 text-right font-mono text-slate-500 uppercase tracking-tighter">
+                                            {new Date(tx.timestamp).toLocaleString()}
+                                        </td>
                                         <td className="px-8 py-6 text-right">
-                                            {tx.type === 'REDEEM' && (
-                                                <button 
-                                                    onClick={() => handleGenerateHistoryCard(tx)}
-                                                    className="p-2 bg-white/5 border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-lg group/btn"
-                                                    title="GENERATE_PNL_CARD"
+                                            <div className="flex justify-end gap-3">
+                                                {tx.type === 'REDEEM' && (
+                                                    <button 
+                                                        onClick={() => handleGenerateHistoryCard(tx)}
+                                                        className="p-2 bg-white/5 border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-lg group/btn"
+                                                        title="GENERATE_PNL_CARD"
+                                                    >
+                                                        <Share2 size={14} className="group-hover/btn:scale-110 transition-transform" />
+                                                    </button>
+                                                )}
+                                                <a 
+                                                    href={`${EXPLORER_URL}/tx/${tx.id}`} 
+                                                    target="_blank" 
+                                                    rel="noreferrer"
+                                                    className="p-2 bg-white/5 border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-lg"
                                                 >
-                                                    <Share2 size={14} className="group-hover/btn:scale-110 transition-transform" />
-                                                </button>
-                                            )}
-                                            <span className="ml-3 text-slate-600 group-hover:text-slate-400">{new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                    <ExternalLink size={14} />
+                                                </a>
+                                            </div>
                                         </td>
                                     </tr>
                                 )) : (
-                                    <tr><td colSpan={4} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_ACTIVITY_LOGGED</td></tr>
+                                    <tr><td colSpan={5} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_ACTIVITY_LOGGED</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -889,5 +957,12 @@ const MarketDetail: React.FC = () => {
     </div>
   );
 };
+
+const ChevronsRight = ({ className, size }: { className: string, size: number }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <polyline points="13 17 18 12 13 7"></polyline>
+        <polyline points="6 17 11 12 6 7"></polyline>
+    </svg>
+);
 
 export default MarketDetail;

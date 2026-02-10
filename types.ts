@@ -3,6 +3,7 @@ import React from 'react';
 
 export interface Account {
   id: string; // Mapped from term_id
+  counterTermId?: string; // For triples, the ID of the opposing position
   label?: string;
   description?: string;
   image?: string;

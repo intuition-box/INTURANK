@@ -31,15 +31,10 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     }, [analysis]);
 
     const generateAnalysis = async () => {
-        const apiKey = process.env.API_KEY;
-        if (!apiKey) {
-            setAnalysis('CRITICAL_ERROR: NEURAL_UPLINK_RESTRICTED. API_KEY_NOT_FOUND.');
-            return;
-        }
-
         setLoading(true);
         try {
-            const ai = new GoogleGenAI({ apiKey });
+            // Fix: Always use process.env.API_KEY directly as per initialization guidelines
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const prompt = `
                 Perform an aggressive, high-stakes tactical comparison between two competing reputation-based assets in a decentralized trust-graph combat arena.
                 
@@ -264,8 +259,9 @@ const Compare: React.FC = () => {
     const [isSelectorOpen, setIsSelectorOpen] = useState<'LEFT' | 'RIGHT' | null>(null);
     const [search, setSearch] = useState('');
 
+    // Fix: Access the 'items' property from the result of getAllAgents()
     useEffect(() => {
-        getAllAgents().then(setAgents);
+        getAllAgents().then(data => setAgents(data.items));
     }, []);
 
     const handleSelect = (agent: Account) => {

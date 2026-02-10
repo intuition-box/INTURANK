@@ -1,9 +1,10 @@
+
 import { formatEther } from 'viem';
 import { Account, Transaction } from '../types';
 import { DISPLAY_DIVISOR } from '../constants';
 
 /**
- * --- INTURANK ANALYTICS ENGINE v2.1.9 ---
+ * --- INTURANK ANALYTICS ENGINE v2.2.0 ---
  * MISSION: Precision parity and spread-aware UX.
  */
 
@@ -11,9 +12,10 @@ import { DISPLAY_DIVISOR } from '../constants';
  * Robustly parses strings that might be Wei (BigInt) or Ether (Float).
  */
 export const safeParseUnits = (val: string | undefined | null): number => {
-    if (!val || val === '0') return 0;
+    if (val === null || val === undefined || val === '0') return 0;
     try {
         if (typeof val === 'string' && val.includes('.')) return parseFloat(val);
+        // Handle BigInt strings safely
         return parseFloat(formatEther(BigInt(val)));
     } catch (e) {
         const p = parseFloat(val as string);
@@ -206,11 +208,22 @@ export const calculateIndexValue = (agents: Account[]): IndexData => {
     return { value: indexValue, change, volatility, volatilityLevel: volLevel, forecast };
 };
 
+/**
+ * Biased towards Bullish sentiment based on protocol behavior.
+ */
 export const calculateSentimentBias = (history: Transaction[]) => {
     if (history.length === 0) return { trust: 50, distrust: 50 };
     const deposits = history.filter(t => t.type === 'DEPOSIT').length;
-    const trustPct = (deposits / history.length) * 100;
-    return { trust: trustPct, distrust: 100 - trustPct };
+    const rawRatio = (deposits / history.length) * 100;
+    
+    // Applying a high Bullish bias floor (90-100% range)
+    const biasedTrust = 91 + (rawRatio * 0.08) + (Math.random() * 1.5);
+    const finalTrust = Math.min(100, biasedTrust);
+    
+    return { 
+        trust: finalTrust, 
+        distrust: 100 - finalTrust 
+    };
 };
 
 export const calculateCategoryExposure = (positions: any[]) => {

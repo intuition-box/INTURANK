@@ -1,9 +1,10 @@
+
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { formatEther } from 'viem';
+import { formatEther, getAddress } from 'viem';
 import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
-import { Wallet, Activity, RefreshCw, Zap, Shield, User, Loader2, TrendingUp, Coins, Lock, Radio, ChevronRight, AlertCircle, Clock, CheckCircle2, Binary, Terminal } from 'lucide-react';
+import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
@@ -50,106 +51,102 @@ const Portfolio: React.FC = () => {
     setLoading(true);
     
     try {
-      // Balance check
-      const bal = await getWalletBalance(address);
+      // 1. Fetch multi-source telemetry
+      const [bal, chainHistory, graphPositionsRaw] = await Promise.all([
+          getWalletBalance(address),
+          getUserHistory(address),
+          getUserPositions(address).catch(() => [])
+      ]);
+
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
 
-      // Fetch network records (Using the high-integrity "events" schema)
-      const chainHistory = await getUserHistory(address).catch(() => []);
+      // 2. Ledger Reconciliation
       const localHistory = getLocalTransactions(address);
-      
       const chainHashes = new Set(chainHistory.map(tx => tx.id.toLowerCase()));
       const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
       const mergedHistory = [...uniqueLocal, ...chainHistory].sort((a, b) => b.timestamp - a.timestamp);
       
       setHistory(mergedHistory);
-      setSentimentBias(calculateSentimentBias(mergedHistory));
 
-      // Reconcile holdings
-      const graphPositionsRaw = await getUserPositions(address).catch(() => []);
-      const uniqueVaultIds = Array.from(new Set(graphPositionsRaw.map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean))) as string[];
-      const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
+      // 3. Identify all nodes ever touched
+      const historyVaultIds = mergedHistory.map(tx => tx.vaultId?.toLowerCase()).filter(Boolean);
+      const graphVaultIds = graphPositionsRaw.map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean);
+      const candidateVaultIds = Array.from(new Set([...graphVaultIds, ...historyVaultIds])) as string[];
+      
+      const metadata = await getVaultsByIds(candidateVaultIds).catch(() => []);
 
+      // 4. HARD-GATE INVENTORY RECONCILIATION
+      const activePositions: any[] = [];
       let aggregatedValue = 0;
       let aggregatedPnL = 0;
 
-      const livePositions = await Promise.all(uniqueVaultIds.map(async (id) => {
+      // Filter positions by real-time balance AND value threshold
+      for (const id of candidateVaultIds) {
           try {
-              // Direct chain lookup for balance truth
-              const sharesRaw = await getShareBalance(address, id, OFFSET_PROGRESSIVE_CURVE_ID);
+              const graphPos = graphPositionsRaw.find((p: any) => p.vault?.term_id?.toLowerCase() === id.toLowerCase());
+              const curveId = graphPos?.vault?.curve_id ? Number(graphPos.vault.curve_id) : OFFSET_PROGRESSIVE_CURVE_ID;
+
+              // CONTRACT CHECK: Real-time share balance
+              const sharesRaw = await getShareBalance(address, id, curveId);
               const sharesNum = parseFloat(sharesRaw);
               
-              if (sharesNum <= 0.0001) return null;
+              // STRICTURE 1: Minimum share threshold
+              if (!sharesNum || sharesNum <= 0.00000001) continue;
 
-              const valueStr = await getQuoteRedeem(sharesRaw, id, address, OFFSET_PROGRESSIVE_CURVE_ID);
+              // VALUATION CHECK: Real-time redeemable value
+              const valueStr = await getQuoteRedeem(sharesRaw, id, address, curveId);
               const value = parseFloat(valueStr);
 
-              // Resolve label and metadata
+              // STRICTURE 2: Minimum Value Threshold (0.005 TRUST)
+              // This removes "Sold" positions that the user considers closed due to dust or rounding residuals.
+              if (value < 0.005) continue;
+
               let meta = metadata.find(m => m.id.toLowerCase() === id.toLowerCase());
               let label = meta?.label || `Node_${id.slice(0, 8)}`;
               let image = meta?.image;
               let type = meta?.type || 'ATOM';
 
-              // Check for Distrust semantics
-              const graphPos = graphPositionsRaw.find((p: any) => p.vault?.term_id?.toLowerCase() === id.toLowerCase());
+              // Triple/Opposition Mapping
               const triple = graphPos?.vault?.term?.triple;
-              if (triple && triple.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(2))) {
-                  label = `Opposing_${triple.subject?.label || triple.subject?.id.slice(0, 6)}`;
-                  image = triple.subject?.image;
+              const isCounter = triple?.counter_term_id?.toLowerCase() === id.toLowerCase();
+              const pointsToDistrust = triple?.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
+
+              if (isCounter || pointsToDistrust) {
+                  const subjectLabel = triple?.subject?.label || triple?.subject?.id?.slice(0, 8) || 'NODE';
+                  label = `OPPOSING_${subjectLabel}`.toUpperCase();
+                  image = triple?.subject?.image;
                   type = 'CLAIM';
               }
 
               const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, mergedHistory, id);
-
+              
               aggregatedValue += value;
               aggregatedPnL += profit;
 
-              return {
-                  id,
-                  shares: sharesNum,
-                  value: value, 
-                  pnl: pnlPercent,
-                  atom: { label, id, image, type }
-              };
-          } catch (e) {
-              return null;
-          }
-      }));
+              activePositions.push({ id, shares: sharesNum, value: value, pnl: pnlPercent, atom: { label, id, image, type } });
+          } catch (e) { continue; }
+      }
 
-      const finalPositions = livePositions.filter(Boolean) as any[];
-      setPositions(finalPositions);
-      
-      // Calculate exposure using categorized metadata
-      const categorized = calculateCategoryExposure(finalPositions);
-      setExposureData(categorized);
-      
+      setPositions(activePositions);
+      setExposureData(calculateCategoryExposure(activePositions));
       setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
       setNetPnL(aggregatedPnL);
+      setSentimentBias(calculateSentimentBias(mergedHistory));
 
-      // Generate temporal data from history
-      // To prevent negative axes and handle partial history, 
-      // we anchor the current point to actual current value and backtrack.
-      const historySorted = [...mergedHistory].sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+      // 5. Build Temporal chart
+      const points = [{ timestamp: Date.now(), val: aggregatedValue }];
       let runner = aggregatedValue;
-      const points = [];
-      
-      // Current point
-      points.push({ timestamp: Date.now(), val: runner });
-
-      for (const tx of historySorted) {
-          // Double points for step visualization
-          points.push({ timestamp: tx.timestamp, val: runner });
+      for (let i = 0; i < Math.min(mergedHistory.length, 50); i++) {
+          const tx = mergedHistory[i];
           const val = safeParseUnits(tx.assets);
           if (tx.type === 'DEPOSIT') runner -= val;
           else runner += val;
           points.push({ timestamp: tx.timestamp, val: runner });
       }
-      
-      // Reverse back to chronological for chart
       setChartData(points.reverse());
 
     } catch (e) {
-      console.error("NETWORK_SYNC_FAILURE", e);
+      console.error("PORTFOLIO_SYNC_FAILURE", e);
     } finally {
       setLoading(false);
       isRefreshingRef.current = false;
@@ -206,23 +203,36 @@ const Portfolio: React.FC = () => {
   );
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20">
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20 font-mono">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         <StatCard label="Wallet Balance" value={balance} unit="TRUST" icon={Wallet} />
         <StatCard label="Total Equity" value={portfolioValue} unit="TRUST" icon={Coins} />
         <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit="TRUST" icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} />
-        <div className="bg-black/40 border border-slate-900 p-6 clip-path-slant flex flex-col justify-between h-36">
+        <div className="bg-black/40 border border-slate-900 p-6 clip-path-slant flex flex-col justify-between h-36 group hover:border-intuition-primary/30 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Sentiment_Bias</span>
-            <Activity size={20} className="text-slate-700" />
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">SENTIMENT_BIAS</span>
+            <PulseIcon size={20} className="text-slate-700 group-hover:text-intuition-primary transition-colors animate-pulse" />
           </div>
-          <div className="flex gap-1 h-1.5 mt-4">
-            <div style={{ width: `${sentimentBias.trust}%` }} className="bg-intuition-success shadow-glow-success"></div>
-            <div style={{ width: `${sentimentBias.distrust}%` }} className="bg-intuition-danger shadow-glow-red"></div>
+          <div className="flex items-center gap-1.5 h-2 w-full px-1 relative">
+            <div className="flex-1 flex justify-end h-full relative overflow-visible">
+                <div style={{ width: `${sentimentBias.trust}%` }} className="h-full bg-intuition-success shadow-[0_0_30px_#00ff9d] transition-all duration-1000 origin-right"></div>
+                <div style={{ width: `${sentimentBias.trust}%` }} className="absolute inset-0 bg-intuition-success/40 blur-[8px] animate-pulse pointer-events-none"></div>
+            </div>
+            <div className="w-px h-3 bg-white/40 shrink-0 z-10"></div>
+            <div className="flex-1 flex justify-start h-full relative overflow-visible">
+                <div style={{ width: `${sentimentBias.distrust}%` }} className="h-full bg-intuition-danger shadow-[0_0_30px_#ff1e6d] transition-all duration-1000 origin-left"></div>
+                <div style={{ width: `${sentimentBias.distrust}%` }} className="absolute inset-0 bg-intuition-danger/40 blur-[8px] animate-pulse pointer-events-none"></div>
+            </div>
           </div>
-          <div className="flex justify-between text-[8px] font-black font-mono mt-2">
-            <span className="text-intuition-success">BULLISH {sentimentBias.trust.toFixed(0)}%</span>
-            <span className="text-intuition-danger">BEARISH {sentimentBias.distrust.toFixed(0)}%</span>
+          <div className="flex justify-between items-end text-[9px] font-black font-mono relative z-10">
+            <div className="flex flex-col">
+                <span className="text-intuition-success uppercase tracking-widest leading-none text-glow-success">BULLISH</span>
+                <span className="text-white text-xs mt-0.5">{sentimentBias.trust.toFixed(0)}%</span>
+            </div>
+            <div className="flex flex-col items-end">
+                <span className="text-intuition-danger uppercase tracking-widest leading-none text-glow-red">BEARISH</span>
+                <span className="text-white text-xs mt-0.5">{sentimentBias.distrust.toFixed(0)}%</span>
+            </div>
           </div>
         </div>
       </div>
@@ -233,25 +243,30 @@ const Portfolio: React.FC = () => {
                 <div className="px-8 py-6 border-b border-slate-900 bg-white/5 flex justify-between items-center">
                     <div className="flex items-center gap-4">
                         <Zap size={20} className="text-intuition-primary animate-pulse" />
-                        <h3 className="text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings</h3>
+                        <h3 className="text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
                     </div>
-                    {/* Fix: Use 'account' instead of undefined 'address' */}
-                    <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors">
-                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest">Verified_On_Intuition_Mainnet</span>
+                        <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors">
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        </button>
+                    </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left font-mono text-xs">
                         <thead className="text-slate-700 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808]">
                             <tr>
-                                <th className="px-8 py-4">Asset_Identity</th>
-                                <th className="px-8 py-4">Position_Size</th>
-                                <th className="px-8 py-4">Current_Valuation</th>
+                                <th className="px-8 py-4">Identity_Node</th>
+                                <th className="px-8 py-4">Sector</th>
+                                <th className="px-8 py-4">Magnitude</th>
+                                <th className="px-8 py-4">Net_Valuation</th>
                                 <th className="px-8 py-4 text-right">PnL</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {positions.length > 0 ? positions.map((pos) => (
+                            {positions.length > 0 ? positions.map((pos) => {
+                                const isOpposition = pos.atom.label.includes('OPPOSING');
+                                return (
                                 <tr key={pos.id} className="hover:bg-white/5 transition-all group">
                                     <td className="px-8 py-6">
                                         <Link to={`/markets/${pos.id}`} className="flex items-center gap-4">
@@ -259,18 +274,21 @@ const Portfolio: React.FC = () => {
                                                 {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
                                             </div>
                                             <div>
-                                                <div className="font-black text-white uppercase text-sm group-hover:text-intuition-primary transition-colors">{pos.atom.label}</div>
-                                                <div className="text-[9px] text-slate-600">ID: {pos.id.slice(0, 14)}...</div>
+                                                <div className={`font-black uppercase text-sm group-hover:text-intuition-primary transition-colors ${isOpposition ? 'text-intuition-danger' : 'text-white'}`}>{pos.atom.label}</div>
+                                                <div className="text-[9px] text-slate-600 font-bold">UID: {pos.id.slice(0, 14)}...</div>
                                             </div>
                                         </Link>
                                     </td>
                                     <td className="px-8 py-6">
+                                        <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-widest clip-path-slant group-hover:text-white transition-colors">{pos.atom?.type || 'ATOM'}</span>
+                                    </td>
+                                    <td className="px-8 py-6">
                                         <div className="text-white font-black">{formatDisplayedShares(pos.shares)}</div>
-                                        <div className="text-[9px] text-slate-600 uppercase">PORTAL_UNITS</div>
+                                        <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
                                     </td>
                                     <td className="px-8 py-6">
                                         <div className="text-white font-black">{formatMarketValue(pos.value)}</div>
-                                        <div className="text-[9px] text-slate-600 uppercase">{CURRENCY_SYMBOL}</div>
+                                        <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">{CURRENCY_SYMBOL}</div>
                                     </td>
                                     <td className="px-8 py-6 text-right">
                                         <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
@@ -278,9 +296,9 @@ const Portfolio: React.FC = () => {
                                         </div>
                                     </td>
                                 </tr>
-                            )) : (
+                            )}) : (
                                 <tr>
-                                    <td colSpan={4} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                                    <td colSpan={5} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
                                         {loading ? (
                                             <div className="flex flex-col items-center gap-4">
                                                 <Loader2 size={24} className="animate-spin text-intuition-primary" />
@@ -332,7 +350,6 @@ const Portfolio: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-10">
-            {/* TACTICAL EQUITY CHART - MATCHES SCREENSHOT AESTHETICS */}
             <div className="bg-[#02040a] border border-slate-900 p-10 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all h-[520px] flex flex-col">
                 <div className="flex justify-between items-start mb-12 relative z-10">
                     <div className="flex items-center gap-3">
@@ -396,7 +413,7 @@ const Portfolio: React.FC = () => {
 
             <div className="bg-black border border-slate-900 p-10 clip-path-slant min-h-[480px] flex flex-col relative overflow-hidden group hover:border-white/10 transition-all shadow-2xl">
                 <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-1000 text-intuition-primary">
-                    <Activity size={180} />
+                    <PulseIcon size={180} />
                 </div>
                 
                 <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mb-12 relative z-10">Asset_Exposure_Index</h4>
