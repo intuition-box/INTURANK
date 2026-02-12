@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert } from 'lucide-react';
+import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
 import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionLists, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
@@ -12,7 +12,7 @@ import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
-import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, calculatePositionPnL, calculateRealizedPnL } from '../services/analytics';
+import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
 import { OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
 import html2canvas from 'html2canvas';
 import Logo from '../components/Logo';
@@ -307,7 +307,7 @@ const MarketDetail: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
-  const [txModal, setTxModal] = useState<any>({ isOpen: false, status: 'idle', title: '', message: '', details: null });
+  const [txModal, setTxModal] = useState<any>({ isOpen: false, status: 'idle', title: '', message: '', hash: undefined, logs: [] });
   const [hoverData, setHoverData] = useState<any>(null);
 
   const [userPosition, setUserPosition] = useState<any>(null);
@@ -463,6 +463,10 @@ const MarketDetail: React.FC = () => {
     }
   }, [inputAmount, action, wallet, id, sentiment, agent, oppositionAgent]);
 
+  const addLog = (log: string) => {
+    setTxModal(prev => ({ ...prev, logs: [...prev.logs, log] }));
+  };
+
   const handleExecute = async () => {
         if (!wallet) return;
 
@@ -481,26 +485,35 @@ const MarketDetail: React.FC = () => {
         }
 
         if (action === 'ACQUIRE' && !isApproved) {
-            setTxModal({ isOpen: true, status: 'processing', title: 'PERMISSION_HANDSHAKE', message: 'Authorizing protocol uplink...' });
+            setTxModal({ isOpen: true, status: 'processing', title: 'PERMISSION_HANDSHAKE', message: 'Authorizing protocol uplink...', logs: ['Simulating Handshake...'] });
             try {
                 await grantProxyApproval(wallet);
                 setIsApproved(true);
                 setTxModal({ isOpen: false });
                 toast.success("HANDSHAKE_VERIFIED");
             } catch (e) {
-                setTxModal({ isOpen: true, status: 'error', title: 'AUTH_FAILED', message: parseProtocolError(e) });
+                setTxModal({ isOpen: true, status: 'error', title: 'AUTH_FAILED', message: parseProtocolError(e), logs: ['Simulation Failed.', 'Protocol Unreachable.'] });
             }
             return;
         }
 
         if (!inputAmount || parseFloat(inputAmount) <= 0) return;
-        setTxModal({ isOpen: true, status: 'processing', title: 'SIGNAL_COMMIT', message: 'Transmitting packet to mainnet...' });
+        setTxModal({ 
+            isOpen: true, 
+            status: 'processing', 
+            title: action === 'ACQUIRE' ? 'SIGNAL_ACQUISITION' : 'LIQUIDITY_RECLAMATION', 
+            message: 'Executing protocol handshake...',
+            logs: ['Initializing Secure Uplink...'] 
+        });
+        
         try {
             let res: any;
+            const logHandler = (msg: string) => addLog(msg);
+
             if (action === 'ACQUIRE') {
-                res = await depositToVault(inputAmount, activeTargetId, wallet);
+                res = await depositToVault(inputAmount, activeTargetId, wallet, logHandler);
             } else {
-                res = await redeemFromVault(inputAmount, activeTargetId, wallet);
+                res = await redeemFromVault(inputAmount, activeTargetId, wallet, logHandler);
             }
             
             playSuccess();
@@ -522,12 +535,26 @@ const MarketDetail: React.FC = () => {
             
             saveLocalTransaction(localTx, wallet);
             setActivityLog(prev => [localTx, ...prev]);
-            setTxModal({ isOpen: true, status: 'success', title: 'SIGNAL_LOCKED', message: 'Transaction verified on-chain.', hash: res.hash });
+            setTxModal(prev => ({ 
+                ...prev, 
+                status: 'success', 
+                title: 'SIGNAL_LOCKED', 
+                message: 'Transaction verified on-chain.', 
+                hash: res.hash,
+                logs: [...prev.logs, 'Finalizing Local Ledger Sync...', 'Uplink Synchronized.']
+            }));
             setInputAmount('');
             
-            setTimeout(() => { fetchData(); }, 3000);
+            // Re-fetch with slight delay to allow indexer to breathe
+            setTimeout(() => { fetchData(); }, 4000);
         } catch (e) {
-            setTxModal({ isOpen: true, status: 'error', title: 'UPLINK_LOST', message: parseProtocolError(e) });
+            setTxModal(prev => ({ 
+                ...prev, 
+                status: 'error', 
+                title: 'UPLINK_LOST', 
+                message: parseProtocolError(e),
+                logs: [...prev.logs, 'CRITICAL: Protocol Connection Timed Out.']
+            }));
         }
   };
 
@@ -572,6 +599,7 @@ const MarketDetail: React.FC = () => {
   const mktCapVal = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const displayPrice = hoverData ? hoverData.price : currentSpotPrice;
   const theme = getTierTheme(currentStrength);
+  const verified = isSystemVerified(agent);
 
   const tags = Array.from(new Map<string, { label: string; count: number }>(triples
         .filter(t => t.subject?.term_id === agent.id)
@@ -581,13 +609,21 @@ const MarketDetail: React.FC = () => {
 
   return (
     <div className="w-full px-4 lg:px-10 pt-6 pb-32 font-mono text-[#e2e8f0] bg-[#020308]">
-        <TransactionModal isOpen={txModal.isOpen} status={txModal.status} title={txModal.title} message={txModal.message} hash={txModal.hash} onClose={() => setTxModal(p => ({ ...p, isOpen: false }))} />
+        <TransactionModal 
+            isOpen={txModal.isOpen} 
+            status={txModal.status} 
+            title={txModal.title} 
+            message={txModal.message} 
+            hash={txModal.hash} 
+            logs={txModal.logs}
+            onClose={() => setTxModal(p => ({ ...p, isOpen: false }))} 
+        />
         <CreateModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
         <AgentShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} agent={agent} mktCap={mktCapVal} price={currentSpotPrice} holders={totalHoldersCount} tags={tags} />
         
         {showShareCard && cardStats && (
           <div className="fixed inset-0 bg-black/98 z-[300] flex items-center justify-center p-4 backdrop-blur-3xl animate-in zoom-in duration-300" onClick={() => setShowShareCard(false)}>
-            <div className="relative w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="relative w-full max-lg" onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowShareCard(false)} className="absolute -top-16 right-0 text-slate-500 hover:text-white transition-colors p-2 group"><X size={32} className="group-hover:rotate-90 transition-transform" /></button>
               <ShareCard 
                 username={wallet || '0xUser'} 
@@ -604,6 +640,7 @@ const MarketDetail: React.FC = () => {
           </div>
         )}
 
+        {/* Header telemetry and layout */}
         <div className="flex flex-wrap items-center gap-3 mb-10 overflow-x-auto pb-2 no-scrollbar">
             {tags.slice(0, 6).map((tag, idx) => (
                 <div key={idx} className="flex items-center gap-2.5 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full hover:border-intuition-primary/60 transition-all group cursor-default hover:shadow-glow-blue">
@@ -616,6 +653,7 @@ const MarketDetail: React.FC = () => {
                 </div>))}
         </div>
 
+        {/* Header content */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-8 mb-12 py-8 border-b border-white/5 overflow-x-auto no-scrollbar">
             <div className="flex items-center gap-4 shrink-0">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Total Mkt Cap</span>
@@ -660,7 +698,18 @@ const MarketDetail: React.FC = () => {
                     <div className="w-28 h-28 bg-slate-950 border-2 flex items-center justify-center overflow-hidden clip-path-slant shadow-2xl group-hover/header:scale-105 transition-all duration-700" style={{ borderColor: `${theme.color}66` }}>{agent.image ? <img src={agent.image} alt={agent.label} className="w-full h-full object-cover group-hover/header:scale-110 transition-transform duration-1000" /> : <User size={52} className="text-slate-800" />}</div>
                 </div>
                 <div>
-                    <div className="flex items-center gap-3 mb-3"><div className="w-2 h-2 rounded-full bg-intuition-success animate-pulse shadow-[0_0_10px_#00ff9d]"></div><span className="text-[10px] font-black uppercase tracking-[0.5em] text-glow" style={{ color: theme.color }}>Neural_Node_Locked</span></div>
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-2 h-2 rounded-full bg-intuition-success animate-pulse shadow-[0_0_10px_#00ff9d]"></div>
+                        {verified ? (
+                            <span className="flex items-center gap-1.5 px-3 py-1 bg-intuition-primary/10 border border-intuition-primary/40 text-intuition-primary text-[10px] font-black uppercase tracking-[0.3em] shadow-glow-blue">
+                                <BadgeCheck size={14} /> System_Verified_Node
+                            </span>
+                        ) : (
+                            <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-900 border border-slate-700 text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
+                                <UserCog size={14} /> Custom_User_Node
+                            </span>
+                        )}
+                    </div>
                     <h1 className="text-6xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-none mb-4">{agent.label}</h1>
                     <div className="flex items-center gap-5 text-[9px] font-black text-slate-600 uppercase tracking-widest"><div className="flex items-center gap-2"><Hash size={13} className="text-slate-700" /><span>NODE_ID: <span className="text-slate-500 font-mono">{agent.id.slice(0, 18)}...</span></span></div><div className="w-1 h-1 rounded-full bg-slate-800"></div><span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em]" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>LINEAR_CURVE_UTILITY</span></div>
                 </div>
@@ -879,7 +928,19 @@ const MarketDetail: React.FC = () => {
                 {activeTab === 'CLAIMS' && (
                     <div className="animate-in fade-in duration-700">
                         <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-10 flex items-center gap-4"><MessageSquare size={16}/> Semantic Claim Ledger</h4>
-                        <div className="space-y-4">{triples.length > 0 ? triples.map((t, i) => (<div key={i} className="p-6 bg-white/[0.01] border-2 border-slate-900 hover:border-white/30 transition-all clip-path-slant flex flex-col md:flex-row items-center justify-between gap-6 group backdrop-blur-sm shadow-xl"><div className="flex items-center gap-6 flex-1 min-w-0"><div className="flex items-center flex-col"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.subject?.label}</span></div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="px-4 py-1.5 bg-black border text-white font-black text-[9px] uppercase tracking-widest clip-path-slant group-hover:shadow-glow-white transition-all" style={{ borderColor: `${theme.color}44`, color: theme.color }}>{t.predicate?.label}</div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="flex flex-col items-center"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.object?.image ? <img src={t.object.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.object?.label}</span></div></div><div className="text-right"><div className="text-[8px] text-slate-600 uppercase font-black mb-1">Packet_Origin</div><div className="text-[10px] text-white font-mono group-hover:text-glow-white transition-all">{t.transaction_hash?.slice(0, 14)}...</div></div></div>)) : (<div className="py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_CLAIMS_RECORDED</div>)}</div>
+                        <div className="space-y-4">{triples.length > 0 ? triples.map((t, i) => (<div key={i} className="p-6 bg-white/[0.01] border-2 border-slate-900 hover:border-white/30 transition-all clip-path-slant flex flex-col md:flex-row items-center justify-between gap-6 group backdrop-blur-sm shadow-xl"><div className="flex items-center gap-6 flex-1 min-w-0"><div className="flex items-center flex-col"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.subject?.label}</span></div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="px-4 py-1.5 bg-black border text-white font-black text-[9px] uppercase tracking-widest clip-path-slant group-hover:shadow-glow-white transition-all" style={{ borderColor: `${theme.color}44`, color: theme.color }}>{t.predicate?.label}</div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="flex flex-col items-center"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.object?.image ? <img src={t.object.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.object?.label}</span></div></div><div className="flex flex-col items-end gap-2 shrink-0">
+                                {t.creator && (
+                                    <Link to={`/profile/${t.creator.id}`} onClick={playClick} className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 hover:border-intuition-primary transition-all clip-path-slant group/creator">
+                                        <div className="w-4 h-4 bg-black border border-white/10 rounded-full overflow-hidden shrink-0 shadow-sm"><img src={t.creator.image || `https://effigy.im/a/${t.creator.id}.png`} className="w-full h-full object-cover" /></div>
+                                        <span className="text-[8px] font-black text-slate-400 group-hover/creator:text-white uppercase tracking-widest">{t.creator.label || t.creator.id.slice(0, 10)}</span>
+                                        <UserCircle size={10} className="text-slate-600 group-hover/creator:text-intuition-primary" />
+                                    </Link>
+                                )}
+                                <div className="text-right">
+                                    <div className="text-[8px] text-slate-600 uppercase font-black mb-1">Packet_Origin</div>
+                                    <div className="text-[10px] text-white font-mono group-hover:text-glow-white transition-all">{t.transaction_hash?.slice(0, 14)}...</div>
+                                </div>
+                            </div></div>)) : (<div className="py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_CLAIMS_RECORDED</div>)}</div>
                     </div>
                 )}
                 {activeTab === 'LISTS' && (

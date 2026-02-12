@@ -11,6 +11,8 @@ import Compare from './pages/Compare';
 import Indexes from './pages/Indexes';
 import Portfolio from './pages/Portfolio';
 import PublicProfile from './pages/PublicProfile';
+import KPIDashboard from './pages/KPIDashboard';
+import Documentation from './pages/Documentation';
 import ComingSoon from './pages/ComingSoon';
 import { ToastContainer } from './components/Toast';
 
@@ -32,6 +34,8 @@ const App: React.FC = () => {
           <Route path="/markets" element={<Markets />} />
           <Route path="/markets/:id" element={<MarketDetail />} />
           <Route path="/feed" element={<Feed />} />
+          <Route path="/health" element={<KPIDashboard />} />
+          <Route path="/documentation" element={<Documentation />} />
           
           {/* New Features */}
           <Route path="/compare" element={<Compare />} />

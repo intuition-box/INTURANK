@@ -156,7 +156,7 @@ export const getQuoteRedeem = async (sharesAmount: string, termId: string, accou
     } catch { return "0"; }
 };
 
-export const depositToVault = async (amount: string, termId: string, receiver: string) => {
+export const depositToVault = async (amount: string, termId: string, receiver: string, onProgress?: (log: string) => void) => {
   const checksumReceiver = getAddress(receiver);
   const termIdBytes32 = pad((termId.startsWith('0x') ? termId : `0x${termId}`) as Hex, { size: 32 });
   const provider = getProvider();
@@ -164,13 +164,16 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   const assets = parseEther(amount);
   
   try {
+      onProgress?.("Simulating Gas & Total Cost Basis...");
       const totalCost = await publicClient.readContract({
           address: FEE_PROXY_ADDRESS as `0x${string}`,
           abi: FEE_PROXY_ABI,
           functionName: 'getTotalDepositCost',
           args: [assets]
       } as any) as bigint;
+      onProgress?.(`Handshake Cost Calculated: ${formatEther(totalCost)} TRUST`);
 
+      onProgress?.("Awaiting Biometric Signature...");
       const { request } = await publicClient.simulateContract({
           address: FEE_PROXY_ADDRESS as `0x${string}`,
           abi: FEE_PROXY_ABI,
@@ -181,7 +184,10 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       } as any);
 
       const hash = await walletClient.writeContract(request);
+      onProgress?.(`Broadcasting Packet to Mainnet... Hash: ${hash.slice(0,10)}...`);
+      
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      onProgress?.("Transaction Reconciled in Block.");
       
       let actualShares = 0n;
       for (const log of receipt.logs) {
@@ -208,7 +214,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   }
 };
 
-export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string) => {
+export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, onProgress?: (log: string) => void) => {
   const checksumReceiver = getAddress(receiver);
   const termIdBytes32 = pad((termId.startsWith('0x') ? termId : `0x${termId}`) as Hex, { size: 32 });
   const provider = getProvider();
@@ -216,13 +222,16 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
   const shares = parseEther(sharesAmount);
   
   try {
+      onProgress?.("Calculating Exit Liquidity...");
       const preview = await publicClient.readContract({
           address: MULTI_VAULT_ADDRESS as `0x${string}`,
           abi: MULTI_VAULT_ABI,
           functionName: 'previewRedeem',
           args: [termIdBytes32, BigInt(OFFSET_PROGRESSIVE_CURVE_ID), shares]
       } as any) as [bigint, bigint];
+      onProgress?.(`Projected Proceeds: ${formatEther(preview[0])} TRUST`);
 
+      onProgress?.("Awaiting Exit Signature...");
       const { request } = await publicClient.simulateContract({
           address: MULTI_VAULT_ADDRESS as `0x${string}`,
           abi: MULTI_VAULT_ABI,
@@ -232,7 +241,10 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
       } as any);
 
       const hash = await walletClient.writeContract(request);
+      onProgress?.(`Liquidating Position... Hash: ${hash.slice(0,10)}...`);
+      
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      onProgress?.("Handshake Cleared. Position Terminated.");
       
       let actualAssets = preview[0];
       for (const log of receipt.logs) {
@@ -341,7 +353,7 @@ export const publishOpinion = async (text: string, agentId: string, side: string
     } catch (e) { return undefined; }
 };
 
-export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string) => {
+export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string, onProgress?: (log: string) => void) => {
     const checksumReceiver = getAddress(receiver);
     const dataHex = stringToHex(JSON.stringify(metadata));
     const depositBigInt = parseEther(depositAmount);
@@ -349,12 +361,15 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
     const provider = getProvider();
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
     try {
+        onProgress?.("Calculating Metadata Cost Vectors...");
         const totalCost = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
             functionName: 'getAtomCost',
             args: [dataHex, depositBigInt, curveIdBigInt]
         } as any) as bigint;
+        
+        onProgress?.("Awaiting Identity Signature...");
         const { request } = await publicClient.simulateContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
@@ -363,7 +378,9 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
             args: [checksumReceiver, [dataHex], [depositBigInt], [curveIdBigInt]],
             value: totalCost, 
         } as any);
+        
         const hash = await walletClient.writeContract(request);
+        onProgress?.(`Broadcasting Identity... Hash: ${hash.slice(0,10)}...`);
         window.dispatchEvent(new Event('local-tx-updated'));
         return hash;
     } catch (error: any) { throw error; }
@@ -401,7 +418,7 @@ export const estimateAtomGas = async (account: string, metadata: any, depositAmo
     } catch (error) { return parseEther('0.0008'); }
 };
 
-export const createSemanticTriple = async (subjectId: string, predicateId: string, objectId: string, depositAmount: string, receiver: string) => {
+export const createSemanticTriple = async (subjectId: string, predicateId: string, objectId: string, depositAmount: string, receiver: string, onProgress?: (log: string) => void) => {
     const checksumReceiver = getAddress(receiver);
     const sId = pad((subjectId.startsWith('0x') ? subjectId : `0x${subjectId}`) as Hex, { size: 32 });
     const pId = pad((predicateId.startsWith('0x') ? predicateId : `0x${predicateId}`) as Hex, { size: 32 });
@@ -410,6 +427,7 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
     const provider = getProvider();
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
     try {
+        onProgress?.("Simulating Synapse Parameters...");
         let tripleCost: bigint;
         try {
             tripleCost = await publicClient.readContract({
@@ -418,12 +436,15 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
                 functionName: 'getTripleCost',
             } as any) as bigint;
         } catch (e) { tripleCost = parseEther('0.101'); }
+        
         const totalCost = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
             functionName: 'getTotalCreationCost',
             args: [1n, assets, tripleCost]
         } as any) as bigint;
+        
+        onProgress?.("Awaiting Synapse Signature...");
         const { request } = await publicClient.simulateContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
@@ -432,7 +453,9 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
             args: [checksumReceiver, [sId], [pId], [oId], [assets], BigInt(OFFSET_PROGRESSIVE_CURVE_ID)],
             value: totalCost, 
         } as any);
+        
         const hash = await walletClient.writeContract(request);
+        onProgress?.(`Broadcasting Triple... Hash: ${hash.slice(0,10)}...`);
         window.dispatchEvent(new Event('local-tx-updated'));
         return hash;
     } catch (error: any) { throw error; }

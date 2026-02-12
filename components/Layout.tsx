@@ -1,13 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck } from 'lucide-react';
 import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
 import Logo from './Logo';
 import WalletModal from './WalletModal';
-import CreateModal from './CreateModal';
 import { toast } from './Toast';
 
 interface LayoutProps {
@@ -29,16 +28,12 @@ const DiscordIcon = ({ className }: { className?: string }) => (
 );
 
 const IntuitionTargetLogo = () => (
-  <div className="relative w-14 h-14 flex items-center justify-center transition-all duration-700 group-hover/powered:scale-110">
-    {/* Outer dashed ring */}
-    <div className="absolute inset-0 border-2 border-white/10 rounded-full border-dashed animate-spin-slow group-hover/powered:border-intuition-primary/60 group-hover/powered:animate-spin"></div>
-    {/* Middle broken ring */}
-    <div className="absolute inset-[8px] border-2 border-transparent border-t-white/40 border-r-white/20 rounded-full animate-spin-reverse-slow group-hover/powered:border-t-intuition-primary group-hover/powered:animate-spin-reverse-fast"></div>
-    {/* Inner solid ring */}
-    <div className="absolute inset-[15px] border border-white/60 rounded-full group-hover/powered:border-intuition-primary transition-colors"></div>
-    {/* Center dot */}
-    <div className="w-2.5 h-2.5 bg-white rounded-full shadow-[0_0_12px_white] group-hover/powered:bg-intuition-primary group-hover/powered:shadow-[0_0_20px_#00f3ff]"></div>
-  </div>
+  <svg width="60" height="60" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg" className="group-hover/powered:scale-110 transition-transform duration-700">
+    <circle cx="30" cy="30" r="28" stroke="#00f3ff" strokeWidth="1" strokeOpacity="0.2" />
+    <circle cx="30" cy="30" r="20" stroke="#00f3ff" strokeWidth="1" strokeOpacity="0.4" />
+    <circle cx="30" cy="30" r="12" stroke="#00f3ff" strokeWidth="2" />
+    <circle cx="30" cy="30" r="4" fill="#00f3ff" className="animate-pulse" />
+  </svg>
 );
 
 interface NavItemProps {
@@ -60,14 +55,9 @@ const NavItem: React.FC<NavItemProps> = ({ to, label, icon, active, onClick }) =
         : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
     }`}
   >
-    {/* Accenty Bar Indicator */}
     <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-3 bg-white transition-all duration-500 ${active ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}></div>
-    
     {icon}
     <span>{label}</span>
-    
-    {/* Hover Accent Line */}
-    <div className={`absolute bottom-0 left-0 h-0.5 bg-white transition-all duration-500 ${active ? 'w-0' : 'w-0 group-hover:w-full'}`}></div>
   </Link>
 );
 
@@ -176,10 +166,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   ];
 
   const intelItems = [
-    { label: 'FEED', path: '/feed', icon: <Globe size={14} /> },
-    { label: 'COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
-    { label: 'INDEXES', path: '/indexes', icon: <Layers size={14} /> },
-    { label: 'DIRECTORY', path: '/stats', icon: <Search size={14} /> },
+    { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
+    { label: 'SIGNAL_FEED', path: '/feed', icon: <Globe size={14} /> },
+    { label: 'CONFLICT_COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
+    { label: 'SECTOR_INDEXES', path: '/indexes', icon: <Layers size={14} /> },
+    { label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> },
   ];
 
   if (walletAddress) {
@@ -210,7 +201,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-20">
 
-            {/* Logo Section */}
             <div
               className="flex items-center flex-shrink-0 gap-4 group cursor-pointer"
               onMouseEnter={playHover}
@@ -225,11 +215,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link to="/" onClick={playClick} className="text-xl font-black tracking-widest text-white font-display transition-all duration-500 text-glow-blue group-hover:text-intuition-primary">
                   INTU<span className="text-intuition-primary group-hover:text-white">RANK</span>
                 </Link>
-                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.3.0 STABLE</span>
+                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.3.1 STABLE</span>
               </div>
             </div>
 
-            {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-1.5">
               {mainNavItems.map((item) => (
                 <NavItem 
@@ -252,11 +241,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     }`}
                 >
                   <Activity size={14} /> INTEL <ChevronDown size={10} className={`transition-transform duration-300 ${isIntelOpen ? 'rotate-180' : ''}`} />
-                  <div className={`absolute bottom-0 left-0 h-0.5 bg-intuition-primary transition-all duration-500 ${isIntelActive ? 'w-0' : 'w-0 group-hover:w-full'}`}></div>
                 </button>
 
                 {isIntelOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-56 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant p-1 animate-in slide-in-from-top-2">
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant p-1 animate-in slide-in-from-top-2">
                     <div className="bg-[#080a12] p-1">
                       {intelItems.map(item => (
                         <Link
@@ -275,9 +263,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex items-center gap-3">
-              {/* GET TRUST BUTTON */}
               <a
                 href={TRUST_SWAP_URL}
                 target="_blank"
@@ -354,7 +340,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
             </div>
 
-            {/* Mobile Button */}
             <div className="lg:hidden">
               <button
                 onClick={() => { playClick(); setIsMenuOpen(!isMenuOpen); }}
@@ -366,7 +351,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </div>
 
-        {/* Mobile Navigation */}
         {isMenuOpen && (
           <div className="lg:hidden bg-black/98 backdrop-blur-2xl border-b-2 border-intuition-primary/20 absolute w-full z-[100] animate-in slide-in-from-top-4 duration-300">
             <div className="px-4 pt-4 pb-10 space-y-2">
@@ -492,6 +476,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="space-y-8">
               <h4 className="text-[12px] font-black font-display text-intuition-secondary uppercase tracking-[0.6em] text-glow-red">Ecosystem_Hub</h4>
               <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
+                <Link to="/documentation" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
+                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Documentation <FileText size={12} />
+                </Link>
                 <a href={TRUST_SWAP_URL} target="_blank" rel="noreferrer" className="text-intuition-success hover:text-white transition-colors flex items-center gap-3 group">
                    <ChevronsRight size={14} className="text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0" /> Liquidity_Uplink ($TRUST) <ExternalLink size={12} />
                 </a>
@@ -499,10 +486,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                    <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Intuition_Home <ExternalLink size={12} />
                 </a>
                 <a href="https://docs.intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Documentation <BookOpen size={12} />
-                </a>
-                <a href="https://discord.gg/gz62ER2e7a" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Support_Node <MessageSquare size={12} />
+                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Core_Docs <BookOpen size={12} />
                 </a>
                 <a href="https://explorer.intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
                    <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Network_Explorer <Globe size={12} />
@@ -514,10 +498,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           <div className="pt-16 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 items-center justify-items-center gap-12">
             <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest font-black text-center md:text-left justify-self-start">
-              Sector_04_ARES // Version_1.3.0_STABLE // © 2025 IntuRank_Systems
+              Sector_04_ARES // Version_1.3.1_STABLE // © 2025 IntuRank_Systems
             </div>
 
-            {/* POWERED BY INTUITION SECTION - ABSOLUTELY CENTERED DESIGN */}
             <div className="flex flex-col items-center group/powered relative">
               <span className="text-[11px] font-black font-mono text-slate-500 uppercase tracking-[0.8em] mb-4 group-hover/powered:text-white transition-all duration-500">Powered By</span>
               <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="flex items-center gap-8 no-underline">
@@ -526,7 +509,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   INTUITION
                 </span>
               </a>
-              {/* Scanline line overlay for better integration */}
               <div className="absolute -bottom-6 w-48 h-px bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent"></div>
             </div>
 
@@ -540,12 +522,5 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     </div>
   );
 };
-
-const ChevronsRight = ({ className, size }: { className: string, size: number }) => (
-    <svg viewBox="0 0 24 24" width={size} height={size} stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <polyline points="13 17 18 12 13 7"></polyline>
-        <polyline points="6 17 11 12 6 7"></polyline>
-    </svg>
-);
 
 export default Layout;

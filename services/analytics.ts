@@ -95,6 +95,27 @@ export const categorizeAgent = (agent: Account): AgentCategory => {
     return 'UNKNOWN';
 };
 
+/**
+ * Distinguishes between System-Verified (official protocols/known identities) 
+ * and User-Generated atoms.
+ */
+export const isSystemVerified = (agent: Account): boolean => {
+    const label = (agent.label || '').toLowerCase();
+    const category = categorizeAgent(agent);
+    
+    // Logic 1: ENS Names are considered self-verified identity nodes
+    if (label.endsWith('.eth')) return true;
+    
+    // Logic 2: Known Protocol entities and AI Models
+    if (category === 'PROTOCOL' || category === 'AI') return true;
+    
+    // Logic 3: Specific system/network keywords
+    const systemKeywords = ['intuition', 'ethereum', 'base', 'optimism', 'arbitrum', 'uniswap', 'aave', 'chainlink', 'vault'];
+    if (systemKeywords.some(k => label.includes(k))) return true;
+
+    return false;
+};
+
 export const calculateVolatility = (assetsWei: string): number => {
     const assets = safeParseUnits(assetsWei);
     if (assets === 0) return 0;

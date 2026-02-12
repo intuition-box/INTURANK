@@ -1,13 +1,13 @@
 
 import React, { useEffect, useState } from 'react';
-import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle, ShieldAlert } from 'lucide-react';
+import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle, ShieldAlert, BadgeCheck, UserCog } from 'lucide-react';
 import { getTopPositions, getAllAgents, getTopClaims } from '../services/graphql';
 import { fetchAtomNameFromChain, resolveENS } from '../services/web3';
 import { formatEther, isAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
-import { formatMarketValue } from '../services/analytics';
+import { formatMarketValue, isSystemVerified } from '../services/analytics';
 
 type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS';
 
@@ -23,6 +23,7 @@ interface LeaderboardEntry {
   subject?: any;
   predicate?: string;
   object?: any;
+  verified?: boolean;
 }
 
 const Stats: React.FC = () => {
@@ -69,34 +70,51 @@ const Stats: React.FC = () => {
 
     try {
       if (activeTab === 'STAKERS') {
-        const positions = await getTopPositions();
+        // High-density reconnaissance: Fetching up to 2500 top positions to ensure 
+        // accurate cross-vault aggregation for diversified stakers.
+        const positions = await getTopPositions(2500);
         const userMap = new Map<string, number>();
         const userMeta = new Map<string, any>();
 
         positions.forEach((pos: any) => {
             const accId = pos.account?.id;
             if (!accId) return;
-            const shares = parseFloat(formatEther(BigInt(pos.shares || '0')));
+            
+            // Calculate real-time conviction valuation: (Shares * Vault_Assets) / Vault_Supply
+            const shares = BigInt(pos.shares || '0');
+            const vaultAssets = BigInt(pos.vault?.total_assets || '0');
+            const vaultShares = BigInt(pos.vault?.total_shares || '1');
+            
+            const valueWei = vaultShares > 0n ? (shares * vaultAssets) / vaultShares : 0n;
+            const valueEth = parseFloat(formatEther(valueWei));
+            
             const currentVal = userMap.get(accId) || 0;
-            userMap.set(accId, currentVal + shares);
+            userMap.set(accId, currentVal + valueEth);
+            
             if (!userMeta.has(accId)) {
-                userMeta.set(accId, { label: pos.account.label || `Trader ${accId.slice(2,6)}`, image: pos.account.image });
+                userMeta.set(accId, { 
+                  label: pos.account.label || `Trader ${accId.slice(2,6)}`, 
+                  image: pos.account.image 
+                });
             }
         });
 
-        const sorted = Array.from(userMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 100).map(([id, val], idx) => ({
-            rank: idx + 1,
-            id: id,
-            label: userMeta.get(id).label,
-            subLabel: 'STAKED_CONVICTION',
-            value: val.toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' TRUST',
-            rawValue: val,
-            image: userMeta.get(id).image
-        }));
+        const sorted = Array.from(userMap.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 100)
+            .map(([id, val], idx) => ({
+                rank: idx + 1,
+                id: id,
+                label: userMeta.get(id).label,
+                subLabel: 'STAKED_CONVICTION',
+                value: formatMarketValue(val) + ' TRUST',
+                rawValue: val,
+                image: userMeta.get(id).image,
+                verified: id.endsWith('.eth') || isAddress(id)
+            }));
         setData(sorted);
 
       } else if (activeTab === 'AGENTS_SUPPORT') {
-        // Fix: Access the 'items' property from the result of getAllAgents()
         const agentsData = await getAllAgents();
         const agents = agentsData.items;
         const sorted = agents.sort((a, b) => {
@@ -110,12 +128,12 @@ const Stats: React.FC = () => {
             subLabel: 'TOTAL_PROTOCOL_VOLUME',
             value: parseFloat(formatEther(BigInt(a.totalAssets || '0'))).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' TRUST',
             rawValue: parseFloat(formatEther(BigInt(a.totalAssets || '0'))),
-            image: a.image
+            image: a.image,
+            verified: isSystemVerified(a)
         }));
         setData(sorted);
 
       } else if (activeTab === 'AGENTS_CONTROVERSY') {
-        // Fix: Access the 'items' property from the result of getAllAgents()
         const agentsData = await getAllAgents();
         const agents = agentsData.items;
         const sorted = agents.map(a => {
@@ -132,12 +150,12 @@ const Stats: React.FC = () => {
             subLabel: 'VOLATILITY_ENTROPY_INDEX',
             value: 'Score: ' + a.heuristic.toFixed(0),
             rawValue: a.heuristic,
-            image: a.image
+            image: a.image,
+            verified: isSystemVerified(a)
         }));
         setData(sorted);
         
       } else if (activeTab === 'CLAIMS') {
-          // Fix: Access the 'items' property from the result of getTopClaims()
           const claimsData = await getTopClaims();
           const claims = claimsData.items;
           const sorted = claims.slice(0, 100).map((c: any, idx: number) => ({
@@ -406,8 +424,13 @@ const Stats: React.FC = () => {
                                     {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-1000" /> : <div className="text-3xl font-black text-slate-800">{item.label?.[0]}</div>}
                                 </div>
                                 
-                                <h3 className={`font-black text-white text-xl truncate max-w-full mb-2 group-hover:text-intuition-primary transition-all uppercase tracking-tighter leading-none`}>{item.label}</h3>
-                                <p className="text-[9px] text-slate-500 font-mono mb-8 uppercase tracking-[0.4em] font-black">{item.subLabel}</p>
+                                <div className="flex flex-col items-center gap-1.5 mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className={`font-black text-white text-xl truncate max-w-full group-hover:text-intuition-primary transition-all uppercase tracking-tighter leading-none`}>{item.label}</h3>
+                                        {item.verified && <BadgeCheck size={16} className="text-intuition-primary animate-pulse" />}
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 font-mono uppercase tracking-[0.4em] font-black">{item.subLabel}</p>
+                                </div>
                                 
                                 <div className={`mt-auto font-black font-display text-3xl tracking-tighter leading-none ${accentColorClass}`}>
                                     {item.value}
@@ -455,7 +478,14 @@ const Stats: React.FC = () => {
                                                 {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-lg font-black text-slate-800">{item.label?.[0]}</div>}
                                             </div>
                                             <div>
-                                                <div className="font-black text-white text-xl group-hover:text-intuition-primary transition-colors uppercase tracking-tight leading-none mb-1.5">{item.label}</div>
+                                                <div className="flex items-center gap-3 mb-1.5">
+                                                    <div className="font-black text-white text-xl group-hover:text-intuition-primary transition-colors uppercase tracking-tight leading-none">{item.label}</div>
+                                                    {item.verified ? (
+                                                        <BadgeCheck size={16} className="text-intuition-primary" title="System Verified" />
+                                                    ) : (
+                                                        <UserCog size={14} className="text-slate-700" title="User Node" />
+                                                    )}
+                                                </div>
                                                 <div className="text-[8px] text-slate-600 font-mono uppercase tracking-[0.3em] font-black">{item.subLabel}</div>
                                             </div>
                                         </div>

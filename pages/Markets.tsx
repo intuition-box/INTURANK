@@ -1,14 +1,14 @@
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users } from 'lucide-react';
+import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog } from 'lucide-react';
 import { formatEther } from 'viem';
 import { getAllAgents, searchGlobalAgents, getLists, getTopClaims } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
 import { Account } from '../types';
 import { getWatchlist, getConnectedAccount } from '../services/web3';
 import { toast } from '../components/Toast';
-import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber } from '../services/analytics';
+import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber, isSystemVerified } from '../services/analytics';
 import { CURRENCY_SYMBOL } from '../constants';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
@@ -570,6 +570,7 @@ const Markets: React.FC = () => {
              const price = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
              const mktCap = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
              const strength = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+             const verified = isSystemVerified(agent);
              
              let dynamicLabel = 'CREDIBLE';
              let dynamicLetter = 'C';
@@ -608,9 +609,17 @@ const Markets: React.FC = () => {
                 className={`group relative flex flex-col bg-black border-2 ${tierStyle.border} transition-all duration-300 overflow-hidden clip-path-slant hover:-translate-y-2 hover:border-white/50 shadow-2xl hover:shadow-[0_0_40px_rgba(0,243,255,0.1)]`}
               >
                 <div className={`absolute inset-0 bg-gradient-to-br ${tierStyle.glow} pointer-events-none`}></div>
-                <div className="absolute top-0 right-0 p-3 z-20">
+                
+                {/* BRANDING CONTAINER - Top Left purely for Curve info */}
+                <div className="absolute top-0 left-0 p-3 z-20 flex flex-col items-start gap-2">
                     <div className="px-2 py-0.5 bg-black border border-white/5 text-[6px] font-black font-mono text-slate-500 uppercase tracking-widest clip-path-slant group-hover:border-intuition-primary/40 transition-colors">Progressive_Curve</div>
+                    {!verified && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-900 border border-slate-700 text-slate-500 text-[7px] font-black uppercase tracking-widest">
+                            <UserCog size={10} /> USER_NODE
+                        </div>
+                    )}
                 </div>
+                
                 <div className="absolute bottom-0 right-0 p-2 opacity-5 text-white pointer-events-none font-display font-black text-6xl group-hover:scale-150 transition-transform duration-1000">{tierStyle.label}</div>
                 
                 <div className="relative p-6 z-10 flex flex-col h-full">
@@ -622,9 +631,20 @@ const Markets: React.FC = () => {
                              <div className={`text-4xl font-black ${tierStyle.color}`}>{agent.label?.[0]?.toUpperCase()}</div>
                           )}
                       </div>
-                      <div className="text-right">
-                          <div className={`text-4xl font-black font-display italic ${tierStyle.color} text-glow drop-shadow-2xl`}>{tierStyle.label}</div>
-                          <div className="text-[8px] font-black font-mono text-slate-600 uppercase tracking-widest">Protocol_Tier</div>
+                      <div className="text-right flex flex-col items-end">
+                          <div className={`text-4xl font-black font-display italic ${tierStyle.color} text-glow drop-shadow-2xl relative`}>
+                              {tierStyle.label}
+                          </div>
+                          {/* VERIFICATION BADGE - Positioned big and bold under the class letter */}
+                          <div className="flex flex-col items-end gap-1 mt-2">
+                              {verified && (
+                                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
+                                    <BadgeCheck size={22} className="text-intuition-primary shadow-glow-blue" strokeWidth={3} />
+                                    <span className="text-[6px] font-black text-intuition-primary uppercase tracking-widest mt-0.5">VERIFIED</span>
+                                </div>
+                              )}
+                              <div className="text-[8px] font-black font-mono text-slate-600 uppercase tracking-widest mt-1">Protocol_Tier</div>
+                          </div>
                       </div>
                    </div>
 
