@@ -1,0 +1,5 @@
+{
+  "name": "IntuRank",
+  "description": "A semantic trust-graph intelligence layer and prediction market interface for the Intuition Network.",
+  "requestFramePermissions": []
+}
