@@ -73,7 +73,7 @@ const ComingSoon: React.FC = () => {
 
         <div className="mt-8 flex items-center justify-center gap-3 text-slate-700 text-[8px] font-black uppercase tracking-[0.4em] opacity-40">
           <Terminal size={10} />
-          SYSTEM_VERSION_1.3.0_STABLE // SECTOR_04_ARES
+          SYSTEM_VERSION_1.4.0_STABLE // SECTOR_04_ARES
         </div>
       </div>
     </div>

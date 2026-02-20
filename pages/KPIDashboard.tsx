@@ -356,7 +356,7 @@ const KPIDashboard: React.FC = () => {
                              <Shield size={24} strokeWidth={1.5} />
                          </div>
                          <div>
-                             <div className="text-xs font-black font-display text-white uppercase tracking-[0.2em] mb-1">ARES_Audit_v1.3.1</div>
+                             <div className="text-xs font-black font-display text-white uppercase tracking-[0.2em] mb-1">ARES_Audit_v1.4.0</div>
                              <div className="text-[8px] font-black font-mono text-slate-500 uppercase tracking-[0.4em]">Sector_04 // RECON_LAYER</div>
                          </div>
                     </div>

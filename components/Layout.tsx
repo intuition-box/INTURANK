@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, Layers, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck } from 'lucide-react';
-import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet } from '../services/web3';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck } from 'lucide-react';
+import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet, type WalletConnector } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
 import Logo from './Logo';
@@ -108,9 +108,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     };
   }, []);
 
-  const handleConnect = async () => {
+  const handleConnect = async (connector: WalletConnector, injectedPreference?: 'default' | 'metamask' | 'rabby' | 'brave') => {
     playClick();
-    const address = await connectWallet();
+    const address = await connectWallet(connector, injectedPreference as any);
     if (address) {
       setWalletAddress(address);
       setIsWalletModalOpen(false);
@@ -154,7 +154,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleNewSignal = () => {
     playClick();
     setIsMenuOpen(false);
-    navigate('/coming-soon');
+    navigate('/create');
   };
 
   const mainNavItems = [
@@ -168,8 +168,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
     { label: 'CONFLICT_COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
-    { label: 'SECTOR_INDEXES', path: '/indexes', icon: <Layers size={14} /> },
     { label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> },
+    { label: 'SDK_LAB', path: '/sdk-lab', icon: <Terminal size={14} /> },
   ];
 
   if (walletAddress) {
@@ -204,9 +204,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               className="flex items-center flex-shrink-0 gap-4 group cursor-pointer"
               onMouseEnter={playHover}
             >
-              <div className="relative group-hover:scale-105 transition-transform duration-500">
-                <div className="w-11 h-11 rounded-none bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_15px_rgba(0,243,255,0.3)] group-hover:shadow-[0_0_25px_rgba(0,243,255,0.5)] transition-all duration-500 clip-path-slant">
-                  <Logo className="w-6 h-6 text-intuition-primary group-hover:rotate-12 transition-transform" />
+              <div className="relative group-hover:scale-115 transition-transform duration-500">
+                <div className="w-18 h-18 rounded-none bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_22px_rgba(0,243,255,0.5)] group-hover:shadow-[0_0_36px_rgba(0,243,255,0.8)] transition-all duration-500 clip-path-slant">
+                  <Logo className="w-14 h-14 group-hover:rotate-3 transition-transform" />
                 </div>
                 <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-intuition-secondary rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d]"></div>
               </div>
@@ -214,7 +214,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link to="/" onClick={playClick} className="text-xl font-black tracking-widest text-white font-display transition-all duration-500 text-glow-blue group-hover:text-intuition-primary">
                   INTU<span className="text-intuition-primary group-hover:text-white">RANK</span>
                 </Link>
-                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.3.1 STABLE</span>
+                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.4.0 STABLE</span>
               </div>
             </div>
 
@@ -415,8 +415,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             <div className="md:col-span-2 space-y-10">
               <div className="flex items-center gap-6 group cursor-pointer" onMouseEnter={playHover}>
-                <div className="w-16 h-16 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_30px_rgba(0,243,255,0.5)] group-hover:scale-110 transition-all duration-700 clip-path-slant">
-                  <Logo className="w-9 h-9 group-hover:rotate-12 transition-transform" />
+                <div className="w-28 h-28 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 clip-path-slant">
+                  <Logo className="w-22 h-22 group-hover:rotate-3 transition-transform" />
                 </div>
                 <span className="text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
                   INTU<span className="group-hover:text-white transition-colors">RANK</span>
@@ -497,7 +497,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           <div className="pt-16 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 items-center justify-items-center gap-12">
             <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest font-black text-center md:text-left justify-self-start">
-              Sector_04_ARES // Version_1.3.1_STABLE // © 2025 IntuRank_Systems
+              Sector_04_ARES // Version_1.4.0_STABLE // © 2025 IntuRank_Systems
             </div>
 
             <div className="flex flex-col items-center group/powered relative">

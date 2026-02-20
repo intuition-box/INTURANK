@@ -72,7 +72,15 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-const root = ReactDOM.createRoot(rootElement);
+// Reuse existing root when module re-runs (e.g. HMR / strict mode) to avoid "createRoot() on a container that has already been passed to createRoot()"
+declare global {
+  interface Window {
+    __INTRANK_ROOT__?: ReturnType<typeof ReactDOM.createRoot>;
+  }
+}
+const root = window.__INTRANK_ROOT__ ?? ReactDOM.createRoot(rootElement);
+if (!window.__INTRANK_ROOT__) window.__INTRANK_ROOT__ = root;
+
 root.render(
   <React.StrictMode>
     <ErrorBoundary>

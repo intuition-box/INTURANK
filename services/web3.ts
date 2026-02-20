@@ -5,6 +5,7 @@ import { normalize } from 'viem/ens';
 import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR } from '../constants';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
+import EthereumProvider from '@walletconnect/ethereum-provider';
 
 export const intuitionChain = {
   id: CHAIN_ID,
@@ -22,20 +23,43 @@ export const publicClient = createPublicClient({
   transport: http(RPC_URL),
 });
 
+// Active EIP-1193 provider (injected or WalletConnect).
+let activeProvider: any | null = null;
+
 // Dedicated client for ENS resolution (Ethereum Mainnet) using a more robust public RPC
 const mainnetClient = createPublicClient({
   chain: mainnet,
   transport: http('https://eth.llamarpc.com'),
 });
 
-const getProvider = () => {
+type InjectedPreference = 'default' | 'metamask' | 'rabby' | 'brave';
+
+const getBrowserProvider = (preference: InjectedPreference = 'default') => {
   if (typeof window === 'undefined') return null;
   const ethereum = (window as any).ethereum;
   if (!ethereum) return null;
-  if (ethereum.providers && Array.isArray(ethereum.providers)) {
-    return ethereum.providers.find((p: any) => p.isMetaMask) || ethereum.providers[0];
+  const providers: any[] =
+    ethereum.providers && Array.isArray(ethereum.providers)
+      ? ethereum.providers
+      : [ethereum];
+
+  const pick = (predicate: (p: any) => boolean) =>
+    providers.find(predicate) || providers[0];
+
+  switch (preference) {
+    case 'metamask':
+      return pick((p) => p.isMetaMask);
+    case 'rabby':
+      return pick((p) => p.isRabby);
+    case 'brave':
+      return pick((p) => p.isBraveWallet || p.isBrave);
+    default:
+      return providers[0];
   }
-  return ethereum;
+};
+
+const getProvider = () => {
+  return activeProvider || getBrowserProvider('default');
 };
 
 /**
@@ -95,8 +119,51 @@ export const switchNetwork = async () => {
     }
 };
 
-export const connectWallet = async (): Promise<string | null> => {
-  const provider = getProvider();
+export type WalletConnector = 'injected' | 'walletconnect';
+export type InjectedWalletPreference = InjectedPreference;
+
+export const connectWallet = async (
+  connector: WalletConnector = 'injected',
+  injectedPreference: InjectedWalletPreference = 'default',
+): Promise<string | null> => {
+  if (connector === 'walletconnect') {
+    try {
+      const projectId = (import.meta as any).env?.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
+      if (!projectId) {
+        toast.error("MISSING_WC_PROJECT_ID: Set VITE_WALLETCONNECT_PROJECT_ID in .env.local");
+        return null;
+      }
+
+      const provider = await EthereumProvider.init({
+        projectId,
+        showQrModal: true,
+        chains: [CHAIN_ID],
+        rpcMap: {
+          [CHAIN_ID]: RPC_URL,
+        },
+        metadata: {
+          name: 'IntuRank',
+          description: 'Semantic markets on the Intuition Network',
+          url: typeof window !== 'undefined' ? window.location.origin : 'https://inturank.app',
+          icons: [],
+        },
+      });
+
+      await provider.connect();
+      const accounts = await provider.request({ method: 'eth_accounts' });
+      if (!accounts || accounts.length === 0) return null;
+      const address = getAddress(accounts[0]);
+
+      activeProvider = provider;
+      return address;
+    } catch (error: any) {
+      if (error?.code === 4001) toast.error("REJECTED_BY_USER");
+      else toast.error(`WALLETCONNECT_ERROR: ${error?.message || 'Failed to connect'}`);
+      return null;
+    }
+  }
+
+  const provider = getBrowserProvider(injectedPreference);
   if (!provider) {
     toast.error("NO_PROVIDER: Install MetaMask.");
     return null;
@@ -111,6 +178,7 @@ export const connectWallet = async (): Promise<string | null> => {
     if (parseInt(chainIdHex, 16) !== CHAIN_ID) {
         await switchNetwork();
     }
+    activeProvider = provider;
     return address;
   } catch (error: any) {
     if (error.code === 4001) toast.error("REJECTED_BY_USER");
@@ -186,21 +254,28 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       const hash = await walletClient.writeContract(request);
       onProgress?.(`Broadcasting Packet to Mainnet... Hash: ${hash.slice(0,10)}...`);
       
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      onProgress?.("Transaction Reconciled in Block.");
-      
       let actualShares = 0n;
-      for (const log of receipt.logs) {
-          try {
-              const decoded = decodeEventLog({
-                  abi: MULTI_VAULT_ABI,
-                  data: log.data,
-                  topics: (log as any).topics,
-              });
-              if ((decoded as any).eventName === 'Deposit' || (decoded as any).args?.shares) {
-                  actualShares = (decoded as any).args.shares;
-              }
-          } catch {}
+      try {
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          onProgress?.("Transaction Reconciled in Block.");
+          
+          for (const log of receipt.logs) {
+              try {
+                  const decoded = decodeEventLog({
+                      abi: MULTI_VAULT_ABI,
+                      data: log.data,
+                      topics: (log as any).topics,
+                  });
+                  if ((decoded as any).eventName === 'Deposit' || (decoded as any).args?.shares) {
+                      actualShares = (decoded as any).args.shares;
+                  }
+              } catch {}
+          }
+      } catch (waitError: any) {
+          // If the RPC cannot look up the hash yet (or returns malformed),
+          // fall back to a heuristic and let the indexer reconcile later.
+          console.warn("DEPOSIT_RECEIPT_TIMEOUT:", waitError);
+          onProgress?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
       }
 
       if (actualShares === 0n) {
@@ -243,21 +318,26 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
       const hash = await walletClient.writeContract(request);
       onProgress?.(`Liquidating Position... Hash: ${hash.slice(0,10)}...`);
       
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      onProgress?.("Handshake Cleared. Position Terminated.");
-      
       let actualAssets = preview[0];
-      for (const log of receipt.logs) {
-          try {
-              const decoded = decodeEventLog({
-                  abi: MULTI_VAULT_ABI,
-                  data: log.data,
-                  topics: (log as any).topics,
-              });
-              if ((decoded as any).eventName === 'Withdraw' || (decoded as any).args?.assets) {
-                  actualAssets = (decoded as any).args.assets;
-              }
-          } catch {}
+      try {
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          onProgress?.("Handshake Cleared. Position Terminated.");
+          
+          for (const log of receipt.logs) {
+              try {
+                  const decoded = decodeEventLog({
+                      abi: MULTI_VAULT_ABI,
+                      data: log.data,
+                      topics: (log as any).topics,
+                  });
+                  if ((decoded as any).eventName === 'Withdraw' || (decoded as any).args?.assets) {
+                      actualAssets = (decoded as any).args.assets;
+                  }
+              } catch {}
+          }
+      } catch (waitError: any) {
+          console.warn("REDEEM_RECEIPT_TIMEOUT:", waitError);
+          onProgress?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
       }
 
       return { hash, assets: actualAssets, shares };
@@ -344,7 +424,16 @@ export const parseProtocolError = (error: any) => {
     if (msg.includes("0xD76F6FF8")) return "PROTOCOL_APPROVAL_REQUIRED: Please 'Enable Protocol' first.";
     if (msg.includes("insufficient funds")) return "INSUFFICIENT_TRUST_BALANCE";
     if (msg.includes("User rejected")) return "USER_REJECTED_HANDSHAKE";
-    return msg.slice(0, 120) + "...";
+    // Already a clear triple failure message (e.g. from FeeProxy + SDK fallback)
+    if (msg.includes("Triple creation failed")) return msg.slice(0, 140) + (msg.length > 140 ? "…" : "");
+    // FeeProxy createTriples revert (custom error / undecodable)
+    if (msg.includes("createTriples") || msg.includes("0xd335ef46") || (msg.includes("reverted") && msg.toLowerCase().includes("triple"))) {
+        return "Triple creation failed. Check: all 3 atoms exist on-chain, enough TRUST, and Enable Protocol.";
+    }
+    if (msg.includes("reverted") || msg.includes("ContractFunctionRevertedError")) {
+        return "Transaction reverted. Ensure all 3 atoms exist on-chain and you have enough TRUST.";
+    }
+    return msg.slice(0, 120) + (msg.length > 120 ? "…" : "");
 };
 
 export const publishOpinion = async (text: string, agentId: string, side: string, wallet: string): Promise<string | undefined> => {
@@ -436,14 +525,19 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
                 functionName: 'getTripleCost',
             } as any) as bigint;
         } catch (e) { tripleCost = parseEther('0.101'); }
-        
-        const totalCost = await publicClient.readContract({
-            address: FEE_PROXY_ADDRESS as `0x${string}`,
-            abi: FEE_PROXY_ABI,
-            functionName: 'getTotalCreationCost',
-            args: [1n, assets, tripleCost]
-        } as any) as bigint;
-        
+
+        let totalCost: bigint;
+        try {
+            totalCost = await publicClient.readContract({
+                address: FEE_PROXY_ADDRESS as `0x${string}`,
+                abi: FEE_PROXY_ABI,
+                functionName: 'getTotalCreationCost',
+                args: [1n, assets, tripleCost]
+            } as any) as bigint;
+        } catch (e) {
+            totalCost = assets + tripleCost;
+        }
+
         onProgress?.("Awaiting Synapse Signature...");
         const { request } = await publicClient.simulateContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,

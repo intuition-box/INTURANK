@@ -5,7 +5,7 @@
 > *Stake on Identity. Short the Noise. Profit from Truth.*
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.3.0--stable-green)
+![Version](https://img.shields.io/badge/version-1.4.0--stable-green)
 ![Network](https://img.shields.io/badge/network-Intuition%20Mainnet-purple)
 
 ## 📖 Overview
@@ -77,6 +77,30 @@ IntuRank interacts primarily with the **Intuition MultiVault** and **Fee Proxy**
 - **Deposit:** `deposit` via Fee Proxy - Acquires shares with automatic fee calculation.
 - **Redeem:** `redeemBatch` via MultiVault - Burns shares to claim underlying TRUST assets.
 - **Atoms/Triples:** Uses `createAtoms` and `createTriples` to register new identities and opinions.
+
+## 🧩 Intuition SDK Integration (`@0xintuition/sdk`)
+
+This app also exposes a thin wrapper around the official Intuition TypeScript SDK to make higher-level graph operations easy to use from React and from AI agents inside Cursor.
+
+- **Dependency**: `@0xintuition/sdk` (peer: `viem ^2.x`)
+- **Service entrypoint**: `services/intuitionSdk.ts`
+
+Key helpers:
+
+- **`createStringAtom(text, deposit?)`**: Creates an atom from a plain string on Intuition Mainnet, optionally with a TRUST deposit (decimal string, e.g. `"0.01"`).
+- **`createThingAtom(thing, deposit)`**: Creates a rich JSON‑LD style "Thing" atom using the SDK’s IPFS/Pinata flow.
+- **`createSingleTriple(subjectId, predicateId, objectId, deposit)`**: Creates one `(subject, predicate, object)` triple with a TRUST deposit.
+- **`fetchAtomDetails(atomId)`**: Fetches full atom metadata from the Intuition API.
+- **`searchIntuition(query, options?)`**: Text search across atoms/accounts/triples/collections.
+- **`semanticSearchIntuition(query, options?)`**: Embedding-based semantic search over the graph.
+
+All write helpers automatically:
+
+- Resolve the canonical `MultiVault` address via `getMultiVaultAddressFromChainId(intuitionMainnet.id)`.
+- Reuse the existing `publicClient` and `intuitionChain` from `services/web3.ts`.
+- Bind to the currently connected browser wallet (MetaMask/Rabby) via EIP‑1193.
+
+For full protocol and SDK docs, see the upstream monorepo: `https://github.com/0xIntuition/intuition-ts`.
 
 ---
 

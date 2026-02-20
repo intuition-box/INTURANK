@@ -11,11 +11,13 @@ export interface ToastMessage {
 }
 
 let toastListeners: ((toast: ToastMessage) => void)[] = [];
+let clearListeners: (() => void)[] = [];
 
 export const toast = {
   success: (msg: string) => emitToast('success', msg),
   error: (msg: string) => emitToast('error', msg),
   info: (msg: string) => emitToast('info', msg),
+  dismissAll: () => { clearListeners.forEach((fn) => fn()); },
 };
 
 const emitToast = (type: ToastType, message: string) => {
@@ -27,16 +29,24 @@ export const ToastContainer: React.FC = () => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
-    const handleToast = (toast: ToastMessage) => {
-      setToasts((prev) => [toast, ...prev]);
+    const handleToast = (t: ToastMessage) => {
+      setToasts((prev) => {
+        // Dedupe: don't add a second error toast with the same message (avoids double toasts)
+        if (t.type === 'error' && prev.some((x) => x.type === 'error' && x.message === t.message))
+          return prev;
+        return [t, ...prev];
+      });
       setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+        setToasts((prev) => prev.filter((x) => x.id !== t.id));
       }, 5000);
     };
+    const handleClear = () => setToasts([]);
 
     toastListeners.push(handleToast);
+    clearListeners.push(handleClear);
     return () => {
-      toastListeners = toastListeners.filter(l => l !== handleToast);
+      toastListeners = toastListeners.filter((l) => l !== handleToast);
+      clearListeners = clearListeners.filter((l) => l !== handleClear);
     };
   }, []);
 

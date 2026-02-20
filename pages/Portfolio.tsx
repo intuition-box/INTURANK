@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatEther, getAddress } from 'viem';
 import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
+import { getUserPositions, getUserHistory, getVaultsByIds, getAccountPnlCurrent } from '../services/graphql';
 import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -52,23 +52,32 @@ const Portfolio: React.FC = () => {
     
     try {
       // 1. Fetch multi-source telemetry
-      const [bal, chainHistory, graphPositionsRaw] = await Promise.all([
+      const [bal, chainHistory, graphPositionsRaw, pnlSnapshot] = await Promise.all([
           getWalletBalance(address),
           getUserHistory(address),
-          getUserPositions(address).catch(() => [])
+          getUserPositions(address).catch(() => []),
+          getAccountPnlCurrent(address)
       ]);
 
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
 
-      // 2. Ledger Reconciliation
+      // 2. Transmission history
+      // - Prefer on-network history from Graph
+      // - Fall back to local (pending) history when Graph has no records yet
+      const networkHistory = [...chainHistory].sort((a, b) => b.timestamp - a.timestamp);
       const localHistory = getLocalTransactions(address);
-      const chainHashes = new Set(chainHistory.map(tx => tx.id.toLowerCase()));
-      const uniqueLocal = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
-      const mergedHistory = [...uniqueLocal, ...chainHistory].sort((a, b) => b.timestamp - a.timestamp);
-      
-      setHistory(mergedHistory);
 
-      const historyVaultIds = mergedHistory.map(tx => tx.vaultId?.toLowerCase()).filter(Boolean);
+      let displayHistory: Transaction[] = [];
+      if (networkHistory.length > 0) {
+        const chainHashes = new Set(networkHistory.map(tx => tx.id.toLowerCase()));
+        const pending = localHistory.filter(tx => !chainHashes.has(tx.id.toLowerCase()));
+        displayHistory = [...pending, ...networkHistory].sort((a, b) => b.timestamp - a.timestamp);
+      } else {
+        displayHistory = [...localHistory].sort((a, b) => b.timestamp - a.timestamp);
+      }
+      setHistory(displayHistory);
+
+      const historyVaultIds = networkHistory.map(tx => tx.vaultId?.toLowerCase()).filter(Boolean);
       const graphVaultIds = graphPositionsRaw.map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean);
       const candidateVaultIds = Array.from(new Set([...graphVaultIds, ...historyVaultIds])) as string[];
       
@@ -79,8 +88,16 @@ const Portfolio: React.FC = () => {
       let aggregatedValue = 0;
       let aggregatedPnL = 0;
 
-      // Filter positions by real-time balance respecting Graph-provided Curve IDs
-      for (const p of graphPositionsRaw) {
+      const DUST = 1e-10; // treat below this as zero (sold / dust)
+      const graphWithShares = graphPositionsRaw.filter((p: any) => {
+        const s = p.shares;
+        if (s === undefined || s === null) return false;
+        const n = typeof s === 'string' ? parseFloat(s) : Number(s);
+        return n > DUST;
+      });
+
+      // Active holdings = only what the user is currently holding (on-chain verified)
+      for (const p of graphWithShares) {
           try {
               const id = p.vault.term_id.toLowerCase();
               const curveId = Number(p.vault.curve_id || 1);
@@ -88,8 +105,8 @@ const Portfolio: React.FC = () => {
               const sharesRaw = await getShareBalance(address, id, curveId);
               const sharesNum = parseFloat(sharesRaw);
               
-              // respect even tiny positions for Caleb-level power users
-              if (!sharesNum || sharesNum <= 0.00000000001) continue;
+              // Only show positions with current on-chain balance (exclude sold / dust)
+              if (!(sharesNum > DUST)) continue;
 
               const valueStr = await getQuoteRedeem(sharesRaw, id, address, curveId);
               const value = parseFloat(valueStr);
@@ -111,7 +128,7 @@ const Portfolio: React.FC = () => {
                   type = 'CLAIM';
               }
 
-              const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, mergedHistory, id);
+              const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, networkHistory, id);
               
               aggregatedValue += value;
               aggregatedPnL += profit;
@@ -122,21 +139,50 @@ const Portfolio: React.FC = () => {
 
       setPositions(activePositions);
       setExposureData(calculateCategoryExposure(activePositions));
-      setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
-      setNetPnL(aggregatedPnL);
-      setSentimentBias(calculateSentimentBias(mergedHistory));
 
-      // 4. Build Temporal chart
-      const points = [{ timestamp: Date.now(), val: aggregatedValue }];
+      if (pnlSnapshot && pnlSnapshot.equity_value) {
+        try {
+          const eq = Number(formatEther(BigInt(pnlSnapshot.equity_value)));
+          setPortfolioValue(eq.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+        } catch {
+          setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+        }
+      } else {
+        setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+      }
+
+      if (pnlSnapshot && pnlSnapshot.total_pnl) {
+        try {
+          const totalPnl = Number(formatEther(BigInt(pnlSnapshot.total_pnl)));
+          setNetPnL(totalPnl);
+        } catch {
+          setNetPnL(aggregatedPnL);
+        }
+      } else {
+        setNetPnL(aggregatedPnL);
+      }
+      setSentimentBias(calculateSentimentBias(displayHistory));
+
+      // 4. Build Equity Volume Temporal chart (use same history as Transmission for consistency)
+      const points: { timestamp: number; val: number }[] = [{ timestamp: Date.now(), val: aggregatedValue }];
       let runner = aggregatedValue;
-      for (let i = 0; i < Math.min(mergedHistory.length, 50); i++) {
-          const tx = mergedHistory[i];
+      const historyForChart = displayHistory.slice(0, 100);
+      for (let i = 0; i < historyForChart.length; i++) {
+          const tx = historyForChart[i];
           const val = safeParseUnits(tx.assets);
           if (tx.type === 'DEPOSIT') runner -= val;
           else runner += val;
           points.push({ timestamp: tx.timestamp, val: runner });
       }
-      setChartData(points.reverse());
+      const sorted = points.reverse();
+      // Ensure at least 2 points so the area/line renders (not just a dot)
+      if (sorted.length === 1) {
+          sorted.unshift({
+              timestamp: sorted[0].timestamp - 24 * 60 * 60 * 1000,
+              val: Math.max(0, sorted[0].val - 0.01),
+          });
+      }
+      setChartData(sorted);
 
     } catch (e) {
       console.error("PORTFOLIO_SYNC_FAILURE", e);

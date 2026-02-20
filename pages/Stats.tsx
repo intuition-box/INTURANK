@@ -1,15 +1,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle, ShieldAlert, BadgeCheck, UserCog } from 'lucide-react';
-import { getTopPositions, getAllAgents, getTopClaims } from '../services/graphql';
-import { fetchAtomNameFromChain, resolveENS } from '../services/web3';
+import { getTopPositions, getAllAgents, getTopClaims, getAccountPnlCurrent, getPnlLeaderboard, searchAccountsByLabel } from '../services/graphql';
+import { reverseResolveENS, resolveENS } from '../services/web3';
 import { formatEther, isAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { formatMarketValue, isSystemVerified } from '../services/analytics';
 
-type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS';
+type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
 
 interface LeaderboardEntry {
   rank: number;
@@ -37,21 +37,47 @@ const Stats: React.FC = () => {
 
   // --- NAME RESOLUTION EFFECT ---
   useEffect(() => {
-      if (loading || data.length === 0 || activeTab === 'CLAIMS') return;
+      if (loading || data.length === 0 || (activeTab !== 'STAKERS' && activeTab !== 'PNL')) return;
 
       const resolveUnknowns = async () => {
           let hasUpdates = false;
           const updatedData = [...data];
-          const topItems = updatedData.slice(0, 20);
+          const topItems = updatedData.slice(0, 50);
           
           for (let i = 0; i < topItems.length; i++) {
               const item = topItems[i];
-              if (item.label.startsWith('Agent 0x') || item.label.startsWith('Trader 0x')) {
-                  const realName = await fetchAtomNameFromChain(item.id);
-                  if (realName && realName !== item.label) {
-                      updatedData[i] = { ...item, label: realName };
-                      hasUpdates = true;
+              if (item.label.startsWith('Trader 0x')) {
+                  try {
+                      const ens = await reverseResolveENS(item.id);
+                      if (ens && ens !== item.label) {
+                          updatedData[i] = { 
+                              ...item, 
+                              label: ens,
+                              image: updatedData[i].image || `https://effigy.im/a/${item.id}.png`
+                          };
+                          hasUpdates = true;
+                      } else if (!updatedData[i].image) {
+                          updatedData[i] = {
+                              ...item,
+                              image: `https://effigy.im/a/${item.id}.png`
+                          };
+                          hasUpdates = true;
+                      }
+                  } catch {
+                      if (!updatedData[i].image) {
+                          updatedData[i] = {
+                              ...item,
+                              image: `https://effigy.im/a/${item.id}.png`
+                          };
+                          hasUpdates = true;
+                      }
                   }
+              } else if (!item.image) {
+                  updatedData[i] = {
+                      ...item,
+                      image: `https://effigy.im/a/${item.id}.png`
+                  };
+                  hasUpdates = true;
               }
           }
 
@@ -77,7 +103,7 @@ const Stats: React.FC = () => {
         const userMeta = new Map<string, any>();
 
         positions.forEach((pos: any) => {
-            const accId = pos.account?.id;
+            const accId = pos.account_id;
             if (!accId) return;
             
             // Calculate real-time conviction valuation: (Shares * Vault_Assets) / Vault_Supply
@@ -93,26 +119,29 @@ const Stats: React.FC = () => {
             userMap.set(accId, currentVal + valueEth);
             
             if (!userMeta.has(accId)) {
+                const baseLabel = pos.account?.label || ensNameForDisplay(accId);
+                const baseImage = pos.account?.image || `https://effigy.im/a/${accId}.png`;
                 userMeta.set(accId, { 
-                  label: pos.account.label || (ensNameForDisplay(accId)), 
-                  image: pos.account.image 
+                  label: baseLabel, 
+                  image: baseImage
                 });
             }
         });
 
         const sorted = Array.from(userMap.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 100)
-            .map(([id, val], idx) => ({
-                rank: idx + 1,
-                id: id,
-                label: userMeta.get(id).label,
-                subLabel: 'STAKED_CONVICTION',
-                value: val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
-                rawValue: val,
-                image: userMeta.get(id).image,
-                verified: id.endsWith('.eth') || isAddress(id)
-            }));
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 100)
+          .map(([id, val], idx) => ({
+            rank: idx + 1,
+            id: id,
+            label: userMeta.get(id).label,
+            subLabel: 'STAKED_CONVICTION',
+            value: val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
+            rawValue: val,
+            image: userMeta.get(id).image,
+            verified: id.endsWith('.eth') || isAddress(id)
+          }));
+
         setData(sorted);
 
       } else if (activeTab === 'AGENTS_SUPPORT') {
@@ -178,6 +207,25 @@ const Stats: React.FC = () => {
               object: c.object
           }));
           setData(sorted);
+      } else if (activeTab === 'PNL') {
+          const pnlRows = await getPnlLeaderboard(0, 100);
+          const sorted = (pnlRows || []).map((row: any) => {
+              const pnlEth = parseFloat(formatEther(BigInt(row.total_pnl_raw || '0')));
+              const volEth = parseFloat(formatEther(BigInt(row.total_volume_raw || '0')));
+              const pct = row.pnl_pct != null ? Number(row.pnl_pct) : 0;
+              const winRate = row.win_rate != null ? Number(row.win_rate) : 0;
+              return {
+                  rank: row.rank ?? 0,
+                  id: row.account_id,
+                  label: row.account_label || ensNameForDisplay(row.account_id),
+                  subLabel: 'PNL_LEADERBOARD',
+                  value: (pnlEth >= 0 ? '+' : '') + pnlEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
+                  rawValue: pnlEth,
+                  image: `https://effigy.im/a/${row.account_id}.png`,
+                  subject: { pnl_pct: pct, win_rate: winRate, total_volume_raw: row.total_volume_raw }
+              };
+          });
+          setData(sorted);
       }
     } catch (e) {
         console.error("LEADERBOARD_RECON_FAILURE", e);
@@ -199,14 +247,35 @@ const Stats: React.FC = () => {
   const handleSearch = async () => {
       const query = searchQuery.trim();
       if (!query) return;
-      if (isAddress(query)) { playClick(); navigate(`/profile/${query}`); return; }
-      if (query.endsWith('.eth')) {
+
+      const isWallet = isAddress(query);
+      const isEns = query.toLowerCase().endsWith('.eth');
+
+      if (isWallet) { 
+          playClick(); 
+          navigate(`/profile/${query}`); 
+          return; 
+      }
+
+      if (isEns) {
           playClick();
           setIsResolving(true);
           try {
+              // 1) Try canonical ENS on Ethereum mainnet
               const address = await resolveENS(query);
-              if (address) navigate(`/profile/${address}`);
-              else toast.error(`ENS IDENTITY NOT FOUND: ${query}`);
+              if (address) {
+                  navigate(`/profile/${address}`);
+                  return;
+              }
+
+              // 2) Fallback to Intuition account labels (old behavior)
+              const matches = await searchAccountsByLabel(query);
+              if (matches && matches.length > 0) {
+                  navigate(`/profile/${matches[0].id}`);
+                  return;
+              }
+
+              toast.error(`ENS IDENTITY NOT FOUND: ${query}`);
           } catch (e) { toast.error("ENS RESOLUTION FAILED"); } finally { setIsResolving(false); }
       } else { toast.error("INVALID WALLET OR ENS"); }
   };
@@ -237,6 +306,7 @@ const Stats: React.FC = () => {
         <div className="flex flex-wrap justify-center gap-3 mb-16 bg-black/40 p-2 border-2 border-slate-900 clip-path-slant backdrop-blur-xl relative z-20 shadow-2xl">
             {[
                 { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-glow-blue' },
+                { id: 'PNL', icon: TrendingUp, label: 'TOP PNL', color: 'bg-amber-500', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(245,158,11,0.4)]' },
                 { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_25px_#00ff9d]' },
                 { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'MARKET ENTROPY', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
                 { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-glow-purple' }
@@ -263,7 +333,7 @@ const Stats: React.FC = () => {
         </div>
 
         {/* SEARCH BAR - COMMAND LINE STYLE */}
-        {activeTab === 'STAKERS' && (
+        {(activeTab === 'STAKERS' || activeTab === 'PNL') && (
             <div className="max-w-3xl mx-auto mb-20 relative z-20 group">
                 <div className="bg-black border-2 border-slate-900 p-1 clip-path-slant shadow-2xl group-hover:border-intuition-primary/40 transition-all duration-500">
                     <div className="flex items-center gap-0 bg-[#05080f]">
@@ -281,17 +351,25 @@ const Stats: React.FC = () => {
                                 disabled={isResolving}
                             />
                         </div>
+                        {(() => {
+                            const query = searchQuery.trim();
+                            const isWallet = isAddress(query);
+                            const isEns = query.toLowerCase().endsWith('.eth');
+                            const isValidTarget = isWallet || isEns;
+                            return (
                         <button 
-                            onClick={handleSearch}
-                            disabled={isResolving || (!isAddress(searchQuery.trim()) && !searchQuery.trim().endsWith('.eth'))}
-                            className={`h-16 px-10 font-black font-display text-sm tracking-widest flex items-center justify-center gap-3 transition-all duration-300 ${
-                                (isAddress(searchQuery.trim()) || searchQuery.trim().endsWith('.eth'))
-                                ? 'bg-intuition-primary text-black hover:bg-white cursor-pointer shadow-glow-blue' 
-                                : 'bg-transparent text-slate-800 cursor-not-allowed border-l-2 border-slate-900'
-                            }`}
-                        >
-                            {isResolving ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}
-                        </button>
+                                onClick={handleSearch}
+                                disabled={isResolving || !isValidTarget}
+                                className={`h-16 px-10 font-black font-display text-sm tracking-widest flex items-center justify-center gap-3 transition-all duration-300 ${
+                                    isValidTarget
+                                    ? 'bg-intuition-primary text-black hover:bg-white cursor-pointer shadow-glow-blue' 
+                                    : 'bg-transparent text-slate-800 cursor-not-allowed border-l-2 border-slate-900'
+                                }`}
+                            >
+                                {isResolving ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}
+                            </button>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
@@ -323,6 +401,57 @@ const Stats: React.FC = () => {
            <div className="text-center py-40 text-slate-800 font-mono border-2 border-dashed border-slate-900 bg-black/40 clip-path-slant font-black tracking-[0.5em] uppercase">
               [NULL_SET] NO_SIGNAL_DATA_RECOVERED
            </div>
+        ) : activeTab === 'PNL' ? (
+            <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">
+                <div className="p-8 border-b-2 border-slate-900 bg-white/5 flex justify-between items-center">
+                   <div className="flex items-center gap-4">
+                        <TrendingUp size={24} className="text-amber-500 animate-pulse" />
+                        <h3 className="font-black text-white font-display tracking-[0.3em] uppercase text-xl">PnL_Leaderboard</h3>
+                   </div>
+                   <div className="text-[10px] text-slate-700 font-black uppercase tracking-[0.3em]">get_pnl_leaderboard</div>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left font-mono border-collapse min-w-[900px]">
+                        <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                            <tr>
+                                <th className="px-10 py-6 w-24 text-center">RANK</th>
+                                <th className="px-10 py-6">ACCOUNT</th>
+                                <th className="px-10 py-6 text-right">TOTAL_PNL</th>
+                                <th className="px-10 py-6 text-right">PNL_%</th>
+                                <th className="px-10 py-6 text-right">WIN_RATE</th>
+                                <th className="px-10 py-6 text-right">VOLUME</th>
+                                <th className="px-10 py-6 text-right">RECON</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {data.map((item, i) => (
+                                <tr key={item.id} className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 30}ms` }}>
+                                    <td className="px-10 py-8 text-center font-black text-slate-700 text-lg group-hover:text-amber-500 transition-colors">#{String(item.rank || i + 1).padStart(2, '0')}</td>
+                                    <td className="px-10 py-8">
+                                        <div className="flex items-center gap-4 bg-slate-900/50 pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-amber-500/40 transition-colors">
+                                            <div className="w-12 h-12 rounded-none bg-black flex items-center justify-center overflow-hidden border-r border-slate-800">
+                                                {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" alt="" /> : <div className="text-lg font-black text-slate-700">{item.label?.[0]}</div>}
+                                            </div>
+                                            <span className="font-black text-white text-sm uppercase whitespace-nowrap max-w-[180px] truncate tracking-tighter leading-none">{item.label}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-10 py-8 text-right">
+                                        <div className={`font-display font-black text-xl tracking-normal leading-none mb-1 ${item.rawValue >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>{item.value}</div>
+                                    </td>
+                                    <td className="px-10 py-8 text-right font-black text-white text-sm">{(item.subject?.pnl_pct != null ? (Number(item.subject.pnl_pct) * 100).toFixed(2) : '—')}%</td>
+                                    <td className="px-10 py-8 text-right font-black text-white text-sm">{(item.subject?.win_rate != null ? (Number(item.subject.win_rate) * 100).toFixed(0) : '—')}%</td>
+                                    <td className="px-10 py-8 text-right font-black text-slate-400 text-sm">{item.subject?.total_volume_raw != null ? formatMarketValue(formatEther(BigInt(item.subject.total_volume_raw))) + ' TRUST' : '—'}</td>
+                                    <td className="px-10 py-8 text-right">
+                                        <Link to={`/profile/${item.id}`} className="inline-flex px-8 py-2.5 bg-amber-500 text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 tracking-widest">
+                                            PROFILE
+                                        </Link>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         ) : activeTab === 'CLAIMS' ? (
             <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">
                 <div className="p-8 border-b-2 border-slate-900 bg-white/5 flex justify-between items-center">

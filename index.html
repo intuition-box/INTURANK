@@ -69,11 +69,54 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Fira+Code:wght@400;600&family=Orbitron:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
+      html { scroll-behavior: smooth; }
       body {
         background-color: #020308;
         color: #e2e8f0;
         font-family: 'Inter', sans-serif;
         overflow-x: hidden;
+      }
+
+      /* Apple-style animations: smooth, purposeful motion */
+      @keyframes fade-in-up {
+        from { opacity: 0; transform: translateY(28px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes scale-in {
+        from { opacity: 0; transform: scale(0.96); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      .animate-fade-in-up {
+        animation: fade-in-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .animate-fade-in {
+        animation: fade-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .animate-scale-in {
+        animation: scale-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .motion-hover-lift {
+        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .motion-hover-lift:hover {
+        transform: translateY(-4px);
+      }
+      .motion-hover-scale {
+        transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .motion-hover-scale:hover {
+        transform: scale(1.02);
+      }
+      .motion-smooth {
+        transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
       }
       
       h1, h2, h3, h4, h5, h6 {
@@ -146,6 +189,11 @@
       .shadow-glow-red { box-shadow: 0 0 15px rgba(255, 30, 109, 0.2); }
       .shadow-glow-gold { box-shadow: 0 0 15px rgba(250, 204, 21, 0.2); }
       .shadow-glow-purple { box-shadow: 0 0 15px rgba(168, 85, 247, 0.2); }
+      .shadow-neon-blue { box-shadow: 0 0 20px rgba(0, 243, 255, 0.4), 0 0 40px rgba(0, 243, 255, 0.15); }
+      .shadow-neon-purple { box-shadow: 0 0 20px rgba(168, 85, 247, 0.4), 0 0 40px rgba(168, 85, 247, 0.15); }
+      .shadow-neon-gold { box-shadow: 0 0 20px rgba(250, 204, 21, 0.35), 0 0 40px rgba(250, 204, 21, 0.1); }
+      .shadow-neon-red { box-shadow: 0 0 20px rgba(255, 30, 109, 0.35), 0 0 40px rgba(255, 30, 109, 0.1); }
+      .border-glow-multi { box-shadow: inset 0 0 30px rgba(168, 85, 247, 0.08), 0 0 0 1px rgba(168, 85, 247, 0.3), 0 0 30px rgba(0, 243, 255, 0.1), 0 0 60px rgba(250, 204, 21, 0.05); }
 
       .clip-path-slant {
         clip-path: polygon(
@@ -167,12 +215,14 @@
         border: none;
         cursor: pointer;
         clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
-        transition: all 0.2s ease;
+        transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
         overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
       }
+      .btn-cyber:hover { transform: translateY(-2px); }
+      .btn-cyber:active { transform: translateY(0) scale(0.98); }
     </style>
 <script type="importmap">
 {

@@ -213,7 +213,7 @@ export const getAgentById = async (termId: string) => {
 
 export const getUserHistory = async (userAddress: string): Promise<Transaction[]> => {
   const q = `query ($userAddress: String!) {
-      events(limit: 200, order_by: {created_at: desc}, where: {
+      events(limit: 500, order_by: {created_at: desc}, where: {
           _and: [{type: {_neq: "FeesTransfered"}}, {_not: {_and: [{type: {_eq: "Deposited"}}, {deposit: {assets_after_fees: {_eq: 0}}}]}}, 
           {_or: [{_and: [{type: {_eq: "AtomCreated"}}, {atom: {creator: {id: {_eq: $userAddress}}}}]}, 
           {_and: [{type: {_eq: "TripleCreated"}}, {triple: {creator: {id: {_eq: $userAddress}}}}]}, 
@@ -344,6 +344,87 @@ export const getUserPositions = async (address: string) => {
     const data = await fetchGraphQL(q, { ids });
     return data?.positions ?? [];
   } catch (e) { return []; }
+};
+
+export const getUserActivityStats = async (address: string) => {
+  const addr = address.toLowerCase();
+  // NOTE: Some Hasura deployments apply row caps to *_aggregate,
+  // so we fetch explicit lists with a high limit and count client-side
+  const q = `query GetUserActivityStats($addr: String!) {
+      events(
+        where: {
+          _and: [
+            { type: { _in: ["Deposited", "Redeemed", "AtomCreated", "TripleCreated"] } },
+            { _or: [
+                { deposit: { sender: { id: { _eq: $addr } } } },
+                { redemption: { sender: { id: { _eq: $addr } } } },
+                { atom: { creator: { id: { _eq: $addr } } } },
+                { triple: { creator: { id: { _eq: $addr } } } }
+            ] }
+          ]
+        },
+        limit: 10000
+      ) {
+        id
+      }
+      positions(where: { account: { id: { _eq: $addr } }, shares: { _gt: "0" } }, limit: 10000) {
+        id
+      }
+  }`;
+
+  try {
+    const data = await fetchGraphQL(q, { addr });
+    const txCount = (data?.events || []).length;
+    const holdingsCount = (data?.positions || []).length;
+    return { txCount, holdingsCount };
+  } catch (e) {
+    return { txCount: 0, holdingsCount: 0 };
+  }
+};
+
+export const getAccountPnlCurrent = async (address: string) => {
+  const q = `query GetAccountPnlCurrent($input: GetAccountPnlCurrentInput!) {
+    getAccountPnlCurrent(input: $input) {
+      account_id
+      timestamp
+      equity_value
+      total_assets_in
+      total_assets_out
+      net_invested
+      total_pnl
+      pnl_pct
+      unrealized_pnl
+    }
+  }`;
+
+  try {
+    const res = await fetchGraphQL(q, { input: { account_id: address } });
+    return res?.getAccountPnlCurrent ?? null;
+  } catch (e) {
+    return null;
+  }
+};
+
+/** PnL leaderboard with pagination. p_offset: start index (0, 10, 20...), p_limit: page size */
+export const getPnlLeaderboard = async (p_offset: number = 0, p_limit: number = 50) => {
+  const q = `query Get_pnl_leaderboard($args: get_pnl_leaderboard_args) {
+    get_pnl_leaderboard(args: $args) {
+      rank
+      account_id
+      account_label
+      total_pnl_raw
+      pnl_pct
+      win_rate
+      total_volume_raw
+    }
+  }`;
+
+  try {
+    const res = await fetchGraphQL(q, { args: { p_offset, p_limit } });
+    return res?.get_pnl_leaderboard ?? [];
+  } catch (e) {
+    return [];
+  }
 };
 
 export const getVaultsByIds = async (ids: string[]) => {
@@ -492,7 +573,12 @@ export const getTopPositions = async (limit: number = 2500) => {
       positions(order_by: { shares: desc }, limit: $limit, where: { shares: { _gt: "0" } }) {
         id 
         shares 
-        account { id label image } 
+        account_id
+        account {
+          id
+          label
+          image
+        }
         vault { 
           term_id 
           total_assets 
@@ -532,21 +618,46 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
   } catch (e) { return { items: [], hasMore: false }; }
 };
 
-export const searchGlobalAgents = async (term: string) => {
+export const searchGlobalAgents = async (term: string): Promise<{ id: string; label: string; image?: string; type?: string }[]> => {
+  const t = term.trim();
+  if (!t) return [];
+  const pattern = `%${t}%`;
   const q = `query SearchAgents($term: String!) {
-      atoms(where: { _or: [{ label: { _ilike: $term } }, { term_id: { _ilike: $term } }] }, limit: 20) {
+      atoms(where: { _or: [{ label: { _ilike: $term } }, { term_id: { _ilike: $term } }] }, limit: 25) {
         term_id label data image type creator { id label image }
       }
   }`;
   try {
-    const res = await fetchGraphQL(q, { term: `%${term}%` });
-    return (res?.atoms || []).map((a: any) => ({
+    const res = await fetchGraphQL(q, { term: pattern });
+    const atoms = res?.atoms ?? res?.data?.atoms ?? [];
+    if (!Array.isArray(atoms)) return [];
+    return atoms.map((a: any) => ({
       id: a.term_id,
       label: resolveMetadata(a).label,
       image: a.image,
       type: a.type
     }));
-  } catch (e) { return []; }
+  } catch (e) {
+    console.warn('searchGlobalAgents error', e);
+    return [];
+  }
+};
+
+export const searchAccountsByLabel = async (term: string) => {
+  const q = `query SearchAccounts($term: String!) {
+      accounts(where: { label: { _ilike: $term } }, limit: 10) {
+        id
+        label
+        image
+      }
+  }`;
+
+  try {
+    const res = await fetchGraphQL(q, { term: `%${term}%` });
+    return (res?.accounts || []) as { id: string; label: string | null; image: string | null }[];
+  } catch (e) {
+    return [];
+  }
 };
 
 export const getLists = async (limit: number = 40, offset: number = 0) => {

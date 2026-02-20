@@ -8,17 +8,18 @@ import Markets from './pages/Markets';
 import MarketDetail from './pages/MarketDetail';
 import Feed from './pages/Feed';
 import Compare from './pages/Compare';
-import Indexes from './pages/Indexes';
 import Portfolio from './pages/Portfolio';
 import PublicProfile from './pages/PublicProfile';
 import KPIDashboard from './pages/KPIDashboard';
 import Documentation from './pages/Documentation';
 import ComingSoon from './pages/ComingSoon';
+import CreateSignal from './pages/CreateSignal';
+import SDKPlayground from './pages/SDKPlayground';
 import { ToastContainer } from './components/Toast';
 
 const App: React.FC = () => {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Layout>
         <ToastContainer />
         <Routes>
@@ -36,11 +37,12 @@ const App: React.FC = () => {
           <Route path="/feed" element={<Feed />} />
           <Route path="/health" element={<KPIDashboard />} />
           <Route path="/documentation" element={<Documentation />} />
+          <Route path="/sdk-lab" element={<SDKPlayground />} />
           
           {/* New Features */}
           <Route path="/compare" element={<Compare />} />
-          <Route path="/indexes" element={<Indexes />} />
           <Route path="/coming-soon" element={<ComingSoon />} />
+          <Route path="/create" element={<CreateSignal />} />
         </Routes>
       </Layout>
     </Router>

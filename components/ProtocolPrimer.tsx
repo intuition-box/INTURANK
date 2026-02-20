@@ -118,7 +118,7 @@ const ProtocolPrimer: React.FC<ProtocolPrimerProps> = ({ isOpen, onClose }) => {
         <div className="p-8 bg-black/80 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4">
                 <div className="w-2.5 h-2.5 rounded-full bg-intuition-primary animate-pulse shadow-glow-blue"></div>
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Protocol_Version: 1.3.0_Stable</span>
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Protocol_Version: 1.4.0_Stable</span>
             </div>
             <button 
                 onClick={() => { playClick(); onClose(); }}

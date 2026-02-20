@@ -54,10 +54,14 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: 
   return (
     <div
       ref={ref}
-      className={`transition-all duration-[800ms] ease-out ${className} ${
+      className={`transition-all duration-[900ms] ${className} ${
         isInView ? 'opacity-100 blur-none' : 'opacity-0 blur-sm'
       }`}
-      style={{ transitionDelay: `${delay}ms`, transform: getTransform() }}
+      style={{
+        transitionDelay: `${delay}ms`,
+        transform: getTransform(),
+        transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      }}
     >
       {children}
     </div>
@@ -245,7 +249,7 @@ const Home: React.FC = () => {
                   { num: "03", icon: <Activity size={40}/>, color: "text-white text-glow-white", border: "border-white/20", glow: "hover:border-white hover:shadow-2xl", title: "STAKE_CONSENSUS", desc: "Conviction is quantified through capital allocation, making deception economically irrational." }
               ].map((item, i) => (
                   <Reveal key={i} delay={200 + (i * 150)}>
-                      <div className={`p-10 bg-black border-2 ${item.border} ${item.glow} transition-all duration-500 clip-path-slant group relative overflow-hidden h-full flex flex-col hover:shadow-[0_0_40px_rgba(255,0,85,0.25)]`}>
+                      <div className={`p-10 bg-black border-2 ${item.border} ${item.glow} motion-hover-lift clip-path-slant group relative overflow-hidden h-full flex flex-col hover:shadow-[0_0_40px_rgba(255,0,85,0.25)]`}>
                           <div className="absolute top-0 right-0 p-4 text-[7rem] font-black text-white/5 font-display italic pointer-events-none group-hover:text-intuition-secondary/10 transition-colors">{item.num}</div>
                           <div className={`w-20 h-20 bg-white/5 border-2 ${item.border} flex items-center justify-center ${item.color} group-hover:scale-110 transition-all duration-700 mb-10 clip-path-slant shadow-2xl`}>
                               {item.icon}
@@ -289,7 +293,7 @@ const Home: React.FC = () => {
             RECLAIM_THE<br/><span className="text-intuition-secondary text-glow-red">REPUTATION</span>
           </h2>
           <div className="flex justify-center mb-24">
-            <Link to="/markets" onClick={playClick} className="btn-cyber btn-cyber-secondary px-24 py-10 text-3xl shadow-[0_0_100px_rgba(255,30,109,0.7)] active:scale-95 transition-transform">
+            <Link to="/markets" onClick={playClick} className="btn-cyber btn-cyber-secondary px-24 py-10 text-3xl shadow-[0_0_100px_rgba(255,30,109,0.7)] motion-smooth">
               SYNC_PROTOCOL
             </Link>
           </div>
@@ -319,7 +323,7 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
     };
 
     return (
-      <div className={`relative p-8 bg-[#02040a] group transition-all duration-700 flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none`}>
+      <div className={`relative p-8 bg-[#02040a] group motion-hover-lift flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none hover:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]`}>
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-10 pointer-events-none"></div>
         
         <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
@@ -338,7 +342,7 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
         </div>
 
         <div className="flex-1 flex items-center justify-start relative z-10 min-h-0 overflow-hidden">
-            <div className={`font-black text-white font-display transition-all duration-500 tracking-tighter w-full break-all leading-tight group-hover:scale-[1.02] ${getFontSize()} ${glowClass}`}>
+            <div className={`font-black text-white font-display transition-all duration-500 tracking-tighter w-full break-all leading-[1.35] min-h-[1.35em] group-hover:scale-[1.02] ${getFontSize()} ${glowClass}`}>
                 {value}
             </div>
         </div>

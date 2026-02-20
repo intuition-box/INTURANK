@@ -245,7 +245,7 @@ const Markets: React.FC = () => {
         <div className="relative z-10 space-y-1">
           <div className="flex items-center gap-2 text-intuition-primary/80">
             <span className="text-[11px] font-black font-mono tracking-widest uppercase">
-              {">_"} SECTOR_ANALYSIS_SYSTEM_V1.3.0_ARES
+              {">_"} SECTOR_ANALYSIS_SYSTEM_V1.4.0_ARES
             </span>
           </div>
           <h1 className="text-6xl md:text-[5rem] font-black text-white font-display tracking-tighter uppercase text-glow-blue leading-none py-2">

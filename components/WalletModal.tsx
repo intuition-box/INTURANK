@@ -6,7 +6,7 @@ import { CHAIN_ID } from '../constants';
 interface WalletModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConnect: () => Promise<void>;
+  onConnect: (connector: 'injected' | 'walletconnect', injectedPreference?: 'default' | 'metamask' | 'rabby' | 'brave') => Promise<void>;
 }
 
 const WalletOption = ({ name, description, icon: Icon, onClick, isConnecting, disabled = false, color = "primary" }: any) => {
@@ -51,19 +51,23 @@ const WalletOption = ({ name, description, icon: Icon, onClick, isConnecting, di
 
 const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onConnect }) => {
   const [isConnecting, setIsConnecting] = useState(false);
+  const [activeConnector, setActiveConnector] = useState<'injected' | 'walletconnect' | null>(null);
+  const [showInjectedOptions, setShowInjectedOptions] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleConnect = async () => {
+  const handleConnect = async (connector: 'injected' | 'walletconnect', injectedPreference: 'default' | 'metamask' | 'rabby' | 'brave' = 'default') => {
     playClick();
     setIsConnecting(true);
+    setActiveConnector(connector);
     try {
-      await onConnect();
+      await onConnect(connector, injectedPreference);
       onClose();
     } catch (e) {
       console.error("Connection cancelled or failed", e);
     } finally {
       setIsConnecting(false);
+      setActiveConnector(null);
     }
   };
 
@@ -114,17 +118,17 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onConnect })
                     name="Injected_Node" 
                     description="MetaMask // Rabby // Brave" 
                     icon={Cpu} 
-                    onClick={handleConnect}
-                    isConnecting={isConnecting}
+                    onClick={() => { playClick(); setShowInjectedOptions((v) => !v); }}
+                    isConnecting={false}
                     color="primary"
                 />
                 
                 <WalletOption 
                     name="Mobile_Relay" 
-                    description="WalletConnect // QR Access" 
+                    description="WalletConnect v2 // QR Access" 
                     icon={Smartphone} 
-                    onClick={() => {}}
-                    disabled={true}
+                    onClick={() => handleConnect('walletconnect')}
+                    isConnecting={isConnecting && activeConnector === 'walletconnect'}
                     color="primary"
                 />
 
@@ -137,6 +141,44 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose, onConnect })
                     color="primary"
                 />
             </div>
+
+            {showInjectedOptions && (
+              <div className="mt-6 space-y-3 border border-white/10 bg-black/60 p-4 clip-path-slant">
+                <div className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.4em] mb-2">
+                  Select_Wallet_Client
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() => handleConnect('injected', 'metamask')}
+                    className="flex items-center justify-between px-4 py-3 bg-black border border-white/10 hover:border-intuition-primary text-[10px] font-mono font-black uppercase tracking-[0.25em] transition-all"
+                  >
+                    <span>MetaMask</span>
+                    {isConnecting && activeConnector === 'injected' && <Loader2 size={14} className="animate-spin text-intuition-primary" />}
+                  </button>
+                  <button
+                    onClick={() => handleConnect('injected', 'rabby')}
+                    className="flex items-center justify-between px-4 py-3 bg-black border border-white/10 hover:border-intuition-primary text-[10px] font-mono font-black uppercase tracking-[0.25em] transition-all"
+                  >
+                    <span>Rabby</span>
+                    {isConnecting && activeConnector === 'injected' && <Loader2 size={14} className="animate-spin text-intuition-primary" />}
+                  </button>
+                  <button
+                    onClick={() => handleConnect('injected', 'brave')}
+                    className="flex items-center justify-between px-4 py-3 bg-black border border-white/10 hover:border-intuition-primary text-[10px] font-mono font-black uppercase tracking-[0.25em] transition-all"
+                  >
+                    <span>Brave</span>
+                    {isConnecting && activeConnector === 'injected' && <Loader2 size={14} className="animate-spin text-intuition-primary" />}
+                  </button>
+                  <button
+                    onClick={() => handleConnect('injected', 'default')}
+                    className="flex items-center justify-between px-4 py-3 bg-black border border-white/10 hover:border-intuition-primary text-[10px] font-mono font-black uppercase tracking-[0.25em] transition-all"
+                  >
+                    <span>Auto-Detect</span>
+                    {isConnecting && activeConnector === 'injected' && <Loader2 size={14} className="animate-spin text-intuition-primary" />}
+                  </button>
+                </div>
+              </div>
+            )}
             
             <div className="mt-8 p-6 bg-black border border-white/5 border-dashed clip-path-slant opacity-60">
                 <p className="text-[9px] font-mono text-slate-500 leading-relaxed uppercase tracking-widest text-center">

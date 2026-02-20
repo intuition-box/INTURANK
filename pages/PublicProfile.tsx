@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
+import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats } from '../services/graphql';
 import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon } from 'lucide-react';
 import { formatEther, isAddress } from 'viem';
 import { Transaction } from '../types';
@@ -27,6 +27,7 @@ const PublicProfile: React.FC = () => {
   const [sentimentBias, setSentimentBias] = useState({ trust: 50, distrust: 50 });
   const [exposureData, setExposureData] = useState<any[]>([]);
   const [semanticFootprint, setSemanticFootprint] = useState(0);
+  const [activeHoldingsCount, setActiveHoldingsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isResolving, setIsResolving] = useState(false);
 
@@ -42,9 +43,10 @@ const PublicProfile: React.FC = () => {
       setEthBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
       // High-precision parallel fetch
-      const [graphPositions, chainHistory] = await Promise.all([
+      const [graphPositions, chainHistory, activityStats] = await Promise.all([
           getUserPositions(addr).catch(() => []),
-          getUserHistory(addr).catch(() => [])
+          getUserHistory(addr).catch(() => []),
+          getUserActivityStats(addr).catch(() => ({ txCount: 0, holdingsCount: 0 }))
       ]);
       
       const uniqueVaultIds = Array.from(new Set([
@@ -56,19 +58,24 @@ const PublicProfile: React.FC = () => {
       
       let totalAssetsSum = 0;
 
-      // CRITICAL RECONCILIATION: Map every Graph position to a real-time Curve check
-      const livePositions = await Promise.all(graphPositions.map(async (p: any) => {
+      const DUST = 1e-10; // treat below this as zero (sold / dust)
+      const graphWithShares = graphPositions.filter((p: any) => {
+        const s = p.shares;
+        if (s === undefined || s === null) return false;
+        const n = typeof s === 'string' ? parseFloat(s) : Number(s);
+        return n > DUST;
+      });
+
+      // Only show positions the user currently holds (on-chain verified)
+      const livePositions = await Promise.all(graphWithShares.map(async (p: any) => {
           const id = p.vault.term_id.toLowerCase();
-          // Power users use multiple curves; we must query the specific curve_id for the vault
           const curveId = Number(p.vault.curve_id || 1);
           const meta = metadata.find(m => m.id.toLowerCase() === id);
           
-          // Verify actual balance on-chain to prevent stale data display
           const sharesRaw = await getShareBalance(addr, id, curveId);
           const sharesNum = parseFloat(sharesRaw);
           
-          // Remove restrictive filtering to capture small but significant "magnitude" signals
-          if (sharesNum <= 0.000000000000001) return null;
+          if (!(sharesNum > DUST)) return null;
 
           const valueStr = await getQuoteRedeem(sharesRaw, id, addr, curveId);
           const value = parseFloat(valueStr);
@@ -100,30 +107,54 @@ const PublicProfile: React.FC = () => {
 
       const finalPositions = livePositions.filter(Boolean) as any[];
       setPositions(finalPositions);
+      setActiveHoldingsCount(activityStats.holdingsCount || finalPositions.length);
       setExposureData(calculateCategoryExposure(finalPositions));
       
-      // Update Global Magnitude Display
-      setPortfolioValue(totalAssetsSum.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+      // Update Global Magnitude Display based purely on live position value
+      setPortfolioValue(
+        totalAssetsSum.toLocaleString(undefined, {
+          minimumFractionDigits: 4,
+          maximumFractionDigits: 4,
+        }),
+      );
 
       const mergedHistory = chainHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       setHistory(mergedHistory);
-      setSemanticFootprint(mergedHistory.length); 
-      setSentimentBias(calculateSentimentBias(mergedHistory));
 
+      // SEMANTIC FOOTPRINT: fall back to active holdings if no explicit history
+      const footprintCount =
+        activityStats.txCount && activityStats.txCount > 0
+          ? activityStats.txCount
+          : (mergedHistory.length > 0 ? mergedHistory.length : finalPositions.length);
+      setSemanticFootprint(footprintCount); 
+
+      // SENTIMENT BIAS: use history when available, otherwise infer from holdings
+      if (mergedHistory.length > 0) {
+          setSentimentBias(calculateSentimentBias(mergedHistory));
+      } else if (finalPositions.length > 0) {
+          // Power users with holdings but no on-chain events yet: show bullish bias
+          setSentimentBias({ trust: 95, distrust: 5 });
+      } else {
+          setSentimentBias({ trust: 50, distrust: 50 });
+      }
+      
       // Reconstruct temporal growth chart
       let currentRunningVol = 0;
-      const chartPoints = mergedHistory
+      let chartPoints = mergedHistory
           .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
-          .map(tx => {
+          .map((tx, idx) => {
               try {
                   const assetVal = parseFloat(formatEther(BigInt(tx.assets || '0')));
                   currentRunningVol += assetVal > 0 ? assetVal : 0;
               } catch (e) {}
-              return { val: currentRunningVol };
+              return { idx, val: currentRunningVol };
           });
       
       if (chartPoints.length === 0 && finalPositions.length > 0) {
-          chartPoints.push({ val: 0 }, { val: totalAssetsSum });
+          chartPoints = [
+              { idx: 0, val: 0 },
+              { idx: 1, val: totalAssetsSum }
+          ];
       }
       setVolumeData(chartPoints);
 
@@ -197,8 +228,10 @@ const PublicProfile: React.FC = () => {
             )}
             {!ensName && <div className="mb-4"></div>}
             <div className="flex flex-wrap gap-4 justify-center md:justify-start font-mono text-[9px] font-black uppercase">
-              <span className="bg-intuition-primary/10 text-intuition-primary px-3 py-1.5 border border-intuition-primary/30 clip-path-slant">LEVEL: {positions.length > 50 ? 'ELITE_TRADER' : positions.length > 10 ? 'MASTER_TRADER' : 'RECON_LEVEL_1'}</span>
-              <span className="bg-white/5 text-slate-400 px-3 py-1.5 border border-white/10 clip-path-slant">{positions.length} ACTIVE_HOLDINGS</span>
+              <span className="bg-intuition-primary/10 text-intuition-primary px-3 py-1.5 border border-intuition-primary/30 clip-path-slant">LEVEL: {activeHoldingsCount > 50 ? 'ELITE_TRADER' : activeHoldingsCount > 10 ? 'MASTER_TRADER' : 'RECON_LEVEL_1'}</span>
+              <span className="bg-white/5 text-slate-400 px-3 py-1.5 border border-white/10 clip-path-slant">
+                  {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} ACTIVE_HOLDINGS
+              </span>
               <span className="bg-black text-slate-300 px-3 py-1.5 border border-slate-800 flex items-center gap-2 clip-path-slant">
                   <Wallet size={10} className="text-intuition-primary" /> {ethBalance} {CURRENCY_SYMBOL}
               </span>
@@ -221,7 +254,8 @@ const PublicProfile: React.FC = () => {
                   <Database size={14} className="text-intuition-secondary" /> Semantic_Footprint
               </div>
               <div className="text-4xl font-black text-white font-display flex items-center gap-3">
-                  {semanticFootprint} <span className="text-[10px] text-slate-500 font-mono tracking-widest font-black uppercase">TXs_Logged</span>
+                  {semanticFootprint >= 100 ? `${semanticFootprint}+` : semanticFootprint}
+                  <span className="text-[10px] text-slate-500 font-mono tracking-widest font-black uppercase">TXs_Logged</span>
               </div>
           </div>
           <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-primary/30 transition-all shadow-2xl relative overflow-hidden">
@@ -300,7 +334,7 @@ const PublicProfile: React.FC = () => {
                                 </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 6" stroke="#ffffff08" vertical={false} />
-                            <XAxis hide />
+                            <XAxis dataKey="idx" hide />
                             <YAxis hide />
                             <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
                             <Area type="stepAfter" dataKey="val" stroke="#00f3ff" strokeWidth={2} fillOpacity={1} fill="url(#colorVal)" isAnimationActive={true} animationDuration={1000} />

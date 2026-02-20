@@ -1,8 +1,7 @@
-
 {
   "name": "inturank",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@0xintuition/sdk": "^2.0.2",
     "@google/genai": "^1.34.0",
+    "@walletconnect/ethereum-provider": "^2.23.6",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",

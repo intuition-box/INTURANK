@@ -245,7 +245,7 @@ const AgentShareModal: React.FC<{
                     </div>
 
                     <div className="flex items-center justify-between pt-8 border-t border-white/10 opacity-60 relative z-10 font-mono">
-                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.6em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.3.0</div>
+                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.6em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.4.0</div>
                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{new Date().toLocaleDateString()} // NEURAL_SYNC_S04</div>
                     </div>
                 </div>
@@ -467,7 +467,17 @@ const MarketDetail: React.FC = () => {
   };
 
   const handleExecute = async () => {
-        if (!wallet) return;
+        let activeWallet = wallet;
+        if (!activeWallet) {
+            // Lazy sync in case user connected after page load
+            activeWallet = await getConnectedAccount();
+            if (!activeWallet) {
+                toast.error("WALLET_CONNECTION_REQUIRED");
+                return;
+            }
+            setWallet(activeWallet);
+            setWalletBalance(await getWalletBalance(activeWallet));
+        }
 
         let activeTargetId = id!;
         if (sentiment === 'DISTRUST') {
@@ -483,10 +493,10 @@ const MarketDetail: React.FC = () => {
             return;
         }
 
-        if (action === 'ACQUIRE' && !isApproved) {
+            if (action === 'ACQUIRE' && !isApproved) {
             setTxModal({ isOpen: true, status: 'processing', title: 'PERMISSION_HANDSHAKE', message: 'Authorizing protocol uplink...', logs: ['Simulating Handshake...'] });
             try {
-                await grantProxyApproval(wallet);
+                await grantProxyApproval(activeWallet);
                 setIsApproved(true);
                 setTxModal({ isOpen: false });
                 toast.success("HANDSHAKE_VERIFIED");
@@ -510,9 +520,9 @@ const MarketDetail: React.FC = () => {
             const logHandler = (msg: string) => addLog(msg);
 
             if (action === 'ACQUIRE') {
-                res = await depositToVault(inputAmount, activeTargetId, wallet, logHandler);
+                res = await depositToVault(inputAmount, activeTargetId, activeWallet, logHandler);
             } else {
-                res = await redeemFromVault(inputAmount, activeTargetId, wallet, logHandler);
+                res = await redeemFromVault(inputAmount, activeTargetId, activeWallet, logHandler);
             }
             
             playSuccess();
@@ -532,7 +542,7 @@ const MarketDetail: React.FC = () => {
                 assetLabel: assetLabel
             };
             
-            saveLocalTransaction(localTx, wallet);
+            saveLocalTransaction(localTx, activeWallet);
             setActivityLog(prev => [localTx, ...prev]);
             setTxModal(prev => ({ 
                 ...prev, 

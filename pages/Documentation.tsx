@@ -149,7 +149,7 @@ const Documentation: React.FC = () => {
           <div className="relative z-10">
             <div className="flex items-center gap-4 text-intuition-primary mb-12 animate-in slide-in-from-left duration-1000">
               <Activity size={24} className="animate-pulse shadow-glow-blue" />
-              <span className="text-[12px] font-black tracking-[1.2em] uppercase opacity-70">Sector_04 // Compendium // v1.3.1</span>
+              <span className="text-[12px] font-black tracking-[1.2em] uppercase opacity-70">Sector_04 // Compendium // v1.4.0</span>
             </div>
             
             <h1 className="text-6xl md:text-[10rem] font-black text-white font-display tracking-tighter uppercase leading-[0.8] mb-16 animate-in slide-in-from-bottom duration-1000 fill-mode-both">
