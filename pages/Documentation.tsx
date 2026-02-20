@@ -320,7 +320,7 @@ const Documentation: React.FC = () => {
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 font-mono">
                     <div className="space-y-3">
                         <div className="text-[9px] font-black text-white flex items-center gap-2 uppercase tracking-widest"><div className="w-4 h-px bg-intuition-success"></div> 01_COMMIT</div>
-                        <p className="text-[11px] text-slate-500 uppercase leading-relaxed font-bold">Signalers deposit $TRUST into an Atom's MultiVault to mint portal shares.</p>
+                        <p className="text-[11px] text-slate-500 uppercase leading-relaxed font-bold">Signalers deposit ₸ into an Atom's MultiVault to mint portal shares.</p>
                     </div>
                     <div className="space-y-3">
                         <div className="text-[9px] font-black text-white flex items-center gap-2 uppercase tracking-widest"><div className="w-4 h-px bg-intuition-success"></div> 02_SIGNAL</div>
@@ -426,7 +426,7 @@ const Documentation: React.FC = () => {
                     {[
                         { step: "01", title: "Establish Link", desc: "Connect an Ethereum-compatible wallet to the Intuition Network." },
                         { step: "02", title: "Identify Signal", desc: "Select a high-signal Identity or Claim node from the Terminal." },
-                        { step: "03", title: "Acquire Shares", desc: "Commit $TRUST to ingress. Your conviction is now on-chain." }
+                        { step: "03", title: "Acquire Shares", desc: "Commit ₸ to ingress. Your conviction is now on-chain." }
                     ].map((step, i) => (
                         <div key={i} className="p-10 bg-[#05060b] border-2 border-slate-900 clip-path-slant hover:border-white transition-all shadow-xl group">
                             <div className="text-4xl font-black text-white font-display mb-6 opacity-10 group-hover:opacity-100 group-hover:text-intuition-primary transition-all">{step.step}</div>

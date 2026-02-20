@@ -13,6 +13,7 @@ import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
 import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
 import { OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 import html2canvas from 'html2canvas';
 import Logo from '../components/Logo';
 import ShareCard from '../components/ShareCard';
@@ -37,7 +38,7 @@ const CustomTooltip = ({ active, payload }: any) => {
           <div className="flex justify-between items-baseline gap-6">
             <span className="text-[9px] font-black font-mono text-slate-400 uppercase tracking-widest">SHARE_PRICE:</span>
             <span className="text-lg font-black font-display text-white tracking-tighter text-glow-white">
-                {Number(payload[0].value).toLocaleString(undefined, { maximumFractionDigits: 4 })} <span className="text-[10px] text-intuition-primary ml-1">{CURRENCY_SYMBOL}</span>
+                {Number(payload[0].value).toLocaleString(undefined, { maximumFractionDigits: 4 })} <CurrencySymbol size="md" />
             </span>
           </div>
           <div className="flex justify-between items-center">
@@ -729,7 +730,7 @@ const MarketDetail: React.FC = () => {
                 <div className="flex items-end gap-8 mb-2">
                     <div className="flex flex-col items-center group/prob">
                         <div className="text-4xl font-black text-intuition-success text-glow-success transition-all group-hover/prob:scale-110">{currentStrength.toFixed(1)}%</div>
-                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">TRUST</div>
+                        <div className="mt-1 flex items-center justify-center"><CurrencySymbol size="sm" className="text-slate-500" /></div>
                     </div>
                 </div>
                 <div className="text-sm font-black text-slate-700 font-mono uppercase tracking-[0.4em]">Convergence_L3_Confirmed</div>
@@ -752,7 +753,7 @@ const MarketDetail: React.FC = () => {
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none"></div>
                     <div className="p-10 flex flex-col md:flex-row justify-between items-end bg-[#02040a]/80 backdrop-blur-md relative z-20 border-b border-white/5 gap-8">
                         <div>
-                            <div className="flex items-baseline gap-3 mb-2"><div className="text-7xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700">{formatMarketValue(displayPrice)}</div><div className="text-[14px] text-slate-500 font-mono tracking-widest uppercase font-black">{CURRENCY_SYMBOL} / PORTAL_SHARE</div></div>
+                            <div className="flex items-baseline gap-3 mb-2"><div className="text-7xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700 flex items-baseline gap-2"><CurrencySymbol size="3xl" leading className="text-white/90" /><span>{formatMarketValue(displayPrice)}</span></div><div className="text-[14px] text-slate-500 font-mono tracking-widest uppercase font-black">/ PORTAL_SHARE</div></div>
                             <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.4em] mt-3 text-glow" style={{ color: theme.color }}><Activity size={12} className="animate-pulse shadow-[0_0_15px_currentColor]" /> SIGNAL_TELEMETRY_LIVE</div>
                         </div>
                         <div className="flex gap-12 font-black text-right pb-1">
@@ -839,7 +840,7 @@ const MarketDetail: React.FC = () => {
                                     <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Est_Proceeds</span>
                                     <div className="flex items-center gap-2">
                                         {isQuoting ? <Loader2 size={12} className="animate-spin text-intuition-primary" /> : (
-                                            <span className="text-sm font-black text-intuition-success font-mono">{estimatedProceeds} <span className="text-[9px] text-slate-600 uppercase">TRUST</span></span>
+                                            <span className="text-sm font-black text-intuition-success font-mono inline-flex items-baseline gap-1">{estimatedProceeds} <CurrencySymbol size="sm" className="text-slate-600" /></span>
                                         )}
                                     </div>
                                 </div>
@@ -858,7 +859,7 @@ const MarketDetail: React.FC = () => {
                 {userPosition && (
                     <button onClick={() => { playClick(); setCardStats({ pnl: userPosition.pnl, entry: userPosition.entry, exit: userPosition.exit }); setShowShareCard(true); }} className={`w-full bg-black border-2 p-6 clip-path-slant group transition-all duration-500 shadow-2xl overflow-hidden border-intuition-success/40 hover:border-intuition-success`}>
                         <div className="flex justify-between items-center mb-4"><h3 className={`text-[9px] font-black uppercase tracking-[0.4em] flex items-center gap-2 text-intuition-success`}><TrendingUp size={14} className="animate-pulse" /> POSITION_ACTIVE</h3><span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded border ${parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400 border-emerald-500/50 bg-emerald-500/10' : 'text-rose-400 border-rose-500/50 bg-rose-500/10'}`}>{parseFloat(userPosition.pnl) >= 0 ? '+' : ''}{userPosition.pnl}%</span></div>
-                        <div className="flex items-center justify-between"><div className="text-left"><div className="text-[7px] text-slate-600 font-black uppercase tracking-widest mb-1">Estimated_Value</div><div className="text-xl font-black text-white font-mono">{userPosition.value} <span className="text-[10px] text-slate-500">TRUST</span></div></div><div className={`w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center transition-all group-hover:bg-intuition-success group-hover:text-black`}><Share size={16} /></div></div>
+                        <div className="flex items-center justify-between"><div className="text-left"><div className="text-[7px] text-slate-600 font-black uppercase tracking-widest mb-1">Estimated_Value</div><div className="text-xl font-black text-white font-mono inline-flex items-baseline gap-1">{userPosition.value} <CurrencySymbol size="md" className="text-slate-500" /></div></div><div className={`w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center transition-all group-hover:bg-intuition-success group-hover:text-black`}><Share size={16} /></div></div>
                     </button>
                 )}
             </div>
@@ -889,7 +890,7 @@ const MarketDetail: React.FC = () => {
                                 <h4 className="text-[11px] font-black uppercase tracking-[0.6em] mb-6 flex items-center gap-3 text-glow" style={{ color: theme.color }}><Terminal size={14}/> Core_Alignment_Matrix</h4>
                                 <p className="text-slate-400 text-base leading-relaxed font-mono font-bold uppercase tracking-tight group-hover:text-white transition-colors">Node <strong className="text-white text-glow-white">{agent.label}</strong> stabilized in Sector_04. Semantic weight currently projected at {triples.length} unique synapses. Linear Curve Utility (ID: 1) engaged.</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-6"><div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL MKT CAP</div><div className="text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">{formatMarketValue(mktCapVal)} {CURRENCY_SYMBOL}</div></div><div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL_SHARES</div><div className="text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">{formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}</div></div></div>
+                            <div className="grid grid-cols-2 gap-6"><div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL MKT CAP</div><div className="text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white inline-flex items-baseline gap-1"><CurrencySymbol size="xl" leading className="text-white/90" />{formatMarketValue(mktCapVal)}</div></div><div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL_SHARES</div><div className="text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">{formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}</div></div></div>
                             
                             {/* NEW: PROVENANCE LINKS SECTION */}
                             {agent.links && agent.links.length > 0 && (

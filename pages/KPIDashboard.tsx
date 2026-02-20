@@ -7,9 +7,10 @@ import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import html2canvas from 'html2canvas';
 import { CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 import { getWalletBalance } from '../services/web3';
 
-const KPIStatCard = ({ label, value, sub, icon: Icon, color = "primary", animate = false, isZero = false }: any) => {
+const KPIStatCard = ({ label, value, sub, icon: Icon, color = "primary", animate = false, isZero = false }: { label: string; value: string | number; sub: string | React.ReactNode; icon: any; color?: string; animate?: boolean; isZero?: boolean }) => {
     const isPrimary = color === "primary";
     const accentColor = isPrimary ? 'text-intuition-primary' : 'text-intuition-secondary';
     const borderColor = isPrimary ? 'border-intuition-primary/20' : 'border-intuition-secondary/20';
@@ -36,7 +37,7 @@ const KPIStatCard = ({ label, value, sub, icon: Icon, color = "primary", animate
                 <div className={`text-2xl md:text-3xl font-black text-white font-display tracking-tight leading-none group-hover:text-glow-white transition-all ${isZero ? 'opacity-30' : ''}`}>
                     {value}
                 </div>
-                <span className={`text-[9px] font-black uppercase tracking-widest ${accentColor}`}>{sub}</span>
+                <span className={`text-[9px] font-black uppercase tracking-widest ${accentColor} inline-flex items-baseline`}>{sub}</span>
             </div>
             {isZero && (
                 <div className="absolute bottom-3 left-5 text-[6px] font-black text-slate-700 uppercase tracking-widest animate-pulse font-mono">
@@ -201,7 +202,7 @@ const KPIDashboard: React.FC = () => {
 
                 {/* KPI Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
-                    <KPIStatCard label="Ingress Volume" value={formattedProxyTVL} sub={CURRENCY_SYMBOL} icon={Coins} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
+                    <KPIStatCard label="Ingress Volume" value={formattedProxyTVL} sub={<CurrencySymbol size="md" />} icon={Coins} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
                     <KPIStatCard label="Verified Citizens" value={stats?.userCount || 0} sub="WALLETS" icon={Users} color="primary" isZero={isProxyEmpty} />
                     <KPIStatCard label="Protocol Transactions" value={stats?.txCount || 0} sub="ALL_TIME" icon={Box} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
                     <KPIStatCard label="Market Power" value={`${formattedMarketShare}%`} sub="MAGNITUDE" icon={PieChart} color="primary" isZero={isProxyEmpty} />
@@ -227,7 +228,7 @@ const KPIDashboard: React.FC = () => {
                                                 <th className="px-6 py-4">RECON_ID</th>
                                                 <th className="px-6 py-4 text-center">TOTAL_TXS</th>
                                                 <th className="px-6 py-4 text-right">VOLUME_SIGNALED</th>
-                                                <th className="px-6 py-4 text-right">TRUST_BAL</th>
+                                                <th className="px-6 py-4 text-right">{`${CURRENCY_SYMBOL}_BAL`}</th>
                                                 <th className="px-6 py-4 text-right">RANK</th>
                                             </tr>
                                         </thead>
@@ -304,7 +305,7 @@ const KPIDashboard: React.FC = () => {
                                 <div className="group/diag">
                                     <div className="flex justify-between items-end mb-2">
                                         <span className="text-[9px] text-slate-600 uppercase font-black group-hover/diag:text-white transition-colors tracking-widest">Global_TVL</span>
-                                        <span className="text-xs font-black text-white">{formattedGlobalTVL} {CURRENCY_SYMBOL}</span>
+                                        <span className="text-xs font-black text-white inline-flex items-baseline gap-1">{formattedGlobalTVL} <CurrencySymbol size="md" /></span>
                                     </div>
                                     <div className="h-1 w-full bg-slate-950 overflow-hidden border border-white/5 rounded-none">
                                         <div className="h-full bg-slate-400 opacity-20" style={{ width: '100%' }}></div>

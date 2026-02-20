@@ -7,6 +7,7 @@ import { Account, Triple } from '../types';
 import TransactionModal from '../components/TransactionModal';
 import { playClick, playSuccess } from '../services/audio';
 import { CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 
 const AgentProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -73,7 +74,7 @@ const AgentProfile: React.FC = () => {
 
       const balance = await getWalletBalance(wallet);
       if (parseFloat(stakeAmount) >= parseFloat(balance)) {
-         setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus fees (0.1 TRUST + 5%).` });
+         setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus fees (0.1 ${CURRENCY_SYMBOL} + 5%).` });
          return;
       }
       
@@ -173,7 +174,7 @@ const AgentProfile: React.FC = () => {
             <div className="space-y-5 relative z-10">
               <div className="flex justify-between items-end">
                 <span className="text-[10px] font-mono text-slate-500 uppercase font-black">Market_Price</span>
-                <span className="text-white font-bold font-mono">1.2 {CURRENCY_SYMBOL}</span>
+                <span className="text-white font-bold font-mono inline-flex items-baseline gap-1">1.2 <CurrencySymbol size="md" /></span>
               </div>
               <div className="relative group/input">
                 <input 
@@ -241,7 +242,7 @@ const AgentProfile: React.FC = () => {
               
               <div className="group/stat">
                 <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest mb-2 font-black group-hover/stat:text-intuition-primary transition-colors">Total_Global_Stake</div>
-                <div className="text-3xl font-black font-mono text-white tracking-tighter">-- <span className="text-xs text-slate-600">{CURRENCY_SYMBOL}</span></div>
+                <div className="text-3xl font-black font-mono text-white tracking-tighter inline-flex items-baseline gap-2">-- <CurrencySymbol size="lg" className="text-slate-600" /></div>
               </div>
 
               <div className="group/stat">

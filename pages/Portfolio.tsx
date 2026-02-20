@@ -10,11 +10,12 @@ import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
 import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue, safeParseUnits } from '../services/analytics';
 import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID, DISTRUST_ATOM_ID } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 import { Link } from 'react-router-dom';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
-const StatCard: React.FC<{ label: string; value: string; unit: string; icon: any; trendColor?: string }> = ({ label, value, unit, icon: Icon, trendColor }) => (
+const StatCard: React.FC<{ label: string; value: string; unit: string | React.ReactNode; icon: any; trendColor?: string }> = ({ label, value, unit, icon: Icon, trendColor }) => (
   <div className="bg-black/40 border border-slate-900 p-6 clip-path-slant relative group hover:border-white/20 transition-all flex flex-col justify-between h-36">
     <div className="absolute top-6 right-6 text-slate-700 group-hover:text-slate-500 transition-colors">
       <Icon size={24} strokeWidth={1.5} />
@@ -24,10 +25,10 @@ const StatCard: React.FC<{ label: string; value: string; unit: string; icon: any
         <div className="w-1.5 h-1.5 bg-current rounded-full opacity-60"></div>
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{label}</span>
       </div>
-      <div className={`text-4xl font-black font-display tracking-tight group-hover:text-intuition-primary transition-colors leading-none ${trendColor || 'text-white'}`}>
+      <div className={`text-4xl font-black font-display tracking-tight group-hover:text-intuition-primary transition-colors leading-none flex items-baseline gap-1 ${trendColor || 'text-white'}`}>
+        {typeof unit === 'string' ? <span className="text-4xl font-bold text-intuition-primary/90 mr-2 align-baseline">{unit}</span> : unit}
         {value}
       </div>
-      <div className="text-[10px] font-black text-intuition-primary uppercase tracking-[0.3em] pt-1">{unit}</div>
     </div>
   </div>
 );
@@ -244,9 +245,9 @@ const Portfolio: React.FC = () => {
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20 font-mono">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-        <StatCard label="Wallet Balance" value={balance} unit="TRUST" icon={Wallet} />
-        <StatCard label="Total Equity" value={portfolioValue} unit="TRUST" icon={Coins} />
-        <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit="TRUST" icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} />
+        <StatCard label="Wallet Balance" value={balance} unit={<CurrencySymbol size="2xl" leading />} icon={Wallet} />
+        <StatCard label="Total Equity" value={portfolioValue} unit={<CurrencySymbol size="2xl" leading />} icon={Coins} />
+        <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit={<CurrencySymbol size="2xl" leading />} icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} />
         <div className="bg-black/40 border border-slate-900 p-6 clip-path-slant flex flex-col justify-between h-36 group hover:border-intuition-primary/30 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">SENTIMENT_BIAS</span>
@@ -326,8 +327,10 @@ const Portfolio: React.FC = () => {
                                         <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
                                     </td>
                                     <td className="px-8 py-6">
-                                        <div className="text-white font-black">{formatMarketValue(pos.value)}</div>
-                                        <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">{CURRENCY_SYMBOL}</div>
+                                        <div className="inline-flex items-baseline gap-1.5 text-white font-black text-sm">
+                                            <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
+                                            {formatMarketValue(pos.value)}
+                                        </div>
                                     </td>
                                     <td className="px-8 py-6 text-right">
                                         <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
@@ -374,7 +377,7 @@ const Portfolio: React.FC = () => {
                                     try {
                                         return safeParseUnits(tx.assets).toFixed(4);
                                     } catch { return '0.0000'; }
-                                })()} {CURRENCY_SYMBOL}</div>
+                                })()} <CurrencySymbol size="md" /></div>
                                 <div className="text-[8px] text-slate-600 font-mono uppercase">{new Date(tx.timestamp).toLocaleString()}</div>
                             </div>
                         </div>
@@ -401,8 +404,9 @@ const Portfolio: React.FC = () => {
                         </h4>
                     </div>
                     <div className="text-right">
-                        <div className="text-2xl font-black text-intuition-primary font-mono text-glow-blue leading-none">
-                            {portfolioValue} <span className="text-xs uppercase ml-1">TRUST</span>
+                        <div className="text-2xl font-black text-intuition-primary font-mono text-glow-blue leading-none inline-flex items-baseline gap-2">
+                            <CurrencySymbol size="xl" leading className="text-intuition-primary/90" />
+                            {portfolioValue}
                         </div>
                         <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">CURRENT_EST_VALUE</div>
                     </div>

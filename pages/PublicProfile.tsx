@@ -9,6 +9,7 @@ import { formatEther, isAddress } from 'viem';
 import { Transaction } from '../types';
 import { calculateCategoryExposure, calculateSentimentBias, formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 import { playClick } from '../services/audio';
 import { toast } from '../components/Toast';
 
@@ -246,7 +247,7 @@ const PublicProfile: React.FC = () => {
               <div className="text-[9px] font-black font-mono text-slate-600 uppercase mb-4 tracking-[0.3em] flex items-center gap-3">
                   <Activity size={14} className="text-intuition-primary" /> Protocol_Assets
               </div>
-              <div className="text-4xl font-black text-white font-display tracking-tighter text-glow-white">{portfolioValue} <span className="text-xs text-intuition-primary font-mono">{CURRENCY_SYMBOL}</span></div>
+              <div className="text-4xl font-black text-white font-display tracking-tighter text-glow-white inline-flex items-baseline gap-2"><CurrencySymbol size="2xl" leading />{portfolioValue}</div>
           </div>
           <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-secondary/40 transition-all shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform"><Layers size={80}/></div>
@@ -381,7 +382,12 @@ const PublicProfile: React.FC = () => {
                                   <span className="px-3 py-1 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-[0.1em] clip-path-slant group-hover:text-white transition-colors">{p.atom?.type || 'STANDARD_ATOM'}</span>
                               </td>
                               <td className="px-10 py-8 text-right font-black text-sm text-white">{formatDisplayedShares(p.shares)}</td>
-                              <td className="px-10 py-8 text-right font-black text-sm text-intuition-success tracking-tight">{formatMarketValue(p.value)} {CURRENCY_SYMBOL}</td>
+                              <td className="px-10 py-8 text-right">
+                                  <div className="inline-flex items-baseline gap-1.5 justify-end font-black text-sm text-intuition-success tracking-tight">
+                                      <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
+                                      {formatMarketValue(p.value)}
+                                  </div>
+                              </td>
                               <td className="px-10 py-8 text-right">
                                   <Link to={`/markets/${p.id}`} className="inline-flex px-6 py-2 bg-white/5 border border-white/10 hover:border-intuition-primary hover:border-intuition-primary text-[9px] font-black uppercase clip-path-slant transition-all tracking-widest">Inspect</Link>
                               </td>

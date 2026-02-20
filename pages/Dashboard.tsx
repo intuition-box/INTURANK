@@ -10,6 +10,7 @@ import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
 import { Link } from 'react-router-dom';
 import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatDisplayedShares } from '../services/analytics';
 
 const Dashboard: React.FC = () => {
@@ -222,17 +223,17 @@ const Dashboard: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full md:w-auto">
             <div className="bg-intuition-dark border border-intuition-border p-4 min-w-[140px] hover:border-intuition-primary/50 transition-colors group">
               <div className="text-[10px] text-slate-500 font-mono uppercase group-hover:text-intuition-primary transition-colors">Wallet Balance</div>
-              <div className="text-xl font-bold text-white font-display">{balance} <span className="text-xs text-intuition-primary">TRUST</span></div>
+              <div className="text-xl font-bold text-white font-display inline-flex items-baseline gap-1"><CurrencySymbol size="lg" leading />{balance}</div>
             </div>
 
             <div className="bg-intuition-dark border border-intuition-border p-4 min-w-[140px] hover:border-intuition-success/50 transition-colors group">
               <div className="text-[10px] text-slate-500 font-mono uppercase group-hover:text-intuition-success transition-colors">Portfolio Value</div>
-              <div className="text-xl font-bold text-intuition-success font-display">{portfolioValue} <span className="text-xs text-intuition-primary">TRUST</span></div>
+              <div className="text-xl font-bold text-intuition-success font-display inline-flex items-baseline gap-1"><CurrencySymbol size="lg" leading />{portfolioValue}</div>
             </div>
 
             <div className="bg-intuition-dark border border-intuition-border p-4 min-w-[140px] hover:border-intuition-secondary/50 transition-colors group hidden md:block">
               <div className="text-[10px] text-slate-500 font-mono uppercase group-hover:text-intuition-secondary transition-colors">Est. PnL</div>
-              <div className={`text-xl font-bold font-display ${netPnL >= -0.0001 ? 'text-emerald-400' : 'text-rose-400'}`}>{netPnL > 0 ? '+' : ''}{netPnL.toFixed(4)} <span className="text-xs text-slate-500">TRUST</span></div>
+              <div className={`text-xl font-bold font-display inline-flex items-baseline gap-1 ${netPnL >= -0.0001 ? 'text-emerald-400' : 'text-rose-400'}`}><CurrencySymbol size="lg" leading className="text-slate-500" />{netPnL > 0 ? '+' : ''}{netPnL.toFixed(4)}</div>
             </div>
           </div>
         </div>
@@ -276,7 +277,7 @@ const Dashboard: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-[10px] text-slate-500 font-mono">{pos.id.slice(0, 8)}...</td>
                   <td className="px-6 py-4 text-white font-bold font-display text-lg">{formatDisplayedShares(pos.shares)}</td>
-                  <td className="px-6 py-4 text-intuition-success">{(pos.value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} {CURRENCY_SYMBOL}</td>
+                  <td className="px-6 py-4 text-intuition-success inline-flex items-baseline gap-1">{(pos.value || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} <CurrencySymbol size="md" className="text-intuition-success/90" /></td>
                   <td className="px-6 py-4 text-right"><span className="text-intuition-success text-xs font-bold border border-intuition-success/30 px-2 py-1 bg-intuition-success/10 rounded flex items-center justify-end gap-1"><ExternalLink size={10} /> ON-CHAIN</span></td>
                 </tr>
               )}) : (!loading && (
@@ -313,7 +314,7 @@ const Dashboard: React.FC = () => {
                             const val = raw.includes('.') ? parseFloat(raw) : parseFloat(formatEther(BigInt(raw)));
                             return val.toFixed(4);
                         } catch { return '0.0000'; }
-                    })()} {CURRENCY_SYMBOL}
+                    })()} <CurrencySymbol size="md" className="text-intuition-primary/90" />
                   </div>
                   <div className="text-slate-500">{tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString() : 'Block #'}</div>
                 </div>

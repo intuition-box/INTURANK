@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { Account, Triple, Transaction } from '../types';
 import { formatEther } from 'viem';
 import { formatDisplayedShares } from '../services/analytics';
+import { CURRENCY_SYMBOL } from '../constants';
 
 const MODEL_NAME = 'gemini-3-flash-preview';
 
@@ -28,7 +29,7 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
                     Perform a high-fidelity semantic audit of the following trust graph node:
                     - Entity: "${agent.label || 'Unknown Agent'}"
                     - Classification: ${agent.type || 'Standard Atom'}
-                    - Protocol Volume: ${agent.totalAssets ? formatEther(BigInt(agent.totalAssets)) : '0'} TRUST
+                    - Protocol Volume: ${agent.totalAssets ? formatEther(BigInt(agent.totalAssets)) : '0'} ${CURRENCY_SYMBOL}
                     - Circulating Shares: ${agent.totalShares ? formatDisplayedShares(agent.totalShares) : '0'} Portal Units
                     - Graph Depth: ${triples?.length || 0} semantic claims identified.
                     - Historical Interactions: ${history?.length || 0} on-chain transmissions.

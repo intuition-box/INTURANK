@@ -99,7 +99,7 @@ const ProtocolPrimer: React.FC<ProtocolPrimerProps> = ({ isOpen, onClose }) => {
                             <ChevronRight size={10} className="text-intuition-primary" /> Staking_Ingress
                         </div>
                         <p className="text-[11px] text-slate-400 uppercase leading-relaxed tracking-tight">
-                            When you stake $TRUST, you mint new portal shares. This pushes the node further up the active bonding curve, raising the "Spot Price" for all subsequent participants.
+                            When you stake ₸, you mint new portal shares. This pushes the node further up the active bonding curve, raising the "Spot Price" for all subsequent participants.
                         </p>
                     </div>
                     <div className="space-y-4">
@@ -107,7 +107,7 @@ const ProtocolPrimer: React.FC<ProtocolPrimerProps> = ({ isOpen, onClose }) => {
                             <ChevronRight size={10} className="text-intuition-secondary" /> Liquidity_Exit
                         </div>
                         <p className="text-[11px] text-slate-400 uppercase leading-relaxed tracking-tight">
-                            Liquidating shares burns them back into $TRUST assets. This moves the node down the curve, lowering the price and extracting value from the consensus pool.
+                            Liquidating shares burns them back into ₸ assets. This moves the node down the curve, lowering the price and extracting value from the consensus pool.
                         </p>
                     </div>
                 </div>

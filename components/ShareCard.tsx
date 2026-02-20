@@ -3,6 +3,7 @@ import { Download, Share2, Award, Copy, Twitter, Loader2, CheckCircle, Activity,
 import html2canvas from 'html2canvas';
 import { toast } from './Toast';
 import Logo from './Logo';
+import { CurrencySymbol } from './CurrencySymbol';
 
 interface ShareCardProps {
   username: string;
@@ -162,11 +163,11 @@ const ShareCard: React.FC<ShareCardProps> = ({
                 </div>
                 <div className="flex flex-col">
                     <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-1">Entry_Basis</span>
-                    <span className="text-slate-300 font-bold text-xs tracking-tighter">{entryPrice} <span className="text-[8px] text-slate-600">TRUST</span></span>
+                    <span className="text-slate-300 font-bold text-xs tracking-tighter inline-flex items-baseline gap-0.5">{entryPrice} <CurrencySymbol size="sm" className="text-slate-600" /></span>
                 </div>
                 <div className="flex flex-col text-right">
                     <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-1">Exit_Terminal</span>
-                    <span className="text-white font-bold text-xs tracking-tighter">{currentPrice} <span className="text-[8px] text-slate-600">TRUST</span></span>
+                    <span className="text-white font-bold text-xs tracking-tighter inline-flex items-baseline gap-0.5">{currentPrice} <CurrencySymbol size="sm" className="text-slate-600" /></span>
                 </div>
             </div>
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { User, ExternalLink, Activity as PulseIcon, Box, Zap, AlertCircle, Fingerprint, Network, Database, TrendingUp, TrendingDown, Crown } from 'lucide-react';
 import { formatEther } from 'viem';
 import { EXPLORER_URL } from '../constants';
+import { CurrencySymbol } from './CurrencySymbol';
 import { playClick, playHover } from '../services/audio';
 import { formatMarketValue, safeParseUnits } from '../services/analytics';
 
@@ -157,7 +158,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                         <span className={`font-black text-2xl tracking-tighter text-white transition-transform duration-700 ${isWhale ? 'scale-110' : ''}`}>
                             {formatMarketValue(assetsNum)}
                         </span>
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: `${colorHex}88` }}>TRUST</span>
+                        <CurrencySymbol size="md" className="font-black uppercase" style={{ color: `${colorHex}88` }} />
                     </div>
                 )}
 

@@ -169,7 +169,7 @@ const SDKPlayground: React.FC = () => {
 
               <div>
                 <label className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em] mb-1 block">
-                  Optional Deposit (TRUST)
+                  Optional Deposit (₸)
                 </label>
                 <input
                   type="number"

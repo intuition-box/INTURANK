@@ -6,7 +6,8 @@ import { searchGlobalAgents } from '../services/graphql';
 import { Account } from '../types';
 import { toast } from './Toast';
 import { formatEther } from 'viem';
-import { EXPLORER_URL } from '../constants';
+import { EXPLORER_URL, CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from './CurrencySymbol';
 
 interface CreateModalProps {
   isOpen: boolean;
@@ -245,7 +246,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
     if (!wallet || !identityForm.name || !identityForm.deposit || parseFloat(identityForm.deposit) < 0.1) return;
     const totalRequired = (parseFloat(estCost || '0.1') + parseFloat(identityForm.deposit) + parseFloat(estGas || '0.0008'));
     if (parseFloat(walletBalance) < totalRequired) {
-        toast.error(`INSUFFICIENT_FUNDS: Your TRUST balance (${parseFloat(walletBalance).toFixed(4)}) is lower than total ingress cost.`);
+        toast.error(`INSUFFICIENT_FUNDS: Your ${CURRENCY_SYMBOL} balance (${parseFloat(walletBalance).toFixed(4)}) is lower than total ingress cost.`);
         return;
     }
     setTxStatus('CALCULATING');
@@ -395,22 +396,22 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
                         <input value={identityForm.name} onChange={e => setIdentityForm({...identityForm, name: e.target.value})} placeholder="Enter alias..." className="w-full bg-black border border-white/10 rounded-2xl py-4 px-6 text-white font-medium focus:border-intuition-primary transition-all outline-none" />
                      </div>
                      <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Initial Deposit ($TRUST)</label>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1 inline-flex items-center gap-1">Initial Deposit (<CurrencySymbol size="sm" />)</label>
                         <div className="relative group">
                           <input type="number" step="0.1" min="0.1" value={identityForm.deposit} onChange={e => setIdentityForm({...identityForm, deposit: e.target.value})} placeholder="0.1" className="w-full bg-black border border-white/10 rounded-2xl py-4 px-6 text-white font-medium focus:border-intuition-primary transition-all outline-none" />
-                          <div className="absolute right-6 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600 tracking-widest uppercase">TRUST</div>
+                          <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-baseline"><CurrencySymbol size="md" className="text-slate-600 font-black" /></div>
                         </div>
                         <div className="mt-4 p-4 border-2 border-slate-900 bg-black clip-path-slant flex items-center justify-between">
                             <div className="flex flex-col gap-1">
                                 <span className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-widest">TOTAL_INGRESS_COMMIT</span>
-                                <span className="text-xl font-black text-white font-display">
+                                <span className="text-xl font-black text-white font-display inline-flex items-baseline gap-1">
                                     {(() => {
                                         const c = parseFloat(estCost || '0.1');
                                         const d = parseFloat(identityForm.deposit || '0');
                                         const g = parseFloat(estGas || '0.0008');
                                         const sum = c + d + g;
                                         return sum > 0 ? sum.toFixed(4) : '--';
-                                    })()} TRUST
+                                    })()} <CurrencySymbol size="lg" />
                                 </span>
                             </div>
                         </div>

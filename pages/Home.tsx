@@ -5,6 +5,7 @@ import { ArrowRight, Shield, Activity, ChevronDown, Binary, Box, HardDrive, Term
 import { formatEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { getAllAgents, getNetworkStats } from '../services/graphql';
+import { CURRENCY_SYMBOL } from '../constants';
 
 interface InViewOptions extends IntersectionObserverInit {
   once?: boolean;
@@ -273,7 +274,7 @@ const Home: React.FC = () => {
           </Reveal>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
-            <Reveal delay={100}><StatBox label="Protocol Volume" value={formattedVolume} sub="TRUST EQUITY" icon={<Box size={18}/>} color="secondary" /></Reveal>
+            <Reveal delay={100}><StatBox label="Protocol Volume" value={formattedVolume} sub={`${CURRENCY_SYMBOL} EQUITY`} icon={<Box size={18}/>} color="secondary" /></Reveal>
             <Reveal delay={200}><StatBox label="Semantic Nodes" value={stats.atoms.toLocaleString()} sub="VERIFIED ATOMS" icon={<HardDrive size={18}/>} color="primary" /></Reveal>
             <Reveal delay={300}><StatBox label="Signal Density" value={stats.signals.toLocaleString()} sub="GRAPH TRIPLES" icon={<Binary size={18}/>} color="secondary" /></Reveal>
             <Reveal delay={400}><StatBox label="Uplink Flux" value={`${stats.positions.toLocaleString()}Hz`} sub="THROUGHPUT" icon={<Activity size={18}/>} color="primary" /></Reveal>

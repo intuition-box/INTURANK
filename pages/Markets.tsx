@@ -10,6 +10,7 @@ import { getWatchlist, getConnectedAccount } from '../services/web3';
 import { toast } from '../components/Toast';
 import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber, isSystemVerified } from '../services/analytics';
 import { CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
 type ViewMode = 'GRID' | 'HEATMAP';
@@ -505,7 +506,7 @@ const Markets: React.FC = () => {
                                             <Users size={14} className="text-intuition-primary opacity-50" />
                                             <span className="text-sm font-black text-intuition-primary">{formatLargeNumber(claim.holders)}</span>
                                         </div>
-                                        <div className="text-lg font-black text-white">{formatMarketValue(claim.value)} <span className="text-[10px] text-slate-600">TRUST</span></div>
+                                        <div className="text-lg font-black text-white inline-flex items-baseline gap-1">{formatMarketValue(claim.value)} <CurrencySymbol size="md" className="text-slate-600" /></div>
                                     </div>
                                 </td>
                                 
@@ -515,7 +516,7 @@ const Markets: React.FC = () => {
                                             <Users size={14} className="text-intuition-danger opacity-50" />
                                             <span className="text-sm font-black text-intuition-danger">{formatLargeNumber(claim.opposeHolders || 0)}</span>
                                         </div>
-                                        <div className="text-lg font-black text-white">{formatMarketValue(claim.opposeValue || 0)} <span className="text-[10px] text-slate-600">TRUST</span></div>
+                                        <div className="text-lg font-black text-white inline-flex items-baseline gap-1">{formatMarketValue(claim.opposeValue || 0)} <CurrencySymbol size="md" className="text-slate-600" /></div>
                                     </div>
                                 </td>
 

@@ -374,7 +374,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 onClick={() => { playClick(); setIsMenuOpen(false); }}
                 className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest clip-path-slant mt-6 hover:bg-intuition-success hover:text-black transition-all"
               >
-                <Coins size={18} /> ACQUIRE_$TRUST_TOKEN
+                <Coins size={18} /> ACQUIRE_₸_TOKEN
               </a>
 
               <button
@@ -479,7 +479,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                    <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Documentation <FileText size={12} />
                 </Link>
                 <a href={TRUST_SWAP_URL} target="_blank" rel="noreferrer" className="text-intuition-success hover:text-white transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0" /> Liquidity_Uplink ($TRUST) <ExternalLink size={12} />
+                   <ChevronsRight size={14} className="text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0" /> Liquidity_Uplink (₸) <ExternalLink size={12} />
                 </a>
                 <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
                    <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Intuition_Home <ExternalLink size={12} />

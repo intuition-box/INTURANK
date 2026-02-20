@@ -8,6 +8,7 @@ import { searchGlobalAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type View = 'root' | 'identity_choice' | 'identity_manual' | 'identity_review' | 'claim' | 'claim_review' | 'construct_atom' | 'sdk' | 'manual_pathway' | 'establish_synapse';
 
@@ -531,8 +532,8 @@ const CreateSignal: React.FC = () => {
                     <div>
                       <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
                       <input type="number" min="0" step="0.01" value={atomDeposit} onChange={(e) => setAtomDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
-                      <span className="ml-2 text-[10px] text-slate-500">{CURRENCY_SYMBOL}</span>
-                      {walletBalance && <span className="block mt-1 text-[9px] text-slate-500">{walletBalance} {CURRENCY_SYMBOL} available</span>}
+                      <span className="ml-2"><CurrencySymbol size="md" className="text-slate-500" /></span>
+                      {walletBalance && <span className="block mt-1 text-[10px] text-slate-500 inline-flex items-baseline gap-1">{walletBalance} <CurrencySymbol size="sm" /> available</span>}
                     </div>
                     <button type="button" onClick={() => { playClick(); setView('identity_review'); }} disabled={!accountAddress.trim()} className="w-full py-4 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
                       Continue
@@ -566,7 +567,7 @@ const CreateSignal: React.FC = () => {
                     <div>
                       <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
                       <input type="number" min="0" step="0.01" value={atomDeposit} onChange={(e) => setAtomDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
-                      <span className="ml-2 text-[10px] text-slate-500">{CURRENCY_SYMBOL}</span>
+                      <span className="ml-2"><CurrencySymbol size="md" className="text-slate-500" /></span>
                     </div>
                     <button type="button" onClick={() => { playClick(); setView('identity_review'); }} disabled={!nodeAlias.trim()} className="w-full py-4 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
                       Continue
@@ -591,15 +592,15 @@ const CreateSignal: React.FC = () => {
                   <div className="text-white font-mono">
                     {identitySchemaType === 'Account' ? `Account: ${accountAddress.trim().slice(0, 10)}… (${accountChain})` : `Create: ${nodeAlias.trim() || '—'}`}
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-1">Initial deposit: {atomDeposit || '0'} {CURRENCY_SYMBOL}</div>
+                  <div className="text-[10px] text-slate-500 mt-1 inline-flex items-baseline gap-1">Initial deposit: {atomDeposit || '0'} <CurrencySymbol size="sm" /></div>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-500">Total cost</span>
-                  <span className="text-white font-mono">{atomDeposit || '0'} {CURRENCY_SYMBOL}</span>
+                  <span className="text-white font-mono inline-flex items-baseline gap-1">{atomDeposit || '0'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-500">Available balance</span>
-                  <span className="text-white font-mono">{walletBalance || '—'} {CURRENCY_SYMBOL}</span>
+                  <span className="text-white font-mono inline-flex items-baseline gap-1">{walletBalance || '—'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex items-start gap-2 p-3 bg-white/5 border border-white/10">
                   <Info size={14} className="text-intuition-primary shrink-0 mt-0.5" />
@@ -762,7 +763,7 @@ const CreateSignal: React.FC = () => {
                 <div className="flex gap-6 text-[9px] text-slate-500">
                   <div><span className="block uppercase tracking-widest mb-1">PROTOCOL_COST</span><span>—</span></div>
                   <div><span className="block uppercase tracking-widest mb-1">EST_GAS_VECTOR</span><span>—</span></div>
-                  <div><span className="block uppercase tracking-widest mb-1">NET_REQUIRED</span><span className="text-white">{atomDeposit || '0'} {CURRENCY_SYMBOL}</span></div>
+                  <div><span className="block uppercase tracking-widest mb-1">NET_REQUIRED</span><span className="text-white inline-flex items-baseline gap-1">{atomDeposit || '0'} <CurrencySymbol size="md" /></span></div>
                 </div>
                 <div className="flex gap-4">
                   <button type="button" onClick={() => { setReturnToSynapseSlot(null); setView(returnToSynapseSlot ? 'claim' : 'manual_pathway'); }} className="flex-1 py-3 bg-white/5 border border-white/10 text-white font-black text-[10px] uppercase tracking-widest clip-path-slant">ABORT_GENESIS</button>
@@ -872,7 +873,7 @@ const CreateSignal: React.FC = () => {
                   <div>
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
                     <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
-                    <span className="ml-2 text-[10px] text-slate-500">{CURRENCY_SYMBOL}</span>
+                    <span className="ml-2"><CurrencySymbol size="md" className="text-slate-500" /></span>
                   </div>
                   <button type="button" onClick={() => { playClick(); setView('claim_review'); }} disabled={!subjectId || !predicateId || !objectId} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-neon-purple transition-all">
                     Review
@@ -894,15 +895,15 @@ const CreateSignal: React.FC = () => {
                 <div className="border border-[#a855f7]/40 p-4 bg-[#050505] shadow-glow-purple">
                   <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Claim (triple)</div>
                   <div className="text-white font-mono text-[10px]">[{subjectLabel || subjectId?.slice(0, 10)}…] [{predicateLabel || predicateId?.slice(0, 10)}…] [{objectLabel || objectId?.slice(0, 10)}…]</div>
-                  <div className="text-[10px] text-slate-500 mt-1">Initial deposit: {synapseDeposit || '0'} {CURRENCY_SYMBOL}</div>
+                  <div className="text-[10px] text-slate-500 mt-1 inline-flex items-baseline gap-1">Initial deposit: {synapseDeposit || '0'} <CurrencySymbol size="sm" /></div>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-500">Total cost</span>
-                  <span className="text-white font-mono">{synapseDeposit || '0'} {CURRENCY_SYMBOL}</span>
+                  <span className="text-white font-mono inline-flex items-baseline gap-1">{synapseDeposit || '0'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-500">Available balance</span>
-                  <span className="text-white font-mono">{walletBalance || '—'} {CURRENCY_SYMBOL}</span>
+                  <span className="text-white font-mono inline-flex items-baseline gap-1">{walletBalance || '—'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex items-start gap-2 p-3 bg-white/5 border border-white/10">
                   <Info size={14} className="text-[#a855f7] shrink-0 mt-0.5" />
@@ -1047,7 +1048,7 @@ const CreateSignal: React.FC = () => {
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">INITIAL_LIQUIDITY_INGRESS</label>
                     <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
                   </div>
-                  <div className="text-[9px] text-slate-500">MIN_DEPOSIT: 0.1 TRUST</div>
+                  <div className="text-[10px] text-slate-500 inline-flex items-baseline gap-1">MIN_DEPOSIT: 0.1 <CurrencySymbol size="sm" /></div>
                   <button onClick={handleEstablishSynapse} disabled={creatingSynapse || !subjectId || !predicateId || !objectId} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
                     {creatingSynapse ? <Loader2 size={14} className="animate-spin inline mr-2" /> : null} ESTABLISH_SYNAPSE_LINK
                   </button>

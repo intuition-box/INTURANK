@@ -2,7 +2,7 @@
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, encodePacked, decodeEventLog } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
-import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR } from '../constants';
+import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL } from '../constants';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import EthereumProvider from '@walletconnect/ethereum-provider';
@@ -239,7 +239,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
           functionName: 'getTotalDepositCost',
           args: [assets]
       } as any) as bigint;
-      onProgress?.(`Handshake Cost Calculated: ${formatEther(totalCost)} TRUST`);
+      onProgress?.(`Handshake Cost Calculated: ${formatEther(totalCost)} ${CURRENCY_SYMBOL}`);
 
       onProgress?.("Awaiting Biometric Signature...");
       const { request } = await publicClient.simulateContract({
@@ -304,7 +304,7 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
           functionName: 'previewRedeem',
           args: [termIdBytes32, BigInt(OFFSET_PROGRESSIVE_CURVE_ID), shares]
       } as any) as [bigint, bigint];
-      onProgress?.(`Projected Proceeds: ${formatEther(preview[0])} TRUST`);
+      onProgress?.(`Projected Proceeds: ${formatEther(preview[0])} ${CURRENCY_SYMBOL}`);
 
       onProgress?.("Awaiting Exit Signature...");
       const { request } = await publicClient.simulateContract({

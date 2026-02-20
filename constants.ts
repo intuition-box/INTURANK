@@ -3,7 +3,7 @@ export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";
 export const GRAPHQL_URL = "https://mainnet.intuition.sh/v1/graphql";
 export const EXPLORER_URL = "https://explorer.intuition.systems";
-export const CURRENCY_SYMBOL = "TRUST";
+export const CURRENCY_SYMBOL = "₸";
 
 export const MULTI_VAULT_ADDRESS = "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e";
 export const FEE_PROXY_ADDRESS = "0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93";

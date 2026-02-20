@@ -7,6 +7,8 @@ import { formatEther } from 'viem';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { playClick, playHover } from '../services/audio';
 import { Link } from 'react-router-dom';
+import { CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 import { GoogleGenAI } from "@google/genai";
 
 const MODEL_NAME = 'gemini-3-pro-preview';
@@ -205,7 +207,7 @@ const ComparisonRow: React.FC<{
     label: string, 
     leftVal: string | number, 
     rightVal: string | number, 
-    unit?: string,
+    unit?: string | React.ReactNode,
     icon: React.ReactNode 
 }> = ({ label, leftVal, rightVal, unit = '', icon }) => {
     const lNum = parseFloat(leftVal.toString());
@@ -231,7 +233,7 @@ const ComparisonRow: React.FC<{
                 <div className={`font-mono font-black text-3xl tracking-tighter ${leftWins ? 'text-intuition-primary text-glow-blue' : 'text-white'}`}>
                     {Number(leftVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
-                <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">{unit}</span>
+                <span className="inline-flex items-baseline text-slate-600 font-black uppercase tracking-widest">{typeof unit === 'string' ? <span className="text-[8px]">{unit}</span> : unit}</span>
             </div>
             
             <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0">
@@ -246,7 +248,7 @@ const ComparisonRow: React.FC<{
                 <div className={`font-mono font-black text-3xl tracking-tighter ${rightWins ? 'text-intuition-secondary text-glow-red' : 'text-white'}`}>
                     {Number(rightVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
-                <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">{unit}</span>
+                <span className="inline-flex items-baseline text-slate-600 font-black uppercase tracking-widest">{typeof unit === 'string' ? <span className="text-[8px]">{unit}</span> : unit}</span>
             </div>
         </div>
     );
@@ -377,7 +379,7 @@ const Compare: React.FC = () => {
                                     label="PROTOCOL_VOLUME" 
                                     leftVal={parseFloat(formatEther(BigInt(leftAgent.totalAssets || '0')))} 
                                     rightVal={parseFloat(formatEther(BigInt(rightAgent.totalAssets || '0')))}
-                                    unit="TRUST"
+                                    unit={<CurrencySymbol size="sm" className="text-slate-600" />}
                                     icon={<Shield />}
                                 />
                                 <ComparisonRow 

@@ -8,6 +8,8 @@ import { playHover, playClick } from '../services/audio';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { formatMarketValue, isSystemVerified } from '../services/analytics';
+import { CURRENCY_SYMBOL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
 
@@ -136,7 +138,7 @@ const Stats: React.FC = () => {
             id: id,
             label: userMeta.get(id).label,
             subLabel: 'STAKED_CONVICTION',
-            value: val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
+            value: val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + CURRENCY_SYMBOL,
             rawValue: val,
             image: userMeta.get(id).image,
             verified: id.endsWith('.eth') || isAddress(id)
@@ -158,7 +160,7 @@ const Stats: React.FC = () => {
                 id: a.id,
                 label: a.label || 'Unknown Agent',
                 subLabel: 'TOTAL_PROTOCOL_VOLUME',
-                value: totalAssetsEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
+                value: totalAssetsEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + CURRENCY_SYMBOL,
                 rawValue: totalAssetsEth,
                 image: a.image,
                 verified: isSystemVerified(a)
@@ -200,7 +202,7 @@ const Stats: React.FC = () => {
               id: c.id,
               label: '', 
               subLabel: 'SEMANTIC_LINK_WEIGHT',
-              value: c.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
+              value: c.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + CURRENCY_SYMBOL,
               rawValue: c.value,
               subject: c.subject,
               predicate: c.predicate,
@@ -219,7 +221,7 @@ const Stats: React.FC = () => {
                   id: row.account_id,
                   label: row.account_label || ensNameForDisplay(row.account_id),
                   subLabel: 'PNL_LEADERBOARD',
-                  value: (pnlEth >= 0 ? '+' : '') + pnlEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRUST',
+                  value: (pnlEth >= 0 ? '+' : '') + pnlEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + CURRENCY_SYMBOL,
                   rawValue: pnlEth,
                   image: `https://effigy.im/a/${row.account_id}.png`,
                   subject: { pnl_pct: pct, win_rate: winRate, total_volume_raw: row.total_volume_raw }
@@ -440,7 +442,7 @@ const Stats: React.FC = () => {
                                     </td>
                                     <td className="px-10 py-8 text-right font-black text-white text-sm">{(item.subject?.pnl_pct != null ? (Number(item.subject.pnl_pct) * 100).toFixed(2) : '—')}%</td>
                                     <td className="px-10 py-8 text-right font-black text-white text-sm">{(item.subject?.win_rate != null ? (Number(item.subject.win_rate) * 100).toFixed(0) : '—')}%</td>
-                                    <td className="px-10 py-8 text-right font-black text-slate-400 text-sm">{item.subject?.total_volume_raw != null ? formatMarketValue(formatEther(BigInt(item.subject.total_volume_raw))) + ' TRUST' : '—'}</td>
+                                    <td className="px-10 py-8 text-right font-black text-slate-400 text-sm">{item.subject?.total_volume_raw != null ? <span className="inline-flex items-baseline gap-1 justify-end">{formatMarketValue(formatEther(BigInt(item.subject.total_volume_raw)))} <CurrencySymbol size="sm" className="text-slate-500" /></span> : '—'}</td>
                                     <td className="px-10 py-8 text-right">
                                         <Link to={`/profile/${item.id}`} className="inline-flex px-8 py-2.5 bg-amber-500 text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 tracking-widest">
                                             PROFILE
@@ -498,7 +500,7 @@ const Stats: React.FC = () => {
                                     </td>
                                     <td className="px-10 py-8 text-right">
                                         <div className="font-display font-black text-white text-xl group-hover:text-[#a855f7] group-hover:text-glow-purple transition-all tracking-normal leading-none mb-1">{item.value}</div>
-                                        <div className="text-[8px] text-slate-700 font-black uppercase">TRUST_UNITS</div>
+                                        <div className="text-[8px] text-slate-700 font-black uppercase inline-flex items-baseline gap-0.5"><CurrencySymbol size="sm" />_UNITS</div>
                                     </td>
                                     <td className="px-10 py-8 text-right">
                                         <Link to={`/markets/${item.id}`} className="inline-flex px-8 py-2.5 bg-[#a855f7] text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black shadow-glow-purple transition-all active:scale-95 tracking-widest">
