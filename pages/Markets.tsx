@@ -335,7 +335,7 @@ const Markets: React.FC = () => {
                     <div className={`p-[2px] clip-path-slant transition-colors ${isSortOpen ? 'bg-intuition-primary' : 'bg-slate-900 hover:bg-intuition-primary/50'}`}>
                         <button 
                             onClick={() => { setIsSortOpen(!isSortOpen); playClick(); }}
-                            className={`flex items-center justify-between gap-6 px-6 py-4 min-w-[220px] bg-black text-[10px] font-black font-mono text-intuition-primary clip-path-slant transition-all`}
+                            className={`flex items-center justify-between gap-4 sm:gap-6 min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 min-w-[160px] sm:min-w-[220px] bg-black text-[9px] sm:text-[10px] font-black font-mono text-intuition-primary clip-path-slant transition-all`}
                         >
                             <div className="flex items-center gap-3"><Filter size={14} />{getSortLabel(sortOption)}</div>
                             <ChevronDown size={14} className={`transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
@@ -353,7 +353,7 @@ const Markets: React.FC = () => {
                                     <button 
                                         key={item.opt}
                                         onClick={() => toggleSort(item.opt as any)} 
-                                        className={`w-full flex items-center justify-between px-4 py-3 text-[9px] font-black font-mono hover:bg-intuition-primary hover:text-black transition-all uppercase tracking-widest ${sortOption === item.opt ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}
+                                        className={`w-full min-h-[44px] flex items-center justify-between px-4 py-3 text-[9px] font-black font-mono hover:bg-intuition-primary hover:text-black transition-all uppercase tracking-widest ${sortOption === item.opt ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}
                                     >
                                         <span>{item.label}</span> <item.icon size={12} />
                                     </button>

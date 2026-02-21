@@ -144,7 +144,7 @@ export const connectWallet = async (
         metadata: {
           name: 'IntuRank',
           description: 'Semantic markets on the Intuition Network',
-          url: typeof window !== 'undefined' ? window.location.origin : 'https://inturank.app',
+          url: typeof window !== 'undefined' ? window.location.origin : 'https://inturank.intuition.box',
           icons: [],
         },
       });

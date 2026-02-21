@@ -64,7 +64,7 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     };
 
     return (
-        <div className="bg-[#020308] border border-intuition-primary/40 p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-8">
+        <div className="bg-[#020308] border border-intuition-primary/40 p-4 sm:p-6 md:p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-6 md:mb-8">
             {/* Background Brain Icon Decal as per Inspo */}
             <div className="absolute -top-12 -right-12 opacity-[0.08] text-intuition-primary pointer-events-none group-hover:scale-110 transition-transform duration-1000">
                 <Brain size={280} />
@@ -154,7 +154,7 @@ const AgentCard: React.FC<{
     
     return (
         <div 
-            className={`relative flex-1 bg-[#02040a] border-2 p-10 flex flex-col items-center justify-center min-h-[380px] transition-all duration-500 hover:bg-slate-900/10 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success/40 shadow-[0_0_50px_rgba(0,255,157,0.05)]' : isLoser ? 'border-intuition-danger/10 opacity-60 grayscale' : 'border-slate-900 hover:border-intuition-primary/40'}`}
+            className={`relative flex-1 bg-[#02040a] border-2 p-4 sm:p-6 md:p-10 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] transition-all duration-500 hover:bg-slate-900/10 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success/40 shadow-[0_0_50px_rgba(0,255,157,0.05)]' : isLoser ? 'border-intuition-danger/10 opacity-60 grayscale' : 'border-slate-900 hover:border-intuition-primary/40'}`}
             onClick={() => { playClick(); onSelect(); }}
             onMouseEnter={playHover}
         >
@@ -222,7 +222,7 @@ const ComparisonRow: React.FC<{
     const rightWins = rNum > lNum;
 
     return (
-        <div className="flex items-center justify-between py-6 px-10 transition-all group relative overflow-hidden min-h-[100px] border-b border-white/5">
+        <div className="flex items-center justify-between py-4 px-4 sm:px-6 md:px-10 transition-all group relative overflow-hidden min-h-[80px] sm:min-h-[100px] border-b border-white/5">
             {/* Asymmetrical Background Weight Bars */}
             <div className="absolute inset-0 flex pointer-events-none opacity-[0.08] group-hover:opacity-[0.12] transition-opacity">
                 <div className="h-full bg-intuition-primary transition-all duration-1000 ease-out" style={{ width: `${lPct}%` }}></div>

@@ -16,7 +16,7 @@ import { Link } from 'react-router-dom';
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
 const StatCard: React.FC<{ label: string; value: string; unit: string | React.ReactNode; icon: any; trendColor?: string }> = ({ label, value, unit, icon: Icon, trendColor }) => (
-  <div className="bg-black/40 border border-slate-900 p-6 clip-path-slant relative group hover:border-white/20 transition-all flex flex-col justify-between h-36">
+  <div className="bg-black/40 border border-slate-900 p-4 sm:p-5 md:p-6 clip-path-slant relative group hover:border-white/20 transition-all flex flex-col justify-between min-h-[120px] sm:h-36">
     <div className="absolute top-6 right-6 text-slate-700 group-hover:text-slate-500 transition-colors">
       <Icon size={24} strokeWidth={1.5} />
     </div>
@@ -228,7 +228,7 @@ const Portfolio: React.FC = () => {
                 </div>
             </div>
             <div className="mb-10 space-y-2">
-                <h1 className="text-5xl font-black text-white font-display uppercase tracking-tighter">PORTFOLIO_LOCK</h1>
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white font-display uppercase tracking-tighter">PORTFOLIO_LOCK</h1>
                 <p className="text-slate-500 font-mono text-[10px] uppercase tracking-[0.2em] font-black px-6">Establish neural sync to view semantic assets and protocol earnings.</p>
             </div>
             <button 
@@ -248,7 +248,7 @@ const Portfolio: React.FC = () => {
         <StatCard label="Wallet Balance" value={balance} unit={<CurrencySymbol size="2xl" leading />} icon={Wallet} />
         <StatCard label="Total Equity" value={portfolioValue} unit={<CurrencySymbol size="2xl" leading />} icon={Coins} />
         <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit={<CurrencySymbol size="2xl" leading />} icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} />
-        <div className="bg-black/40 border border-slate-900 p-6 clip-path-slant flex flex-col justify-between h-36 group hover:border-intuition-primary/30 transition-all">
+        <div className="bg-black/40 border border-slate-900 p-4 sm:p-5 md:p-6 clip-path-slant flex flex-col justify-between min-h-[120px] sm:h-36 group hover:border-intuition-primary/30 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">SENTIMENT_BIAS</span>
             <PulseIcon size={20} className="text-slate-700 group-hover:text-intuition-primary transition-colors animate-pulse" />
@@ -280,12 +280,12 @@ const Portfolio: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         <div className="lg:col-span-8 space-y-8">
             <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
-                <div className="px-8 py-6 border-b border-slate-900 bg-white/5 flex justify-between items-center">
+                <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div className="flex items-center gap-4">
-                        <Zap size={20} className="text-intuition-primary animate-pulse" />
-                        <h3 className="text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
+                        <Zap size={20} className="text-intuition-primary animate-pulse shrink-0" />
+                        <h3 className="text-xs sm:text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:gap-4">
                         <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest">Verified_On_Intuition_Mainnet</span>
                         <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors">
                             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -293,14 +293,14 @@ const Portfolio: React.FC = () => {
                     </div>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left font-mono text-xs">
+                    <table className="w-full text-left font-mono text-[10px] sm:text-xs min-w-[480px]">
                         <thead className="text-slate-700 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808]">
                             <tr>
-                                <th className="px-8 py-4">Identity_Node</th>
-                                <th className="px-8 py-4">Sector</th>
-                                <th className="px-8 py-4">Magnitude</th>
-                                <th className="px-8 py-4">Net_Valuation</th>
-                                <th className="px-8 py-4 text-right">PnL</th>
+                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Identity_Node</th>
+                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Sector</th>
+                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Magnitude</th>
+                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Net_Valuation</th>
+                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4 text-right">PnL</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -308,9 +308,9 @@ const Portfolio: React.FC = () => {
                                 const isOpposition = pos.atom.label.includes('OPPOSING');
                                 return (
                                 <tr key={pos.id} className="hover:bg-white/5 transition-all group">
-                                    <td className="px-8 py-6">
-                                        <Link to={`/markets/${pos.id}`} className="flex items-center gap-4">
-                                            <div className="w-10 h-10 bg-slate-900 border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all">
+                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                        <Link to={`/markets/${pos.id}`} className="flex items-center gap-2 sm:gap-4">
+                                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
                                                 {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
                                             </div>
                                             <div>
@@ -319,20 +319,20 @@ const Portfolio: React.FC = () => {
                                             </div>
                                         </Link>
                                     </td>
-                                    <td className="px-8 py-6">
+                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
                                         <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-widest clip-path-slant group-hover:text-white transition-colors">{pos.atom?.type || 'ATOM'}</span>
                                     </td>
-                                    <td className="px-8 py-6">
-                                        <div className="text-white font-black">{formatDisplayedShares(pos.shares)}</div>
+                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                        <div className="text-white font-black text-xs sm:text-sm">{formatDisplayedShares(pos.shares)}</div>
                                         <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
                                     </td>
-                                    <td className="px-8 py-6">
-                                        <div className="inline-flex items-baseline gap-1.5 text-white font-black text-sm">
+                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                        <div className="inline-flex items-baseline gap-1.5 text-white font-black text-xs sm:text-sm">
                                             <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
                                             {formatMarketValue(pos.value)}
                                         </div>
                                     </td>
-                                    <td className="px-8 py-6 text-right">
+                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6 text-right">
                                         <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
                                             {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}%
                                         </div>

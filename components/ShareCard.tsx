@@ -128,7 +128,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
                 </div>
                 <div className="text-[9px] font-black font-mono text-slate-400 mb-2 uppercase tracking-[0.5em]">Realized_Consensus_PnL</div>
                 <div 
-                  className={`text-7xl font-black font-display tracking-tighter transition-all duration-1000`}
+                  className={`text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black font-display tracking-tighter transition-all duration-1000`}
                   style={{ 
                     color: isPositive ? '#00ff9d' : '#ff1e6d',
                     textShadow: `0 0 30px ${isPositive ? '#00ff9d66' : '#ff1e6d66'}` 
@@ -149,7 +149,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
             </div>
 
             {/* Trade Details Grid */}
-            <div className="grid grid-cols-2 gap-y-6 gap-x-10 mb-8 text-sm font-mono relative z-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 sm:gap-y-6 gap-x-4 sm:gap-x-10 mb-6 sm:mb-8 text-sm font-mono relative z-10">
                 <div className="flex flex-col">
                     <span className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-1">Asset_Identity</span>
                     <span className="text-white font-black truncate border-b border-white/10 pb-1.5 text-xs uppercase tracking-tight">{assetName}</span>

@@ -698,6 +698,101 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
   } catch (e) { return []; }
 };
 
+/** Activity on markets the user holds — other users buying/selling in those claims. For notification bar. */
+export interface PositionActivityNotification {
+  id: string;
+  type: 'acquired' | 'liquidated';
+  senderLabel: string;
+  senderId: string;
+  marketLabel: string;
+  vaultId: string;
+  timestamp: number;
+  txHash?: string;
+  /** Shares in wei (raw) */
+  shares?: string;
+  /** Assets/value in wei (raw) — ₸ amount for deposit, proceeds for redeem */
+  assets?: string;
+  /** Curve used: 1 = Offset Progressive (exponential), 2 = Linear */
+  curveId?: number | string;
+}
+
+/** Human-readable curve label for notifications. */
+export function getCurveLabel(curveId: number | string | undefined): string {
+  if (curveId === undefined || curveId === null) return 'Linear';
+  const id = typeof curveId === 'string' ? parseInt(curveId, 10) : curveId;
+  return id === 1 ? 'Offset Progressive' : id === 2 ? 'Linear' : 'Linear';
+}
+
+export const getActivityOnMyMarkets = async (
+  userAddress: string,
+  vaultIds: string[],
+  limit: number = 30
+): Promise<PositionActivityNotification[]> => {
+  if (!vaultIds.length) return [];
+  const ids = Array.from(new Set(vaultIds.map(normalize).filter(Boolean)));
+  if (!ids.length) return [];
+  const userAddr = userAddress.toLowerCase();
+  // Fetch activity on both Linear and Offset Progressive (exponential) curves — filter by term_id only so all curve types are included
+  const q = `query GetActivityOnMyMarkets($ids: [String!]!, $limit: Int!) {
+    events(
+      where: {
+        _and: [
+          { type: { _in: ["Deposited", "Redeemed"] } },
+          { _or: [{ atom: { term_id: { _in: $ids } } }, { triple: { term_id: { _in: $ids } } }] }
+        ]
+      },
+      order_by: { created_at: desc },
+      limit: $limit
+    ) {
+      id created_at type transaction_hash
+      atom { term_id label data image type }
+      triple { term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } }
+      deposit { shares assets_after_fees sender { id label image } vault { term_id curve_id } }
+      redemption { shares assets sender { id label image } vault { term_id curve_id } }
+    }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { ids, limit });
+    const events = data?.events ?? [];
+    const out: PositionActivityNotification[] = [];
+    for (const ev of events) {
+      const sender = ev.deposit?.sender || ev.redemption?.sender;
+      if (!sender || normalize(sender.id) === userAddr) continue;
+      let label = 'Unknown';
+      const vaultId = ev.atom?.term_id || ev.triple?.term_id || '';
+      if (ev.atom) {
+        const meta = resolveMetadata(ev.atom);
+        label = meta.label;
+      } else if (ev.triple) {
+        const sMeta = resolveMetadata(ev.triple.subject);
+        const oMeta = resolveMetadata(ev.triple.object);
+        label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
+      }
+      const senderLabel = (sender.label && sender.label !== '0x' && !sender.label.startsWith('0x00'))
+        ? sender.label
+        : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
+      const vault = ev.deposit?.vault || ev.redemption?.vault;
+      const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
+      out.push({
+        id: ev.transaction_hash || ev.id,
+        type: ev.type === 'Redeemed' ? 'liquidated' : 'acquired',
+        senderLabel,
+        senderId: sender.id,
+        marketLabel: label,
+        vaultId,
+        timestamp: new Date(ev.created_at).getTime(),
+        txHash: ev.transaction_hash,
+        shares: (ev.deposit?.shares || ev.redemption?.shares || '0')?.toString(),
+        assets: (ev.deposit?.assets_after_fees || ev.redemption?.assets || '0')?.toString(),
+        curveId,
+      });
+    }
+    return out;
+  } catch (e) {
+    return [];
+  }
+};
+
 export const getHoldersForVault = async (termId: string) => {
   const ids = prepareQueryIds(termId);
   const q = `query GetHolders($ids: [String!]!) {

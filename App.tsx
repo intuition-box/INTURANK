@@ -1,6 +1,6 @@
-
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { EmailNotifyProvider } from './contexts/EmailNotifyContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Stats from './pages/Stats';
@@ -16,13 +16,15 @@ import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
 import SDKPlayground from './pages/SDKPlayground';
 import { ToastContainer } from './components/Toast';
+import EmailNotifyModal from './components/EmailNotifyModal';
 
 const App: React.FC = () => {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Layout>
-        <ToastContainer />
-        <Routes>
+      <EmailNotifyProvider>
+        <Layout>
+          <ToastContainer />
+          <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/agents" element={<Navigate to="/markets" replace />} />
           <Route path="/agents/:id" element={<Navigate to="/markets/:id" replace />} />
@@ -43,8 +45,10 @@ const App: React.FC = () => {
           <Route path="/compare" element={<Compare />} />
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
-        </Routes>
-      </Layout>
+          </Routes>
+        </Layout>
+        <EmailNotifyModal />
+      </EmailNotifyProvider>
     </Router>
   );
 };

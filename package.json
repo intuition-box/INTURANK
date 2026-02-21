@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "email-server": "node server/index.js"
   },
   "dependencies": {
     "@0xintuition/sdk": "^2.0.2",
@@ -18,7 +19,10 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3",
     "recharts": "^2.12.2",
-    "viem": "^2.21.0"
+    "viem": "^2.21.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",

@@ -141,7 +141,7 @@ const Documentation: React.FC = () => {
         ></div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-6 lg:px-12 py-24">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-12 py-12 md:py-24">
         
         {/* CINEMATIC HERO */}
         <div className="mb-48 relative">
@@ -237,14 +237,14 @@ const Documentation: React.FC = () => {
                 </p>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                  <div className="p-10 bg-[#050508] border border-slate-900 clip-path-slant relative overflow-hidden group/card hover:border-intuition-primary/40 transition-all shadow-2xl">
+                  <div className="p-4 sm:p-6 md:p-8 lg:p-10 bg-[#050508] border border-slate-900 clip-path-slant relative overflow-hidden group/card hover:border-intuition-primary/40 transition-all shadow-2xl">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03] text-white"><Ghost size={120} /></div>
                     <h4 className="text-xs font-black text-intuition-primary uppercase tracking-[0.4em] mb-6 flex items-center gap-3"><Activity size={14}/> Denoising Protocol</h4>
                     <p className="text-sm font-mono text-slate-400 uppercase tracking-widest leading-relaxed group-hover/card:text-slate-200 transition-colors">
                       Raw on-chain data is noisy. We utilize <span className="text-white">Heuristic Sifting</span> to identify high-conviction human signals versus bot-driven volume residuals.
                     </p>
                   </div>
-                  <div className="p-10 bg-[#050508] border border-slate-900 clip-path-slant relative overflow-hidden group/card hover:border-intuition-secondary/40 transition-all shadow-2xl">
+                  <div className="p-4 sm:p-6 md:p-8 lg:p-10 bg-[#050508] border border-slate-900 clip-path-slant relative overflow-hidden group/card hover:border-intuition-secondary/40 transition-all shadow-2xl">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03] text-white"><Target size={120} /></div>
                     <h4 className="text-xs font-black text-intuition-secondary uppercase tracking-[0.4em] mb-6 flex items-center gap-3"><Zap size={14}/> Market Verification</h4>
                     <p className="text-sm font-mono text-slate-400 uppercase tracking-widest leading-relaxed group-hover/card:text-slate-200 transition-colors">
@@ -338,7 +338,7 @@ const Documentation: React.FC = () => {
             {/* 03_ECONOMICS */}
             <DocSection id="economics" title="Mathematical_Dynamics" icon={TrendingUp} badge="03_CURVES" color="#facc15">
               <div className="space-y-16">
-                <div className="p-10 bg-black border-l-8 border-intuition-warning clip-path-slant font-mono shadow-2xl">
+                <div className="p-4 sm:p-6 md:p-10 bg-black border-l-8 border-intuition-warning clip-path-slant font-mono shadow-2xl">
                     <p className="text-slate-400 text-sm leading-relaxed uppercase font-black tracking-widest">
                         // CORE_SPECIFICATION_V1:<br />
                         Pricing is governed by <span className="text-white">Deterministic Bonding Curves</span>. This ensures perpetual liquidity—you can always exit a position, but the cost of entry increases as consensus builds.
@@ -346,7 +346,7 @@ const Documentation: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                    <div className="bg-[#0a0a0a] border border-slate-900 p-10 clip-path-slant group hover:border-intuition-warning/40 transition-all shadow-xl">
+                    <div className="bg-[#0a0a0a] border border-slate-900 p-4 sm:p-6 md:p-10 clip-path-slant group hover:border-intuition-warning/40 transition-all shadow-xl">
                         <div className="flex items-center gap-5 mb-8">
                             <div className="w-16 h-16 bg-intuition-warning/10 border border-intuition-warning/30 flex items-center justify-center text-intuition-warning clip-path-slant shadow-glow-gold"><TrendingUp size={32}/></div>
                             <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Offset Progressive</h4>
@@ -360,7 +360,7 @@ const Documentation: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="bg-[#0a0a0a] border border-slate-900 p-10 clip-path-slant group hover:border-intuition-primary/40 transition-all shadow-xl">
+                    <div className="bg-[#0a0a0a] border border-slate-900 p-4 sm:p-6 md:p-10 clip-path-slant group hover:border-intuition-primary/40 transition-all shadow-xl">
                         <div className="flex items-center gap-5 mb-8">
                             <div className="w-16 h-16 bg-intuition-primary/10 border border-intuition-primary/30 flex items-center justify-center text-intuition-primary clip-path-slant shadow-glow-blue"><Layers size={32}/></div>
                             <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Linear Utility</h4>

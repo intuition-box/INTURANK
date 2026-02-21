@@ -8,6 +8,9 @@ import TransactionModal from '../components/TransactionModal';
 import { playClick, playSuccess } from '../services/audio';
 import { CURRENCY_SYMBOL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { sendTransactionReceiptEmail } from '../services/emailNotifications';
+import { formatDisplayedShares, formatMarketValue } from '../services/analytics';
+import { formatEther } from 'viem';
 
 const AgentProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -78,10 +81,18 @@ const AgentProfile: React.FC = () => {
          return;
       }
       
-      // Fixed: Removed extra 'TRUST' argument as depositToVault expects 3 arguments
-      const { hash } = await depositToVault(stakeAmount, id, wallet);
+      const { hash, shares, assets } = await depositToVault(stakeAmount, id, wallet);
       playSuccess();
-      
+
+      sendTransactionReceiptEmail(wallet, {
+        txHash: hash,
+        type: 'acquired',
+        side: 'trust',
+        marketLabel: agent?.label || 'Claim',
+        sharesFormatted: formatDisplayedShares(shares),
+        assetsFormatted: assets ? `${CURRENCY_SYMBOL}${formatMarketValue(parseFloat(formatEther(assets)))}` : `${CURRENCY_SYMBOL}${formatMarketValue(parseFloat(stakeAmount))}`,
+      });
+
       setTxModal({ 
         isOpen: true, 
         status: 'success', 

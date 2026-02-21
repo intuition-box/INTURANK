@@ -30,6 +30,16 @@ jobs:
       - name: Install dependencies
         run: npm install --no-fund --no-audit
 
+      - name: Verify email server (Ensend API)
+        run: |
+          node server/index.js &
+          SERVER_PID=$!
+          sleep 3
+          curl -sf http://localhost:${PORT:-3001}/health || (kill $SERVER_PID 2>/dev/null; exit 1)
+          kill $SERVER_PID 2>/dev/null || true
+        env:
+          PORT: 3001
+
       - name: Build site
         run: npm run build
         env:

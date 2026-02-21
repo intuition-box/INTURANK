@@ -79,7 +79,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
 
     return (
         <div 
-            className={`group flex flex-col md:flex-row items-center gap-6 p-6 border-2 bg-black transition-all duration-500 relative overflow-hidden mb-2 clip-path-slant hover:border-white/40 ${isWhale ? 'animate-pulse' : ''}`}
+            className={`group flex flex-col md:flex-row items-center gap-4 sm:gap-6 p-4 sm:p-6 border-2 bg-black transition-all duration-500 relative overflow-hidden mb-2 clip-path-slant hover:border-white/40 overflow-x-auto min-w-0 ${isWhale ? 'animate-pulse' : ''}`}
             style={cardStyle}
             onMouseEnter={playHover}
         >
@@ -105,10 +105,10 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             ></div>
 
             {/* Identity Segment */}
-            <div className="flex items-center gap-4 shrink-0 min-w-[220px] relative z-10">
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0 min-w-0 md:min-w-[200px] relative z-10">
                 <Link to={`/profile/${event.sender?.id}`} className="relative group/avatar">
                     <div 
-                        className="w-14 h-14 bg-black border-2 flex items-center justify-center transition-all group-hover:scale-105 relative overflow-hidden shadow-2xl clip-path-slant"
+                        className="w-12 h-12 sm:w-14 sm:h-14 bg-black border-2 flex items-center justify-center transition-all group-hover:scale-105 relative overflow-hidden shadow-2xl clip-path-slant shrink-0"
                         style={{ borderColor: `${colorHex}66` }}
                     >
                         {event.sender?.image ? (
@@ -140,7 +140,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             </div>
 
             {/* Narrative Segment */}
-            <div className="flex-1 flex flex-wrap items-center gap-4 text-xs font-mono relative z-10 py-1">
+            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-mono relative z-10 py-1">
                 <div 
                     className={`px-4 py-1.5 border-2 clip-path-slant font-black uppercase text-[9px] tracking-widest shadow-xl transition-all duration-700`}
                     style={{ 
@@ -205,7 +205,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             </div>
 
             {/* Time & Explorer */}
-            <div className="flex items-center gap-6 shrink-0 min-w-[150px] justify-end relative z-10 border-l border-white/5 pl-8">
+            <div className="flex items-center gap-4 sm:gap-6 shrink-0 min-w-0 md:min-w-[140px] justify-end relative z-10 border-l border-white/5 pl-4 sm:pl-6 md:pl-8">
                 <div className="text-right">
                     <div className="text-[7px] font-black text-slate-700 uppercase tracking-[0.4em] mb-1">Temporal_Log</div>
                     <span className="text-[10px] font-black font-mono text-slate-500 group-hover:text-white transition-colors uppercase tracking-widest">

@@ -363,15 +363,15 @@ const CreateSignal: React.FC = () => {
   );
 
   const footer = (
-    <div className="mt-8 flex items-center justify-center gap-8 border-t border-white/5 pt-8 w-full opacity-60 font-mono">
+    <div className="mt-10 flex items-center justify-center gap-10 border-t border-white/10 pt-8 w-full font-mono">
       <div className="flex flex-col items-center">
-        <span className="text-[7px] text-slate-600 uppercase font-black tracking-widest mb-1">Module</span>
-        <span className="text-[9px] font-black text-white uppercase tracking-widest">S05_CREATE</span>
+        <span className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-1">Module</span>
+        <span className="text-[10px] font-black text-white uppercase tracking-widest">S05_CREATE</span>
       </div>
-      <div className="w-px h-6 bg-white/10"></div>
+      <div className="w-px h-6 bg-intuition-primary/30"></div>
       <div className="flex flex-col items-center">
-        <span className="text-[7px] text-slate-600 uppercase font-black tracking-widest mb-1">Handshake</span>
-        <span className="text-[9px] font-black text-intuition-success uppercase tracking-widest">SYNC_ACTIVE</span>
+        <span className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-1">Handshake</span>
+        <span className="text-[10px] font-black text-intuition-success uppercase tracking-widest text-glow-success">SYNC_ACTIVE</span>
       </div>
     </div>
   );
@@ -428,54 +428,69 @@ const CreateSignal: React.FC = () => {
         </div>
       )}
 
-      <div className="relative z-10 w-full max-w-3xl">
-        <div className="bg-[#02040a] border-2 border-slate-900 p-10 md:p-14 flex flex-col items-center clip-path-slant shadow-2xl relative overflow-hidden group">
+      <div className="relative z-10 w-full max-w-3xl mx-auto px-2 sm:px-4">
+        <div className="bg-[#02040a] border-2 border-intuition-primary/20 p-6 sm:p-8 md:p-12 flex flex-col items-center clip-path-slant shadow-2xl shadow-intuition-primary/5 relative overflow-hidden group min-h-[420px]">
           <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(0,243,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,30,109,0.01)_1px,transparent_1px)] bg-[size:32px_32px] opacity-60" aria-hidden />
 
           {/* ----- ROOT: Create identity or claim ----- */}
           {view === 'root' && (
+            <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both">
             <>
-              <div className="text-[9px] text-intuition-primary uppercase tracking-[0.4em] mb-2 font-black">CREATE</div>
-              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">Create identity or claim</h1>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center mb-10">
+              <div className="flex items-center justify-between w-full mb-8">
+                <Link
+                  to="/markets"
+                  onClick={playClick}
+                  onMouseEnter={playHover}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200"
+                >
+                  <ArrowLeft size={16} /> Back to markets
+                </Link>
+                <span className="text-[9px] text-intuition-primary uppercase tracking-[0.4em] font-black">CREATE</span>
+              </div>
+              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-3">Create identity or claim</h1>
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-center mb-10 max-w-lg mx-auto">
                 Anchor a new identity on the graph or attest a semantic claim (triple).
               </p>
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
                 <button
                   onClick={() => { playClick(); setView('identity_choice'); }}
                   onMouseEnter={playHover}
-                  className="p-8 bg-white/5 border-2 border-intuition-primary/40 hover:border-intuition-primary hover:bg-intuition-primary/10 hover:shadow-neon-blue clip-path-slant text-left transition-all group"
+                  className="p-8 bg-white/[0.06] border-2 border-intuition-primary/50 hover:border-intuition-primary hover:bg-intuition-primary/10 hover:shadow-[0_0_30px_rgba(0,243,255,0.25)] clip-path-slant text-left transition-all group"
                 >
                   <UserPlus size={32} className="text-intuition-primary mb-4 group-hover:scale-110 transition-transform text-glow-blue" />
                   <div className="text-white font-black text-sm uppercase tracking-widest mb-2">Create identity</div>
-                  <div className="text-[10px] text-slate-500 leading-relaxed">Generate with AI or create manually. Things, persons, organizations, accounts.</div>
-                  <div className="mt-4 text-intuition-primary text-[10px] font-black uppercase tracking-widest">→</div>
+                  <div className="text-[10px] text-slate-400 leading-relaxed">Generate with AI or create manually. Things, persons, organizations, accounts.</div>
+                  <div className="mt-4 text-intuition-primary text-[10px] font-black uppercase tracking-widest text-glow-blue">→</div>
                 </button>
                 <button
                   onClick={() => { playClick(); setView('claim'); }}
                   onMouseEnter={playHover}
-                  className="p-8 bg-white/5 border-2 border-[#a855f7]/30 hover:border-[#a855f7] hover:bg-[#a855f7]/10 hover:shadow-neon-purple clip-path-slant text-left transition-all group"
+                  className="p-8 bg-white/[0.06] border-2 border-[#a855f7]/50 hover:border-[#a855f7] hover:bg-[#a855f7]/10 hover:shadow-[0_0_30px_rgba(168,85,247,0.3)] clip-path-slant text-left transition-all group"
                 >
                   <FileText size={32} className="text-[#a855f7] mb-4 group-hover:scale-110 transition-transform text-glow-purple" />
                   <div className="text-white font-black text-sm uppercase tracking-widest mb-2">Create claim</div>
-                  <div className="text-[10px] text-slate-500 leading-relaxed">Claim anything about anything. Subject – predicate – object (semantic triple).</div>
-                  <div className="mt-4 text-[#a855f7] text-[10px] font-black uppercase tracking-widest">→</div>
+                  <div className="text-[10px] text-slate-400 leading-relaxed">Claim anything about anything. Subject – predicate – object (semantic triple).</div>
+                  <div className="mt-4 text-[#a855f7] text-[10px] font-black uppercase tracking-widest text-glow-purple">→</div>
                 </button>
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- IDENTITY CHOICE: Generate with AI | Create Manually ----- */}
           {view === 'identity_choice' && (
+            <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <button type="button" onClick={() => setView('root')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase">
-                <ArrowLeft size={14} /> Back
-              </button>
-              <div className="text-[9px] text-slate-600 uppercase tracking-[0.4em] mb-2">Create identity</div>
-              <h1 className="text-2xl md:text-4xl font-black text-white font-display tracking-tighter uppercase text-center mb-6">Choose how to create</h1>
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
-                <button type="button" disabled className="p-8 bg-white/5 border border-white/10 opacity-60 cursor-not-allowed clip-path-slant text-left">
+              <div className="flex items-center justify-between w-full mb-8">
+                <button type="button" onClick={() => { playClick(); setView('root'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
+                  <ArrowLeft size={14} /> Back
+                </button>
+                <span className="text-[9px] text-slate-400 uppercase tracking-[0.4em] font-black">Create identity</span>
+              </div>
+              <h1 className="text-2xl md:text-4xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Choose how to create</h1>
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button type="button" disabled className="p-8 bg-white/[0.04] border-2 border-white/10 opacity-60 cursor-not-allowed clip-path-slant text-left">
                   <Sparkles size={32} className="text-slate-500 mb-4" />
                   <div className="text-white font-black text-sm uppercase tracking-widest mb-2">Generate identity with AI</div>
                   <div className="text-[10px] text-slate-500 leading-relaxed">Coming soon.</div>
@@ -483,28 +498,33 @@ const CreateSignal: React.FC = () => {
                 <button
                   onClick={() => { playClick(); setView('identity_manual'); }}
                   onMouseEnter={playHover}
-                  className="p-8 bg-white/5 border-2 border-amber-500/40 hover:border-amber-400 hover:shadow-neon-gold clip-path-slant text-left transition-all group"
+                  className="p-8 bg-white/[0.06] border-2 border-amber-400/60 hover:border-amber-400 hover:bg-amber-500/10 hover:shadow-[0_0_28px_rgba(251,191,36,0.3)] clip-path-slant text-left transition-all group"
                 >
-                  <UserPlus size={32} className="text-amber-400 mb-4 group-hover:scale-110 transition-transform" />
+                  <UserPlus size={32} className="text-amber-300 mb-4 group-hover:scale-110 transition-transform text-glow-gold" />
                   <div className="text-white font-black text-sm uppercase tracking-widest mb-2">Create identity manually</div>
-                  <div className="text-[10px] text-slate-500 leading-relaxed">Schema type, image, name, description, URL, initial deposit.</div>
-                  <div className="mt-4 text-amber-400 text-[10px] font-black uppercase tracking-widest">→</div>
+                  <div className="text-[10px] text-slate-400 leading-relaxed">Schema type, image, name, description, URL, initial deposit.</div>
+                  <div className="mt-4 text-amber-300 text-[10px] font-black uppercase tracking-widest text-glow-gold">→</div>
                 </button>
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- IDENTITY MANUAL: Create New Identity form ----- */}
           {view === 'identity_manual' && (
+            <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <button type="button" onClick={() => setView('identity_choice')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase">
-                <ArrowLeft size={14} /> Back
-              </button>
+              <div className="flex items-center justify-between w-full mb-8">
+                <button type="button" onClick={() => { playClick(); setView('identity_choice'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-amber-400 hover:text-amber-300 font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
+                  <ArrowLeft size={14} /> Back
+                </button>
+                <span className="text-[9px] text-amber-400/90 uppercase tracking-[0.4em] font-black">Create identity</span>
+              </div>
               <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Create new identity</h1>
-              <div className="w-full max-w-lg space-y-5 text-left">
+              <div className="w-full max-w-lg mx-auto space-y-5 text-left">
                 <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Schema type</label>
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Schema type</label>
                   <select value={identitySchemaType} onChange={(e) => setIdentitySchemaType(e.target.value as any)} className="w-full bg-black border border-white/10 py-3 px-4 text-sm text-white font-mono focus:border-intuition-primary outline-none">
                     <option value="Thing">Thing</option>
                     <option value="Person">Person</option>
@@ -515,11 +535,11 @@ const CreateSignal: React.FC = () => {
                 {identitySchemaType === 'Account' ? (
                   <>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Address</label>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Address</label>
                       <input value={accountAddress} onChange={(e) => setAccountAddress(e.target.value)} placeholder="0x..." className="w-full bg-black border border-white/10 py-3 px-4 text-sm text-white font-mono focus:border-intuition-primary outline-none placeholder-slate-600" />
                     </div>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Chain</label>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Chain</label>
                       <select value={accountChain} onChange={(e) => setAccountChain(e.target.value)} className="w-full bg-black border border-white/10 py-3 px-4 text-sm text-white font-mono focus:border-intuition-primary outline-none">
                         <option value="Intuition Mainnet">Intuition Mainnet</option>
                         <option value="Base">Base</option>
@@ -530,10 +550,10 @@ const CreateSignal: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
-                      <input type="number" min="0" step="0.01" value={atomDeposit} onChange={(e) => setAtomDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
-                      <span className="ml-2"><CurrencySymbol size="md" className="text-slate-500" /></span>
-                      {walletBalance && <span className="block mt-1 text-[10px] text-slate-500 inline-flex items-baseline gap-1">{walletBalance} <CurrencySymbol size="sm" /> available</span>}
+<label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
+                    <input type="number" min="0" step="0.01" value={atomDeposit} onChange={(e) => setAtomDeposit(e.target.value)} className="w-28 bg-black border-2 border-white/15 py-2 px-3 text-sm text-white font-mono outline-none focus:border-intuition-primary" />
+                    <span className="ml-2"><CurrencySymbol size="md" className="text-intuition-primary/90" /></span>
+                    {walletBalance && <span className="block mt-1 text-[10px] text-slate-400 inline-flex items-baseline gap-1">{walletBalance} <CurrencySymbol size="sm" /> available</span>}
                     </div>
                     <button type="button" onClick={() => { playClick(); setView('identity_review'); }} disabled={!accountAddress.trim()} className="w-full py-4 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
                       Continue
@@ -543,7 +563,7 @@ const CreateSignal: React.FC = () => {
                   <>
                     <div className="border-2 border-dashed border-white/20 p-6 flex flex-col items-center justify-center gap-2">
                       <Camera size={28} className="text-slate-600" />
-                      <span className="text-[9px] font-black text-slate-500 uppercase">Image</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase">Image</span>
                       <span className="text-[8px] text-slate-600">PNG, JPG, GIF up to 5MB</span>
                       <label className="mt-2 px-4 py-2 bg-white/10 border border-white/20 text-white text-[10px] font-black uppercase cursor-pointer hover:bg-white/20 transition-colors">
                         <input type="file" accept="image/png,image/jpeg,image/jpg,image/gif" onChange={handleImageFileChange} className="sr-only" />
@@ -553,23 +573,23 @@ const CreateSignal: React.FC = () => {
                       <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="Or paste image URL" className="mt-2 w-full bg-black border border-white/10 py-2 px-3 text-[10px] text-white font-mono outline-none placeholder-slate-600" />
                     </div>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Name</label>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Name</label>
                       <input value={nodeAlias} onChange={(e) => setNodeAlias(e.target.value)} placeholder="Enter name" className="w-full bg-black border border-white/10 py-3 px-4 text-sm text-white font-mono focus:border-intuition-primary outline-none placeholder-slate-600" />
                     </div>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Description</label>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Description</label>
                       <textarea value={descriptionPayload} onChange={(e) => setDescriptionPayload(e.target.value)} placeholder="Enter description" rows={3} className="w-full bg-black border border-white/10 py-3 px-4 text-sm text-white font-mono focus:border-intuition-primary outline-none placeholder-slate-600 resize-none" />
                     </div>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">URL</label>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">URL</label>
                       <input type="url" value={identityUrl} onChange={(e) => setIdentityUrl(e.target.value)} placeholder="Enter website URL" className="w-full bg-black border border-white/10 py-3 px-4 text-sm text-white font-mono focus:border-intuition-primary outline-none placeholder-slate-600" />
                     </div>
                     <div>
-                      <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
-                      <input type="number" min="0" step="0.01" value={atomDeposit} onChange={(e) => setAtomDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
-                      <span className="ml-2"><CurrencySymbol size="md" className="text-slate-500" /></span>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
+                      <input type="number" min="0" step="0.01" value={atomDeposit} onChange={(e) => setAtomDeposit(e.target.value)} className="w-28 bg-black border-2 border-white/15 py-2 px-3 text-sm text-white font-mono outline-none focus:border-intuition-primary" />
+                      <span className="ml-2"><CurrencySymbol size="md" className="text-intuition-primary/90" /></span>
                     </div>
-                    <button type="button" onClick={() => { playClick(); setView('identity_review'); }} disabled={!nodeAlias.trim()} className="w-full py-4 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button type="button" onClick={() => { playClick(); setView('identity_review'); }} disabled={!nodeAlias.trim()} className="w-full py-4 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-[0_0_24px_rgba(0,243,255,0.35)] transition-all">
                       Continue
                     </button>
                   </>
@@ -577,29 +597,34 @@ const CreateSignal: React.FC = () => {
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- IDENTITY REVIEW & CONFIRM ----- */}
           {view === 'identity_review' && (
+            <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <button type="button" onClick={() => setView('identity_manual')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase">
-                <ArrowLeft size={14} /> Back
-              </button>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-6">Review & confirm</h1>
+              <div className="flex items-center justify-between w-full mb-8">
+                <button type="button" onClick={() => { playClick(); setView('identity_manual'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
+                  <ArrowLeft size={14} /> Back
+                </button>
+                <span className="text-[9px] text-intuition-primary uppercase tracking-[0.4em] font-black">Create identity</span>
+              </div>
+              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Review & confirm</h1>
               <div className="w-full max-w-md space-y-5 text-left">
-                <div className="border border-intuition-primary/40 p-4 bg-[#050505] shadow-glow-blue">
-                  <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Identity</div>
+                <div className="border-2 border-intuition-primary/50 p-4 bg-[#050505] shadow-[0_0_20px_rgba(0,243,255,0.15)]">
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Identity</div>
                   <div className="text-white font-mono">
                     {identitySchemaType === 'Account' ? `Account: ${accountAddress.trim().slice(0, 10)}… (${accountChain})` : `Create: ${nodeAlias.trim() || '—'}`}
                   </div>
-                  <div className="text-[10px] text-slate-500 mt-1 inline-flex items-baseline gap-1">Initial deposit: {atomDeposit || '0'} <CurrencySymbol size="sm" /></div>
+                  <div className="text-[10px] text-slate-400 mt-1 inline-flex items-baseline gap-1">Initial deposit: {atomDeposit || '0'} <CurrencySymbol size="sm" /></div>
                 </div>
                 <div className="flex justify-between text-[10px]">
-                  <span className="text-slate-500">Total cost</span>
+                  <span className="text-slate-400">Total cost</span>
                   <span className="text-white font-mono inline-flex items-baseline gap-1">{atomDeposit || '0'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex justify-between text-[10px]">
-                  <span className="text-slate-500">Available balance</span>
+                  <span className="text-slate-400">Available balance</span>
                   <span className="text-white font-mono inline-flex items-baseline gap-1">{walletBalance || '—'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex items-start gap-2 p-3 bg-white/5 border border-white/10">
@@ -610,17 +635,19 @@ const CreateSignal: React.FC = () => {
                   <button type="button" onClick={() => setView('identity_manual')} className="flex-1 py-3 border border-intuition-primary/50 text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant hover:shadow-neon-blue transition-all">
                     Back
                   </button>
-                  <button type="button" onClick={handleSubmitIdentityFromReview} disabled={creatingAtom} className="flex-1 py-3 bg-intuition-primary text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:shadow-neon-blue transition-all">
+                  <button type="button" onClick={handleSubmitIdentityFromReview} disabled={creatingAtom} className="flex-1 py-3 bg-intuition-primary border-2 border-intuition-primary text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:bg-white hover:text-intuition-primary hover:shadow-[0_0_28px_rgba(0,243,255,0.4)] transition-all shadow-[0_0_18px_rgba(0,243,255,0.25)]">
                     {creatingAtom ? <><Loader2 size={14} className="animate-spin inline mr-2" /> Submitting…</> : 'Submit transactions'}
                   </button>
                 </div>
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- INGRESS: Choose SDK vs Manual ----- */}
           {view === 'ingress' && (
+            <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               {frameHeader}
               <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">SIGNAL_INGRESS</h1>
@@ -652,10 +679,12 @@ const CreateSignal: React.FC = () => {
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- SDK: Simple form ----- */}
           {view === 'sdk' && (
+            <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               {frameHeader}
               <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">SIGNAL_INGRESS</h1>
@@ -693,10 +722,12 @@ const CreateSignal: React.FC = () => {
               </Link>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- MANUAL: CHOOSE_PATHWAY ----- */}
           {view === 'manual_pathway' && (
+            <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               <div className="text-[9px] text-slate-600 uppercase tracking-[0.4em] mb-2">INGRESS_MODULE // S05_ARES</div>
               <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">SIGNAL_TERMINAL</h1>
@@ -722,15 +753,18 @@ const CreateSignal: React.FC = () => {
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- CONSTRUCT_ATOM (manual / or from claim "Create atom") ----- */}
           {view === 'construct_atom' && (
+            <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               <button
                 type="button"
-                onClick={() => { setReturnToSynapseSlot(null); setView(returnToSynapseSlot ? 'claim' : 'manual_pathway'); }}
-                className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase"
+                onClick={() => { playClick(); setReturnToSynapseSlot(null); setView(returnToSynapseSlot ? 'claim' : 'manual_pathway'); }}
+                onMouseEnter={playHover}
+                className="absolute top-6 left-6 inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-700 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10"
               >
                 <ArrowLeft size={14} /> Back
               </button>
@@ -774,23 +808,31 @@ const CreateSignal: React.FC = () => {
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- CREATE CLAIM (main flow) ----- */}
           {view === 'claim' && (
+            <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <button type="button" onClick={() => setView('root')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase">
-                <ArrowLeft size={14} /> Back
-              </button>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-4">Create claim</h1>
-              <p className="text-[10px] text-slate-500 text-center mb-8 max-w-lg">
-                Claim anything about anything. Claims in Intuition (also called triples) are structured as a semantic triple — like a sentence. For example: [Alice] [is] [trustworthy].
+              <div className="flex items-center justify-between w-full mb-8">
+                <button type="button" onClick={() => { playClick(); setView('root'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
+                  <ArrowLeft size={14} /> Back
+                </button>
+                <span className="text-[9px] text-[#a855f7] uppercase tracking-[0.4em] font-black">CREATE CLAIM</span>
+              </div>
+              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-3">Create claim</h1>
+              <p className="text-[11px] font-black text-slate-400 text-center mb-8 max-w-lg mx-auto leading-relaxed">
+                Claim anything about anything. Claims in Intuition (also called triples) are structured as a semantic triple — like a sentence. For example:{' '}
+                <span className="text-intuition-primary font-bold">[Alice]</span>{' '}
+                <span className="text-white/90 font-bold">[is]</span>{' '}
+                <span className="text-intuition-primary font-bold">[trustworthy]</span>.
               </p>
-              <div className="w-full max-w-2xl space-y-6">
+              <div className="w-full max-w-2xl mx-auto space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {(['subject', 'predicate', 'object'] as const).map((role) => (
-                    <div key={role} className="border-2 border-dashed border-white/20 p-6 flex flex-col items-center justify-center min-h-[120px] relative">
-                      <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">{role === 'subject' ? 'Subject' : role === 'predicate' ? 'Predicate' : 'Object'}</div>
+                    <div key={role} className="border-2 border-dashed border-intuition-primary/30 p-6 flex flex-col items-center justify-center min-h-[120px] relative bg-white/[0.02] hover:border-intuition-primary/50 transition-colors">
+                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">{role === 'subject' ? 'Subject' : role === 'predicate' ? 'Predicate' : 'Object'}</div>
                       {role === 'subject' && subjectId ? (
                         <div className="text-center">
                           <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full" title={subjectId}>{subjectLabel || subjectId.slice(0, 12)}…</div>
@@ -810,16 +852,16 @@ const CreateSignal: React.FC = () => {
                         </div>
                       ) : null}
                       {((role === 'subject' && !subjectId) || (role === 'predicate' && !predicateId) || (role === 'object' && !objectId)) && (
-                        <button type="button" onClick={() => setNodeSearchOpen(role)} className="flex flex-col items-center gap-2 text-slate-500 hover:text-intuition-primary transition-colors">
-                          <Search size={24} />
-                          <span className="text-[9px] font-black uppercase">Connect node</span>
+                        <button type="button" onClick={() => setNodeSearchOpen(role)} className="flex flex-col items-center gap-2 text-slate-400 hover:text-intuition-primary transition-colors group/btn">
+                          <Search size={24} className="group-hover/btn:text-glow-blue" />
+                          <span className="text-[9px] font-black uppercase text-intuition-primary/90 group-hover/btn:text-intuition-primary">Connect node</span>
                         </button>
                       )}
                     </div>
                   ))}
                 </div>
                 {nodeSearchOpen && (
-                  <div className="border border-white/20 p-4 space-y-3">
+                  <div className="border-2 border-intuition-primary/20 bg-black/40 p-4 space-y-3">
                     <div className="flex gap-2">
                       <input
                         ref={nodeSearchInputRef}
@@ -869,43 +911,48 @@ const CreateSignal: React.FC = () => {
                     </div>
                   </div>
                 )}
-                <div className="flex flex-wrap items-center gap-4">
-                  <div>
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Initial deposit</label>
-                    <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
-                    <span className="ml-2"><CurrencySymbol size="md" className="text-slate-500" /></span>
+                <div className="flex flex-wrap items-center justify-between sm:justify-start gap-4 pt-2 border-t border-white/10">
+                  <div className="flex items-baseline gap-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] shrink-0">Initial deposit</label>
+                    <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-24 bg-black border-2 border-white/15 py-2.5 px-3 text-sm text-white font-mono outline-none focus:border-intuition-primary" />
+                    <span className="ml-1"><CurrencySymbol size="md" className="text-intuition-primary/90" /></span>
                   </div>
-                  <button type="button" onClick={() => { playClick(); setView('claim_review'); }} disabled={!subjectId || !predicateId || !objectId} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-neon-purple transition-all">
+                  <button type="button" onClick={() => { playClick(); setView('claim_review'); }} disabled={!subjectId || !predicateId || !objectId} className="py-3 px-8 bg-[#a855f7] border-2 border-[#a855f7] text-white font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white hover:text-[#a855f7] hover:shadow-[0_0_32px_rgba(168,85,247,0.5)] transition-all shadow-[0_0_20px_rgba(168,85,247,0.25)]">
                     Review
                   </button>
                 </div>
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- CLAIM REVIEW & CONFIRM ----- */}
           {view === 'claim_review' && (
+            <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <button type="button" onClick={() => setView('claim')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase">
-                <ArrowLeft size={14} /> Back
-              </button>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-6">Review & confirm</h1>
-              <div className="w-full max-w-md space-y-5 text-left">
-                <div className="border border-[#a855f7]/40 p-4 bg-[#050505] shadow-glow-purple">
-                  <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Claim (triple)</div>
+              <div className="flex items-center justify-between w-full mb-8">
+                <button type="button" onClick={() => { playClick(); setView('claim'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-[#a855f7] hover:text-[#a855f7] font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
+                  <ArrowLeft size={14} /> Back
+                </button>
+                <span className="text-[9px] text-[#a855f7] uppercase tracking-[0.4em] font-black">CREATE CLAIM</span>
+              </div>
+              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Review & confirm</h1>
+              <div className="w-full max-w-md mx-auto space-y-5 text-left">
+                <div className="border-2 border-[#a855f7]/50 p-4 bg-[#050505] shadow-[0_0_24px_rgba(168,85,247,0.2)]">
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Claim (triple)</div>
                   <div className="text-white font-mono text-[10px]">[{subjectLabel || subjectId?.slice(0, 10)}…] [{predicateLabel || predicateId?.slice(0, 10)}…] [{objectLabel || objectId?.slice(0, 10)}…]</div>
-                  <div className="text-[10px] text-slate-500 mt-1 inline-flex items-baseline gap-1">Initial deposit: {synapseDeposit || '0'} <CurrencySymbol size="sm" /></div>
+                  <div className="text-[10px] text-slate-400 mt-1 inline-flex items-baseline gap-1">Initial deposit: {synapseDeposit || '0'} <CurrencySymbol size="sm" /></div>
                 </div>
                 <div className="flex justify-between text-[10px]">
-                  <span className="text-slate-500">Total cost</span>
+                  <span className="text-slate-400">Total cost</span>
                   <span className="text-white font-mono inline-flex items-baseline gap-1">{synapseDeposit || '0'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex justify-between text-[10px]">
-                  <span className="text-slate-500">Available balance</span>
+                  <span className="text-slate-400">Available balance</span>
                   <span className="text-white font-mono inline-flex items-baseline gap-1">{walletBalance || '—'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
-                <div className="flex items-start gap-2 p-3 bg-white/5 border border-white/10">
+                <div className="flex items-start gap-2 p-3 bg-white/5 border-2 border-white/10">
                   <Info size={14} className="text-[#a855f7] shrink-0 mt-0.5" />
                   <p className="text-[10px] text-slate-400">You will be prompted to approve the transaction in your wallet.</p>
                 </div>
@@ -943,19 +990,21 @@ const CreateSignal: React.FC = () => {
                   <button type="button" onClick={() => setView('claim')} className="flex-1 py-3 border border-intuition-primary/50 text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant hover:shadow-neon-blue transition-all">
                     Back
                   </button>
-                  <button type="button" onClick={handleSubmitClaimFromReview} disabled={creatingSynapse} className="flex-1 py-3 bg-[#a855f7] text-white font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:bg-white hover:text-black hover:shadow-neon-purple transition-all">
+                  <button type="button" onClick={handleSubmitClaimFromReview} disabled={creatingSynapse} className="flex-1 py-3 bg-[#a855f7] border-2 border-[#a855f7] text-white font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:bg-white hover:text-[#a855f7] hover:shadow-[0_0_32px_rgba(168,85,247,0.5)] transition-all shadow-[0_0_20px_rgba(168,85,247,0.25)]">
                     {creatingSynapse ? <><Loader2 size={14} className="animate-spin inline mr-2" /> Submitting…</> : 'Submit transactions'}
                   </button>
                 </div>
               </div>
               {footer}
             </>
+            </div>
           )}
 
           {/* ----- ESTABLISH_SYNAPSE (manual / legacy) ----- */}
           {view === 'establish_synapse' && (
+            <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <button onClick={() => setView('manual_pathway')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-2 text-[10px] font-black uppercase">
+              <button onClick={() => setView('manual_pathway')} className="absolute top-6 left-6 inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-700 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
                 <ArrowLeft size={14} /> BACK
               </button>
               <div className="text-[9px] text-slate-600 uppercase tracking-[0.4em] mb-2">INGRESS_MODULE // S05_ARES</div>
@@ -1056,6 +1105,7 @@ const CreateSignal: React.FC = () => {
               </div>
               {footer}
             </>
+            </div>
           )}
         </div>
         <div className="mt-6 flex items-center justify-center gap-3 text-slate-700 text-[8px] font-black uppercase tracking-[0.4em] opacity-40">

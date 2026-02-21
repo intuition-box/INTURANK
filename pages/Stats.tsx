@@ -321,7 +321,7 @@ const Stats: React.FC = () => {
                         key={tab.id}
                         onClick={() => { playClick(); setActiveTab(tab.id as any); setSearchQuery(''); }}
                         onMouseEnter={playHover}
-                        className={`px-8 py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
+                        className={`min-h-[44px] px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
                             isActive 
                             ? `${tab.color} ${tab.text} ${tab.glow} border-transparent`
                             : 'bg-black/40 border-slate-800 text-slate-500 hover:text-white hover:border-white/40'
@@ -405,10 +405,10 @@ const Stats: React.FC = () => {
            </div>
         ) : activeTab === 'PNL' ? (
             <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">
-                <div className="p-8 border-b-2 border-slate-900 bg-white/5 flex justify-between items-center">
+                <div className="p-4 sm:p-6 md:p-8 border-b-2 border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                    <div className="flex items-center gap-4">
-                        <TrendingUp size={24} className="text-amber-500 animate-pulse" />
-                        <h3 className="font-black text-white font-display tracking-[0.3em] uppercase text-xl">PnL_Leaderboard</h3>
+                        <TrendingUp size={24} className="text-amber-500 animate-pulse shrink-0" />
+                        <h3 className="font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase text-lg sm:text-xl">PnL_Leaderboard</h3>
                    </div>
                    <div className="text-[10px] text-slate-700 font-black uppercase tracking-[0.3em]">get_pnl_leaderboard</div>
                 </div>
@@ -416,35 +416,35 @@ const Stats: React.FC = () => {
                     <table className="w-full text-left font-mono border-collapse min-w-[900px]">
                         <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
                             <tr>
-                                <th className="px-10 py-6 w-24 text-center">RANK</th>
-                                <th className="px-10 py-6">ACCOUNT</th>
-                                <th className="px-10 py-6 text-right">TOTAL_PNL</th>
-                                <th className="px-10 py-6 text-right">PNL_%</th>
-                                <th className="px-10 py-6 text-right">WIN_RATE</th>
-                                <th className="px-10 py-6 text-right">VOLUME</th>
-                                <th className="px-10 py-6 text-right">RECON</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 w-24 text-center">RANK</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6">ACCOUNT</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">TOTAL_PNL</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">PNL_%</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">WIN_RATE</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">VOLUME</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">RECON</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {data.map((item, i) => (
                                 <tr key={item.id} className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 30}ms` }}>
-                                    <td className="px-10 py-8 text-center font-black text-slate-700 text-lg group-hover:text-amber-500 transition-colors">#{String(item.rank || i + 1).padStart(2, '0')}</td>
-                                    <td className="px-10 py-8">
-                                        <div className="flex items-center gap-4 bg-slate-900/50 pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-amber-500/40 transition-colors">
-                                            <div className="w-12 h-12 rounded-none bg-black flex items-center justify-center overflow-hidden border-r border-slate-800">
-                                                {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" alt="" /> : <div className="text-lg font-black text-slate-700">{item.label?.[0]}</div>}
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-center font-black text-slate-700 text-base sm:text-lg group-hover:text-amber-500 transition-colors">#{String(item.rank || i + 1).padStart(2, '0')}</td>
+                                    <td className="px-4 md:px-10 py-4 md:py-6">
+                                        <div className="flex items-center gap-2 sm:gap-4 bg-slate-900/50 pr-4 sm:pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-amber-500/40 transition-colors">
+                                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-none bg-black flex items-center justify-center overflow-hidden border-r border-slate-800 shrink-0">
+                                                {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" alt="" /> : <div className="text-sm sm:text-lg font-black text-slate-700">{item.label?.[0]}</div>}
                                             </div>
-                                            <span className="font-black text-white text-sm uppercase whitespace-nowrap max-w-[180px] truncate tracking-tighter leading-none">{item.label}</span>
+                                            <span className="font-black text-white text-xs sm:text-sm uppercase whitespace-nowrap max-w-[120px] sm:max-w-[180px] truncate tracking-tighter leading-none">{item.label}</span>
                                         </div>
                                     </td>
-                                    <td className="px-10 py-8 text-right">
-                                        <div className={`font-display font-black text-xl tracking-normal leading-none mb-1 ${item.rawValue >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>{item.value}</div>
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right">
+                                        <div className={`font-display font-black text-base sm:text-xl tracking-normal leading-none mb-1 ${item.rawValue >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>{item.value}</div>
                                     </td>
-                                    <td className="px-10 py-8 text-right font-black text-white text-sm">{(item.subject?.pnl_pct != null ? (Number(item.subject.pnl_pct) * 100).toFixed(2) : '—')}%</td>
-                                    <td className="px-10 py-8 text-right font-black text-white text-sm">{(item.subject?.win_rate != null ? (Number(item.subject.win_rate) * 100).toFixed(0) : '—')}%</td>
-                                    <td className="px-10 py-8 text-right font-black text-slate-400 text-sm">{item.subject?.total_volume_raw != null ? <span className="inline-flex items-baseline gap-1 justify-end">{formatMarketValue(formatEther(BigInt(item.subject.total_volume_raw)))} <CurrencySymbol size="sm" className="text-slate-500" /></span> : '—'}</td>
-                                    <td className="px-10 py-8 text-right">
-                                        <Link to={`/profile/${item.id}`} className="inline-flex px-8 py-2.5 bg-amber-500 text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 tracking-widest">
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right font-black text-white text-xs sm:text-sm">{(item.subject?.pnl_pct != null ? (Number(item.subject.pnl_pct) * 100).toFixed(2) : '—')}%</td>
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right font-black text-white text-xs sm:text-sm">{(item.subject?.win_rate != null ? (Number(item.subject.win_rate) * 100).toFixed(0) : '—')}%</td>
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right font-black text-slate-400 text-xs sm:text-sm">{item.subject?.total_volume_raw != null ? <span className="inline-flex items-baseline gap-1 justify-end">{formatMarketValue(formatEther(BigInt(item.subject.total_volume_raw)))} <CurrencySymbol size="sm" className="text-slate-500" /></span> : '—'}</td>
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right">
+                                        <Link to={`/profile/${item.id}`} className="inline-flex min-h-[44px] px-4 sm:px-6 md:px-8 py-2.5 bg-amber-500 text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 tracking-widest items-center justify-center">
                                             PROFILE
                                         </Link>
                                     </td>
@@ -456,10 +456,10 @@ const Stats: React.FC = () => {
             </div>
         ) : activeTab === 'CLAIMS' ? (
             <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">
-                <div className="p-8 border-b-2 border-slate-900 bg-white/5 flex justify-between items-center">
+                <div className="p-4 sm:p-6 md:p-8 border-b-2 border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                    <div className="flex items-center gap-4">
-                        <Activity size={24} className="text-[#a855f7] animate-pulse" />
-                        <h3 className="font-black text-white font-display tracking-[0.3em] uppercase text-xl">Semantic_Triple_Leaderboard</h3>
+                        <Activity size={24} className="text-[#a855f7] animate-pulse shrink-0" />
+                        <h3 className="font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase text-lg sm:text-xl">Semantic_Triple_Leaderboard</h3>
                    </div>
                    <div className="text-[10px] text-slate-700 font-black uppercase tracking-[0.3em]">L3_Network_Convergence</div>
                 </div>
@@ -467,18 +467,18 @@ const Stats: React.FC = () => {
                     <table className="w-full text-left font-mono border-collapse min-w-[1000px]">
                         <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
                             <tr>
-                                <th className="px-10 py-6 w-24 text-center">RANK</th>
-                                <th className="px-10 py-6">SEMANTIC_TRIPLE (SUBJECT &rarr; PREDICATE &rarr; OBJECT)</th>
-                                <th className="px-10 py-6 text-right">MARKET_CAPITALIZATION</th>
-                                <th className="px-10 py-6 text-right">HANDSHAKE</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 w-24 text-center">RANK</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6">SEMANTIC_TRIPLE (SUBJECT &rarr; PREDICATE &rarr; OBJECT)</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">MARKET_CAPITALIZATION</th>
+                                <th className="px-4 md:px-10 py-4 md:py-6 text-right">HANDSHAKE</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {data.map((item, i) => (
                                 <tr key={item.id} className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 30}ms` }}>
-                                    <td className="px-10 py-8 text-center font-black text-slate-700 text-lg group-hover:text-[#a855f7] transition-colors">#{(i+1).toString().padStart(2, '0')}</td>
-                                    <td className="px-10 py-8">
-                                        <div className="flex flex-col md:flex-row items-center gap-4">
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-center font-black text-slate-700 text-base sm:text-lg group-hover:text-[#a855f7] transition-colors">#{(i+1).toString().padStart(2, '0')}</td>
+                                    <td className="px-4 md:px-10 py-4 md:py-6">
+                                        <div className="flex flex-col md:flex-row items-center gap-3 sm:gap-4">
                                             <div className="flex items-center gap-4 bg-slate-900/50 pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-[#a855f7]/40 transition-colors">
                                                 <div className="w-12 h-12 rounded-none bg-black flex items-center justify-center overflow-hidden border-r border-slate-800">
                                                     {item.subject?.image ? <img src={item.subject.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-lg font-black text-slate-700">{item.subject?.label?.[0]}</div>}
@@ -498,12 +498,12 @@ const Stats: React.FC = () => {
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="px-10 py-8 text-right">
-                                        <div className="font-display font-black text-white text-xl group-hover:text-[#a855f7] group-hover:text-glow-purple transition-all tracking-normal leading-none mb-1">{item.value}</div>
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right">
+                                        <div className="font-display font-black text-white text-base sm:text-xl group-hover:text-[#a855f7] group-hover:text-glow-purple transition-all tracking-normal leading-none mb-1">{item.value}</div>
                                         <div className="text-[8px] text-slate-700 font-black uppercase inline-flex items-baseline gap-0.5"><CurrencySymbol size="sm" />_UNITS</div>
                                     </td>
-                                    <td className="px-10 py-8 text-right">
-                                        <Link to={`/markets/${item.id}`} className="inline-flex px-8 py-2.5 bg-[#a855f7] text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black shadow-glow-purple transition-all active:scale-95 tracking-widest">
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right">
+                                        <Link to={`/markets/${item.id}`} className="inline-flex min-h-[44px] px-4 sm:px-6 md:px-8 py-2.5 bg-[#a855f7] text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black shadow-glow-purple transition-all active:scale-95 tracking-widest items-center justify-center">
                                             TRADE
                                         </Link>
                                     </td>
@@ -594,13 +594,13 @@ const Stats: React.FC = () => {
              {/* The List (Rank 4+) - MONOLITHIC ARES TABLE */}
              <div className="bg-black border-2 border-slate-900 overflow-hidden clip-path-slant relative shadow-2xl">
                 <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent opacity-50"></div>
-                
-                <table className="w-full text-left font-mono border-collapse">
-                    <thead className="bg-[#080808] text-[10px] font-black text-slate-700 uppercase tracking-[0.4em] border-b-2 border-slate-900">
+                <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono border-collapse min-w-[320px]">
+                    <thead className="bg-[#080808] text-[10px] font-black text-slate-700 uppercase tracking-[0.3em] sm:tracking-[0.4em] border-b-2 border-slate-900">
                         <tr>
-                            <th className="px-10 py-6 w-24 text-center">RANK</th>
-                            <th className="px-10 py-6">ENTITY_IDENTITY</th>
-                            <th className="px-10 py-6 text-right">METRIC_VOLUME</th>
+                            <th className="px-4 md:px-10 py-4 md:py-6 w-20 sm:w-24 text-center">RANK</th>
+                            <th className="px-4 md:px-10 py-4 md:py-6">ENTITY_IDENTITY</th>
+                            <th className="px-4 md:px-10 py-4 md:py-6 text-right">METRIC_VOLUME</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -613,24 +613,24 @@ const Stats: React.FC = () => {
                                     className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-4" 
                                     style={{ animationDelay: `${i * 20}ms` }}
                                 >
-                                    <td className="px-10 py-8 text-center font-black text-slate-700 text-xl group-hover:text-intuition-primary transition-colors">
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-center font-black text-slate-700 text-lg sm:text-xl group-hover:text-intuition-primary transition-colors">
                                         #{(i+4).toString().padStart(2, '0')}
                                     </td>
-                                    <td className="px-10 py-8">
-                                        <div className="flex items-center gap-6">
-                                            <div className="w-12 h-12 rounded-none clip-path-slant bg-slate-950 flex items-center justify-center text-xs overflow-hidden border-2 border-slate-800 group-hover:border-intuition-primary transition-all duration-500 shadow-xl">
-                                                {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-lg font-black text-slate-800">{item.label?.[0]}</div>}
+                                    <td className="px-4 md:px-10 py-4 md:py-6">
+                                        <div className="flex items-center gap-3 sm:gap-6">
+                                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-none clip-path-slant bg-slate-950 flex items-center justify-center text-xs overflow-hidden border-2 border-slate-800 group-hover:border-intuition-primary transition-all duration-500 shadow-xl shrink-0">
+                                                {item.image ? <img src={item.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" /> : <div className="text-sm sm:text-lg font-black text-slate-800">{item.label?.[0]}</div>}
                                             </div>
-                                            <div>
-                                                <div className="flex items-center gap-3 mb-1.5">
-                                                    <div className="font-black text-white text-xl group-hover:text-intuition-primary transition-colors uppercase tracking-tight leading-none">{item.label}</div>
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 sm:gap-3 mb-1.5">
+                                                    <div className="font-black text-white text-base sm:text-xl group-hover:text-intuition-primary transition-colors uppercase tracking-tight leading-none truncate">{item.label}</div>
                                                     {item.verified ? (
-                                                        <BadgeCheck size={16} className="text-intuition-primary" title="System Verified" />
+                                                        <BadgeCheck size={14} className="text-intuition-primary shrink-0 sm:w-4 sm:h-4" title="System Verified" />
                                                     ) : (
-                                                        <UserCog size={14} className="text-slate-700" title="User Node" />
+                                                        <UserCog size={12} className="text-slate-700 shrink-0 sm:w-[14px] sm:h-[14px]" title="User Node" />
                                                     )}
                                                 </div>
-                                                <div className="text-[8px] text-slate-600 font-mono uppercase tracking-[0.3em] font-black">{item.subLabel}</div>
+                                                <div className="text-[8px] text-slate-600 font-mono uppercase tracking-[0.3em] font-black truncate">{item.subLabel}</div>
                                             </div>
                                         </div>
                                         <Link 
@@ -639,8 +639,8 @@ const Stats: React.FC = () => {
                                             onClick={playClick} 
                                         />
                                     </td>
-                                    <td className="px-10 py-8 text-right">
-                                        <div className={`font-display font-black text-2xl tracking-tighter leading-none mb-1 ${accentColorClass} group-hover:text-white transition-colors`}>
+                                    <td className="px-4 md:px-10 py-4 md:py-6 text-right">
+                                        <div className={`font-display font-black text-xl sm:text-2xl tracking-tighter leading-none mb-1 ${accentColorClass} group-hover:text-white transition-colors`}>
                                             {item.value}
                                         </div>
                                         <div className="text-[8px] text-slate-700 font-black uppercase tracking-widest">PROTOCOL_MAGNITUDE</div>
@@ -650,6 +650,7 @@ const Stats: React.FC = () => {
                         })}
                     </tbody>
                 </table>
+                </div>
              </div>
           </div>
         )}

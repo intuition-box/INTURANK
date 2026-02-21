@@ -180,7 +180,7 @@ const Feed: React.FC = () => {
 
             {/* ARES_PULSE Tactical Ticker */}
             <div className="mb-10 p-1 bg-gradient-to-r from-intuition-primary/20 via-intuition-secondary/20 to-intuition-primary/20 clip-path-slant shadow-2xl">
-                <div className="bg-black p-6 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+                <div className="bg-black p-4 sm:p-6 flex flex-col md:flex-row items-center gap-4 sm:gap-6 md:gap-8 relative overflow-hidden">
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
                     <div className="flex items-center gap-4 shrink-0">
                         <div className="w-12 h-12 bg-white/5 border border-white/10 flex items-center justify-center text-intuition-primary clip-path-slant shadow-inner">
@@ -220,21 +220,21 @@ const Feed: React.FC = () => {
                     <input 
                         type="text" 
                         placeholder="QUERY_LEDGER: [WALLET_NODE_OR_CLAIM]..." 
-                        className="w-full bg-[#050505] py-5 pl-14 pr-10 text-white font-mono text-xs focus:outline-none placeholder-slate-700 uppercase tracking-widest clip-path-slant"
+                        className="w-full bg-[#050505] py-4 sm:py-5 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-xs focus:outline-none placeholder-slate-700 uppercase tracking-widest clip-path-slant min-h-[48px]"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <button className="flex items-center gap-3 px-10 py-5 bg-black border-2 border-slate-900 text-slate-400 hover:text-white hover:border-white transition-all text-[10px] font-black uppercase tracking-[0.4em] clip-path-slant group relative overflow-hidden">
-                        <ListFilter size={16} /> Filter_Module
+                    <button className="flex items-center gap-2 sm:gap-3 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 border-slate-900 text-slate-400 hover:text-white hover:border-white transition-all text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] clip-path-slant group relative overflow-hidden">
+                        <ListFilter size={16} className="shrink-0" /> <span className="hidden sm:inline">Filter_Module</span>
                     </button>
                     
-                    <div className="relative">
+                    <div className="relative min-w-0 flex-1 sm:flex-initial">
                         <button 
                             onClick={() => { playClick(); setIsSortOpen(!isSortOpen); }}
-                            className={`flex items-center justify-between gap-8 px-10 py-5 bg-black border-2 transition-all text-[10px] font-black uppercase tracking-[0.4em] clip-path-slant min-w-[240px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-900 text-slate-400'}`}
+                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 transition-all text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] clip-path-slant min-w-0 sm:min-w-[200px] md:min-w-[240px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-900 text-slate-400'}`}
                         >
                             {activeSort} <ChevronDown size={14} className={`transition-transform duration-500 ${isSortOpen ? 'rotate-180' : ''}`} />
                         </button>
@@ -244,7 +244,7 @@ const Feed: React.FC = () => {
                                     <button 
                                         key={opt}
                                         onClick={() => { setActiveSort(opt); setIsSortOpen(false); playClick(); }}
-                                        className={`w-full px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest transition-all hover:bg-intuition-primary hover:text-black ${activeSort === opt ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
+                                        className={`w-full min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 text-left text-[9px] font-black uppercase tracking-widest transition-all hover:bg-intuition-primary hover:text-black ${activeSort === opt ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
                                     >
                                         {opt}
                                     </button>

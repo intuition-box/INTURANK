@@ -294,9 +294,9 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl animate-in fade-in duration-300">
-      <div className="relative w-full max-w-[850px] bg-[#0c0c0c] border border-white/10 rounded-[32px] shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-[95vw] sm:max-w-[850px] bg-[#0c0c0c] border border-white/10 rounded-[32px] shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden flex flex-col max-h-[90vh]">
         <TxTerminal status={txStatus} txHash={txHash} error={txError} onRetry={() => setTxStatus('IDLE')} onClose={onClose} />
-        <div className="flex items-center justify-between px-8 py-6 border-b border-white/5 bg-black/20">
+        <div className="flex items-center justify-between px-4 sm:px-6 md:px-8 py-4 md:py-6 border-b border-white/5 bg-black/20">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-white/5 rounded-2xl flex items-center justify-center text-white border border-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,0.05)]">
               {view === 'IDLE' ? <Zap size={20} /> : view === 'CLAIM_OVERVIEW' ? <Network size={20} /> : view === 'SELECTOR' ? <Search size={20} /> : <UserPlus size={20} />}
@@ -313,19 +313,19 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
                 </div>
             </div>
           </div>
-          <button onClick={() => { playClick(); onClose(); }} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5 text-slate-500 hover:text-white transition-all"><X size={20} /></button>
+          <button onClick={() => { playClick(); onClose(); }} className="min-w-[44px] min-h-[44px] w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5 text-slate-500 hover:text-white transition-all"><X size={20} /></button>
         </div>
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {view === 'IDLE' && (
-            <div className="p-12 grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in zoom-in-95 duration-500">
-                <button onClick={() => { playClick(); setReturnTo('IDLE'); setView('IDENTITY_CREATOR'); }} onMouseEnter={playHover} className="group relative p-10 bg-[#080a12] border border-white/10 hover:border-intuition-primary rounded-[32px] text-left transition-all overflow-hidden shadow-2xl">
+            <div className="p-4 sm:p-6 md:p-8 lg:p-12 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 animate-in fade-in zoom-in-95 duration-500">
+                <button onClick={() => { playClick(); setReturnTo('IDLE'); setView('IDENTITY_CREATOR'); }} onMouseEnter={playHover} className="group relative p-6 md:p-8 lg:p-10 bg-[#080a12] border border-white/10 hover:border-intuition-primary rounded-[32px] text-left transition-all overflow-hidden shadow-2xl">
                     <div className="absolute inset-0 bg-gradient-to-br from-intuition-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="w-16 h-16 bg-black border-2 border-intuition-primary rounded-2xl flex items-center justify-center mb-8 group-hover:bg-intuition-primary group-hover:text-black transition-all shadow-lg"><Database size={32} /></div>
                     <h3 className="text-2xl font-black text-white uppercase mb-4 tracking-tighter">Construct_Atom</h3>
                     <p className="text-xs font-mono text-slate-500 uppercase leading-relaxed tracking-wider font-bold group-hover:text-slate-300 transition-colors">Register a unique identity as a tradeable node. Engaging Linear Curve parameters.</p>
                     <div className="mt-8 flex items-center gap-2 text-[8px] font-black font-mono text-intuition-primary group-hover:translate-x-2 transition-transform">INITIALIZE_SEQUENCE <ArrowRight size={10} /></div>
                 </button>
-                <button onClick={() => { playClick(); setView('CLAIM_OVERVIEW'); }} onMouseEnter={playHover} className="group relative p-10 bg-[#080a12] border border-white/10 hover:border-intuition-secondary rounded-[32px] text-left transition-all overflow-hidden shadow-2xl">
+                <button onClick={() => { playClick(); setView('CLAIM_OVERVIEW'); }} onMouseEnter={playHover} className="group relative p-6 md:p-8 lg:p-10 bg-[#080a12] border border-white/10 hover:border-intuition-secondary rounded-[32px] text-left transition-all overflow-hidden shadow-2xl">
                     <div className="absolute inset-0 bg-gradient-to-br from-intuition-secondary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="w-16 h-16 bg-black border-2 border-intuition-secondary rounded-2xl flex items-center justify-center mb-8 group-hover:bg-intuition-secondary group-hover:text-black transition-all shadow-lg"><Network size={32} /></div>
                     <h3 className="text-2xl font-black text-white uppercase mb-4 tracking-tighter">Define_Synapse</h3>
@@ -336,10 +336,10 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
           )}
           {/* [Remaining view logic for CLAIM_OVERVIEW, SELECTOR, IDENTITY_CREATOR remains consistent with updated curve usage] */}
           {view === 'CLAIM_OVERVIEW' && (
-            <div className="p-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex items-center gap-4">
-                  <button onClick={() => setView('IDLE')} className="text-slate-600 hover:text-white transition-colors"><ArrowRight size={16} className="rotate-180"/></button>
-                  <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">Establishing a semantic synapse under Linear_Utility_1 protocols.</p>
+            <div className="p-4 sm:p-6 md:p-8 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex items-center gap-3 sm:gap-4">
+                  <button onClick={() => setView('IDLE')} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-600 hover:text-white transition-colors"><ArrowRight size={16} className="rotate-180"/></button>
+                  <p className="text-slate-400 text-xs sm:text-sm leading-relaxed max-w-2xl">Establishing a semantic synapse under Linear_Utility_1 protocols.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {(['subject', 'predicate', 'object'] as const).map((key) => (
@@ -379,8 +379,8 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
             </div>
           )}
           {view === 'IDENTITY_CREATOR' && (
-            <div className="p-8 space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-               <div className="grid grid-cols-1 md:grid-cols-12 gap-10">
+            <div className="p-4 sm:p-6 md:p-8 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-10">
                   <div className="md:col-span-4 space-y-6">
                      <div className="space-y-3">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Biometric Visual</label>

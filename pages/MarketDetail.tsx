@@ -13,6 +13,7 @@ import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
 import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
 import { OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
+import { sendTransactionReceiptEmail } from '../services/emailNotifications';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import html2canvas from 'html2canvas';
 import Logo from '../components/Logo';
@@ -544,6 +545,18 @@ const MarketDetail: React.FC = () => {
             };
             
             saveLocalTransaction(localTx, activeWallet);
+            const sharesFormatted = formatDisplayedShares(res.shares);
+            const assetsFormatted = res.assets
+              ? `${CURRENCY_SYMBOL}${formatMarketValue(parseFloat(formatEther(res.assets)))}`
+              : (action === 'ACQUIRE' ? `${CURRENCY_SYMBOL}${formatMarketValue(parseFloat(inputAmount))}` : '—');
+            sendTransactionReceiptEmail(activeWallet, {
+              txHash: res.hash,
+              type: action === 'ACQUIRE' ? 'acquired' : 'liquidated',
+              side: sentiment === 'TRUST' ? 'trust' : 'distrust',
+              marketLabel: agent?.label || 'Claim',
+              sharesFormatted,
+              assetsFormatted,
+            });
             setActivityLog(prev => [localTx, ...prev]);
             setTxModal(prev => ({ 
                 ...prev, 
@@ -618,7 +631,15 @@ const MarketDetail: React.FC = () => {
   const activeBalance = sentiment === 'TRUST' ? trustBalance : distrustBalance;
 
   return (
-    <div className="w-full px-4 lg:px-10 pt-6 pb-32 font-mono text-[#e2e8f0] bg-[#020308]">
+    <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-6 pb-24 sm:pb-32 font-mono text-[#e2e8f0] bg-[#020308] max-w-[100vw] overflow-x-hidden">
+        <Link
+          to="/markets"
+          onClick={playClick}
+          onMouseEnter={playHover}
+          className="inline-flex items-center gap-2 px-4 py-2.5 mb-6 border-2 border-slate-700 text-slate-400 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 hover:shadow-glow-blue"
+        >
+          <ArrowLeft size={16} /> Back to markets
+        </Link>
         <TransactionModal 
             isOpen={txModal.isOpen} 
             status={txModal.status} 
@@ -700,27 +721,27 @@ const MarketDetail: React.FC = () => {
             </div>
         </div>
 
-        <div className="bg-[#02040a] border-2 clip-path-slant p-8 mb-8 flex flex-col md:flex-row items-center justify-between relative overflow-hidden shadow-2xl group/header transition-all duration-700" style={{ borderColor: `${theme.color}44`, boxShadow: `0 0 40px ${theme.bgGlow}` }}>
+        <div className="bg-[#02040a] border-2 clip-path-slant p-4 sm:p-6 md:p-8 mb-6 md:mb-8 flex flex-col md:flex-row items-center justify-between relative overflow-hidden shadow-2xl group/header transition-all duration-700" style={{ borderColor: `${theme.color}44`, boxShadow: `0 0 40px ${theme.bgGlow}` }}>
             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:24px_24px] opacity-10"></div>
-            <div className="flex items-center gap-10 relative z-10">
-                <div className="relative">
-                    <div className="absolute -inset-6 blur-2xl opacity-0 group-hover/header:opacity-100 transition-opacity duration-1000" style={{ backgroundColor: `${theme.color}33` }}></div>
-                    <div className="w-28 h-28 bg-slate-950 border-2 flex items-center justify-center overflow-hidden clip-path-slant shadow-2xl group-hover/header:scale-105 transition-all duration-700" style={{ borderColor: `${theme.color}66` }}>{agent.image ? <img src={agent.image} alt={agent.label} className="w-full h-full object-cover group-hover/header:scale-110 transition-transform duration-1000" /> : <User size={52} className="text-slate-800" />}</div>
+            <div className="flex items-center gap-4 sm:gap-6 md:gap-10 relative z-10 w-full min-w-0">
+                <div className="relative shrink-0">
+                    <div className="absolute -inset-4 md:-inset-6 blur-2xl opacity-0 group-hover/header:opacity-100 transition-opacity duration-1000" style={{ backgroundColor: `${theme.color}33` }}></div>
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 bg-slate-950 border-2 flex items-center justify-center overflow-hidden clip-path-slant shadow-2xl group-hover/header:scale-105 transition-all duration-700" style={{ borderColor: `${theme.color}66` }}>{agent.image ? <img src={agent.image} alt={agent.label} className="w-full h-full object-cover group-hover/header:scale-110 transition-transform duration-1000" /> : <User size={40} className="text-slate-800 md:w-[52px] md:h-[52px]" />}</div>
                 </div>
-                <div>
-                    <div className="flex items-center gap-3 mb-3">
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
                         <div className="w-2 h-2 rounded-full bg-intuition-success animate-pulse shadow-[0_0_10px_#00ff9d]"></div>
                         {verified ? (
-                            <span className="flex items-center gap-1.5 px-3 py-1 bg-intuition-primary/10 border border-intuition-primary/40 text-intuition-primary text-[10px] font-black uppercase tracking-[0.3em] shadow-glow-blue">
-                                <BadgeCheck size={14} /> System_Verified_Node
+                            <span className="flex items-center gap-1.5 px-2 sm:px-3 py-1 bg-intuition-primary/10 border border-intuition-primary/40 text-intuition-primary text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-glow-blue">
+                                <BadgeCheck size={12} className="sm:w-[14px] sm:h-[14px]" /> System_Verified_Node
                             </span>
                         ) : (
-                            <span className="flex items-center gap-1.5 px-3 py-1 bg-slate-900 border border-slate-700 text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
-                                <UserCog size={14} /> Custom_User_Node
+                            <span className="flex items-center gap-1.5 px-2 sm:px-3 py-1 bg-slate-900 border border-slate-700 text-slate-500 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
+                                <UserCog size={12} className="sm:w-[14px] sm:h-[14px]" /> Custom_User_Node
                             </span>
                         )}
                     </div>
-                    <h1 className="text-6xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-none mb-4">{agent.label}</h1>
+                    <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-tight mb-2 sm:mb-4 break-words">{agent.label}</h1>
                     <div className="flex items-center gap-5 text-[9px] font-black text-slate-600 uppercase tracking-widest"><div className="flex items-center gap-2"><Hash size={13} className="text-slate-700" /><span>NODE_ID: <span className="text-slate-500 font-mono">{agent.id.slice(0, 18)}...</span></span></div><div className="w-1 h-1 rounded-full bg-slate-800"></div><span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em]" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>LINEAR_CURVE_UTILITY</span></div>
                 </div>
             </div>
@@ -743,17 +764,17 @@ const MarketDetail: React.FC = () => {
                     <div className="bg-black border p-8 clip-path-slant relative overflow-hidden group shadow-2xl h-full flex flex-col justify-center hover:border-white/40 transition-colors duration-700" style={{ borderColor: `${theme.color}44` }}>
                         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-125 transition-transform duration-1000"><Shield size={100} /></div>
                         <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-8 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full animate-pulse shadow-[0_0_12px_currentColor]" style={{ backgroundColor: theme.color }}></div> REPUTATION CLASS</div>
-                        <div className="text-5xl font-black font-display text-white text-glow-white mb-2 leading-none uppercase tracking-tighter transition-all duration-700" style={{ color: theme.color, textShadow: `0 0 20px ${theme.color}66` }}>{theme.label}</div>
+                        <div className="text-2xl sm:text-3xl md:text-5xl font-black font-display text-white text-glow-white mb-2 leading-none uppercase tracking-tighter transition-all duration-700" style={{ color: theme.color, textShadow: `0 0 20px ${theme.color}66` }}>{theme.label}</div>
                         <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest font-mono">NEURAL_CONVERGENCE: <span style={{ color: theme.color }}>{currentStrength.toFixed(1)}%</span></div>
                     </div>
                     <div className="md:col-span-2"><AIBriefing agent={agent} triples={triples} history={activityLog} /></div>
                 </div>
 
-                <div className="bg-black border border-slate-900 flex flex-col clip-path-slant relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)] h-[650px] group/chart">
+                <div className="bg-black border border-slate-900 flex flex-col clip-path-slant relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)] min-h-[320px] h-[50vh] sm:h-[420px] md:h-[550px] lg:h-[650px] group/chart">
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none"></div>
-                    <div className="p-10 flex flex-col md:flex-row justify-between items-end bg-[#02040a]/80 backdrop-blur-md relative z-20 border-b border-white/5 gap-8">
+                    <div className="p-4 sm:p-6 md:p-10 flex flex-col md:flex-row justify-between items-end bg-[#02040a]/80 backdrop-blur-md relative z-20 border-b border-white/5 gap-4 md:gap-8">
                         <div>
-                            <div className="flex items-baseline gap-3 mb-2"><div className="text-7xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700 flex items-baseline gap-2"><CurrencySymbol size="3xl" leading className="text-white/90" /><span>{formatMarketValue(displayPrice)}</span></div><div className="text-[14px] text-slate-500 font-mono tracking-widest uppercase font-black">/ PORTAL_SHARE</div></div>
+                            <div className="flex items-baseline gap-2 sm:gap-3 mb-2 flex-wrap"><div className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700 flex items-baseline gap-2"><CurrencySymbol size="3xl" leading className="text-white/90" /><span>{formatMarketValue(displayPrice)}</span></div><div className="text-[10px] sm:text-[14px] text-slate-500 font-mono tracking-widest uppercase font-black">/ PORTAL_SHARE</div></div>
                             <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.4em] mt-3 text-glow" style={{ color: theme.color }}><Activity size={12} className="animate-pulse shadow-[0_0_15px_currentColor]" /> SIGNAL_TELEMETRY_LIVE</div>
                         </div>
                         <div className="flex gap-12 font-black text-right pb-1">
@@ -761,7 +782,7 @@ const MarketDetail: React.FC = () => {
                              <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">LINEAR_MARKET_RATE</span><span className="text-2xl font-display tracking-tight uppercase text-glow" style={{ color: theme.color }}>STABLE</span></div>
                         </div>
                     </div>
-                    <div className="px-10 py-4 bg-white/5 border-b border-white/5 flex items-center justify-between z-20"><div className="flex gap-2">{(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (<button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`px-4 py-2 text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest ${timeframe === tf ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>{tf}</button>))}</div></div>
+                    <div className="px-3 sm:px-6 md:px-10 py-3 bg-white/5 border-b border-white/5 flex items-center justify-between z-20 overflow-x-auto"><div className="flex gap-1.5 sm:gap-2 min-w-0">{(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (<button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`min-h-[44px] px-3 sm:px-4 py-2.5 sm:py-2 text-[9px] sm:text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest shrink-0 ${timeframe === tf ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>{tf}</button>))}</div></div>
                     <div className="flex-1 w-full relative z-10 p-4 pt-10" style={{ background: `radial-gradient(circle at 50% -20%, ${theme.bgGlow}, transparent 70%)` }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={chartData} onMouseMove={(e: any) => { if (e?.activePayload) setHoverData(e.activePayload[0].payload); }} onMouseLeave={() => setHoverData(null)} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
@@ -832,7 +853,9 @@ const MarketDetail: React.FC = () => {
                             </div>
                             <div className={`relative group/input border-2 p-1 clip-path-slant transition-all duration-300 border-slate-900 focus-within:border-white/40`}>
                                 <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-5 text-right text-white font-black font-mono text-3xl focus:outline-none transition-all shadow-inner" placeholder="0.00" />
-                                <div className={`absolute left-5 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase pointer-events-none z-20 transition-all text-slate-700 group-focus-within/input:text-white`}>{action === 'ACQUIRE' ? CURRENCY_SYMBOL : 'SHARES'}</div>
+                                <div className={`absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none z-20 transition-all text-slate-700 group-focus-within/input:text-white`}>
+                                {action === 'ACQUIRE' ? <CurrencySymbol size="xl" leading className="font-black" /> : <span className="text-[10px] font-black uppercase">SHARES</span>}
+                            </div>
                             </div>
                             
                             {action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && (
@@ -882,7 +905,7 @@ const MarketDetail: React.FC = () => {
                     </button>))}
             </div>
             
-            <div className="p-10">
+            <div className="p-4 sm:p-6 md:p-10 overflow-x-hidden">
                 {activeTab === 'OVERVIEW' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-20 animate-in fade-in duration-700">
                         <div className="space-y-12">
@@ -890,7 +913,7 @@ const MarketDetail: React.FC = () => {
                                 <h4 className="text-[11px] font-black uppercase tracking-[0.6em] mb-6 flex items-center gap-3 text-glow" style={{ color: theme.color }}><Terminal size={14}/> Core_Alignment_Matrix</h4>
                                 <p className="text-slate-400 text-base leading-relaxed font-mono font-bold uppercase tracking-tight group-hover:text-white transition-colors">Node <strong className="text-white text-glow-white">{agent.label}</strong> stabilized in Sector_04. Semantic weight currently projected at {triples.length} unique synapses. Linear Curve Utility (ID: 1) engaged.</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-6"><div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL MKT CAP</div><div className="text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white inline-flex items-baseline gap-1"><CurrencySymbol size="xl" leading className="text-white/90" />{formatMarketValue(mktCapVal)}</div></div><div className="p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL_SHARES</div><div className="text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">{formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}</div></div></div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6"><div className="p-4 md:p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL MKT CAP</div><div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white inline-flex items-baseline gap-1"><CurrencySymbol size="xl" leading className="text-white/90" />{formatMarketValue(mktCapVal)}</div></div><div className="p-4 md:p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL_SHARES</div><div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">{formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}</div></div></div>
                             
                             {/* NEW: PROVENANCE LINKS SECTION */}
                             {agent.links && agent.links.length > 0 && (
@@ -920,14 +943,14 @@ const MarketDetail: React.FC = () => {
                         <div className="space-y-6"><h4 className="text-[11px] font-black text-white uppercase tracking-[0.6em] mb-6 text-glow-white">Protocol_Parameters</h4><div className="p-8 border border-white/5 bg-white/5 clip-path-slant font-mono text-xs space-y-5"><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Bonding_Curve</span><span className="font-bold text-glow" style={{ color: theme.color }}>Linear_Utility_1</span></div><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.label || agent.creator?.id?.slice(0, 18) || 'Null_Origin'}</span></div><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Last_Interaction</span><span className="text-white font-bold group-hover:text-glow-white">{activityLog[0] ? new Date(activityLog[0].timestamp).toLocaleDateString() : 'Syncing...'}</span></div><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Protocol_Tier</span><span className="px-3 py-0.5 text-black font-black uppercase text-[10px] shadow-glow" style={{ backgroundColor: theme.color }}>{theme.label}</span></div></div></div>
                     </div>)}
                 {activeTab === 'POSITIONS' && (
-                    <div className="w-full animate-in slide-in-from-bottom-4 duration-700">
-                        <table className="w-full text-left font-mono text-[11px]">
+                    <div className="w-full animate-in slide-in-from-bottom-4 duration-700 overflow-x-auto">
+                        <table className="w-full text-left font-mono text-[10px] sm:text-[11px] min-w-[400px]">
                             <thead className="text-slate-700 uppercase font-black tracking-[0.3em] border-b border-slate-900 bg-[#080808]">
                                 <tr>
-                                    <th className="px-8 py-6">RANK</th>
-                                    <th className="px-8 py-6">ACCOUNT</th>
-                                    <th className="px-8 py-6">CONVICTION</th>
-                                    <th className="px-8 py-6 text-right">SHARES</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">RANK</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">ACCOUNT</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">CONVICTION</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">SHARES</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
@@ -935,21 +958,21 @@ const MarketDetail: React.FC = () => {
                                     const meta = getConvictionMetadata(h.shares);
                                     return (
                                         <tr key={i} className="hover:bg-white/5 transition-all group">
-                                            <td className="px-8 py-6 text-slate-600 font-black">#{(i + 1).toString().padStart(2, '0')}</td>
-                                            <td className="px-8 py-6">
-                                                <Link to={`/profile/${h.account.id}`} className="flex items-center gap-4 group-hover:text-white transition-colors">
-                                                    <div className="w-8 h-8 rounded-none clip-path-slant bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden group-hover:border-white transition-all shadow-xl">
-                                                        {h.account.image ? <img src={h.account.image} className="w-full h-full object-cover" /> : <User size={14} className="text-slate-700" />}
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-600 font-black">#{(i + 1).toString().padStart(2, '0')}</td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
+                                                <Link to={`/profile/${h.account.id}`} className="flex items-center gap-2 sm:gap-4 group-hover:text-white transition-colors">
+                                                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-none clip-path-slant bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden group-hover:border-white transition-all shadow-xl shrink-0">
+                                                        {h.account.image ? <img src={h.account.image} className="w-full h-full object-cover" /> : <User size={12} className="text-slate-700 sm:w-[14px] sm:h-[14px]" />}
                                                     </div>
-                                                    <span className="font-black text-white group-hover:text-glow-white transition-colors uppercase tracking-tight">{h.account.label || h.account.id.slice(0, 24)}...</span>
+                                                    <span className="font-black text-white group-hover:text-glow-white transition-colors uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">{h.account.label || h.account.id.slice(0, 24)}...</span>
                                                 </Link>
                                             </td>
-                                            <td className="px-8 py-6">
-                                                <span className={`px-3 py-1 border rounded-sm font-black uppercase tracking-tighter transition-all ${meta.color}`}>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
+                                                <span className={`px-2 sm:px-3 py-0.5 sm:py-1 border rounded-sm font-black uppercase tracking-tighter transition-all text-[9px] sm:text-[10px] ${meta.color}`}>
                                                     {meta.label}
                                                 </span>
                                             </td>
-                                            <td className="px-8 py-6 text-right text-white font-black text-lg font-display tracking-tight group-hover:text-glow-white">{formatDisplayedShares(h.shares)}</td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right text-white font-black text-base sm:text-lg font-display tracking-tight group-hover:text-glow-white">{formatDisplayedShares(h.shares)}</td>
                                         </tr>
                                     );
                                 }) : (
@@ -987,36 +1010,36 @@ const MarketDetail: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">{lists.length > 0 ? lists.map((list, i) => (<Link key={i} to={`/markets/${list.id}`} className="group relative flex flex-col p-10 bg-white/[0.02] border-2 border-slate-800 hover:border-white transition-all shadow-[0_0_40px_rgba(0,243,255,0.5)] overflow-hidden min-h-[340px] text-center backdrop-blur-xl clip-path-slant" onClick={playClick} onMouseEnter={playHover}><div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] opacity-10 pointer-events-none"></div><div className="flex flex-col items-center justify-center flex-1 relative z-10"><div className="relative mb-10 group-hover:scale-110 transition-transform duration-700"><div className="absolute -inset-6 border-2 border-dashed border-white/10 rounded-full animate-spin-slow opacity-40 group-hover:opacity-100 transition-all"></div><div className="w-24 h-24 bg-black border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-white shadow-2xl relative clip-path-slant group-hover:shadow-glow-white">{list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={32} className="text-slate-600 group-hover:text-white" />}</div></div><div className="relative z-10"><div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] mb-4 group-hover:text-white transition-colors">SUB_SECTOR_VECTOR</div><div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tighter leading-none mb-6 drop-shadow-md">{list.label}</div><div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/5 border border-white/5 clip-path-slant text-[9px] font-black text-slate-400 group-hover:text-white transition-all"><Database size={12} className="text-slate-600 group-hover:text-white" />CONSTITUENTS: {list.totalItems || 0}</div></div></div><div className="absolute bottom-6 right-6 text-slate-800 group-hover:text-white group-hover:translate-x-1 transition-all"><ArrowRight size={24} /></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 clip-path-slant">NULL_VECTORS_DETECTED</div>)}</div>
                     </div>)}
                 {activeTab === 'ACTIVITY' && (
-                    <div className="animate-in fade-in duration-700 overflow-hidden ares-frame bg-white/[0.01] border-2 border-slate-900 clip-path-slant shadow-2xl backdrop-blur-sm">
-                        <table className="w-full text-left font-mono text-[10px]">
-                            <thead className="bg-black border-b border-slate-800 text-slate-600 font-black uppercase tracking-[0.3em]">
+                    <div className="animate-in fade-in duration-700 overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 clip-path-slant shadow-2xl backdrop-blur-sm">
+                        <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[500px]">
+                            <thead className="bg-black border-b border-slate-800 text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
                                 <tr>
-                                    <th className="px-8 py-5">TRANSACTION_HASH</th>
-                                    <th className="px-8 py-5">ACTION</th>
-                                    <th className="px-8 py-5 text-right">UNITS</th>
-                                    <th className="px-8 py-5 text-right">TIMESTAMP</th>
-                                    <th className="px-8 py-5 text-right">HANDSHAKE</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">TRANSACTION_HASH</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">ACTION</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">UNITS</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">TIMESTAMP</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">HANDSHAKE</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
                                 {activityLog.length > 0 ? activityLog.map((tx, i) => (
                                     <tr key={i} className="hover:bg-white/5 transition-all group">
-                                        <td className="px-8 py-6 font-mono text-slate-400 group-hover:text-white group-hover:text-glow-white transition-colors uppercase tracking-tighter">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 font-mono text-slate-400 group-hover:text-white group-hover:text-glow-white transition-colors uppercase tracking-tighter">
                                             {tx.id.slice(0, 24)}...
                                         </td>
-                                        <td className="px-8 py-6">
-                                            <span className={`px-2 py-0.5 rounded-sm font-black border uppercase tracking-widest ${tx.type === 'DEPOSIT' ? 'text-intuition-success bg-intuition-success/10 border-intuition-success/20 text-glow-success' : 'text-intuition-danger bg-intuition-danger/10 border-intuition-danger/20 text-glow-red'}`}>
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
+                                            <span className={`px-2 py-0.5 rounded-sm font-black border uppercase tracking-widest text-[8px] sm:text-[9px] ${tx.type === 'DEPOSIT' ? 'text-intuition-success bg-intuition-success/10 border-intuition-success/20 text-glow-success' : 'text-intuition-danger bg-intuition-danger/10 border-intuition-danger/20 text-glow-red'}`}>
                                                 {tx.type}
                                             </span>
                                             {!tx.id.startsWith('0x') && <span className="ml-2 px-1.5 py-0.5 bg-intuition-warning/10 text-intuition-warning border border-intuition-warning/30 text-[7px] font-black">LOCAL_UNSYNCED</span>}
                                         </td>
-                                        <td className="px-8 py-6 text-right font-black text-white text-lg group-hover:text-glow-white transition-all">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-black text-white text-base sm:text-lg group-hover:text-glow-white transition-all">
                                             {formatDisplayedShares(tx.shares)}
                                         </td>
-                                        <td className="px-8 py-6 text-right font-mono text-slate-500 uppercase tracking-tighter">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-mono text-slate-500 uppercase tracking-tighter whitespace-nowrap">
                                             {new Date(tx.timestamp).toLocaleString()}
                                         </td>
-                                        <td className="px-8 py-6 text-right">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">
                                             <div className="flex justify-end gap-3">
                                                 {tx.type === 'REDEEM' && (
                                                     <button 

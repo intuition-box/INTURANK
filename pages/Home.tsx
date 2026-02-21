@@ -1,7 +1,8 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Shield, Activity, ChevronDown, Binary, Box, HardDrive, Terminal, AlertCircle, Cpu, Network, Zap } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronDown, Binary, Box, HardDrive, Terminal, AlertCircle, Cpu, Network, Zap, Mail } from 'lucide-react';
+import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { formatEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { getAllAgents, getNetworkStats } from '../services/graphql';
@@ -70,7 +71,7 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: 
 };
 
 const TickerItem: React.FC<{ symbol: string, price: string, isUp: boolean }> = ({ symbol, price, isUp }) => (
-  <div className="flex items-center gap-4 px-8 py-4 border-r border-white/10 text-[10px] font-black font-mono whitespace-nowrap bg-black/40 hover:bg-intuition-secondary/10 transition-all group">
+  <div className="flex items-center gap-2 sm:gap-4 px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-r border-white/10 text-[9px] sm:text-[10px] font-black font-mono whitespace-nowrap bg-black/40 hover:bg-intuition-secondary/10 transition-all group">
     <span className="text-slate-300 tracking-[0.2em] group-hover:text-white transition-colors uppercase font-black">{symbol}</span>
     <span className="text-white tracking-tighter text-sm font-black">{price}</span>
     <span className={`px-1.5 py-0.5 rounded-sm font-black shadow-sm ${isUp ? 'text-intuition-success bg-intuition-success/10 text-glow-success' : 'text-intuition-secondary bg-intuition-secondary/20 shadow-[0_0_10px_rgba(255,0,85,0.2)] text-glow-red'}`}>
@@ -127,6 +128,7 @@ const MissionTerminal: React.FC = () => {
 };
 
 const Home: React.FC = () => {
+  const { openEmailNotify } = useEmailNotify();
   const [tickerData, setTickerData] = useState<any[]>([]);
   const [stats, setStats] = useState({ tvl: "0", atoms: 0, signals: 0, positions: 0 });
 
@@ -155,7 +157,7 @@ const Home: React.FC = () => {
     : "0.0";
 
   return (
-    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white">
+    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white max-w-[100vw] overflow-x-hidden">
       
       <div className="relative h-[90vh] flex flex-col justify-center items-center overflow-hidden border-b border-white/10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,_rgba(0,243,255,0.1),_transparent_60%)]"></div>
@@ -173,7 +175,7 @@ const Home: React.FC = () => {
 
           <Reveal delay={300}>
             <div className="relative mb-8">
-               <h1 className="text-6xl sm:text-7xl lg:text-[8.5rem] font-black tracking-tighter text-white leading-[0.9] font-display text-glow-white uppercase">
+               <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-[8.5rem] font-black tracking-tighter text-white leading-[0.9] font-display text-glow-white uppercase">
                  SEMANTIC<br />
                  <span className="text-intuition-secondary text-glow-red animate-pulse">CAPITALISM</span>
                </h1>
@@ -205,58 +207,60 @@ const Home: React.FC = () => {
         </div>
       </div>
 
-      <div className="w-full border-y-2 border-intuition-secondary/20 bg-black/90 py-1 overflow-hidden flex items-center group relative z-20 shadow-2xl">
-         <div className="bg-black z-30 px-8 py-5 flex items-center gap-4 border-r-2 border-intuition-secondary/40 shadow-[25px_0_45px_rgba(0,0,0,1)]">
+      <div className="w-full min-w-0 border-y-2 border-intuition-secondary/20 bg-black/90 py-1 overflow-hidden flex items-stretch group relative z-20 shadow-2xl">
+         <div className="bg-black z-30 px-4 sm:px-6 md:px-8 py-4 sm:py-5 flex items-center gap-2 sm:gap-4 border-r-2 border-intuition-secondary/40 shadow-[25px_0_45px_rgba(0,0,0,1)] shrink-0">
             <div className="w-3 h-3 rounded-full bg-intuition-secondary animate-pulse-fast shadow-[0_0_15px_#ff0055]"></div>
-            <span className="text-[11px] font-black font-display text-white tracking-[0.3em] uppercase text-glow-white">SYSTEM_PULSE</span>
+            <span className="text-[9px] sm:text-[11px] font-black font-display text-white tracking-[0.2em] sm:tracking-[0.3em] uppercase text-glow-white whitespace-nowrap">SYSTEM_PULSE</span>
          </div>
          
-         <div className="flex w-max animate-marquee group-hover:[animation-play-state:paused]">
-            <div className="flex shrink-0">
-               {tickerData.length > 0 ? tickerData.map((item, i) => (
-                  <TickerItem key={i} symbol={item.symbol} price={item.price} isUp={item.isUp} />
-               )) : <div className="px-20 text-[10px] font-mono text-slate-300 animate-pulse uppercase tracking-[0.5em] font-black">Establishing neural uplink...</div>}
-            </div>
-            <div className="flex shrink-0">
-               {tickerData.length > 0 ? tickerData.map((item, i) => (
-                  <TickerItem key={`d-${i}`} symbol={item.symbol} price={item.price} isUp={item.isUp} />
-               )) : null}
+         <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden no-scrollbar">
+            <div className="flex w-max min-h-full animate-marquee group-hover:[animation-play-state:paused]">
+               <div className="flex shrink-0">
+                  {tickerData.length > 0 ? tickerData.map((item, i) => (
+                     <TickerItem key={i} symbol={item.symbol} price={item.price} isUp={item.isUp} />
+                  )) : <div className="px-8 sm:px-20 text-[9px] sm:text-[10px] font-mono text-slate-300 animate-pulse uppercase tracking-[0.5em] font-black">Establishing neural uplink...</div>}
+               </div>
+               <div className="flex shrink-0">
+                  {tickerData.length > 0 ? tickerData.map((item, i) => (
+                     <TickerItem key={`d-${i}`} symbol={item.symbol} price={item.price} isUp={item.isUp} />
+                  )) : null}
+               </div>
             </div>
          </div>
       </div>
 
-      <div className="py-40 bg-[#04060b] relative overflow-hidden border-b border-white/5">
+      <div className="py-16 sm:py-24 md:py-40 bg-[#04060b] relative overflow-hidden border-b border-white/5 min-w-0">
         <div className="absolute top-0 right-0 w-[700px] h-[700px] bg-intuition-secondary/[0.06] rounded-full blur-[140px] pointer-events-none"></div>
         
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="mb-24 flex flex-col md:flex-row justify-between items-end gap-10">
-            <Reveal className="max-w-3xl">
-                <div className="flex items-center gap-3 text-intuition-secondary font-black font-mono text-xs mb-8 tracking-[0.6em] uppercase text-glow-red">
-                    <Binary size={20} /> Protocol_Engineering
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 min-w-0">
+          <div className="mb-12 md:mb-24 flex flex-col md:flex-row justify-between items-end gap-8 md:gap-10">
+            <Reveal className="max-w-3xl min-w-0">
+                <div className="flex items-center gap-3 text-intuition-secondary font-black font-mono text-[10px] sm:text-xs mb-6 sm:mb-8 tracking-[0.4em] sm:tracking-[0.6em] uppercase text-glow-red">
+                    <Binary size={18} className="sm:w-5 sm:h-5" /> Protocol_Engineering
                 </div>
-                <h2 className="text-6xl md:text-8xl font-black text-white font-display leading-[0.85] tracking-tighter uppercase mb-6 text-glow-white">
+                <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-8xl font-black text-white font-display leading-[0.85] tracking-tighter uppercase mb-4 md:mb-6 text-glow-white">
                   SEMANTIC<br/><span className="text-intuition-secondary text-glow-red">DYNAMICS</span>
                 </h2>
-                <p className="text-slate-200 text-xl font-mono uppercase tracking-widest leading-relaxed font-black">
+                <p className="text-slate-200 text-base sm:text-lg md:text-xl font-mono uppercase tracking-widest leading-relaxed font-black">
                   Mapping global consensus with cryptographic precision.
                 </p>
             </Reveal>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-10 min-w-0">
               {[
                   { num: "01", icon: <Shield size={40}/>, color: "text-intuition-primary text-glow-blue", border: "border-intuition-primary/30", glow: "hover:border-intuition-primary hover:shadow-glow-blue", title: "VERIFIED_ATOMS", desc: "Every unique identity is anchored as a persistent primitive in the graph, ready for valuation." },
                   { num: "02", icon: <Binary size={40}/>, color: "text-intuition-secondary text-glow-red", border: "border-intuition-secondary/40", glow: "hover:border-intuition-secondary hover:shadow-glow-red", title: "LOGIC_TRIPLES", desc: "Claims are structured as machine-readable semantic links, creating a network of truth." },
                   { num: "03", icon: <Activity size={40}/>, color: "text-white text-glow-white", border: "border-white/20", glow: "hover:border-white hover:shadow-2xl", title: "STAKE_CONSENSUS", desc: "Conviction is quantified through capital allocation, making deception economically irrational." }
               ].map((item, i) => (
                   <Reveal key={i} delay={200 + (i * 150)}>
-                      <div className={`p-10 bg-black border-2 ${item.border} ${item.glow} motion-hover-lift clip-path-slant group relative overflow-hidden h-full flex flex-col hover:shadow-[0_0_40px_rgba(255,0,85,0.25)]`}>
-                          <div className="absolute top-0 right-0 p-4 text-[7rem] font-black text-white/5 font-display italic pointer-events-none group-hover:text-intuition-secondary/10 transition-colors">{item.num}</div>
-                          <div className={`w-20 h-20 bg-white/5 border-2 ${item.border} flex items-center justify-center ${item.color} group-hover:scale-110 transition-all duration-700 mb-10 clip-path-slant shadow-2xl`}>
+                      <div className={`min-w-0 p-6 sm:p-8 md:p-10 bg-black border-2 ${item.border} ${item.glow} motion-hover-lift clip-path-slant group relative overflow-hidden h-full flex flex-col hover:shadow-[0_0_40px_rgba(255,0,85,0.25)]`}>
+                          <div className="absolute top-0 right-0 p-2 sm:p-4 text-[4rem] sm:text-[5rem] md:text-[7rem] font-black text-white/5 font-display italic pointer-events-none group-hover:text-intuition-secondary/10 transition-colors">{item.num}</div>
+                          <div className={`w-16 h-16 sm:w-20 sm:h-20 bg-white/5 border-2 ${item.border} flex items-center justify-center ${item.color} group-hover:scale-110 transition-all duration-700 mb-6 sm:mb-10 clip-path-slant shadow-2xl shrink-0`}>
                               {item.icon}
                           </div>
-                          <h4 className={`text-2xl font-black font-display text-white mb-6 uppercase group-hover:text-intuition-secondary transition-all ${item.num === '02' ? 'text-glow-red' : 'group-hover:text-glow-white'}`}>{item.title}</h4>
-                          <p className="text-slate-300 font-mono text-sm leading-relaxed tracking-wider uppercase font-black opacity-100">{item.desc}</p>
+                          <h4 className={`text-lg sm:text-xl md:text-2xl font-black font-display text-white mb-4 md:mb-6 uppercase group-hover:text-intuition-secondary transition-all break-words ${item.num === '02' ? 'text-glow-red' : 'group-hover:text-glow-white'}`}>{item.title}</h4>
+                          <p className="text-slate-300 font-mono text-xs sm:text-sm leading-relaxed tracking-wider uppercase font-black opacity-100 min-w-0">{item.desc}</p>
                       </div>
                   </Reveal>
               ))}
@@ -265,7 +269,7 @@ const Home: React.FC = () => {
       </div>
 
       <div className="py-40 bg-intuition-dark relative border-y-2 border-white/10">
-        <div className="max-w-[1600px] mx-auto px-10">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10">
           <Reveal className="mb-20 flex items-center gap-6">
             <div className="w-12 h-12 bg-intuition-secondary/10 border border-intuition-secondary flex items-center justify-center clip-path-slant shadow-glow-red">
                 <Activity className="text-intuition-secondary animate-pulse" size={24} />
@@ -281,6 +285,35 @@ const Home: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <section id="email-alerts" className="py-20 sm:py-28 md:py-32 relative overflow-hidden border-y-2 border-amber-400/30 bg-[#04060b] min-w-0">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_30%,rgba(251,191,36,0.1),_transparent_60%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_80%_70%,rgba(168,85,247,0.06),_transparent_50%)] pointer-events-none" />
+        <div className="absolute inset-0 opacity-[0.04] retro-grid pointer-events-none" />
+        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
+          <Reveal delay={100}>
+            <div className="inline-flex items-center gap-3 px-4 py-2 mb-6 bg-black/60 border-2 border-amber-400/70 text-amber-300 font-mono uppercase tracking-[0.5em] text-[10px] font-black clip-path-slant shadow-[0_0_28px_rgba(251,191,36,0.3)]">
+              <Mail size={20} className="shrink-0" />
+              EMAIL ALERTS
+            </div>
+            <h3 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black font-display text-white uppercase tracking-tighter mb-4 text-glow-white leading-tight">
+              Get notified about your shares & holdings<br className="hidden sm:block" /> <span className="text-amber-300 text-glow-gold">via email</span>
+            </h3>
+            <p className="text-slate-300 font-mono text-sm sm:text-base max-w-xl mx-auto mb-10 leading-relaxed">
+              When others buy or sell in claims you hold, we’ll notify you in the app and by email. Connect your wallet and add your email below.
+            </p>
+            <button
+              type="button"
+              onClick={() => { playClick(); openEmailNotify(); }}
+              onMouseEnter={playHover}
+              className="btn-cyber px-8 py-4 text-sm sm:text-base bg-amber-400 text-black font-black tracking-[0.2em] border-2 border-amber-400 shadow-[0_0_25px_rgba(251,191,36,0.4)] hover:bg-amber-300 hover:border-amber-300 hover:shadow-[0_0_40px_rgba(251,191,36,0.5),0_0_0_1px_rgba(168,85,247,0.3)] active:scale-[0.98] transition-all duration-300 inline-flex items-center gap-3 motion-hover-scale"
+            >
+              <Mail size={18} />
+              GET EMAIL ALERTS
+            </button>
+          </Reveal>
+        </div>
+      </section>
 
       <MissionTerminal />
 

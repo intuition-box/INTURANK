@@ -6,6 +6,7 @@ import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
 import Logo from './Logo';
 import WalletModal from './WalletModal';
+import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 
 interface LayoutProps {
@@ -48,7 +49,7 @@ const NavItem: React.FC<NavItemProps> = ({ to, label, icon, active, onClick }) =
     to={to}
     onClick={() => { playClick(); onClick(); }}
     onMouseEnter={playHover}
-    className={`group relative flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${
+    className={`group relative flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${
       active
         ? 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]'
         : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
@@ -197,8 +198,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       />
 
       <nav className="fixed top-0 w-full z-50 border-b-2 border-intuition-primary/10 bg-black/95 backdrop-blur-2xl shadow-[0_0_30px_rgba(0,243,255,0.05)]">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
+        <div className="w-full px-3 sm:px-6 lg:px-8 max-w-[100vw] overflow-visible">
+          <div className="flex items-center justify-between h-20 min-w-0">
 
             <div
               className="flex items-center flex-shrink-0 gap-4 group cursor-pointer"
@@ -234,7 +235,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <button
                   onClick={() => { playClick(); setIsIntelOpen(!isIntelOpen); }}
                   onMouseEnter={playHover}
-                  className={`group relative flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${isIntelActive || isIntelOpen
+                  className={`group relative flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${isIntelActive || isIntelOpen
                     ? 'text-intuition-primary border-intuition-primary/40 bg-white/5'
                     : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
                     }`}
@@ -243,7 +244,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
 
                 {isIntelOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant p-1 animate-in slide-in-from-top-2">
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant p-1 animate-in slide-in-from-top-2">
                     <div className="bg-[#080a12] p-1">
                       {intelItems.map(item => (
                         <Link
@@ -269,7 +270,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 rel="noreferrer"
                 onMouseEnter={playHover}
                 onClick={playClick}
-                className="group relative hidden md:flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 border-intuition-success/40 text-intuition-success hover:bg-intuition-success hover:text-black shadow-[0_0_15px_rgba(0,255,157,0.2)]"
+                className="group relative hidden md:flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 border-intuition-success/40 text-intuition-success hover:bg-intuition-success hover:text-black shadow-[0_0_15px_rgba(0,255,157,0.2)]"
               >
                 <Coins size={14} /> GET_TRUST
               </a>
@@ -277,7 +278,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <button
                 onClick={handleNewSignal}
                 onMouseEnter={playHover}
-                className="group relative hidden md:flex items-center gap-2 px-6 py-2.5 text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant bg-intuition-secondary text-white shadow-[0_0_20px_rgba(255,30,109,0.4)] hover:bg-white hover:text-intuition-secondary active:scale-95 border-2 border-transparent"
+                className="group relative hidden md:flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant bg-intuition-secondary text-white shadow-[0_0_20px_rgba(255,30,109,0.4)] hover:bg-white hover:text-intuition-secondary active:scale-95 border-2 border-transparent"
               >
                 <Plus size={16} /> NEW_SIGNAL
               </button>
@@ -290,6 +291,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <AlertTriangle size={14} /> WRONG_NET
                 </button>
               )}
+
+              <div className="hidden md:block">
+                <NotificationBar walletAddress={walletAddress} />
+              </div>
 
               <div className="hidden md:block relative" ref={dropdownRef}>
                 <button
@@ -314,7 +319,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
 
                 {isWalletDropdownOpen && walletAddress && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant animate-in fade-in zoom-in duration-200">
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant animate-in fade-in zoom-in duration-200">
                     <div className="p-1 space-y-0.5 bg-[#080a12]">
                       <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
                         Terminal Access
@@ -339,10 +344,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
             </div>
 
-            <div className="lg:hidden">
+            <div className="lg:hidden flex items-center gap-2">
+              <NotificationBar walletAddress={walletAddress} />
               <button
                 onClick={() => { playClick(); setIsMenuOpen(!isMenuOpen); }}
-                className="text-intuition-primary p-3 border-2 border-slate-900 rounded-none bg-black clip-path-slant shadow-lg active:scale-95 transition-transform"
+                className="text-intuition-primary p-3 min-h-[44px] min-w-[44px] flex items-center justify-center border-2 border-slate-900 rounded-none bg-black clip-path-slant shadow-lg active:scale-95 transition-transform"
               >
                 {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
@@ -351,19 +357,25 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
 
         {isMenuOpen && (
-          <div className="lg:hidden bg-black/98 backdrop-blur-2xl border-b-2 border-intuition-primary/20 absolute w-full z-[100] animate-in slide-in-from-top-4 duration-300">
-            <div className="px-4 pt-4 pb-10 space-y-2">
+          <>
+            <div className="lg:hidden fixed inset-0 top-[5rem] z-[99] bg-black" aria-hidden />
+            <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 animate-in slide-in-from-top-4 duration-300 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)]">
+            <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
               {[...mainNavItems, ...intelItems].map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   onClick={() => { playClick(); setIsMenuOpen(false); }}
-                  className={`flex items-center gap-4 px-5 py-4 border-2 text-[10px] font-black font-mono tracking-widest clip-path-slant transition-all ${isActive(item.path)
+                  className={`relative flex items-center gap-3 min-w-0 pl-5 pr-5 py-4 border-2 text-[9px] sm:text-[10px] font-black font-mono tracking-widest transition-all rounded-sm ${isActive(item.path)
                     ? 'text-black bg-intuition-primary border-intuition-primary'
                     : 'text-slate-400 border-slate-900 hover:text-white bg-white/5'
                     }`}
                 >
-                  {item.icon} {item.label}
+                  {isActive(item.path) && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-black rounded-r" />
+                  )}
+                  <span className="shrink-0 flex items-center justify-center w-5">{item.icon}</span>
+                  <span className="min-w-0 break-words uppercase">{item.label}</span>
                 </Link>
               ))}
 
@@ -401,24 +413,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               )}
             </div>
           </div>
+          </>
         )}
       </nav>
 
-      <main className="flex-grow pt-20 retro-grid relative z-10">
-        {children}
+      <main className="flex-grow pt-20 retro-grid relative z-10 overflow-x-hidden">
+        <div key={location.pathname} className="animate-page-enter min-h-full">
+          {children}
+        </div>
       </main>
 
-      <footer className="border-t border-white/5 bg-[#020308] py-24 mt-auto z-20 relative overflow-hidden">
+      <footer className="border-t border-white/5 bg-[#020308] py-12 md:py-24 mt-auto z-20 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/[0.04] to-transparent pointer-events-none"></div>
-        <div className="max-w-[1600px] mx-auto px-10 relative z-10">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-20 mb-24">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10 relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-20 mb-12 md:mb-24">
 
             <div className="md:col-span-2 space-y-10">
               <div className="flex items-center gap-6 group cursor-pointer" onMouseEnter={playHover}>
-                <div className="w-28 h-28 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 clip-path-slant">
-                  <Logo className="w-22 h-22 group-hover:rotate-3 transition-transform" />
+<div className="w-16 h-16 sm:w-20 sm:h-20 md:w-28 md:h-28 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 clip-path-slant">
+                <Logo className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 group-hover:rotate-3 transition-transform" />
                 </div>
-                <span className="text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
+                <span className="text-3xl sm:text-4xl md:text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
                   INTU<span className="group-hover:text-white transition-colors">RANK</span>
                 </span>
               </div>
@@ -504,7 +519,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <span className="text-[11px] font-black font-mono text-slate-500 uppercase tracking-[0.8em] mb-4 group-hover/powered:text-white transition-all duration-500">Powered By</span>
               <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="flex items-center gap-8 no-underline">
                 <IntuitionTargetLogo />
-                <span className="text-6xl font-display font-black tracking-[0.25em] text-white group-hover/powered:text-intuition-primary transition-all duration-700 uppercase text-glow-blue">
+                <span className="text-3xl md:text-5xl lg:text-6xl font-display font-black tracking-[0.25em] text-white group-hover/powered:text-intuition-primary transition-all duration-700 uppercase text-glow-blue">
                   INTUITION
                 </span>
               </a>

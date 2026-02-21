@@ -349,27 +349,27 @@ const PublicProfile: React.FC = () => {
       </div>
 
       <div className="bg-black border border-slate-900 clip-path-slant overflow-hidden shadow-2xl">
-          <div className="p-8 border-b border-slate-900 bg-white/5 flex justify-between items-center">
-              <h3 className="text-xs font-black text-white font-display tracking-[0.3em] uppercase flex items-center gap-4"><Fingerprint size={20} className="text-slate-500"/> Public_Holding_Ledger</h3>
+          <div className="p-4 sm:p-6 md:p-8 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h3 className="text-[10px] sm:text-xs font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase flex items-center gap-4"><Fingerprint size={20} className="text-slate-500 shrink-0"/> Public_Holding_Ledger</h3>
               <div className="text-[8px] font-black text-slate-700 uppercase tracking-[0.4em]">Verified_On_Intuition_Mainnet</div>
           </div>
           <div className="overflow-x-auto">
-              <table className="w-full text-left font-mono text-[10px]">
-                  <thead className="bg-[#080808] text-slate-600 font-black uppercase tracking-[0.3em] border-b border-slate-900">
+              <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[480px]">
+                  <thead className="bg-[#080808] text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] border-b border-slate-900">
                       <tr>
-                          <th className="px-10 py-6">Identity_Node</th>
-                          <th className="px-10 py-6">Sector</th>
-                          <th className="px-10 py-6 text-right">Magnitude</th>
-                          <th className="px-10 py-6 text-right">Net_Valuation</th>
-                          <th className="px-10 py-6 text-right">Recon</th>
+                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Identity_Node</th>
+                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Sector</th>
+                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Magnitude</th>
+                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Net_Valuation</th>
+                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Recon</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                       {positions.length > 0 ? positions.map((p, i) => (
                           <tr key={i} className="hover:bg-white/5 transition-all group relative">
-                              <td className="px-10 py-8">
-                                  <Link to={`/markets/${p.id}`} className="flex items-center gap-6 group-hover:text-intuition-primary transition-colors">
-                                      <div className="w-12 h-12 bg-slate-900 border-2 border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shadow-xl">
+                              <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6">
+                                  <Link to={`/markets/${p.id}`} className="flex items-center gap-3 sm:gap-6 group-hover:text-intuition-primary transition-colors">
+                                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 border-2 border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shadow-xl shrink-0">
                                           {p.atom?.image ? <img src={p.atom.image} className="w-full h-full object-cover" /> : <User size={20} className="text-slate-700" />}
                                       </div>
                                       <div>
@@ -378,18 +378,18 @@ const PublicProfile: React.FC = () => {
                                       </div>
                                   </Link>
                               </td>
-                              <td className="px-10 py-8">
-                                  <span className="px-3 py-1 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-[0.1em] clip-path-slant group-hover:text-white transition-colors">{p.atom?.type || 'STANDARD_ATOM'}</span>
+                              <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6">
+                                  <span className="px-2 sm:px-3 py-0.5 sm:py-1 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-[0.1em] clip-path-slant group-hover:text-white transition-colors">{p.atom?.type || 'STANDARD_ATOM'}</span>
                               </td>
-                              <td className="px-10 py-8 text-right font-black text-sm text-white">{formatDisplayedShares(p.shares)}</td>
-                              <td className="px-10 py-8 text-right">
-                                  <div className="inline-flex items-baseline gap-1.5 justify-end font-black text-sm text-intuition-success tracking-tight">
+                              <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right font-black text-xs sm:text-sm text-white">{formatDisplayedShares(p.shares)}</td>
+                              <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">
+                                  <div className="inline-flex items-baseline gap-1.5 justify-end font-black text-xs sm:text-sm text-intuition-success tracking-tight">
                                       <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
                                       {formatMarketValue(p.value)}
                                   </div>
                               </td>
-                              <td className="px-10 py-8 text-right">
-                                  <Link to={`/markets/${p.id}`} className="inline-flex px-6 py-2 bg-white/5 border border-white/10 hover:border-intuition-primary hover:border-intuition-primary text-[9px] font-black uppercase clip-path-slant transition-all tracking-widest">Inspect</Link>
+                              <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">
+                                  <Link to={`/markets/${p.id}`} className="inline-flex min-h-[44px] px-4 sm:px-6 py-2 bg-white/5 border border-white/10 hover:border-intuition-primary text-[9px] font-black uppercase clip-path-slant transition-all tracking-widest items-center justify-center">Inspect</Link>
                               </td>
                           </tr>
                       )) : (
