@@ -922,25 +922,55 @@ const MarketDetail: React.FC = () => {
                                         <LinkIcon size={14} className="text-intuition-primary" /> Node_Provenance_Uplinks
                                     </h4>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {agent.links.map((link, idx) => (
-                                            <a 
-                                                key={idx} 
-                                                href={link.url.startsWith('http') ? link.url : `https://${link.url}`} 
-                                                target="_blank" 
-                                                rel="noreferrer" 
-                                                onClick={playClick}
-                                                onMouseEnter={playHover}
-                                                className="flex items-center justify-between p-4 bg-white/5 border border-white/10 clip-path-slant hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all group/link"
-                                            >
-                                                <span className="text-[10px] font-black text-slate-400 group-hover/link:text-white uppercase tracking-widest truncate mr-2">{link.label || 'UPLINK_SOURCE'}</span>
-                                                <ExternalLink size={12} className="text-slate-600 group-hover/link:text-intuition-primary" />
-                                            </a>
-                                        ))}
+                                        {agent.links.map((link, idx) => {
+                                            const href = link.url.startsWith('http') ? link.url : `https://${link.url}`;
+                                            const displayUrl = href.replace(/^https?:\/\//, '');
+                                            return (
+                                                <a 
+                                                    key={idx} 
+                                                    href={href} 
+                                                    target="_blank" 
+                                                    rel="noreferrer" 
+                                                    onClick={playClick}
+                                                    onMouseEnter={playHover}
+                                                    className="flex items-center justify-between gap-3 p-4 bg-white/5 border border-white/10 clip-path-slant hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all group/link"
+                                                >
+                                                    <span className="text-[10px] font-black text-slate-400 group-hover/link:text-white uppercase tracking-widest truncate shrink-0">{link.label || 'UPLINK_SOURCE'}</span>
+                                                    <span className="px-2.5 py-1 rounded-md bg-[#7c3aed]/90 text-white text-[10px] font-bold truncate min-w-0 flex-1 text-center shadow-[0_0_10px_rgba(124,58,237,0.3)]" title={href}>{displayUrl}</span>
+                                                    <ExternalLink size={12} className="text-slate-600 group-hover/link:text-intuition-primary shrink-0" />
+                                                </a>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
                         </div>
-                        <div className="space-y-6"><h4 className="text-[11px] font-black text-white uppercase tracking-[0.6em] mb-6 text-glow-white">Protocol_Parameters</h4><div className="p-8 border border-white/5 bg-white/5 clip-path-slant font-mono text-xs space-y-5"><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Bonding_Curve</span><span className="font-bold text-glow" style={{ color: theme.color }}>Linear_Utility_1</span></div><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.label || agent.creator?.id?.slice(0, 18) || 'Null_Origin'}</span></div><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Last_Interaction</span><span className="text-white font-bold group-hover:text-glow-white">{activityLog[0] ? new Date(activityLog[0].timestamp).toLocaleDateString() : 'Syncing...'}</span></div><div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Protocol_Tier</span><span className="px-3 py-0.5 text-black font-black uppercase text-[10px] shadow-glow" style={{ backgroundColor: theme.color }}>{theme.label}</span></div></div></div>
+                        <div className="space-y-6">
+                            <h4 className="text-[11px] font-black text-white uppercase tracking-[0.6em] mb-6 text-glow-white">Protocol_Parameters</h4>
+                            <div className="p-8 border border-white/5 bg-white/5 clip-path-slant font-mono text-xs space-y-5">
+                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Bonding_Curve</span><span className="font-bold text-glow" style={{ color: theme.color }}>Linear_Utility_1</span></div>
+                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.label || agent.creator?.id?.slice(0, 18) || 'Null_Origin'}</span></div>
+                                {(() => {
+                                    const primaryLink = agent.links?.[0];
+                                    const linkUrl = primaryLink?.url ? (primaryLink.url.startsWith('http') ? primaryLink.url : `https://${primaryLink.url}`) : null;
+                                    return (
+                                        <div className="flex justify-between items-center group gap-3">
+                                            <span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors shrink-0">Link</span>
+                                            {linkUrl ? (
+                                                <a href={linkUrl} target="_blank" rel="noreferrer" onClick={playClick} onMouseEnter={playHover} className="px-3 py-1.5 rounded-md bg-[#7c3aed]/90 hover:bg-[#7c3aed] text-white text-[10px] font-bold truncate max-w-full shadow-[0_0_12px_rgba(124,58,237,0.4)] hover:shadow-[0_0_20px_rgba(124,58,237,0.5)] transition-all flex items-center gap-2" title={linkUrl}>
+                                                    <span className="truncate">{linkUrl.replace(/^https?:\/\//, '')}</span>
+                                                    <ExternalLink size={10} className="shrink-0 opacity-80" />
+                                                </a>
+                                            ) : (
+                                                <span className="text-slate-600 font-bold group-hover:text-slate-500">—</span>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Last_Interaction</span><span className="text-white font-bold group-hover:text-glow-white">{activityLog[0] ? new Date(activityLog[0].timestamp).toLocaleDateString() : 'Syncing...'}</span></div>
+                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Protocol_Tier</span><span className="px-3 py-0.5 text-black font-black uppercase text-[10px] shadow-glow" style={{ backgroundColor: theme.color }}>{theme.label}</span></div>
+                            </div>
+                        </div>
                     </div>)}
                 {activeTab === 'POSITIONS' && (
                     <div className="w-full animate-in slide-in-from-bottom-4 duration-700 overflow-x-auto">

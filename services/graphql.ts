@@ -73,7 +73,11 @@ export const resolveMetadata = (atom: any) => {
             if (decoded.name && (!label || label.startsWith('0x'))) label = decoded.name;
             if (decoded.description) description = decoded.description;
             if (decoded.image) image = decoded.image;
-            if (decoded.links) links = decoded.links;
+            if (decoded.links && Array.isArray(decoded.links)) links = decoded.links;
+            // Single "url" field (e.g. from CreateSignal thing flow) → treat as creation link
+            if (links.length === 0 && decoded.url && typeof decoded.url === 'string') {
+                links = [{ label: 'Link', url: decoded.url }];
+            }
         } catch (e) {
             // Data field might not be JSON, skip
         }
@@ -86,6 +90,9 @@ export const resolveMetadata = (atom: any) => {
             if (!label || label.startsWith('0x')) label = meta.name || meta.label;
             if (!description) description = meta.description || '';
             if (!image) image = meta.image;
+            // Some indexers expose url/links on the parsed value
+            if (links.length === 0 && meta.links && Array.isArray(meta.links)) links = meta.links;
+            if (links.length === 0 && meta.url && typeof meta.url === 'string') links = [{ label: 'Link', url: meta.url }];
         }
     }
 
@@ -344,6 +351,34 @@ export const getUserPositions = async (address: string) => {
     const data = await fetchGraphQL(q, { ids });
     return data?.positions ?? [];
   } catch (e) { return []; }
+};
+
+/** User's total transaction count from the Intuition graph (same semantics as getUserHistory: Deposited, Redeemed, AtomCreated, TripleCreated). */
+export const getUserIdTransactionCount = async (userAddress: string): Promise<number> => {
+  const addr = userAddress.toLowerCase();
+  const q = `query GetUserIdTransactionCount($userAddress: String!) {
+    events_aggregate(
+      where: {
+        _and: [
+          { type: { _neq: "FeesTransfered" } },
+          { _not: { _and: [{ type: { _eq: "Deposited" } }, { deposit: { assets_after_fees: { _eq: 0 } } }] } },
+          { _or: [
+            { _and: [{ type: { _eq: "AtomCreated" } }, { atom: { creator: { id: { _eq: $userAddress } } } }] },
+            { _and: [{ type: { _eq: "TripleCreated" } }, { triple: { creator: { id: { _eq: $userAddress } } } }] },
+            { _and: [{ type: { _eq: "Deposited" } }, { deposit: { sender: { id: { _eq: $userAddress } } } }] },
+            { _and: [{ type: { _eq: "Redeemed" } }, { redemption: { sender: { id: { _eq: $userAddress } } } }] }
+          ]}
+        ]
+      }
+    ) { aggregate { count } }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { userAddress: addr });
+    const count = data?.events_aggregate?.aggregate?.count;
+    return typeof count === 'number' ? count : 0;
+  } catch (e) {
+    return 0;
+  }
 };
 
 export const getUserActivityStats = async (address: string) => {

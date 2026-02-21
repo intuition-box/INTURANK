@@ -18,8 +18,13 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
             
             setLoading(true);
             try {
-                // Fix: Always use process.env.API_KEY directly as per initialization guidelines
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+                if (!apiKey) {
+                    setBrief('ERROR: Set VITE_GEMINI_API_KEY in .env.local for AI briefing.');
+                    setLoading(false);
+                    return;
+                }
+                const ai = new GoogleGenAI({ apiKey });
                 const triplesContext = (triples || [])
                     .slice(0, 5)
                     .map(t => `${t.subject?.label || 'Subject'} -> ${t.predicate?.label || 'Link'} -> ${t.object?.label || 'Object'}`)

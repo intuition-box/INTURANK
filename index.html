@@ -39,9 +39,14 @@
               'spin-fast': 'spin 3s linear infinite',
               'spin-reverse-fast': 'reverse-spin 2s linear infinite',
               'marquee': 'marquee 40s linear infinite',
-              'scanline': 'scanline 10s linear infinite'
+              'scanline': 'scanline 10s linear infinite',
+              'buffer-fill': 'buffer-fill 2.5s cubic-bezier(0.33, 1, 0.68, 1) infinite'
             },
             keyframes: {
+              'buffer-fill': {
+                '0%, 100%': { width: '50%' },
+                '50%': { width: '100%' }
+              },
               glitch: {
                 '0%': { transform: 'translate(0)' },
                 '20%': { transform: 'translate(-3px, 3px)' },
@@ -69,18 +74,19 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Fira+Code:wght@400;600&family=Orbitron:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
-      /* Animation timing: sleek on desktop, snappy on mobile & PWA */
+      /* Fluid system-wide animation: smooth easing + consistent timing */
       :root {
-        --anim-ease: cubic-bezier(0.22, 1, 0.36, 1);
-        --anim-duration-fast: 0.35s;
-        --anim-duration-normal: 0.5s;
-        --anim-duration-slow: 0.7s;
+        --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);
+        --anim-ease-in-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        --anim-duration-fast: 0.4s;
+        --anim-duration-normal: 0.55s;
+        --anim-duration-slow: 0.85s;
       }
       @media (max-width: 768px) {
         :root {
-          --anim-duration-fast: 0.22s;
-          --anim-duration-normal: 0.3s;
-          --anim-duration-slow: 0.4s;
+          --anim-duration-fast: 0.28s;
+          --anim-duration-normal: 0.38s;
+          --anim-duration-slow: 0.5s;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -89,6 +95,13 @@
           --anim-duration-normal: 0.01ms;
           --anim-duration-slow: 0.01ms;
         }
+      }
+
+      * {
+        transition-timing-function: var(--anim-ease);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * { transition-timing-function: step-end; }
       }
 
       html { scroll-behavior: smooth; }
@@ -120,13 +133,13 @@
         100% { background-position: 200% 0; }
       }
       .animate-fade-in-up {
-        animation: fade-in-up var(--anim-duration-slow, 0.6s) var(--anim-ease, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+        animation: fade-in-up var(--anim-duration-slow) var(--anim-ease) forwards;
       }
       .animate-fade-in {
-        animation: fade-in var(--anim-duration-normal, 0.5s) var(--anim-ease) forwards;
+        animation: fade-in var(--anim-duration-normal) var(--anim-ease) forwards;
       }
       .animate-scale-in {
-        animation: scale-in var(--anim-duration-fast, 0.35s) var(--anim-ease) forwards;
+        animation: scale-in var(--anim-duration-fast) var(--anim-ease) forwards;
       }
       /* Notification panel: pop + slide */
       @keyframes notification-panel-in {
@@ -134,7 +147,7 @@
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
       .animate-notification-panel-in {
-        animation: notification-panel-in var(--anim-duration-fast, 0.28s) var(--anim-ease) forwards;
+        animation: notification-panel-in var(--anim-duration-fast) var(--anim-ease) forwards;
       }
       /* Notification list item: stagger in */
       @keyframes notification-item-in {
@@ -142,16 +155,16 @@
         to { opacity: 1; transform: translateX(0); }
       }
       .animate-notification-item-in {
-        animation: notification-item-in var(--anim-duration-fast, 0.3s) var(--anim-ease) forwards;
+        animation: notification-item-in var(--anim-duration-fast) var(--anim-ease) forwards;
       }
       .motion-hover-lift {
-        transition: transform 0.3s var(--anim-ease), box-shadow 0.3s var(--anim-ease);
+        transition: transform var(--anim-duration-normal) var(--anim-ease), box-shadow var(--anim-duration-normal) var(--anim-ease);
       }
       .motion-hover-lift:hover {
         transform: translateY(-3px);
       }
       .motion-hover-scale {
-        transition: transform 0.28s var(--anim-ease);
+        transition: transform var(--anim-duration-normal) var(--anim-ease);
       }
       .motion-hover-scale:hover {
         transform: scale(1.02);
@@ -173,12 +186,12 @@
         animation-fill-mode: both;
       }
       .slide-in-from-right-4 {
-        animation: slide-in-from-right-4 0.3s var(--anim-ease) both;
+        animation: slide-in-from-right-4 var(--anim-duration-fast) var(--anim-ease) both;
       }
       .slide-in-from-left-4 {
-        animation: slide-in-from-left-4 0.3s var(--anim-ease) both;
+        animation: slide-in-from-left-4 var(--anim-duration-fast) var(--anim-ease) both;
       }
-      .duration-300 { animation-duration: 0.3s; }
+      .duration-300 { animation-duration: var(--anim-duration-fast); }
 
       /* Email notify modal: scale + fade in */
       @keyframes email-modal-in {
@@ -190,10 +203,10 @@
         to { opacity: 1; transform: scale(1); }
       }
       .animate-email-modal-in {
-        animation: email-modal-in 0.35s var(--anim-ease) both;
+        animation: email-modal-in var(--anim-duration-fast) var(--anim-ease) both;
       }
       .animate-email-success-in {
-        animation: email-success-in 0.4s var(--anim-ease) both;
+        animation: email-success-in var(--anim-duration-normal) var(--anim-ease) both;
       }
       @media (prefers-reduced-motion: reduce) {
         .animate-email-modal-in, .animate-email-success-in { animation-duration: 0.01ms !important; }
@@ -209,19 +222,19 @@
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
       .animate-page-enter {
-        animation: page-enter var(--anim-duration-normal, 0.45s) var(--anim-ease) forwards;
+        animation: page-enter var(--anim-duration-normal) var(--anim-ease) forwards;
       }
       .animate-page-enter-scale {
-        animation: page-enter-scale var(--anim-duration-fast, 0.4s) var(--anim-ease) forwards;
+        animation: page-enter-scale var(--anim-duration-fast) var(--anim-ease) forwards;
       }
 
-      /* Mobile/PWA: snappier Tailwind-driven animations, lighter continuous animations */
+      /* Mobile: slightly shorter but still fluid */
       @media (max-width: 768px) {
-        [class*="duration-200"] { animation-duration: 0.18s !important; }
-        [class*="duration-300"] { animation-duration: 0.22s !important; }
-        [class*="duration-500"] { animation-duration: 0.28s !important; }
-        [class*="duration-700"] { animation-duration: 0.35s !important; }
-        [class*="duration-1000"] { animation-duration: 0.4s !important; }
+        [class*="duration-200"] { animation-duration: 0.24s !important; }
+        [class*="duration-300"] { animation-duration: var(--anim-duration-fast) !important; }
+        [class*="duration-500"] { animation-duration: 0.35s !important; }
+        [class*="duration-700"] { animation-duration: 0.45s !important; }
+        [class*="duration-1000"] { animation-duration: 0.5s !important; }
         .animate-marquee { animation-duration: 50s; }
       }
 

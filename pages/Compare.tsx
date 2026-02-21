@@ -35,8 +35,13 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     const generateAnalysis = async () => {
         setLoading(true);
         try {
-            // Fix: Always use process.env.API_KEY directly as per initialization guidelines
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                setAnalysis('ERROR: NEURAL_LINK_SEVERED_BY_FIREWALL. Set VITE_GEMINI_API_KEY in .env.local');
+                setLoading(false);
+                return;
+            }
+            const ai = new GoogleGenAI({ apiKey });
             const prompt = `
                 Perform an aggressive, high-stakes tactical comparison between two competing reputation-based assets in a decentralized trust-graph combat arena.
                 
@@ -64,42 +69,42 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     };
 
     return (
-        <div className="bg-[#020308] border border-intuition-primary/40 p-4 sm:p-6 md:p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-6 md:mb-8">
-            {/* Background Brain Icon Decal as per Inspo */}
-            <div className="absolute -top-12 -right-12 opacity-[0.08] text-intuition-primary pointer-events-none group-hover:scale-110 transition-transform duration-1000">
+        <div className="bg-gradient-to-br from-[#020308] via-[#040612] to-[#020308] border-2 border-intuition-primary/30 p-4 sm:p-6 md:p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-6 md:mb-8 rounded-sm hover:border-intuition-primary/50 hover:shadow-[0_0_40px_rgba(0,243,255,0.08)] transition-all duration-500">
+            <div className="absolute inset-0 bg-gradient-to-br from-intuition-primary/5 via-transparent to-intuition-secondary/5 pointer-events-none" />
+            <div className="absolute -top-12 -right-12 opacity-[0.12] text-intuition-primary pointer-events-none group-hover:opacity-20 group-hover:scale-110 transition-all duration-700">
                 <Brain size={280} />
             </div>
             
             <div className="relative z-10">
                 <div className="flex items-center gap-4 mb-8">
-                    <div className="w-10 h-10 bg-black border border-intuition-primary/40 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
+                    <div className="w-10 h-10 bg-black/80 border-2 border-intuition-primary/50 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
                         <Sword size={20} />
                     </div>
-                    <h3 className="text-[12px] font-black font-display text-white tracking-[0.5em] uppercase">CONFLICT_SIMULATION_V3</h3>
+                    <h3 className="text-[12px] font-black font-display text-intuition-primary tracking-[0.5em] uppercase text-glow-blue">CONFLICT_SIMULATION_V3</h3>
                 </div>
                 
                 {!analysis && !loading ? (
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-8 pl-4 border-l-2 border-slate-900">
-                        <p className="text-slate-500 font-mono text-[11px] uppercase tracking-widest leading-relaxed max-w-2xl">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-8 pl-4 border-l-2 border-intuition-primary/30">
+                        <p className="text-slate-400 font-mono text-[11px] uppercase tracking-widest leading-relaxed max-w-2xl">
                             // Standby for semantic projection. Initialize AI synthesis to project takeover probability and identify consensus vulnerabilities.
                         </p>
                         <button 
                             onClick={() => { playClick(); generateAnalysis(); }}
-                            className="px-8 py-3 bg-intuition-primary text-black font-black text-[10px] tracking-widest hover:bg-white transition-all shadow-glow-blue uppercase whitespace-nowrap active:scale-95"
+                            className="px-8 py-3 bg-intuition-primary text-black font-black text-[10px] tracking-widest hover:bg-white hover:shadow-glow-blue transition-all shadow-glow-blue uppercase whitespace-nowrap active:scale-95"
                         >
                             INITIATE_PROJECTION
                         </button>
                     </div>
                 ) : loading ? (
-                    <div className="flex items-center gap-3 text-intuition-primary font-mono text-[11px] animate-pulse font-black py-4 pl-4 border-l-2 border-intuition-primary/20">
+                    <div className="flex items-center gap-3 text-intuition-primary font-mono text-[11px] animate-pulse font-black py-4 pl-4 border-l-2 border-intuition-primary/40">
                         <Loader2 size={16} className="animate-spin" /> RUNNING_NEURAL_WAR_GAMES...
                     </div>
                 ) : (
-                    <div className="flex gap-6 items-start animate-in fade-in duration-500 pl-4 border-l-2 border-intuition-primary/40">
-                        <Quote size={24} className="text-intuition-primary shrink-0 opacity-40 mt-1" />
+                    <div className="flex gap-6 items-start animate-in fade-in duration-500 pl-4 border-l-2 border-intuition-primary/50">
+                        <Quote size={24} className="text-intuition-primary shrink-0 opacity-60 mt-1 text-glow-blue" />
                         <p className="text-slate-200 font-mono text-xs leading-relaxed font-bold uppercase tracking-tight italic">
                             {displayedText}
-                            <span className="inline-block w-2 h-3.5 bg-intuition-primary ml-1 animate-pulse shadow-glow-blue"></span>
+                            <span className="inline-block w-2 h-3.5 bg-intuition-primary ml-1 animate-pulse shadow-glow-blue rounded-sm"></span>
                         </p>
                     </div>
                 )}
@@ -122,12 +127,12 @@ const NeuralCollision: React.FC<{ tension: number, arbitrage: number, onSwap: ()
             </div>
 
             <div className="relative group z-20 my-2">
-                <div className={`absolute inset-0 bg-intuition-primary rounded-full blur-2xl opacity-10 group-hover:opacity-40 transition-all duration-1000 animate-pulse`}></div>
-                
+                <div className={`absolute -inset-4 rounded-full bg-gradient-to-r from-intuition-primary/20 via-intuition-secondary/20 to-intuition-primary/20 blur-xl opacity-30 group-hover:opacity-60 transition-all duration-700 animate-pulse`}></div>
+                <div className={`absolute inset-0 rounded-full border-2 border-dashed ${tension > 30 ? 'border-intuition-danger/40' : 'border-intuition-primary/30'} group-hover:border-intuition-primary/60 transition-all duration-500`}></div>
                 <button 
                     onClick={() => { playClick(); onSwap(); }}
                     onMouseEnter={playHover}
-                    className={`relative w-16 h-16 bg-black border-2 rounded-full flex items-center justify-center text-white hover:text-black hover:bg-intuition-primary transition-all duration-700 hover:scale-110 shadow-2xl group-hover:shadow-glow-blue ${tension > 30 ? 'border-intuition-danger' : 'border-intuition-primary'}`}
+                    className={`relative w-16 h-16 bg-black border-2 rounded-full flex items-center justify-center text-white hover:text-black hover:bg-intuition-primary transition-all duration-500 hover:scale-110 shadow-2xl group-hover:shadow-glow-blue ${tension > 30 ? 'border-intuition-danger shadow-glow-red' : 'border-intuition-primary'}`}
                 >
                     <span className="font-black font-display text-xl italic tracking-tighter">VS</span>
                 </button>
@@ -154,7 +159,7 @@ const AgentCard: React.FC<{
     
     return (
         <div 
-            className={`relative flex-1 bg-[#02040a] border-2 p-4 sm:p-6 md:p-10 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] transition-all duration-500 hover:bg-slate-900/10 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success/40 shadow-[0_0_50px_rgba(0,255,157,0.05)]' : isLoser ? 'border-intuition-danger/10 opacity-60 grayscale' : 'border-slate-900 hover:border-intuition-primary/40'}`}
+            className={`relative flex-1 bg-gradient-to-b from-[#03050c] to-[#020308] border-2 p-4 sm:p-6 md:p-10 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] transition-all duration-500 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success/50 shadow-[0_0_60px_rgba(0,255,157,0.12)] hover:shadow-[0_0_80px_rgba(0,255,157,0.15)]' : isLoser ? 'border-intuition-danger/20 opacity-70 grayscale hover:grayscale-0 hover:opacity-90' : 'border-slate-800 hover:border-intuition-primary/50 hover:shadow-[0_0_30px_rgba(0,243,255,0.06)]'}`}
             onClick={() => { playClick(); onSelect(); }}
             onMouseEnter={playHover}
         >
@@ -191,9 +196,9 @@ const AgentCard: React.FC<{
                     </Link>
                 </>
             ) : (
-                <div className="flex flex-col items-center text-slate-800 group-hover:text-intuition-primary transition-all duration-500">
-                    <div className="w-24 h-24 rounded-none border-2 border-dashed border-slate-900 flex items-center justify-center group-hover:border-intuition-primary transition-all mb-6">
-                        <Crosshair size={32} className="opacity-10 group-hover:opacity-60" />
+                <div className="flex flex-col items-center text-slate-600 group-hover:text-intuition-primary transition-all duration-500">
+                    <div className="w-24 h-24 rounded-none border-2 border-dashed border-slate-800 flex items-center justify-center group-hover:border-intuition-primary group-hover:shadow-glow-blue transition-all duration-500 mb-6 bg-white/[0.02] group-hover:bg-intuition-primary/5">
+                        <Crosshair size={32} className="opacity-30 group-hover:opacity-100 group-hover:text-intuition-primary" />
                     </div>
                     <span className="font-display font-black text-xs tracking-[0.5em] uppercase">CONNECT_NODE</span>
                 </div>
@@ -318,26 +323,26 @@ const Compare: React.FC = () => {
         <div className="min-h-screen bg-[#020308] pt-12 pb-32 px-6 max-w-[1500px] mx-auto relative font-mono selection:bg-intuition-primary selection:text-black">
             <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
 
-            <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-900 pb-10 relative z-10">
+            <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-800 pb-10 relative z-10">
                 <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
+                    <div className="w-16 h-16 bg-black/80 border-2 border-intuition-primary/60 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
                         <BarChart3 size={32} />
                     </div>
                     <div>
                         <div className="flex items-center gap-2 text-intuition-primary font-black font-mono text-[9px] tracking-[0.5em] uppercase mb-1">
                              <Zap size={10} className="animate-pulse" /> Signal_Parity_Module
                         </div>
-                        <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tight uppercase leading-none text-glow-white">
-                            COMPARISON<span className="text-intuition-secondary text-glow-red">_DECK</span>
+                        <h1 className="text-4xl md:text-6xl font-black font-display tracking-tight uppercase leading-none">
+                            <span className="text-white text-glow-white">COMPARISON</span><span className="text-intuition-secondary text-glow-red">_DECK</span>
                         </h1>
                     </div>
                 </div>
                 
                 <div className="flex flex-wrap gap-4">
-                    <div className="px-6 py-3 bg-black border border-slate-800 font-mono text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-3">
+                    <div className="px-6 py-3 bg-black/60 border border-intuition-primary/20 font-mono text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-3">
                         <Terminal size={14} className="text-intuition-primary" /> TARGET_LOCK: <span className="text-white text-glow-white">{leftAgent && rightAgent ? 'SYNCHRONIZED' : 'AWAITING_UPLINK'}</span>
                     </div>
-                    <div className="px-6 py-3 bg-intuition-secondary text-white font-black font-mono text-[10px] uppercase tracking-widest shadow-glow-red active:scale-95 transition-all">
+                    <div className="px-6 py-3 bg-intuition-secondary text-white font-black font-mono text-[10px] uppercase tracking-widest shadow-glow-red hover:shadow-[0_0_25px_rgba(255,30,109,0.4)] active:scale-95 transition-all">
                         UPLINK: ACTIVE
                     </div>
                 </div>
@@ -369,8 +374,8 @@ const Compare: React.FC = () => {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                         {/* RAW SECTOR COMPARISON TABLE */}
-                        <div className="bg-[#03040a] border border-white/5 shadow-2xl relative overflow-hidden clip-path-slant">
-                            <div className="bg-black py-4 border-b border-white/5 flex justify-center items-center relative z-20">
+                        <div className="bg-gradient-to-b from-[#04060c] to-[#020308] border border-white/10 shadow-2xl relative overflow-hidden clip-path-slant hover:border-intuition-primary/20 transition-all duration-500">
+                            <div className="bg-gradient-to-r from-intuition-primary/10 via-transparent to-intuition-secondary/10 py-4 border-b border-intuition-primary/20 flex justify-center items-center relative z-20">
                                 <div className="text-[11px] font-black font-display text-intuition-primary uppercase tracking-[0.6em] text-glow-blue">RAW_SECTOR_COMPARISON</div>
                             </div>
                             
@@ -406,9 +411,10 @@ const Compare: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* LIVE TELEMETRY CHART (Fixed with Inspo Styling) */}
-                        <div className="bg-[#03040a] border border-white/10 p-10 h-[520px] relative group shadow-2xl overflow-hidden clip-path-slant">
-                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none"></div>
+                        {/* LIVE TELEMETRY CHART */}
+                        <div className="bg-gradient-to-b from-[#04060c] to-[#020308] border border-white/10 p-10 h-[520px] relative group shadow-2xl overflow-hidden clip-path-slant hover:border-intuition-primary/20 transition-all duration-500">
+                            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.05] pointer-events-none"></div>
+                            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-intuition-primary/5 to-transparent pointer-events-none" />
                             
                             <div className="flex justify-between items-center mb-10 relative z-10">
                                 <div className="flex gap-8 text-[10px] font-black font-mono">
@@ -421,7 +427,7 @@ const Compare: React.FC = () => {
                                         <span className="text-white uppercase tracking-widest">{rightAgent.label}</span>
                                     </div>
                                 </div>
-                                <div className="px-4 py-2 bg-black border border-white/10 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] shadow-xl">
+                                <div className="px-4 py-2 bg-black/80 border border-intuition-primary/30 text-[9px] font-black font-mono text-intuition-primary uppercase tracking-[0.3em] shadow-glow-blue">
                                     LIVE_TELEMETRY
                                 </div>
                             </div>
@@ -452,29 +458,30 @@ const Compare: React.FC = () => {
                             </div>
 
                             <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
-                                <div className="text-[10px] font-black font-mono text-slate-700 uppercase tracking-[0.6em] animate-pulse">
+                                <div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.6em] animate-pulse">
                                     SIMULATING NEURAL DRIFT SEQUENCE
                                 </div>
-                                <div className="flex gap-2 h-1 w-48 bg-white/5 overflow-hidden rounded-full">
-                                    <div className="h-full bg-intuition-primary animate-marquee w-1/3 shadow-glow-blue"></div>
+                                <div className="flex gap-2 h-1.5 w-48 bg-white/10 overflow-hidden rounded-full border border-white/10">
+                                    <div className="h-full bg-intuition-primary animate-buffer-fill shadow-glow-blue rounded-full"></div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             ) : (
-                <div className="max-w-3xl mx-auto text-center py-32 border-2 border-dashed border-slate-900 bg-black/20 clip-path-slant relative group transition-all">
-                    <Crosshair size={64} className="mx-auto text-slate-800 mb-8 opacity-20 group-hover:text-intuition-primary group-hover:opacity-100 transition-all duration-1000 animate-spin-slow" />
-                    <h3 className="text-2xl font-black font-display text-slate-700 uppercase tracking-[0.5em] mb-4 group-hover:text-white transition-colors">AWAITING_CHALLENGERS</h3>
-                    <p className="text-slate-800 font-mono text-[9px] uppercase tracking-[0.4em] px-8 leading-relaxed max-w-lg mx-auto font-black">
+                <div className="max-w-3xl mx-auto text-center py-32 border-2 border-dashed border-slate-800 bg-gradient-to-b from-slate-900/40 to-black/40 clip-path-slant relative group transition-all duration-500 hover:border-intuition-primary/40 hover:shadow-[0_0_60px_rgba(0,243,255,0.06)]">
+                    <div className="absolute inset-0 bg-intuition-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <Crosshair size={64} className="mx-auto text-slate-600 mb-8 opacity-40 group-hover:text-intuition-primary group-hover:opacity-100 transition-all duration-700 animate-spin-slow relative z-10" />
+                    <h3 className="text-2xl font-black font-display text-slate-500 uppercase tracking-[0.5em] mb-4 group-hover:text-intuition-primary group-hover:text-glow-blue transition-all duration-500 relative z-10">AWAITING_CHALLENGERS</h3>
+                    <p className="text-slate-600 font-mono text-[10px] uppercase tracking-[0.4em] px-8 leading-relaxed max-w-lg mx-auto font-black group-hover:text-slate-400 transition-colors relative z-10">
                         Select two identity nodes to initiate lethal semantic collision analysis and project arbitrage deltas across active corridors.
                     </p>
                 </div>
             )}
 
             {isSelectorOpen && (
-                <div className="fixed inset-0 bg-black/95 z-[200] flex items-center justify-center p-4 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setIsSelectorOpen(null)}>
-                    <div className="w-full max-w-2xl bg-[#050508] border border-intuition-primary/40 p-10 clip-path-slant relative overflow-hidden shadow-[0_0_100px_rgba(0,0,0,1)]" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setIsSelectorOpen(null)}>
+                    <div className="w-full max-w-2xl bg-gradient-to-b from-[#06080e] to-[#020308] border-2 border-intuition-primary/40 p-10 clip-path-slant relative overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.1)] hover:shadow-[0_0_100px_rgba(0,243,255,0.15)] transition-shadow duration-500" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-5 mb-10">
                              <div className="p-3 bg-intuition-primary/10 border border-intuition-primary/30 text-intuition-primary clip-path-slant shadow-glow-blue">
                                  <Search size={24} />

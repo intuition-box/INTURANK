@@ -30,7 +30,13 @@ const Feed: React.FC = () => {
         if (currentEvents.length < 5 || isAresLoading) return;
         setIsAresLoading(true);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            if (!apiKey) {
+                setAresPulse("NEURAL_UPLINK_FRAGMENTED_STANDBY");
+                setIsAresLoading(false);
+                return;
+            }
+            const ai = new GoogleGenAI({ apiKey });
             const summary = currentEvents.slice(0, 15).map(e => 
                 `${e.sender?.label || 'Node'} ${e.type} ${e.assets ? formatEther(BigInt(e.assets)) : ''} on ${e.target?.label}`
             ).join('; ');

@@ -13,34 +13,36 @@ import { getWalletBalance } from '../services/web3';
 const KPIStatCard = ({ label, value, sub, icon: Icon, color = "primary", animate = false, isZero = false }: { label: string; value: string | number; sub: string | React.ReactNode; icon: any; color?: string; animate?: boolean; isZero?: boolean }) => {
     const isPrimary = color === "primary";
     const accentColor = isPrimary ? 'text-intuition-primary' : 'text-intuition-secondary';
-    const borderColor = isPrimary ? 'border-intuition-primary/20' : 'border-intuition-secondary/20';
-    const bgGlow = isPrimary ? 'bg-intuition-primary/5' : 'bg-intuition-secondary/5';
+    const accentGlow = isPrimary ? 'text-glow-blue' : 'text-glow-red';
+    const borderColor = isPrimary ? 'border-intuition-primary/30' : 'border-intuition-secondary/30';
+    const bgGlow = isPrimary ? 'bg-intuition-primary/10' : 'bg-intuition-secondary/10';
+    const iconBgGlow = isPrimary ? 'shadow-glow-blue' : 'shadow-glow-red';
 
     return (
-        <div className={`p-5 bg-black border-2 ${borderColor} clip-path-slant relative group overflow-hidden shadow-xl transition-all duration-500 hover:border-white/20`}>
+        <div className={`p-5 bg-black border-2 ${borderColor} clip-path-slant relative group overflow-hidden shadow-xl transition-all duration-500 hover:border-white/40 hover:shadow-[0_0_30px_rgba(255,255,255,0.06)]`}>
             <div className={`absolute inset-0 ${bgGlow} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}></div>
-            <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform duration-1000">
-                <Icon size={60} />
+            <div className={`absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-all duration-700 group-hover:scale-110 ${isPrimary ? 'text-intuition-primary' : 'text-intuition-secondary'}`}>
+                <Icon size={60} className={animate ? 'animate-pulse' : ''} />
             </div>
             
             <div className="flex justify-between items-start mb-4 relative z-10">
                 <div className="flex flex-col gap-1">
-                    <span className="text-slate-600 font-mono text-[8px] uppercase tracking-[0.3em] font-black group-hover:text-white transition-colors">{label}</span>
-                    <div className={`h-px w-8 ${isPrimary ? 'bg-intuition-primary' : 'bg-intuition-secondary'} opacity-40 group-hover:w-full transition-all duration-1000`}></div>
+                    <span className={`text-[9px] font-mono uppercase tracking-[0.3em] font-black text-slate-400 group-hover:text-white ${isPrimary ? 'group-hover:text-glow-blue' : 'group-hover:text-glow-red'} transition-all duration-300`}>{label}</span>
+                    <div className={`h-px w-8 ${isPrimary ? 'bg-intuition-primary' : 'bg-intuition-secondary'} opacity-60 group-hover:w-full group-hover:opacity-100 transition-all duration-700 shadow-[0_0_8px_currentColor]`}></div>
                 </div>
-                <div className={`p-2 bg-black border border-white/5 clip-path-slant ${accentColor}`}>
-                    <Icon size={14} className={animate ? "animate-pulse" : ""} />
+                <div className={`p-2 bg-black border border-white/10 clip-path-slant ${accentColor} ${iconBgGlow} ${animate ? 'animate-pulse' : ''} group-hover:scale-110 transition-transform duration-300`}>
+                    <Icon size={14} />
                 </div>
             </div>
 
             <div className="relative z-10 flex items-baseline gap-2">
-                <div className={`text-2xl md:text-3xl font-black text-white font-display tracking-tight leading-none group-hover:text-glow-white transition-all ${isZero ? 'opacity-30' : ''}`}>
+                <div className={`text-2xl md:text-3xl font-black text-white font-display tracking-tight leading-none group-hover:text-glow-white transition-all duration-300 ${isZero ? 'opacity-30' : ''}`}>
                     {value}
                 </div>
-                <span className={`text-[9px] font-black uppercase tracking-widest ${accentColor} inline-flex items-baseline`}>{sub}</span>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${accentColor} ${accentGlow} inline-flex items-baseline`}>{sub}</span>
             </div>
             {isZero && (
-                <div className="absolute bottom-3 left-5 text-[6px] font-black text-slate-700 uppercase tracking-widest animate-pulse font-mono">
+                <div className="absolute bottom-3 left-5 text-[7px] font-black text-slate-500 uppercase tracking-widest animate-pulse font-mono">
                     // Recon_Pending_Signal
                 </div>
             )}
@@ -223,45 +225,49 @@ const KPIDashboard: React.FC = () => {
                             <div className="overflow-x-auto min-h-[400px]">
                                 {stats?.userLedger?.length > 0 ? (
                                     <table className="w-full text-left font-mono">
-                                        <thead className="bg-[#080808] text-slate-600 text-[9px] font-black uppercase tracking-[0.4em] border-b border-slate-900">
+                                        <thead className="bg-[#080808] text-slate-400 text-[10px] sm:text-xs font-black uppercase tracking-[0.3em] border-b border-slate-800">
                                             <tr>
-                                                <th className="px-6 py-4">RECON_ID</th>
-                                                <th className="px-6 py-4 text-center">TOTAL_TXS</th>
-                                                <th className="px-6 py-4 text-right">VOLUME_SIGNALED</th>
-                                                <th className="px-6 py-4 text-right">{`${CURRENCY_SYMBOL}_BAL`}</th>
-                                                <th className="px-6 py-4 text-right">RANK</th>
+                                                <th className="px-4 sm:px-6 py-4 w-12 text-center">#</th>
+                                                <th className="px-4 sm:px-6 py-4">RECON_ID</th>
+                                                <th className="px-4 sm:px-6 py-4 text-center">TOTAL_TXS</th>
+                                                <th className="px-4 sm:px-6 py-4 text-right">VOLUME_SIGNALED</th>
+                                                <th className="px-4 sm:px-6 py-4 text-right">{`${CURRENCY_SYMBOL}_BAL`}</th>
+                                                <th className="px-4 sm:px-6 py-4 text-right">RANK</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5">
                                             {stats.userLedger.map((user: any, i: number) => (
                                                 <tr key={user.id} className="hover:bg-white/5 transition-all group cursor-pointer">
-                                                    <td className="px-6 py-5">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-10 h-10 bg-black border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-secondary transition-all">
-                                                                {user.image ? <img src={user.image} className="w-full h-full object-cover" /> : <UserCircle size={20} className="text-slate-700" />}
+                                                    <td className="px-4 sm:px-6 py-5 text-center">
+                                                        <span className="text-sm sm:text-base font-black text-slate-400 group-hover:text-white transition-colors tabular-nums">{i + 1}</span>
+                                                    </td>
+                                                    <td className="px-4 sm:px-6 py-5">
+                                                        <div className="flex items-center gap-3 sm:gap-4">
+                                                            <div className="w-10 h-10 bg-black border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-secondary transition-all shrink-0">
+                                                                {user.image ? <img src={user.image} className="w-full h-full object-cover" alt="" /> : <UserCircle size={20} className="text-slate-600" />}
                                                             </div>
                                                             <div className="min-w-0">
-                                                                <div className="text-xs font-black text-white uppercase group-hover:text-intuition-secondary transition-colors truncate max-w-[120px]">{user.label || user.id.slice(0, 14)}</div>
-                                                                <div className="text-[7px] text-slate-600 font-mono truncate max-w-[80px]">{user.id}</div>
+                                                                <div className="text-sm font-black text-white uppercase group-hover:text-intuition-secondary transition-colors truncate max-w-[140px] sm:max-w-[200px]">{user.label || user.id.slice(0, 14)}</div>
+                                                                <div className="text-[10px] text-slate-500 font-mono truncate max-w-[100px] sm:max-w-[160px] mt-0.5">{user.id}</div>
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-5 text-center">
-                                                        <div className="text-lg font-black text-white font-display group-hover:text-glow-white leading-none">{user.txCount}</div>
+                                                    <td className="px-4 sm:px-6 py-5 text-center">
+                                                        <div className="text-base sm:text-lg font-black text-white font-display group-hover:text-glow-white leading-none tabular-nums">{user.txCount}</div>
                                                     </td>
-                                                    <td className="px-6 py-5 text-right">
-                                                        <div className="text-lg font-black text-intuition-success font-mono group-hover:text-glow-success leading-none">
+                                                    <td className="px-4 sm:px-6 py-5 text-right">
+                                                        <div className="text-base sm:text-lg font-black text-intuition-success font-mono group-hover:text-glow-success leading-none tabular-nums">
                                                             {user.volume.toLocaleString(undefined, { maximumFractionDigits: 4 })}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-5 text-right">
-                                                        <div className="text-[11px] font-black text-intuition-primary font-mono group-hover:text-glow-blue leading-none">
+                                                    <td className="px-4 sm:px-6 py-5 text-right">
+                                                        <div className="text-sm font-black text-intuition-primary font-mono group-hover:text-glow-blue leading-none tabular-nums">
                                                             {userBalances[user.id] || "0.00"}
                                                         </div>
-                                                        <div className="text-[6px] text-slate-700 uppercase mt-1">WALLET_RECON</div>
+                                                        <div className="text-[9px] text-slate-500 uppercase mt-1 font-black tracking-wider">WALLET_BALANCE</div>
                                                     </td>
-                                                    <td className="px-6 py-5 text-right">
-                                                        <span className={`px-3 py-1 border text-[8px] font-black uppercase clip-path-slant ${i < 3 ? 'border-intuition-secondary text-intuition-secondary bg-intuition-secondary/5 shadow-glow-red' : 'border-slate-800 text-slate-600'}`}>
+                                                    <td className="px-4 sm:px-6 py-5 text-right">
+                                                        <span className={`px-3 py-1.5 border text-[9px] font-black uppercase clip-path-slant ${i < 3 ? 'border-intuition-secondary text-intuition-secondary bg-intuition-secondary/10 shadow-glow-red' : 'border-slate-600 text-slate-400'}`}>
                                                             {i < 3 ? 'ELITE' : 'CORE'}
                                                         </span>
                                                     </td>
@@ -282,68 +288,68 @@ const KPIDashboard: React.FC = () => {
                     {/* Sidebar Components */}
                     <div className="lg:col-span-4 space-y-8">
                         {/* Terminal */}
-                        <div className="bg-black border border-slate-900 p-6 clip-path-slant shadow-2xl group">
-                            <div className="flex items-center gap-3 mb-6 border-b border-white/5 pb-3">
-                                <Terminal size={14} className="text-intuition-primary" />
-                                <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em]">Protocol_Log</h4>
+                        <div className="bg-black border border-intuition-primary/20 p-6 clip-path-slant shadow-2xl group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500">
+                            <div className="flex items-center gap-3 mb-6 border-b border-intuition-primary/20 pb-3">
+                                <Terminal size={14} className="text-intuition-primary animate-pulse text-glow-blue" />
+                                <h4 className="text-[10px] font-black text-intuition-primary uppercase tracking-[0.4em] text-glow-blue">Protocol_Log</h4>
                             </div>
-                            <div className="space-y-3 font-mono text-[9px] min-h-[160px]">
+                            <div className="space-y-3 font-mono text-[10px] min-h-[160px]">
                                 {reconLog.map((log, i) => (
-                                    <div key={i} className="text-slate-600 group-hover:text-slate-400 transition-colors uppercase leading-relaxed font-bold border-l border-white/5 pl-3">
-                                        {">_"} {log}
+                                    <div key={i} className="text-slate-400 group-hover:text-intuition-primary transition-colors duration-300 uppercase leading-relaxed font-bold border-l-2 border-intuition-primary/30 pl-3 group-hover:border-intuition-primary/60">
+                                        <span className="text-intuition-primary font-black">{">_"}</span> <span className="group-hover:text-glow-blue">{log}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
                         {/* Gauges */}
-                        <div className="bg-[#020308] border border-slate-900 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/30 transition-all">
-                            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] mb-8 flex items-center gap-3">
-                                <Cpu size={16} className="text-intuition-primary" /> System_Flux
+                        <div className="bg-[#020308] border border-intuition-primary/20 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500">
+                            <h4 className="text-[11px] font-black text-intuition-primary uppercase tracking-[0.5em] mb-8 flex items-center gap-3 text-glow-blue">
+                                <Cpu size={16} className="animate-pulse" /> System_Flux
                             </h4>
                             <div className="space-y-8">
                                 <div className="group/diag">
                                     <div className="flex justify-between items-end mb-2">
-                                        <span className="text-[9px] text-slate-600 uppercase font-black group-hover/diag:text-white transition-colors tracking-widest">Global_TVL</span>
-                                        <span className="text-xs font-black text-white inline-flex items-baseline gap-1">{formattedGlobalTVL} <CurrencySymbol size="md" /></span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-black group-hover/diag:text-intuition-primary group-hover/diag:text-glow-blue transition-all tracking-widest">Global_TVL</span>
+                                        <span className="text-sm font-black text-white text-glow-white inline-flex items-baseline gap-1">{formattedGlobalTVL} <CurrencySymbol size="md" /></span>
                                     </div>
-                                    <div className="h-1 w-full bg-slate-950 overflow-hidden border border-white/5 rounded-none">
-                                        <div className="h-full bg-slate-400 opacity-20" style={{ width: '100%' }}></div>
+                                    <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none">
+                                        <div className="h-full bg-intuition-primary/40 group-hover/diag:bg-intuition-primary group-hover/diag:shadow-glow-blue transition-all duration-500" style={{ width: '100%' }}></div>
                                     </div>
                                 </div>
                                 <div className="group/diag">
                                     <div className="flex justify-between items-end mb-2">
-                                        <span className="text-[9px] text-slate-600 uppercase font-black group-hover/diag:text-white transition-colors tracking-widest">Avg_Handshake</span>
-                                        <span className={`text-xs font-black ${isProxyEmpty ? 'text-slate-800' : 'text-intuition-secondary'}`}>
+                                        <span className="text-[10px] text-slate-400 uppercase font-black group-hover/diag:text-intuition-secondary group-hover/diag:text-glow-red transition-all tracking-widest">Avg_Handshake</span>
+                                        <span className={`text-sm font-black ${isProxyEmpty ? 'text-slate-600' : 'text-intuition-secondary text-glow-red'}`}>
                                             {stats?.txCount > 0 ? (parseFloat(formatEther(BigInt(stats.proxyTVL))) / stats.txCount).toFixed(4) : "0.0000"}
                                         </span>
                                     </div>
-                                    <div className="h-1 w-full bg-slate-950 overflow-hidden border border-white/5 rounded-none">
-                                        <div className="h-full bg-intuition-secondary shadow-glow-red transition-all duration-1000" style={{ width: isProxyEmpty ? '0%' : '50%' }}></div>
+                                    <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none">
+                                        <div className={`h-full bg-intuition-secondary shadow-glow-red transition-all duration-1000 ${!isProxyEmpty ? 'animate-pulse' : ''}`} style={{ width: isProxyEmpty ? '0%' : '50%' }}></div>
                                     </div>
                                 </div>
                                 <div className="group/diag">
                                     <div className="flex justify-between items-end mb-2">
-                                        <span className="text-[9px] text-slate-600 uppercase font-black tracking-widest">Sync_Buffer</span>
-                                        <span className="text-[9px] font-black text-intuition-primary animate-pulse uppercase">LOCKED</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-black group-hover/diag:text-intuition-primary tracking-widest transition-colors">Sync_Buffer</span>
+                                        <span className="text-[10px] font-black text-intuition-primary text-glow-blue animate-pulse uppercase">LOCKED</span>
                                     </div>
-                                    <div className="h-1 w-full bg-slate-950 overflow-hidden border border-white/5 rounded-none relative">
-                                        <div className="h-full bg-intuition-primary shadow-glow-blue animate-[marquee_4s_linear_infinite]" style={{ width: '100%' }}></div>
+                                    <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none relative">
+                                        <div className="h-full bg-intuition-primary shadow-glow-blue animate-buffer-fill"></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         {/* Audit Log Box */}
-                        <div className="bg-[#050505] border border-intuition-secondary/20 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-secondary/50 transition-all">
+                        <div className="bg-[#050505] border-2 border-intuition-secondary/30 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-secondary/60 hover:shadow-[0_0_30px_rgba(255,30,109,0.12)] transition-all duration-500">
                              <div className="relative z-10">
                                 <div className="flex items-center gap-4 mb-6">
-                                    <Lock size={18} className="text-intuition-secondary animate-pulse" />
-                                    <h4 className="text-[10px] font-black text-intuition-secondary uppercase tracking-[0.5em]">Isolated_Protocol</h4>
+                                    <Lock size={18} className="text-intuition-secondary animate-pulse text-glow-red" />
+                                    <h4 className="text-[11px] font-black text-intuition-secondary uppercase tracking-[0.5em] text-glow-red">Isolated_Protocol</h4>
                                 </div>
-                                <p className="text-[10px] text-slate-500 leading-relaxed uppercase font-mono font-bold">
+                                <p className="text-[10px] text-slate-400 leading-relaxed uppercase font-mono font-bold group-hover:text-slate-300 transition-colors">
                                     // Target_Identifier:<br/>
-                                    <span className="text-white font-black select-all break-all mt-3 block py-2 px-3 bg-white/5 border border-white/10 clip-path-slant text-[9px]">0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93</span>
+                                    <span className="text-intuition-primary/90 font-black select-all break-all mt-3 block py-3 px-4 bg-white/5 border border-intuition-primary/20 clip-path-slant text-[10px] text-glow-blue group-hover:border-intuition-primary/40 transition-all">0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93</span>
                                 </p>
                              </div>
                         </div>

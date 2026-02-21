@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats } from '../services/graphql';
+import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount } from '../services/graphql';
 import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon } from 'lucide-react';
 import { formatEther, isAddress } from 'viem';
 import { Transaction } from '../types';
@@ -43,11 +43,12 @@ const PublicProfile: React.FC = () => {
       const bal = await getWalletBalance(addr);
       setEthBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      // High-precision parallel fetch
-      const [graphPositions, chainHistory, activityStats] = await Promise.all([
+      // High-precision parallel fetch (all from Intuition graph / chain)
+      const [graphPositions, chainHistory, activityStats, graphTxCount] = await Promise.all([
           getUserPositions(addr).catch(() => []),
           getUserHistory(addr).catch(() => []),
-          getUserActivityStats(addr).catch(() => ({ txCount: 0, holdingsCount: 0 }))
+          getUserActivityStats(addr).catch(() => ({ txCount: 0, holdingsCount: 0 })),
+          getUserIdTransactionCount(addr).catch(() => 0)
       ]);
       
       const uniqueVaultIds = Array.from(new Set([
@@ -107,6 +108,7 @@ const PublicProfile: React.FC = () => {
       }));
 
       const finalPositions = livePositions.filter(Boolean) as any[];
+      finalPositions.sort((a, b) => (b.value ?? 0) - (a.value ?? 0)); // highest market cap (net valuation) first
       setPositions(finalPositions);
       setActiveHoldingsCount(activityStats.holdingsCount || finalPositions.length);
       setExposureData(calculateCategoryExposure(finalPositions));
@@ -122,11 +124,11 @@ const PublicProfile: React.FC = () => {
       const mergedHistory = chainHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       setHistory(mergedHistory);
 
-      // SEMANTIC FOOTPRINT: fall back to active holdings if no explicit history
+      // SEMANTIC FOOTPRINT: total transactions from Intuition graph (same definition as getUserHistory)
       const footprintCount =
-        activityStats.txCount && activityStats.txCount > 0
-          ? activityStats.txCount
-          : (mergedHistory.length > 0 ? mergedHistory.length : finalPositions.length);
+        graphTxCount > 0
+          ? graphTxCount
+          : (mergedHistory.length > 0 ? mergedHistory.length : (activityStats.txCount > 0 ? activityStats.txCount : finalPositions.length));
       setSemanticFootprint(footprintCount); 
 
       // SENTIMENT BIAS: use history when available, otherwise infer from holdings
@@ -254,9 +256,9 @@ const PublicProfile: React.FC = () => {
               <div className="text-[9px] font-black font-mono text-slate-600 uppercase mb-4 tracking-[0.3em] flex items-center gap-3">
                   <Database size={14} className="text-intuition-secondary" /> Semantic_Footprint
               </div>
-              <div className="text-4xl font-black text-white font-display flex items-center gap-3">
-                  {semanticFootprint >= 100 ? `${semanticFootprint}+` : semanticFootprint}
-                  <span className="text-[10px] text-slate-500 font-mono tracking-widest font-black uppercase">TXs_Logged</span>
+              <div className="text-4xl font-black font-display flex items-center gap-3 text-white tracking-tighter" style={{ textShadow: 'none' }}>
+                  <span className="tabular-nums">{semanticFootprint >= 100 ? `${semanticFootprint}+` : semanticFootprint}</span>
+                  <span className="text-[10px] text-slate-500 font-mono tracking-widest font-black uppercase">TXS_LOGGED</span>
               </div>
           </div>
           <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-primary/30 transition-all shadow-2xl relative overflow-hidden">
