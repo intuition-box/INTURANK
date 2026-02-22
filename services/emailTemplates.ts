@@ -25,7 +25,7 @@ export function getWelcomeEmailHtml(options: { nickname?: string; email?: string
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>You're in — ${BRAND}</title>
+  <title>Welcome to ${BRAND}</title>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0; padding:0; background-color:#0f172a; font-family: Arial, sans-serif;">
@@ -37,17 +37,17 @@ export function getWelcomeEmailHtml(options: { nickname?: string; email?: string
             <td style="padding: 32px 28px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td style="border-bottom: 2px solid ${BORDER_CYAN}; padding-bottom: 20px;">
-                    <span style="font-family: Orbitron, Arial Black, sans-serif; font-size: 14px; font-weight: 900; letter-spacing: 0.2em; color: ${PRIMARY}; text-transform: uppercase;">${BRAND}</span>
-                    <span style="color: ${TEXT_MUTED}; font-size: 10px; letter-spacing: 0.15em; margin-left: 8px;">EMAIL ALERTS</span>
+                  <td style="border-bottom: 2px solid ${BORDER_CYAN}; padding: 0 0 20px 0;">
+                    <img src="${LOGO_URL}" alt="${BRAND}" width="56" height="56" style="display: block; width: 56px; height: 56px; margin: 0 auto 12px auto; object-fit: contain;" />
+                    <p style="margin: 0; font-size: 9px; font-weight: 700; letter-spacing: 0.25em; color: ${PRIMARY}; text-transform: uppercase; text-align: center;">${BRAND} · Email Alerts</p>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding-top: 24px;">
                     <p style="margin: 0 0 8px 0; font-size: 14px; color: ${TEXT_MUTED}; font-weight: 600;">${greeting}</p>
-                    <h1 style="margin: 0 0 16px 0; font-family: Orbitron, Arial Black, sans-serif; font-size: 26px; font-weight: 900; color: #ffffff; letter-spacing: 0.05em; text-transform: uppercase;">You're subscribed.</h1>
+                    <h1 style="margin: 0 0 16px 0; font-family: Orbitron, Arial Black, sans-serif; font-size: 26px; font-weight: 900; color: #ffffff; letter-spacing: 0.05em; text-transform: uppercase;">Welcome to IntuRank.</h1>
                     <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: ${TEXT};">
-                      We'll email you when there's activity on your holdings — others buying or selling in claims you hold. Same alerts you see in the app, straight to your inbox.
+                      Your layer for semantic markets and gTrust. We'll email you when there's activity on your holdings, plus app updates and campaigns to earn TRUST (₸) tokens — straight to your inbox.
                     </p>
                     <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top: 28px;">
                       <tr>

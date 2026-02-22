@@ -149,8 +149,8 @@ function getEmailApiUrl(): string {
  */
 export async function sendWelcomeEmail(to: string, _nickname?: string): Promise<void> {
   const { getWelcomeEmailHtml } = await import('./emailTemplates');
-  const subject = "You're in — IntuRank Email Alerts";
-  const plainMessage = "You're subscribed to IntuRank email alerts. We'll notify you when there's activity on your holdings.";
+  const subject = 'Welcome to IntuRank';
+  const plainMessage = "You're subscribed to IntuRank. We'll email you about activity on your holdings, app updates, and campaigns to earn TRUST (₸) tokens.";
   const html = getWelcomeEmailHtml({ email: to, nickname: _nickname });
   try {
     const url = getEmailApiUrl();
