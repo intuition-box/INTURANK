@@ -26,6 +26,20 @@ export const publicClient = createPublicClient({
 // Active EIP-1193 provider (injected or WalletConnect).
 let activeProvider: any | null = null;
 
+// When using RainbowKit/wagmi, Layout syncs the connected address and provider here so the rest of the app (getConnectedAccount, getProvider) works unchanged.
+let wagmiAddress: string | null = null;
+
+export function setWagmiConnection(address: string | null, provider: any) {
+  wagmiAddress = address;
+  activeProvider = provider;
+}
+
+// When using RainbowKit, Layout sets this so connectWallet() can open the modal for legacy callers (Account, Portfolio, etc.)
+let openConnectModalRef: (() => void) | null = null;
+export function setOpenConnectModalRef(fn: (() => void) | null) {
+  openConnectModalRef = fn;
+}
+
 // Dedicated client for ENS resolution (Ethereum Mainnet) using a more robust public RPC
 const mainnetClient = createPublicClient({
   chain: mainnet,
@@ -79,7 +93,11 @@ export const calculateCounterTripleId = (tripleId: string): Hex => {
     return keccak256(encodePacked(['bytes32', 'string'], [tripleId as Hex, 'counter']));
 };
 
+const DISCONNECT_FLAG_KEY = 'inturank_wallet_disconnected';
+
 export const getConnectedAccount = async (): Promise<string | null> => {
+  if (typeof window !== 'undefined' && localStorage.getItem(DISCONNECT_FLAG_KEY)) return null;
+  if (wagmiAddress) return wagmiAddress;
   const provider = getProvider();
   if (!provider) return null;
   try {
@@ -126,6 +144,11 @@ export const connectWallet = async (
   connector: WalletConnector = 'injected',
   injectedPreference: InjectedWalletPreference = 'default',
 ): Promise<string | null> => {
+  // When RainbowKit is used, open its connect modal and return null; connection state is synced via setWagmiConnection in Layout.
+  if (openConnectModalRef) {
+    openConnectModalRef();
+    return null;
+  }
   if (connector === 'walletconnect') {
     try {
       const projectId = (import.meta as any).env?.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
@@ -155,6 +178,7 @@ export const connectWallet = async (
       const address = getAddress(accounts[0]);
 
       activeProvider = provider;
+      if (typeof window !== 'undefined') localStorage.removeItem(DISCONNECT_FLAG_KEY);
       return address;
     } catch (error: any) {
       if (error?.code === 4001) toast.error("REJECTED_BY_USER");
@@ -179,6 +203,7 @@ export const connectWallet = async (
         await switchNetwork();
     }
     activeProvider = provider;
+    if (typeof window !== 'undefined') localStorage.removeItem(DISCONNECT_FLAG_KEY);
     return address;
   } catch (error: any) {
     if (error.code === 4001) toast.error("REJECTED_BY_USER");
@@ -588,5 +613,9 @@ export const reverseResolveENS = async (address: string): Promise<string | null>
     }
 };
 
-export const disconnectWallet = () => {};
+export const disconnectWallet = () => {
+  wagmiAddress = null;
+  activeProvider = null;
+  if (typeof window !== 'undefined') localStorage.setItem(DISCONNECT_FLAG_KEY, '1');
+};
 export const getProtocolConfig = async () => ({ minDeposit: '0.001' });

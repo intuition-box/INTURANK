@@ -52,7 +52,7 @@ export function getWelcomeEmailHtml(options: { nickname?: string; email?: string
                     <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top: 28px;">
                       <tr>
                         <td style="background-color: ${PRIMARY}; padding: 16px 32px;">
-                          <a href="${APP_PORTFOLIO_URL}" style="font-family: Orbitron, Arial Black, sans-serif; font-size: 12px; font-weight: 900; letter-spacing: 0.15em; color: #000000; text-decoration: none; text-transform: uppercase;">Open IntuRank</a>
+                          <a href="${APP_ROOT_URL}" style="font-family: Orbitron, Arial Black, sans-serif; font-size: 12px; font-weight: 900; letter-spacing: 0.15em; color: #000000; text-decoration: none; text-transform: uppercase;">Open IntuRank</a>
                         </td>
                       </tr>
                     </table>
@@ -88,7 +88,9 @@ function getAppUrl(): string {
   return 'https://inturank.intuition.box';
 }
 
-/** View on IntuRank / Open IntuRank CTA — links to portfolio. */
+/** App root — used for welcome email CTA. */
+const APP_ROOT_URL = 'https://inturank.intuition.box/';
+/** View on IntuRank / Open IntuRank CTA — links to portfolio (activity emails, receipts). */
 const APP_PORTFOLIO_URL = 'https://inturank.intuition.box/#/portfolio';
 
 const EXPLORER_URL = 'https://explorer.intuition.systems';

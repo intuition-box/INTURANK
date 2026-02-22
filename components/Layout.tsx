@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useConnectModal } from '@rainbow-me/rainbowkit';
+import { useAccount, useDisconnect, useConnect } from 'wagmi';
 import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck } from 'lucide-react';
-import { connectWallet, getConnectedAccount, getClientChainId, switchNetwork, disconnectWallet, type WalletConnector } from '../services/web3';
+import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
 import Logo from './Logo';
-import WalletModal from './WalletModal';
 import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 
@@ -63,36 +64,37 @@ const NavItem: React.FC<NavItemProps> = ({ to, label, icon, active, onClick }) =
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isIntelOpen, setIsIntelOpen] = useState(false);
-  const [chainId, setChainId] = useState<number>(0);
+
+  const { openConnectModal } = useConnectModal();
+  const { address: walletAddress, isConnected, chainId = 0 } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { data: connectData } = useConnect();
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const intelRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Sync RainbowKit/wagmi connection to web3 so getConnectedAccount() and getProvider() work app-wide
   useEffect(() => {
-    const checkConnection = async () => {
-      const account = await getConnectedAccount();
-      if (account) setWalletAddress(account);
-      const cId = await getClientChainId();
-      setChainId(cId);
-    };
-    checkConnection();
-
-    if ((window as any).ethereum) {
-      (window as any).ethereum.on('chainChanged', (chainIdHex: string) => {
-        setChainId(parseInt(chainIdHex, 16));
-      });
-      (window as any).ethereum.on('accountsChanged', (accounts: string[]) => {
-        if (accounts.length > 0) setWalletAddress(accounts[0]);
-        else setWalletAddress(null);
-      });
+    if (!isConnected || !walletAddress) {
+      setWagmiConnection(null, null);
+      return;
     }
-  }, []);
+    const connector = connectData?.connector;
+    if (!connector) return;
+    connector.getProvider().then((provider: any) => {
+      setWagmiConnection(walletAddress, provider);
+    }).catch(() => setWagmiConnection(walletAddress, null));
+  }, [isConnected, walletAddress, connectData?.connector]);
+
+  // Let legacy connectWallet() calls (Account, Portfolio, etc.) open the RainbowKit modal
+  useEffect(() => {
+    setOpenConnectModalRef(() => openConnectModal?.());
+    return () => setOpenConnectModalRef(null);
+  }, [openConnectModal]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -109,25 +111,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     };
   }, []);
 
-  const handleConnect = async (connector: WalletConnector, injectedPreference?: 'default' | 'metamask' | 'rabby' | 'brave') => {
+  const openModal = () => {
     playClick();
-    const address = await connectWallet(connector, injectedPreference as any);
-    if (address) {
-      setWalletAddress(address);
-      setIsWalletModalOpen(false);
-      const cId = await getClientChainId();
-      setChainId(cId);
-      toast.success("UPLINK_ESTABLISHED: Identity synchronized.");
-    } else {
-        setIsWalletModalOpen(false);
-    }
+    openConnectModal?.();
   };
 
   const handleDisconnect = (e: React.MouseEvent) => {
     playClick();
     e.stopPropagation();
+    disconnect();
+    setWagmiConnection(null, null);
     disconnectWallet();
-    setWalletAddress(null);
     setIsWalletDropdownOpen(false);
     toast.info("NEURAL_LINK_TERMINATED");
   };
@@ -147,11 +141,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     setIsWalletDropdownOpen(prev => !prev);
   };
 
-  const openModal = () => {
-    playClick();
-    setIsWalletModalOpen(true);
-  }
-
   const handleNewSignal = () => {
     playClick();
     setIsMenuOpen(false);
@@ -159,13 +148,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   const mainNavItems = [
-    { label: 'SYSTEM_ROOT', path: '/', icon: <Home size={14} /> },
     { label: 'MARKETS', path: '/markets', icon: <TrendingUp size={14} /> },
-    { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
     { label: 'PORTFOLIO', path: '/portfolio', icon: <Users size={14} /> },
   ];
 
   const intelItems = [
+    { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
     { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
     { label: 'CONFLICT_COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
@@ -191,14 +179,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="min-h-screen bg-intuition-dark text-slate-300 flex flex-col font-sans selection:bg-intuition-primary selection:text-black">
 
-      <WalletModal
-        isOpen={isWalletModalOpen}
-        onClose={() => setIsWalletModalOpen(false)}
-        onConnect={handleConnect}
-      />
-
       <nav className="fixed top-0 w-full z-50 border-b-2 border-intuition-primary/10 bg-black/95 backdrop-blur-2xl shadow-[0_0_30px_rgba(0,243,255,0.05)]">
-        <div className="w-full px-3 sm:px-6 lg:px-8 max-w-[100vw] overflow-visible">
+        <div className="w-full px-3 sm:px-6 lg:px-8 max-w-[100vw] min-w-0">
           <div className="flex items-center justify-between h-20 min-w-0">
 
             <div
@@ -215,7 +197,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link to="/" onClick={playClick} className="text-xl font-black tracking-widest text-white font-display transition-all duration-500 text-glow-blue group-hover:text-intuition-primary">
                   INTU<span className="text-intuition-primary group-hover:text-white">RANK</span>
                 </Link>
-                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.4.0 STABLE</span>
+                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.5.0 STABLE</span>
               </div>
             </div>
 
@@ -244,15 +226,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
 
                 {isIntelOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant p-1 animate-in slide-in-from-top-2">
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant p-1 animate-dropdown-panel-in">
                     <div className="bg-[#080a12] p-1">
-                      {intelItems.map(item => (
+                      {intelItems.map((item, index) => (
                         <Link
                           key={item.label}
                           to={item.path}
                           onClick={() => { playClick(); setIsIntelOpen(false); }}
                           onMouseEnter={playHover}
-                          className={`flex items-center gap-3 px-4 py-3 text-[9px] font-black font-mono tracking-widest hover:bg-intuition-primary hover:text-black transition-colors uppercase ${isActive(item.path) ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
+                          style={{ animationDelay: `${index * 50}ms` }}
+                          className={`flex items-center gap-3 px-4 py-3 text-[9px] font-black font-mono tracking-widest hover:bg-intuition-primary hover:text-black transition-colors uppercase animate-dropdown-item-in ${isActive(item.path) ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
                         >
                           {item.icon} {item.label}
                         </Link>
@@ -264,17 +247,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
 
             <div className="flex items-center gap-3">
-              <a
-                href={TRUST_SWAP_URL}
-                target="_blank"
-                rel="noreferrer"
-                onMouseEnter={playHover}
-                onClick={playClick}
-                className="group relative hidden md:flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 border-intuition-success/40 text-intuition-success hover:bg-intuition-success hover:text-black shadow-[0_0_15px_rgba(0,255,157,0.2)]"
-              >
-                <Coins size={14} /> GET_TRUST
-              </a>
-
               <button
                 onClick={handleNewSignal}
                 onMouseEnter={playHover}
@@ -319,22 +291,44 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
 
                 {isWalletDropdownOpen && walletAddress && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant animate-in fade-in zoom-in duration-200">
+                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant animate-dropdown-panel-in">
                     <div className="p-1 space-y-0.5 bg-[#080a12]">
-                      <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
+                      <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1 animate-dropdown-item-in" style={{ animationDelay: '0ms' }}>
                         Terminal Access
                       </div>
+                      <Link
+                        to="/account"
+                        onClick={() => { playClick(); setIsWalletDropdownOpen(false); }}
+                        onMouseEnter={playHover}
+                        style={{ animationDelay: '50ms' }}
+                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest animate-dropdown-item-in"
+                      >
+                        <UserCircle size={14} /> PROFILE
+                      </Link>
+                      <a
+                        href={TRUST_SWAP_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => { playClick(); setIsWalletDropdownOpen(false); }}
+                        onMouseEnter={playHover}
+                        style={{ animationDelay: '100ms' }}
+                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-success hover:bg-white/5 transition-colors uppercase tracking-widest animate-dropdown-item-in"
+                      >
+                        <Coins size={14} /> GET_TRUST
+                      </a>
                       <button
                         onClick={handleCopyAddress}
                         onMouseEnter={playHover}
-                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest"
+                        style={{ animationDelay: '150ms' }}
+                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest animate-dropdown-item-in"
                       >
                         <Copy size={14} /> COPY_IDENT_HASH
                       </button>
                       <button
                         onClick={handleDisconnect}
                         onMouseEnter={playHover}
-                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors border-t border-white/5 uppercase tracking-widest"
+                        style={{ animationDelay: '200ms' }}
+                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors border-t border-white/5 uppercase tracking-widest animate-dropdown-item-in"
                       >
                         <LogOut size={14} /> TERMINATE_SYNC
                       </button>
@@ -409,7 +403,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
               ) : (
                 <button
-                  onClick={() => { playClick(); setIsMenuOpen(false); setIsWalletModalOpen(true); }}
+                  onClick={() => { playClick(); setIsMenuOpen(false); openModal(); }}
                   style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
                   className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                 >
@@ -422,8 +416,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         )}
       </nav>
 
-      <main className="flex-grow pt-20 retro-grid relative z-10 overflow-x-hidden">
-        <div key={location.pathname} className="animate-page-enter min-h-full">
+      <main className="flex-grow pt-20 retro-grid relative z-10 overflow-x-hidden mobile-contain min-w-0 w-full max-w-[100vw]">
+        <div key={location.pathname} className="animate-page-enter min-h-full min-w-0">
           {children}
         </div>
       </main>
@@ -517,7 +511,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           <div className="pt-16 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 items-center justify-items-center gap-12">
             <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest font-black text-center md:text-left justify-self-start">
-              Sector_04_ARES // Version_1.4.0_STABLE // © 2025 IntuRank_Systems
+              Sector_04_ARES // Version_1.5.0_STABLE // © 2025 IntuRank_Systems
             </div>
 
             <div className="flex flex-col items-center group/powered relative">

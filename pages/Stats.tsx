@@ -297,12 +297,12 @@ const Stats: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#020308] pt-24 pb-40 relative overflow-hidden font-mono selection:bg-intuition-primary selection:text-black">
+    <div className="min-h-screen bg-[#020308] pt-24 pb-40 relative overflow-x-hidden min-w-0 w-full font-mono selection:bg-intuition-primary selection:text-black">
       {/* HUD OVERLAY EFFECTS */}
       <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
       <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-intuition-primary/5 rounded-full blur-[150px] animate-pulse pointer-events-none"></div>
       
-      <div className="w-full max-w-[1600px] mx-auto px-6 relative z-10">
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 relative z-10 min-w-0">
         
         {/* Header with High-Intensity Glow */}
         <div className="text-center mb-20 relative">
@@ -312,8 +312,8 @@ const Stats: React.FC = () => {
              </h1>
              <div className="absolute -inset-8 bg-intuition-primary/10 blur-3xl opacity-50 z-0 rounded-full"></div>
           </div>
-          <div className="flex items-center justify-center gap-4 text-intuition-primary font-mono text-sm tracking-[0.6em] uppercase">
-            <Trophy size={18} className="animate-bounce" /> 
+          <div className="flex items-center justify-center gap-4 text-intuition-primary font-mono text-sm tracking-[0.6em] uppercase mobile-break text-center px-2">
+            <Trophy size={18} className="animate-bounce shrink-0" /> 
             COMPETITION_DRIVES_INTELLIGENCE
           </div>
         </div>

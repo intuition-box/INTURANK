@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
 import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionLists, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple } from '../services/graphql';
@@ -247,7 +248,7 @@ const AgentShareModal: React.FC<{
                     </div>
 
                     <div className="flex items-center justify-between pt-8 border-t border-white/10 opacity-60 relative z-10 font-mono">
-                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.6em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.4.0</div>
+                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.6em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.5.0</div>
                         <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{new Date().toLocaleDateString()} // NEURAL_SYNC_S04</div>
                     </div>
                 </div>
@@ -280,6 +281,7 @@ const AgentShareModal: React.FC<{
 
 const MarketDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { address: wagmiAddress } = useAccount();
   const [agent, setAgent] = useState<Account | null>(null);
   const [oppositionAgent, setOppositionAgent] = useState<any | null>(null);
   const [triples, setTriples] = useState<Triple[]>([]);
@@ -422,6 +424,20 @@ const MarketDetail: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [id]);
 
+  // Sync wallet from wagmi so Execution Deck / SIGNAL_TRUST has connected wallet when user connected in header
+  useEffect(() => {
+    if (!wagmiAddress) {
+      setWallet(null);
+      return;
+    }
+    setWallet(wagmiAddress);
+    getWalletBalance(wagmiAddress).then(setWalletBalance);
+    if (id) {
+      setIsWatched(isInWatchlist(id, wagmiAddress));
+      checkProxyApproval(wagmiAddress).then(setIsApproved);
+    }
+  }, [wagmiAddress, id]);
+
   useEffect(() => {
         if (agent) {
             setChartData(generateAnchoredHistory(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice, timeframe));
@@ -469,9 +485,10 @@ const MarketDetail: React.FC = () => {
   };
 
   const handleExecute = async () => {
-        let activeWallet = wallet;
+        playClick();
+        // Prefer wagmi address so we're in sync with header
+        let activeWallet = wagmiAddress ?? wallet;
         if (!activeWallet) {
-            // Lazy sync in case user connected after page load
             activeWallet = await getConnectedAccount();
             if (!activeWallet) {
                 toast.error("WALLET_CONNECTION_REQUIRED");
@@ -508,7 +525,10 @@ const MarketDetail: React.FC = () => {
             return;
         }
 
-        if (!inputAmount || parseFloat(inputAmount) <= 0) return;
+        if (!inputAmount || parseFloat(inputAmount) <= 0) {
+            toast.error(action === 'ACQUIRE' ? 'Enter transmission volume (amount to acquire).' : 'Enter share volume to liquidate.');
+            return;
+        }
         setTxModal({ 
             isOpen: true, 
             status: 'processing', 

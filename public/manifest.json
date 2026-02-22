@@ -1,0 +1,23 @@
+{
+  "name": "IntuRank",
+  "short_name": "IntuRank",
+  "description": "Trust Intelligence Layer",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020308",
+  "theme_color": "#00f3ff",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

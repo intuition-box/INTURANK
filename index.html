@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';">
     <title>IntuRank | Trust Intelligence Layer</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M22 10H38V40L30 50L38 60V82L22 95V10Z' fill='%2300f3ff' opacity='0.8'/%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M44 10H75L88 23V47L75 60H60L80 95H60L48 65H44V10ZM54 22V45H72V22H54Z' fill='%23ff0055'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="/icon.png">
+    <link rel="apple-touch-icon" href="/icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#00f3ff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="IntuRank">
     <script defer src="https://cloud.umami.is/script.js" data-website-id="aae6006c-1a2d-4a63-840b-e49fb98743ef"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -113,6 +118,14 @@
         color: #e2e8f0;
         font-family: 'Inter', sans-serif;
         overflow-x: hidden;
+        min-width: 0;
+        -webkit-overflow-scrolling: touch;
+      }
+      /* Mobile: prevent horizontal overflow and clip-off text */
+      @media (max-width: 768px) {
+        body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+        .mobile-contain { min-width: 0; overflow-x: hidden; }
+        .mobile-break { word-break: break-word; overflow-wrap: break-word; }
       }
 
       /* Apple-style animations: smooth on desktop, snappy on mobile/PWA */
@@ -171,6 +184,23 @@
       }
       .motion-smooth {
         transition: transform var(--anim-duration-normal) var(--anim-ease), opacity var(--anim-duration-normal) var(--anim-ease);
+      }
+
+      /* Dropdown panels: buttery slide + fade (INTEL + wallet) */
+      @keyframes dropdown-panel-in {
+        from { opacity: 0; transform: translateY(-6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-dropdown-panel-in {
+        animation: dropdown-panel-in var(--anim-duration-normal) var(--anim-ease) both;
+      }
+      /* Dropdown items: smooth stagger from the right */
+      @keyframes dropdown-item-in {
+        from { opacity: 0; transform: translateX(10px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+      .animate-dropdown-item-in {
+        animation: dropdown-item-in var(--anim-duration-normal) var(--anim-ease) both;
       }
 
       /* Create Signal / step transitions: slide + fade (so animate-in classes work without plugin) */
@@ -242,6 +272,7 @@
       @media (prefers-reduced-motion: reduce) {
         .animate-fade-in-up, .animate-fade-in, .animate-scale-in,
         .animate-notification-panel-in, .animate-notification-item-in,
+        .animate-dropdown-panel-in, .animate-dropdown-item-in,
         .animate-page-enter, .animate-page-enter-scale {
           animation-duration: 0.01ms !important;
           animation-timing-function: step-end !important;

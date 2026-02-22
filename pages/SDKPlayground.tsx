@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { ArrowRight, Loader2, Cpu, Search, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Hex } from 'viem';
 import { createStringAtom, fetchAtomDetails, searchIntuition } from '../services/intuitionSdk';
@@ -18,6 +19,7 @@ interface AtomDetails {
 }
 
 const SDKPlayground: React.FC = () => {
+  const { address: wagmiAddress } = useAccount();
   const [wallet, setWallet] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [deposit, setDeposit] = useState('0.01');
@@ -29,13 +31,21 @@ const SDKPlayground: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[] | null>(null);
 
+  // Sync from wagmi so we show connected state when user connects in header
   useEffect(() => {
+    setWallet(wagmiAddress ?? null);
+  }, [wagmiAddress]);
+
+  // Fallback: poll getConnectedAccount once on mount (e.g. wagmi not yet synced)
+  useEffect(() => {
+    if (wagmiAddress) return;
     getConnectedAccount().then(setWallet).catch(() => setWallet(null));
-  }, []);
+  }, [wagmiAddress]);
 
   const ensureWallet = async () => {
     if (wallet) return wallet;
-    const addr = await connectWallet();
+    connectWallet(); // opens RainbowKit modal
+    const addr = await getConnectedAccount();
     if (!addr) throw new Error('Wallet connection required');
     setWallet(addr);
     return addr;

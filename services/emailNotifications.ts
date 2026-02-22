@@ -10,6 +10,8 @@ import { formatMarketValue, formatDisplayedShares } from './analytics';
 import type { TransactionReceiptData } from './emailTemplates';
 
 const STORAGE_KEY = 'inturank_email_subscriptions';
+const NOTIFIED_IDS_KEY_PREFIX = 'inturank_notified_activity_';
+const MAX_NOTIFIED_IDS = 2000;
 
 export interface EmailSubscription {
   email: string;
@@ -70,9 +72,31 @@ export function removeEmailSubscription(walletAddress: string): void {
   saveSubscriptions(subs);
 }
 
+/** Persisted set of activity notification IDs we already emailed (per wallet) so we never send duplicates or re-send old activities. */
+function loadNotifiedIds(walletAddress: string): Set<string> {
+  try {
+    const key = NOTIFIED_IDS_KEY_PREFIX + normalizeWallet(walletAddress);
+    const raw = localStorage.getItem(key);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr.slice(-MAX_NOTIFIED_IDS)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNotifiedIds(walletAddress: string, ids: Set<string>): void {
+  try {
+    const key = NOTIFIED_IDS_KEY_PREFIX + normalizeWallet(walletAddress);
+    const arr = Array.from(ids).slice(-MAX_NOTIFIED_IDS);
+    localStorage.setItem(key, JSON.stringify(arr));
+  } catch (_) {}
+}
+
 /**
  * Called when there's activity on a claim the user holds (someone else bought/sold).
  * Sends a rich HTML email to the subscribed address for that wallet.
+ * Uses persisted "already notified" IDs so we never send duplicates or re-send old activities (e.g. after remount or new tab).
  */
 export async function requestEmailNotification(
   walletAddress: string,
@@ -80,6 +104,11 @@ export async function requestEmailNotification(
 ): Promise<void> {
   const sub = getEmailSubscription(walletAddress);
   if (!sub?.email) return;
+
+  const notified = loadNotifiedIds(walletAddress);
+  if (notified.has(notification.id)) return;
+  notified.add(notification.id);
+  saveNotifiedIds(walletAddress, notified);
 
   const sharesFormatted = notification.shares ? formatDisplayedShares(notification.shares) : '—';
   const assetsNum = notification.assets ? parseFloat(formatEther(BigInt(notification.assets))) : 0;
@@ -113,14 +142,14 @@ export async function requestEmailNotification(
 
 /**
  * Send transaction receipt email when the user buys or sells shares.
- * Looks up email by wallet and sends a rich receipt (trust/distrust, acquired/liquidated, units, price, tx hash).
+ * Looks up email by wallet (localStorage); if the user removed their email in Profile, no email is sent.
  */
 export async function sendTransactionReceiptEmail(
   walletAddress: string,
   receipt: TransactionReceiptData
 ): Promise<void> {
   const sub = getEmailSubscription(walletAddress);
-  if (!sub?.email) return;
+  if (!sub?.email) return; // User removed email or never added one
 
   const subject = `IntuRank: ${receipt.type === 'acquired' ? 'Acquired' : 'Liquidated'} — ${receipt.marketLabel}`;
   const plainMessage = [

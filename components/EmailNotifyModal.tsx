@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAccount } from 'wagmi';
 import { X, Mail, User, Loader2, CheckCircle } from 'lucide-react';
 import { getConnectedAccount, connectWallet } from '../services/web3';
 import { setEmailSubscription, getEmailSubscription, sendWelcomeEmail } from '../services/emailNotifications';
@@ -7,6 +8,7 @@ import { playClick, playHover } from '../services/audio';
 import { toast } from './Toast';
 
 const EmailNotifyModal: React.FC = () => {
+  const { address: wagmiAddress } = useAccount();
   const { isEmailNotifyOpen, closeEmailNotify } = useEmailNotify();
   const [wallet, setWallet] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,10 +23,12 @@ const EmailNotifyModal: React.FC = () => {
       setShowSuccess(false);
       return;
     }
-    getConnectedAccount().then((addr) => {
-      setWallet(addr);
-      if (addr) {
-        const sub = getEmailSubscription(addr);
+    // Use wagmi address first so we show connected when user connected in header
+    const addr = wagmiAddress ?? null;
+    const resolve = (a: string | null) => {
+      setWallet(a);
+      if (a) {
+        const sub = getEmailSubscription(a);
         if (sub) {
           setEmail(sub.email);
           setNickname(sub.nickname || '');
@@ -36,8 +40,10 @@ const EmailNotifyModal: React.FC = () => {
         setEmail('');
         setNickname('');
       }
-    });
-  }, [isEmailNotifyOpen]);
+    };
+    if (addr) resolve(addr);
+    else getConnectedAccount().then(resolve);
+  }, [isEmailNotifyOpen, wagmiAddress]);
 
   useEffect(() => {
     return () => {

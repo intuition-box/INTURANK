@@ -338,7 +338,7 @@ const Compare: React.FC = () => {
     const filteredAgents = agents.filter(a => (a.label || '').toLowerCase().includes(search.toLowerCase()) || a.id.includes(search));
 
     return (
-        <div className="min-h-screen bg-[#020308] pt-12 pb-32 px-6 max-w-[1500px] mx-auto relative font-mono selection:bg-intuition-primary selection:text-black">
+        <div className="min-h-screen bg-[#020308] pt-12 pb-32 px-4 sm:px-6 max-w-[1500px] mx-auto relative font-mono selection:bg-intuition-primary selection:text-black min-w-0 overflow-x-hidden">
             <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
 
             <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-800 pb-10 relative z-10">
@@ -350,7 +350,7 @@ const Compare: React.FC = () => {
                         <div className="flex items-center gap-2 text-intuition-primary font-black font-mono text-[9px] tracking-[0.5em] uppercase mb-1">
                              <Zap size={10} className="animate-pulse" /> Signal_Parity_Module
                         </div>
-                        <h1 className="text-4xl md:text-6xl font-black font-display tracking-tight uppercase leading-none">
+                        <h1 className="text-4xl md:text-6xl font-black font-display tracking-tight uppercase leading-tight mobile-break min-w-0">
                             <span className="text-white text-glow-white">COMPARISON</span><span className="text-intuition-secondary text-glow-red">_DECK</span>
                         </h1>
                     </div>

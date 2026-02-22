@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog } from 'lucide-react';
 import { formatEther } from 'viem';
 import { getAllAgents, searchGlobalAgents, getLists, getTopClaims } from '../services/graphql';
@@ -18,6 +19,7 @@ type MarketSegment = 'NODES' | 'SYNAPSES' | 'VECTORS';
 
 const Markets: React.FC = () => {
   const navigate = useNavigate();
+  const { address: wagmiAddress } = useAccount();
   const [agents, setAgents] = useState<Account[]>([]);
   const [lists, setLists] = useState<any[]>([]); 
   const [claims, setClaims] = useState<any[]>([]); 
@@ -108,8 +110,12 @@ const Markets: React.FC = () => {
       fetchInitialData();
   }, [fetchInitialData, sortOption]);
 
+  // Sync account from wagmi so watchlist/UI react when user connects
   useEffect(() => {
-    getConnectedAccount().then(setAccount);
+    setAccount(wagmiAddress ?? null);
+  }, [wagmiAddress]);
+
+  useEffect(() => {
     if (account) setWatchlistIds(getWatchlist(account));
 
     const handleWatchUpdate = (e: any) => {
@@ -240,16 +246,16 @@ const Markets: React.FC = () => {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-12 pb-32">
+    <div className="w-full min-w-0 overflow-x-hidden px-4 sm:px-6 lg:px-8 pt-12 pb-32">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-8 border-b border-white/5 pb-10 relative z-10">
-        <div className="relative z-10 space-y-1">
-          <div className="flex items-center gap-2 text-intuition-primary/80">
+        <div className="relative z-10 space-y-1 min-w-0">
+          <div className="flex items-center gap-2 text-intuition-primary/80 mobile-break">
             <span className="text-[11px] font-black font-mono tracking-widest uppercase">
-              {">_"} SECTOR_ANALYSIS_SYSTEM_V1.4.0_ARES
+              {">_"} SECTOR_ANALYSIS_SYSTEM_V1.5.0_ARES
             </span>
           </div>
-          <h1 className="text-6xl md:text-[5rem] font-black text-white font-display tracking-tighter uppercase text-glow-blue leading-none py-2">
+          <h1 className="text-4xl sm:text-6xl md:text-[5rem] font-black text-white font-display tracking-tighter uppercase text-glow-blue leading-tight py-2 mobile-break min-w-0">
             MARKET_CORE
           </h1>
           <div className="flex items-center gap-4 pt-2">

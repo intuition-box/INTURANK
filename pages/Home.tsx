@@ -164,18 +164,18 @@ const Home: React.FC = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,_rgba(255,0,85,0.12),_transparent_40%)]"></div>
         <div className="absolute top-0 left-0 w-full h-full opacity-[0.08] retro-grid pointer-events-none"></div>
         
-        <div className="relative z-10 text-center max-w-6xl px-6 flex flex-col items-center">
+        <div className="relative z-10 text-center max-w-6xl w-full min-w-0 px-4 sm:px-6 flex flex-col items-center">
           <Reveal delay={100} direction="down">
-            <div className="inline-flex items-center gap-3 px-6 py-2 mb-8 bg-black border-2 border-intuition-secondary text-[10px] font-black font-mono tracking-[0.5em] text-intuition-secondary uppercase shadow-[0_0_30px_rgba(255,0,85,0.6)] clip-path-slant group">
+            <div className="inline-flex items-center gap-3 px-4 sm:px-6 py-2 mb-8 bg-black border-2 border-intuition-secondary text-[9px] sm:text-[10px] font-black font-mono tracking-[0.4em] sm:tracking-[0.5em] text-intuition-secondary uppercase shadow-[0_0_30px_rgba(255,0,85,0.6)] clip-path-slant group mobile-break">
               <div className="absolute inset-0 bg-intuition-secondary/10 animate-pulse"></div>
-              <Terminal size={14} className="text-intuition-secondary" />
+              <Terminal size={14} className="text-intuition-secondary shrink-0" />
               IDENTITY_PROTOCOL_ACTIVE // ARES_HIGH_STAKES
             </div>
           </Reveal>
 
           <Reveal delay={300}>
-            <div className="relative mb-8">
-               <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-[8.5rem] font-black tracking-tighter text-white leading-[0.9] font-display text-glow-white uppercase">
+            <div className="relative mb-8 min-w-0 w-full">
+               <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-[8.5rem] font-black tracking-tighter text-white leading-[0.9] font-display text-glow-white uppercase mobile-break">
                  SEMANTIC<br />
                  <span className="text-intuition-secondary text-glow-red animate-pulse">CAPITALISM</span>
                </h1>
@@ -183,7 +183,7 @@ const Home: React.FC = () => {
           </Reveal>
 
           <Reveal delay={500}>
-            <p className="max-w-2xl mx-auto text-base md:text-2xl text-slate-200 mb-12 font-mono leading-relaxed tracking-wide uppercase font-black">
+            <p className="max-w-2xl w-full min-w-0 mx-auto text-sm sm:text-base md:text-2xl text-slate-200 mb-12 font-mono leading-relaxed tracking-wide uppercase font-black px-1 mobile-break">
               Establishing the reputation protocol for a trustless world.<br/>
               <span className="text-intuition-primary text-glow-blue underline decoration-intuition-secondary/50 underline-offset-8">QUANTIFY IDENTITY. ARBITRAGE TRUTH.</span>
             </p>

@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatEther, getAddress } from 'viem';
 import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
@@ -34,6 +35,7 @@ const StatCard: React.FC<{ label: string; value: string; unit: string | React.Re
 );
 
 const Portfolio: React.FC = () => {
+  const { address: wagmiAddress } = useAccount();
   const [account, setAccount] = useState<string | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [history, setHistory] = useState<Transaction[]>([]);
@@ -205,27 +207,28 @@ const Portfolio: React.FC = () => {
     }
   }, []);
 
+  // Sync connected address from wagmi so we react when user connects (header already shows connected)
+  useEffect(() => {
+    if (wagmiAddress) {
+      setAccount(wagmiAddress);
+      fetchUserData(wagmiAddress);
+    } else {
+      setAccount(null);
+      setLoading(false);
+    }
+  }, [wagmiAddress]); // eslint-disable-line react-hooks/exhaustive-deps -- fetchUserData is stable enough
+
   useEffect(() => {
     let mounted = true;
-    const init = async () => {
-      const acc = await getConnectedAccount();
-      if (!mounted) return;
-      setAccount(acc);
-      if (acc) fetchUserData(acc);
-      else setLoading(false);
+    const handleUpdate = () => {
+      if (mounted && account) fetchUserData(account);
     };
-    init();
-
-    const handleUpdate = () => { 
-        if (mounted) getConnectedAccount().then(acc => acc && fetchUserData(acc));
-    };
-
     window.addEventListener('local-tx-updated', handleUpdate);
     return () => {
-        mounted = false;
-        window.removeEventListener('local-tx-updated', handleUpdate);
+      mounted = false;
+      window.removeEventListener('local-tx-updated', handleUpdate);
     };
-  }, [fetchUserData]);
+  }, [account]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!account) return (
     <div className="min-h-[90vh] flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-mono px-4">

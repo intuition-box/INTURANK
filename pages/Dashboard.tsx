@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { connectWallet, getConnectedAccount, getWalletBalance, getLocalTransactions, getShareBalance, getQuoteRedeem } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds } from '../services/graphql';
@@ -14,6 +15,7 @@ import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatDisplayedShares } from '../services/analytics';
 
 const Dashboard: React.FC = () => {
+  const { address: wagmiAddress } = useAccount();
   const [account, setAccount] = useState<string | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [history, setHistory] = useState<Transaction[]>([]);
@@ -23,18 +25,16 @@ const Dashboard: React.FC = () => {
   const [netPnL, setNetPnL] = useState<number>(0);
   const [chartData, setChartData] = useState<any[]>([]);
 
+  // Sync from wagmi so we show content when user is connected (header already shows connected)
   useEffect(() => {
-    const init = async () => {
-      const acc = await getConnectedAccount();
-      setAccount(acc);
-      if (acc) {
-        await fetchUserData(acc);
-      } else {
-        setLoading(false);
-      }
-    };
-    init();
-  }, []);
+    if (wagmiAddress) {
+      setAccount(wagmiAddress);
+      fetchUserData(wagmiAddress);
+    } else {
+      setAccount(null);
+      setLoading(false);
+    }
+  }, [wagmiAddress]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchUserData = async (address: string) => {
     setLoading(true);

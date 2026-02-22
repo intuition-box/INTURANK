@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { ArrowLeft, Terminal, Zap, Loader2, Database, GitBranch, Search, Camera, CheckCircle, ExternalLink, UserPlus, FileText, Sparkles, Info } from 'lucide-react';
 import { Hex, pad } from 'viem';
 import { createStringAtom, createThingAtom, createSingleTriple } from '../services/intuitionSdk';
@@ -15,6 +16,7 @@ type View = 'root' | 'identity_choice' | 'identity_manual' | 'identity_review' |
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 
 const CreateSignal: React.FC = () => {
+  const { address: wagmiAddress } = useAccount();
   const [view, setView] = useState<View>('root');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [walletBalance, setWalletBalance] = useState<string>('');
@@ -58,9 +60,10 @@ const CreateSignal: React.FC = () => {
   const prevNodeSearchingRef = useRef(false);
 
   const ensureWallet = async () => {
-    let account = await getConnectedAccount();
+    // Prefer wagmi address so we're in sync with header
+    let account = wagmiAddress ?? (await getConnectedAccount());
     if (!account) {
-      await connectWallet();
+      connectWallet(); // opens RainbowKit modal
       account = await getConnectedAccount();
     }
     if (!account) throw new Error('Connect wallet to continue');
@@ -223,16 +226,20 @@ const CreateSignal: React.FC = () => {
     setNodeSearchResults([]);
   };
 
-  // Load wallet balance when entering review or identity-manual (Account) screens
+  // Load wallet balance when entering review or identity-manual (Account) screens; use wagmi address so we stay in sync
   useEffect(() => {
     if (view !== 'identity_review' && view !== 'claim_review' && view !== 'identity_manual') return;
+    const acc = wagmiAddress ?? null;
+    if (!acc) {
+      setWalletBalance('0');
+      return;
+    }
     let cancelled = false;
-    getConnectedAccount().then((acc) => {
-      if (!cancelled && acc) getWalletBalance(acc).then((b) => setWalletBalance(b || '0'));
-      else if (!cancelled) setWalletBalance('0');
+    getWalletBalance(acc).then((b) => {
+      if (!cancelled) setWalletBalance(b || '0');
     });
     return () => { cancelled = true; };
-  }, [view]);
+  }, [view, wagmiAddress]);
 
   // Keep focus in search input: focus when panel opens, restore when search finishes
   useEffect(() => {
@@ -256,16 +263,20 @@ const CreateSignal: React.FC = () => {
     if (view === 'claim_review') toast.dismissAll();
   }, [view]);
 
-  // Check protocol approval when on claim review
+  // Check protocol approval when on claim review; use wagmi address to stay in sync
   useEffect(() => {
     if (view !== 'claim_review') return;
+    const acc = wagmiAddress ?? null;
+    if (!acc) {
+      setClaimReviewApproved(null);
+      return;
+    }
     let cancelled = false;
-    getConnectedAccount().then((acc) => {
-      if (!cancelled && acc) checkProxyApproval(acc).then(setClaimReviewApproved);
-      else if (!cancelled) setClaimReviewApproved(null);
+    checkProxyApproval(acc).then((v) => {
+      if (!cancelled) setClaimReviewApproved(v);
     });
     return () => { cancelled = true; };
-  }, [view]);
+  }, [view, wagmiAddress]);
 
   const handleSubmitIdentityFromReview = async () => {
     playClick();
@@ -1109,7 +1120,7 @@ const CreateSignal: React.FC = () => {
           )}
         </div>
         <div className="mt-6 flex items-center justify-center gap-3 text-slate-700 text-[8px] font-black uppercase tracking-[0.4em] opacity-40">
-          <Terminal size={10} /> HANDSHAKE_SECURE // V1.4.0 — INTURANK_PROTOCOL_ACTIVE
+          <Terminal size={10} /> HANDSHAKE_SECURE // V1.5.0 — INTURANK_PROTOCOL_ACTIVE
         </div>
       </div>
     </div>

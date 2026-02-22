@@ -164,7 +164,7 @@ const KPIDashboard: React.FC = () => {
         : marketShareVal.toFixed(2);
 
     return (
-        <div className="w-full max-w-[1400px] mx-auto px-6 py-10 pb-24 font-mono">
+        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-mono min-w-0 overflow-x-hidden">
             {/* Header */}
             <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between mb-12 gap-6 border-b border-slate-900 pb-8">
                 <div>
@@ -172,7 +172,7 @@ const KPIDashboard: React.FC = () => {
                         <ShieldCheck size={16} className="animate-pulse shadow-glow-red" />
                         <span className="text-[10px] font-black tracking-[0.5em] uppercase">Sector_04_ARES_Audit</span>
                     </div>
-                    <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tighter uppercase text-glow-red leading-none">
+                    <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tighter uppercase text-glow-red leading-tight mobile-break min-w-0">
                         INTERNAL_KPI_DECK
                     </h1>
                 </div>
