@@ -28,6 +28,8 @@ interface LeaderboardEntry {
   verified?: boolean;
 }
 
+const PNL_CACHE_MS = 2 * 60 * 1000; // 2 minutes
+
 const Stats: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<LeaderboardType>('STAKERS');
@@ -36,6 +38,7 @@ const Stats: React.FC = () => {
   const [error, setError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isResolving, setIsResolving] = useState(false);
+  const pnlCacheRef = React.useRef<{ entries: LeaderboardEntry[]; at: number } | null>(null);
 
   // --- NAME RESOLUTION EFFECT ---
   useEffect(() => {
@@ -92,6 +95,15 @@ const Stats: React.FC = () => {
   }, [data, loading, activeTab]);
 
   const fetchData = async () => {
+    if (activeTab === 'PNL') {
+      const cached = pnlCacheRef.current;
+      if (cached && Date.now() - cached.at < PNL_CACHE_MS) {
+        setData(cached.entries);
+        setLoading(false);
+        setError(false);
+        return;
+      }
+    }
     setLoading(true);
     setError(false);
     setData([]);
@@ -210,7 +222,8 @@ const Stats: React.FC = () => {
           }));
           setData(sorted);
       } else if (activeTab === 'PNL') {
-          const pnlRows = await getPnlLeaderboard(0, 100);
+          // Request fewer rows so the backend returns faster; API can be slow.
+          const pnlRows = await getPnlLeaderboard(0, 30);
           const sorted = (pnlRows || []).map((row: any) => {
               const pnlEth = parseFloat(formatEther(BigInt(row.total_pnl_raw || '0')));
               const volEth = parseFloat(formatEther(BigInt(row.total_volume_raw || '0')));
@@ -227,6 +240,7 @@ const Stats: React.FC = () => {
                   subject: { pnl_pct: pct, win_rate: winRate, total_volume_raw: row.total_volume_raw }
               };
           });
+          pnlCacheRef.current = { entries: sorted, at: Date.now() };
           setData(sorted);
       }
     } catch (e) {
@@ -386,7 +400,9 @@ const Stats: React.FC = () => {
                     <Loader2 className="text-intuition-primary animate-pulse" size={32}/>
                   </div>
               </div>
-              <div className="text-intuition-primary font-black text-xl animate-pulse font-display tracking-[0.5em] text-glow-blue">COMPUTING_GLOBAL_RANKINGS...</div>
+              <div className="text-intuition-primary font-black text-xl animate-pulse font-display tracking-[0.3em] text-glow-blue">
+                {activeTab === 'PNL' ? 'Loading PNL leaderboard…' : 'Loading rankings…'}
+              </div>
            </div>
         ) : error ? (
            <div className="flex flex-col items-center justify-center h-[500px] gap-10 text-center border-2 border-intuition-secondary/20 bg-[#050505] p-20 clip-path-slant shadow-glow-red">

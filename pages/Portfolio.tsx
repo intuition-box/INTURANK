@@ -1,10 +1,10 @@
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatEther, getAddress } from 'viem';
 import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds, getAccountPnlCurrent } from '../services/graphql';
-import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers } from 'lucide-react';
+import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers, LogOut } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
@@ -44,7 +44,17 @@ const Portfolio: React.FC = () => {
   const [sentimentBias, setSentimentBias] = useState({ trust: 50, distrust: 50 }); 
   const [exposureData, setExposureData] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
+  const [sortBy, setSortBy] = useState<'value_desc' | 'value_asc' | 'oldest' | 'newest'>('value_desc');
   const isRefreshingRef = useRef(false);
+
+  const sortedPositions = useMemo(() => {
+    const list = [...positions];
+    if (sortBy === 'value_desc') return list.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+    if (sortBy === 'value_asc') return list.sort((a, b) => (a.value ?? 0) - (b.value ?? 0));
+    if (sortBy === 'oldest') return list.sort((a, b) => (a.firstDepositTimestamp ?? 0) - (b.firstDepositTimestamp ?? 0));
+    if (sortBy === 'newest') return list.sort((a, b) => (b.firstDepositTimestamp ?? 0) - (a.firstDepositTimestamp ?? 0));
+    return list;
+  }, [positions, sortBy]);
 
   const fetchUserData = useCallback(async (address: string) => {
     if (isRefreshingRef.current) return;
@@ -130,11 +140,13 @@ const Portfolio: React.FC = () => {
               }
 
               const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, networkHistory, id);
-              
+              const depositsForVault = networkHistory.filter((t: Transaction) => t.vaultId?.toLowerCase() === id && t.type === 'DEPOSIT');
+              const firstDepositTimestamp = depositsForVault.length ? Math.min(...depositsForVault.map((t: Transaction) => t.timestamp)) : Date.now();
+
               aggregatedValue += value;
               aggregatedPnL += profit;
 
-              activePositions.push({ id, shares: sharesNum, value: value, pnl: pnlPercent, atom: { label, id, image, type } });
+              activePositions.push({ id, shares: sharesNum, value: value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
           } catch (e) { continue; }
       }
 
@@ -285,9 +297,21 @@ const Portfolio: React.FC = () => {
                         <Zap size={20} className="text-intuition-primary animate-pulse shrink-0" />
                         <h3 className="text-xs sm:text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
                     </div>
-                    <div className="flex items-center gap-3 sm:gap-4">
-                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest">Verified_On_Intuition_Mainnet</span>
-                        <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mr-2">Sort:</span>
+                        <select
+                            value={sortBy}
+                            onChange={(e) => { playClick(); setSortBy(e.target.value as any); }}
+                            onMouseEnter={playHover}
+                            className="bg-black border border-slate-700 text-slate-300 font-mono text-[10px] font-black uppercase tracking-wider px-3 py-2 clip-path-slant focus:border-intuition-primary outline-none"
+                        >
+                            <option value="value_desc">Largest → Lowest</option>
+                            <option value="value_asc">Lowest → Largest</option>
+                            <option value="newest">Newest first</option>
+                            <option value="oldest">Oldest first</option>
+                        </select>
+                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest hidden sm:inline">Verified_On_Intuition_Mainnet</span>
+                        <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors p-1">
                             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                         </button>
                     </div>
@@ -301,10 +325,11 @@ const Portfolio: React.FC = () => {
                                 <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Magnitude</th>
                                 <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Net_Valuation</th>
                                 <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4 text-right">PnL</th>
+                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4 text-right">Exit</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {positions.length > 0 ? positions.map((pos) => {
+                            {sortedPositions.length > 0 ? sortedPositions.map((pos) => {
                                 const isOpposition = pos.atom.label.includes('OPPOSING');
                                 return (
                                 <tr key={pos.id} className="hover:bg-white/5 transition-all group">
@@ -337,10 +362,20 @@ const Portfolio: React.FC = () => {
                                             {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}%
                                         </div>
                                     </td>
+                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6 text-right">
+                                        <Link
+                                            to={`/markets/${pos.id}`}
+                                            onClick={() => { playClick(); }}
+                                            onMouseEnter={playHover}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[9px] uppercase tracking-widest clip-path-slant transition-all"
+                                        >
+                                            <LogOut size={12} /> Exit
+                                        </Link>
+                                    </td>
                                 </tr>
                             )}) : (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                                    <td colSpan={6} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
                                         {loading ? (
                                             <div className="flex flex-col items-center gap-4">
                                                 <Loader2 size={24} className="animate-spin text-intuition-primary" />

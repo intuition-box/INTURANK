@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Activity, Zap, Trophy, Brain, Sword, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3 } from 'lucide-react';
-import { getAllAgents } from '../services/graphql';
+import { Search, Activity, Zap, Trophy, Brain, Sword, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3, TrendingUp } from 'lucide-react';
+import { getAllAgents, getRedemptionCountForVault } from '../services/graphql';
 import { Account } from '../types';
 import { calculateTrustScore, calculateVolatility, formatMarketValue } from '../services/analytics';
 import { formatEther } from 'viem';
@@ -37,32 +37,31 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
         try {
             const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
             if (!apiKey) {
-                setAnalysis('ERROR: NEURAL_LINK_SEVERED_BY_FIREWALL. Set VITE_GEMINI_API_KEY in .env.local');
+                setAnalysis('AI summary is disabled. Add VITE_GEMINI_API_KEY to .env.local to enable it.');
                 setLoading(false);
                 return;
             }
             const ai = new GoogleGenAI({ apiKey });
             const prompt = `
-                Perform an aggressive, high-stakes tactical comparison between two competing reputation-based assets in a decentralized trust-graph combat arena.
-                
-                ENTITY_ALPHA: ${left.label} (Magnitude: ${lScore.toFixed(1)}, Sector: ${left.type})
-                ENTITY_OMEGA: ${right.label} (Magnitude: ${rScore.toFixed(1)}, Sector: ${right.type})
-                
-                SCENARIO: They are in a zero-sum semantic collision for global consensus dominance.
-                DOMINANT_NODE: ${lScore > rScore ? left.label : right.label}
-                
-                Provide a "Combat Report" paragraph.
-                Style: Brutalist cypherpunk, military intelligence, high-frequency finance.
-                Terms: "Liquidity Bleed", "Protocol Incursion", "Semantic Fragging", "Neural Arbitrage", "Consensus Overload".
+                Compare two reputation-based assets for a normal (non-expert) user.
+
+                Asset A: ${left.label} — Score: ${lScore.toFixed(1)}, Type: ${left.type || 'asset'}
+                Asset B: ${right.label} — Score: ${rScore.toFixed(1)}, Type: ${right.type || 'asset'}
+                Stronger so far: ${lScore > rScore ? left.label : right.label}
+
+                Write one short, clear paragraph (2–4 sentences) that:
+                - Says who is ahead and by how much (scores above).
+                - Explains in plain language why one might be stronger (e.g. more volume, more holders, higher score).
+                - Avoids jargon. Use everyday words: "ahead", "stronger", "more activity", "more support", "higher score". Do NOT use: protocol incursion, liquidity bleed, semantic fragging, neural arbitrage, consensus overload, or military/combat metaphors.
             `;
 
             const response = await ai.models.generateContent({
                 model: MODEL_NAME,
                 contents: [{ parts: [{ text: prompt }] }],
             });
-            setAnalysis(response.text || 'ERROR: SYNTHESIS_FRAGMENTED.');
+            setAnalysis(response.text || 'Could not generate summary. Try again.');
         } catch (e) {
-            setAnalysis('ERROR: NEURAL_LINK_SEVERED_BY_FIREWALL.');
+            setAnalysis('Summary unavailable. Check your API key or connection.');
         } finally {
             setLoading(false);
         }
@@ -78,31 +77,31 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
             <div className="relative z-10">
                 <div className="flex items-center gap-4 mb-8">
                     <div className="w-10 h-10 bg-black/80 border-2 border-intuition-primary/50 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
-                        <Sword size={20} />
+                        <Brain size={20} />
                     </div>
-                    <h3 className="text-[12px] font-black font-display text-intuition-primary tracking-[0.5em] uppercase text-glow-blue">CONFLICT_SIMULATION_V3</h3>
+                    <h3 className="text-sm font-bold text-white tracking-wide">Comparison summary</h3>
                 </div>
                 
                 {!analysis && !loading ? (
                     <div className="flex flex-col md:flex-row items-center justify-between gap-8 pl-4 border-l-2 border-intuition-primary/30">
-                        <p className="text-slate-400 font-mono text-[11px] uppercase tracking-widest leading-relaxed max-w-2xl">
-                            // Standby for semantic projection. Initialize AI synthesis to project takeover probability and identify consensus vulnerabilities.
+                        <p className="text-slate-300 font-sans text-sm leading-relaxed max-w-2xl">
+                            Get a short, plain-language summary of how these two compare — who’s ahead and why.
                         </p>
                         <button 
                             onClick={() => { playClick(); generateAnalysis(); }}
-                            className="px-8 py-3 bg-intuition-primary text-black font-black text-[10px] tracking-widest hover:bg-white hover:shadow-glow-blue transition-all shadow-glow-blue uppercase whitespace-nowrap active:scale-95"
+                            className="px-8 py-3 bg-intuition-primary text-black font-bold text-sm tracking-wide hover:bg-white hover:shadow-glow-blue transition-all shadow-glow-blue whitespace-nowrap active:scale-95"
                         >
-                            INITIATE_PROJECTION
+                            Generate summary
                         </button>
                     </div>
                 ) : loading ? (
-                    <div className="flex items-center gap-3 text-intuition-primary font-mono text-[11px] animate-pulse font-black py-4 pl-4 border-l-2 border-intuition-primary/40">
-                        <Loader2 size={16} className="animate-spin" /> RUNNING_NEURAL_WAR_GAMES...
+                    <div className="flex items-center gap-3 text-intuition-primary font-sans text-sm animate-pulse font-medium py-4 pl-4 border-l-2 border-intuition-primary/40">
+                        <Loader2 size={16} className="animate-spin" /> Generating summary…
                     </div>
                 ) : (
                     <div className="flex gap-6 items-start animate-in fade-in duration-500 pl-4 border-l-2 border-intuition-primary/50">
                         <Quote size={24} className="text-intuition-primary shrink-0 opacity-60 mt-1 text-glow-blue" />
-                        <p className="text-slate-200 font-mono text-xs leading-relaxed font-bold uppercase tracking-tight italic">
+                        <p className="text-slate-200 font-sans text-sm leading-relaxed">
                             {displayedText}
                             <span className="inline-block w-2 h-3.5 bg-intuition-primary ml-1 animate-pulse shadow-glow-blue rounded-sm"></span>
                         </p>
@@ -238,22 +237,21 @@ const ComparisonRow: React.FC<{
                 <div className={`font-mono font-black text-3xl tracking-tighter ${leftWins ? 'text-intuition-primary text-glow-blue' : 'text-white'}`}>
                     {Number(leftVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
-                <span className="inline-flex items-baseline text-slate-600 font-black uppercase tracking-widest">{typeof unit === 'string' ? <span className="text-[8px]">{unit}</span> : unit}</span>
+                <span className="inline-flex items-baseline text-slate-300 font-bold uppercase tracking-wider text-[10px] mt-0.5">{typeof unit === 'string' ? unit : unit}</span>
             </div>
             
             <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0">
-                <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-intuition-primary border-intuition-primary/40' : rightWins ? 'text-intuition-secondary border-intuition-secondary/40' : 'text-slate-700'}`}>
-                    {/* Fixed: Cast icon to ReactElement with expected props for cloneElement compatibility */}
+                <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-intuition-primary border-intuition-primary/40' : rightWins ? 'text-intuition-secondary border-intuition-secondary/40' : 'text-slate-500'}`}>
                     {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 16 })}
                 </div>
-                <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] text-center whitespace-nowrap">{label}</div>
+                <div className="text-[10px] font-bold font-mono text-slate-200 text-center whitespace-nowrap px-1">{label}</div>
             </div>
 
             <div className={`relative z-10 w-1/3 text-left pl-12 transition-all duration-500 ${rightWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
                 <div className={`font-mono font-black text-3xl tracking-tighter ${rightWins ? 'text-intuition-secondary text-glow-red' : 'text-white'}`}>
                     {Number(rightVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
-                <span className="inline-flex items-baseline text-slate-600 font-black uppercase tracking-widest">{typeof unit === 'string' ? <span className="text-[8px]">{unit}</span> : unit}</span>
+                <span className="inline-flex items-baseline text-slate-300 font-bold uppercase tracking-wider text-[10px] mt-0.5">{typeof unit === 'string' ? unit : unit}</span>
             </div>
         </div>
     );
@@ -265,11 +263,31 @@ const Compare: React.FC = () => {
     const [rightAgent, setRightAgent] = useState<Account | null>(null);
     const [isSelectorOpen, setIsSelectorOpen] = useState<'LEFT' | 'RIGHT' | null>(null);
     const [search, setSearch] = useState('');
+    const [leftExits, setLeftExits] = useState<number>(0);
+    const [rightExits, setRightExits] = useState<number>(0);
 
-    // Fix: Access the 'items' property from the result of getAllAgents()
     useEffect(() => {
         getAllAgents().then(data => setAgents(data.items));
     }, []);
+
+    useEffect(() => {
+        if (!leftAgent?.id || !rightAgent?.id) {
+            setLeftExits(0);
+            setRightExits(0);
+            return;
+        }
+        let cancelled = false;
+        Promise.all([
+            getRedemptionCountForVault(leftAgent.id),
+            getRedemptionCountForVault(rightAgent.id),
+        ]).then(([l, r]) => {
+            if (!cancelled) {
+                setLeftExits(l);
+                setRightExits(r);
+            }
+        });
+        return () => { cancelled = true; };
+    }, [leftAgent?.id, rightAgent?.id]);
 
     const handleSelect = (agent: Account) => {
         if (isSelectorOpen === 'LEFT') setLeftAgent(agent);
@@ -373,39 +391,53 @@ const Compare: React.FC = () => {
                     <RivalryAnalysis left={leftAgent} right={rightAgent} lScore={lScore} rScore={rScore} />
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                        {/* RAW SECTOR COMPARISON TABLE */}
+                        {/* Side-by-side comparison — clear labels and visible units */}
                         <div className="bg-gradient-to-b from-[#04060c] to-[#020308] border border-white/10 shadow-2xl relative overflow-hidden clip-path-slant hover:border-intuition-primary/20 transition-all duration-500">
                             <div className="bg-gradient-to-r from-intuition-primary/10 via-transparent to-intuition-secondary/10 py-4 border-b border-intuition-primary/20 flex justify-center items-center relative z-20">
-                                <div className="text-[11px] font-black font-display text-intuition-primary uppercase tracking-[0.6em] text-glow-blue">RAW_SECTOR_COMPARISON</div>
+                                <div className="text-sm font-bold text-white uppercase tracking-wider">Comparison</div>
                             </div>
                             
                             <div className="bg-black/40">
                                 <ComparisonRow 
-                                    label="PROTOCOL_VOLUME" 
+                                    label="Trading volume" 
                                     leftVal={parseFloat(formatEther(BigInt(leftAgent.totalAssets || '0')))} 
                                     rightVal={parseFloat(formatEther(BigInt(rightAgent.totalAssets || '0')))}
-                                    unit={<CurrencySymbol size="sm" className="text-slate-600" />}
+                                    unit={<CurrencySymbol size="sm" className="text-slate-300" />}
                                     icon={<Shield />}
                                 />
                                 <ComparisonRow 
-                                    label="MARKET_ENTROPY" 
+                                    label="Volatility" 
                                     leftVal={calculateVolatility(leftAgent.totalAssets || '0')} 
                                     rightVal={calculateVolatility(rightAgent.totalAssets || '0')}
-                                    unit="E"
+                                    unit="index"
                                     icon={<Activity />}
                                 />
                                 <ComparisonRow 
-                                    label="STAKE_HOLDERS" 
-                                    leftVal={Math.floor(Math.random() * 800) + 200} // Mocked for visual density
-                                    rightVal={Math.floor(Math.random() * 800) + 200}
-                                    unit="QTY"
+                                    label="Holders" 
+                                    leftVal={leftAgent.positionCount ?? 0} 
+                                    rightVal={rightAgent.positionCount ?? 0}
+                                    unit="count"
                                     icon={<Users />}
                                 />
                                 <ComparisonRow 
-                                    label="SEMANTIC_REACH" 
+                                    label="Exits (sells)" 
+                                    leftVal={leftExits} 
+                                    rightVal={rightExits}
+                                    unit="count"
+                                    icon={<Activity />}
+                                />
+                                <ComparisonRow 
+                                    label="Risk proxy" 
+                                    leftVal={calculateVolatility(leftAgent.totalAssets || '0')} 
+                                    rightVal={calculateVolatility(rightAgent.totalAssets || '0')}
+                                    unit="σ"
+                                    icon={<TrendingUp />}
+                                />
+                                <ComparisonRow 
+                                    label="Signal strength" 
                                     leftVal={(lScore * 1.2).toFixed(0)} 
                                     rightVal={(rScore * 1.2).toFixed(0)}
-                                    unit="SYNC"
+                                    unit="score"
                                     icon={<Network />}
                                 />
                             </div>
@@ -428,7 +460,7 @@ const Compare: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="px-4 py-2 bg-black/80 border border-intuition-primary/30 text-[9px] font-black font-mono text-intuition-primary uppercase tracking-[0.3em] shadow-glow-blue">
-                                    LIVE_TELEMETRY
+                                    ROI_OVER_TIME
                                 </div>
                             </div>
 
@@ -459,7 +491,7 @@ const Compare: React.FC = () => {
 
                             <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
                                 <div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.6em] animate-pulse">
-                                    SIMULATING NEURAL DRIFT SEQUENCE
+                                    MAGNITUDE & ROI TRAJECTORY
                                 </div>
                                 <div className="flex gap-2 h-1.5 w-48 bg-white/10 overflow-hidden rounded-full border border-white/10">
                                     <div className="h-full bg-intuition-primary animate-buffer-fill shadow-glow-blue rounded-full"></div>

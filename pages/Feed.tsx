@@ -159,18 +159,18 @@ const Feed: React.FC = () => {
                              <Activity size={32} className="animate-pulse" />
                         </div>
                         <div>
-                             <div className="text-[11px] font-black tracking-[0.5em] uppercase text-slate-500 mb-1">Global_Sync_Protocol</div>
+                             <div className="text-xs font-bold tracking-[0.3em] uppercase text-slate-400 mb-1">Global activity</div>
                              <h1 className="text-4xl md:text-7xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-none">ACTIVITY</h1>
                         </div>
                     </div>
-                    <p className="text-slate-400 font-mono text-sm uppercase tracking-widest leading-relaxed max-w-2xl border-l-2 border-slate-800 pl-6">
+                    <p className="text-slate-300 font-mono text-sm uppercase tracking-wider leading-relaxed max-w-2xl border-l-2 border-slate-700 pl-6">
                         Reconciling real-time capital flow and semantic shifts in the global trust graph. Surveillance layer S04 activated.
                     </p>
                 </div>
                 
                 <div className="flex items-center gap-8 relative z-10">
                     <div className="text-right hidden sm:block">
-                        <div className="text-[10px] font-black text-slate-600 uppercase tracking-[0.4em] mb-2">Throughput_Relay</div>
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Throughput</div>
                         <div className="flex items-center justify-end gap-4">
                              <span className="text-2xl font-black text-intuition-success font-display tracking-widest uppercase text-glow-success leading-none">LOCKED</span>
                              <div className="w-4 h-4 rounded-none bg-intuition-success animate-pulse shadow-glow-success clip-path-slant"></div>
@@ -178,7 +178,7 @@ const Feed: React.FC = () => {
                     </div>
                     <div className="w-[2px] h-12 bg-slate-800 hidden sm:block"></div>
                     <div className="flex flex-col gap-1 items-end">
-                        <div className="text-[10px] font-black text-slate-600 uppercase tracking-[0.4em]">Signal_Integrity</div>
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Signal integrity</div>
                         <div className="text-xl font-black text-white font-mono tracking-tighter">99.98%</div>
                     </div>
                 </div>
@@ -193,9 +193,9 @@ const Feed: React.FC = () => {
                             <Brain size={24} className="animate-pulse" />
                         </div>
                         <div>
-                            <div className="text-[8px] font-black text-intuition-primary uppercase tracking-[0.4em]">ARES_Pulse_Synthesis</div>
-                            <div className="text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2">
-                                <Sparkles size={10} className="text-intuition-secondary" /> NEURAL_DYNAMICS
+                            <div className="text-[10px] font-bold text-intuition-primary uppercase tracking-wider">ARES pulse</div>
+                            <div className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                <Sparkles size={10} className="text-intuition-secondary" /> Neural dynamics
                             </div>
                         </div>
                     </div>
@@ -220,27 +220,27 @@ const Feed: React.FC = () => {
             {/* Action Bar */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-10">
                 <div className="flex-1 relative group p-[2px] bg-slate-900 clip-path-slant focus-within:bg-intuition-primary/40 transition-colors">
-                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-intuition-primary transition-colors">
+                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-intuition-primary transition-colors">
                         <Search size={18} />
                     </div>
                     <input 
                         type="text" 
-                        placeholder="QUERY_LEDGER: [WALLET_NODE_OR_CLAIM]..." 
-                        className="w-full bg-[#050505] py-4 sm:py-5 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-xs focus:outline-none placeholder-slate-700 uppercase tracking-widest clip-path-slant min-h-[48px]"
+                        placeholder="Search by wallet, node or claim…" 
+                        className="w-full bg-[#050505] py-4 sm:py-5 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-sm focus:outline-none placeholder-slate-500 uppercase tracking-wider clip-path-slant min-h-[48px]"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <button className="flex items-center gap-2 sm:gap-3 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 border-slate-900 text-slate-400 hover:text-white hover:border-white transition-all text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] clip-path-slant group relative overflow-hidden">
-                        <ListFilter size={16} className="shrink-0" /> <span className="hidden sm:inline">Filter_Module</span>
+                    <button className="flex items-center gap-2 sm:gap-3 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 border-slate-800 text-slate-300 hover:text-white hover:border-white transition-all text-xs sm:text-sm font-bold uppercase tracking-wider clip-path-slant group relative overflow-hidden">
+                        <ListFilter size={16} className="shrink-0" /> <span className="hidden sm:inline">Filter</span>
                     </button>
                     
                     <div className="relative min-w-0 flex-1 sm:flex-initial">
                         <button 
                             onClick={() => { playClick(); setIsSortOpen(!isSortOpen); }}
-                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 transition-all text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] clip-path-slant min-w-0 sm:min-w-[200px] md:min-w-[240px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-900 text-slate-400'}`}
+                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 transition-all text-xs sm:text-sm font-bold uppercase tracking-wider clip-path-slant min-w-0 sm:min-w-[200px] md:min-w-[240px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-800 text-slate-300'}`}
                         >
                             {activeSort} <ChevronDown size={14} className={`transition-transform duration-500 ${isSortOpen ? 'rotate-180' : ''}`} />
                         </button>
@@ -250,7 +250,7 @@ const Feed: React.FC = () => {
                                     <button 
                                         key={opt}
                                         onClick={() => { setActiveSort(opt); setIsSortOpen(false); playClick(); }}
-                                        className={`w-full min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 text-left text-[9px] font-black uppercase tracking-widest transition-all hover:bg-intuition-primary hover:text-black ${activeSort === opt ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
+                                        className={`w-full min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 text-left text-sm font-bold uppercase tracking-wider transition-all hover:bg-intuition-primary hover:text-black ${activeSort === opt ? 'text-intuition-primary bg-white/5' : 'text-slate-300'}`}
                                     >
                                         {opt}
                                     </button>
@@ -263,8 +263,8 @@ const Feed: React.FC = () => {
 
             {/* Activity Feed Container */}
             <div className="relative min-h-[600px] z-10">
-                <div className="flex items-center gap-3 text-slate-700 font-black text-[9px] tracking-[0.6em] uppercase mb-6 px-1 opacity-80">
-                    <Wifi size={10} className="animate-pulse" /> Live_Temporal_Stream // Sector_04_ARES
+                <div className="flex items-center gap-3 text-slate-400 font-bold text-xs tracking-wider uppercase mb-6 px-1">
+                    <Wifi size={12} className="animate-pulse" /> Live stream · Sector 04
                 </div>
 
                 {loading && events.length === 0 ? (
@@ -276,8 +276,8 @@ const Feed: React.FC = () => {
                             </div>
                         </div>
                         <div className="flex flex-col items-center gap-2 text-center">
-                             <span className="font-mono text-sm font-black tracking-[0.6em] uppercase animate-pulse">Synchronizing_Temporal_Ledger...</span>
-                             <div className="text-[8px] font-black text-slate-700 uppercase tracking-widest mt-2">Connecting_Node_Clusters</div>
+                             <span className="font-mono text-sm font-bold text-white tracking-wider uppercase animate-pulse">Loading activity…</span>
+                             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-2">Connecting to network…</div>
                         </div>
                     </div>
                 ) : filteredEvents.length === 0 ? (
@@ -285,8 +285,8 @@ const Feed: React.FC = () => {
                         <div className="absolute inset-0 bg-intuition-danger/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <Zap size={64} className="text-slate-800 mb-8 opacity-40 group-hover:text-intuition-danger transition-colors" />
                         <div className="text-center space-y-2">
-                            <span className="text-sm font-black font-mono text-slate-600 uppercase tracking-[0.5em] group-hover:text-white transition-colors">NULL_SIGNAL_RECOVERED</span>
-                            <p className="text-[10px] text-slate-700 font-bold uppercase tracking-widest">Target query produced zero entropy matches.</p>
+                            <span className="text-sm font-bold font-mono text-slate-400 uppercase tracking-wider group-hover:text-white transition-colors">No results</span>
+                            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">No activity matches your search.</p>
                         </div>
                     </div>
                 ) : (
@@ -309,15 +309,15 @@ const Feed: React.FC = () => {
                                     <Activity size={18} className="text-intuition-primary animate-pulse" />
                                 </div>
                             </div>
-                            <span className="text-[10px] font-black font-mono text-intuition-primary/80 uppercase tracking-[0.8em] animate-pulse">Neural_Buffer_Sector_04...</span>
+                            <span className="text-sm font-bold font-mono text-intuition-primary uppercase tracking-wider animate-pulse">Loading more…</span>
                         </div>
                     ) : !hasMore && events.length > 0 && (
-                        <div className="flex flex-col items-center gap-6 opacity-60">
-                            <div className="w-10 h-10 bg-black border border-slate-900 flex items-center justify-center text-slate-700">
+                        <div className="flex flex-col items-center gap-6 opacity-80">
+                            <div className="w-10 h-10 bg-black border border-slate-700 flex items-center justify-center text-slate-400">
                                 <Terminal size={18} />
                             </div>
                             <div className="text-center space-y-2">
-                                <span className="text-[10px] font-black font-mono text-slate-600 uppercase tracking-[1em]">END_OF_TEMPORAL_LEDGER</span>
+                                <span className="text-sm font-bold font-mono text-slate-400 uppercase tracking-wider">End of feed</span>
                             </div>
                         </div>
                     )}

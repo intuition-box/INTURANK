@@ -20,6 +20,7 @@ export interface Account {
   totalShares?: string; // Total Supply (in Wei)
   currentSharePrice?: string; // Spot Price (in Wei)
   marketCap?: string; // Calculated Multi-Curve Market Cap
+  positionCount?: number; // Number of holders (positions with shares > 0)
 }
 
 export interface Triple {

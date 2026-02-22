@@ -733,6 +733,25 @@ export const getMarketActivity = async (termId: string): Promise<Transaction[]> 
   } catch (e) { return []; }
 };
 
+/** Count redemption (exit/sell) events for a vault — for comparison "sellers" metric. */
+export const getRedemptionCountForVault = async (termId: string): Promise<number> => {
+  const ids = prepareQueryIds(termId);
+  const q = `query GetRedemptionCount($ids: [String!]!) {
+    events_aggregate(
+      where: {
+        _and: [
+          { type: { _eq: "Redeemed" } },
+          { _or: [{ atom: { term_id: { _in: $ids } } }, { triple: { term_id: { _in: $ids } } }] }
+        ]
+      }
+    ) { aggregate { count } }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { ids });
+    return data?.events_aggregate?.aggregate?.count ?? 0;
+  } catch (e) { return 0; }
+};
+
 /** Activity on markets the user holds — other users buying/selling in those claims. For notification bar. */
 export interface PositionActivityNotification {
   id: string;
@@ -788,7 +807,15 @@ export const getActivityOnMyMarkets = async (
   }`;
   try {
     const data = await fetchGraphQL(q, { ids, limit });
-    const events = data?.events ?? [];
+    const rawEvents = data?.events ?? [];
+    // Dedupe by event id so the same activity never appears or triggers email twice
+    const seenEventIds = new Set<string>();
+    const events = rawEvents.filter((ev: any) => {
+      const eid = ev?.id ?? ev?.transaction_hash;
+      if (!eid || seenEventIds.has(eid)) return false;
+      seenEventIds.add(eid);
+      return true;
+    });
     const out: PositionActivityNotification[] = [];
     for (const ev of events) {
       const sender = ev.deposit?.sender || ev.redemption?.sender;
@@ -808,8 +835,10 @@ export const getActivityOnMyMarkets = async (
         : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
       const vault = ev.deposit?.vault || ev.redemption?.vault;
       const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
+      // Use event id so one event = one notification; tx_hash alone can repeat for multiple events in same tx
+      const notificationId = ev.id ? `${ev.id}` : (ev.transaction_hash || `ev-${vaultId}-${ev.created_at}`);
       out.push({
-        id: ev.transaction_hash || ev.id,
+        id: notificationId,
         type: ev.type === 'Redeemed' ? 'liquidated' : 'acquired',
         senderLabel,
         senderId: sender.id,

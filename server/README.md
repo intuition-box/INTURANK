@@ -30,11 +30,53 @@ PORT=3001
      - **Terminal 2:** `npm run dev` (Vite proxies `/api` to the email server).
    - With both running, the app sends notification emails through Ensend when users are subscribed and activity happens on their holdings.
 
-## Production
+## Production: Deploy on Railway
 
-- Deploy this server (e.g. Node on Railway, Render, or a serverless function).
-- Set the same env vars there (`ENSEND_PROJECT_SECRET`, `ENSEND_SENDER_EMAIL`, `ENSEND_SENDER_NAME`).
-- In the frontend build, set `VITE_EMAIL_API_URL` to your deployed email API base URL (e.g. `https://email-api.yourapp.com`) so the app calls your server instead of relative `/api`.
+Railway runs the email server 24/7 with no cold starts. Use the same repo; no separate “email-only” repo needed.
+
+### 1. Create the project on Railway
+
+1. Go to [railway.app](https://railway.app) and sign in (GitHub is fine).
+2. Click **New Project** → **Deploy from GitHub repo**.
+3. Select this repo (`IntuRank-Vanguard` or whatever it’s named). Authorize if asked.
+4. Railway will create a new **service** from the repo.
+
+### 2. Configure the service
+
+1. Open the new service → **Settings** (or **Variables**).
+2. **Build:** Leave defaults. Railway will run `npm install` and use `npm start` (which runs `node server/index.js`).
+3. **Root Directory:** Leave blank (repo root is correct).
+4. **Start Command:** Leave blank so it uses `npm start`.
+
+### 3. Add environment variables
+
+In the service, go to **Variables** and add:
+
+| Variable | Value |
+|----------|--------|
+| `ENSEND_PROJECT_SECRET` | Your Ensend project secret |
+| `ENSEND_SENDER_EMAIL` | Your sender email (e.g. from Ensend) |
+| `ENSEND_SENDER_NAME` | `IntuRank` (or whatever you want) |
+
+Do **not** set `PORT`; Railway sets it automatically.
+
+### 4. Get the public URL
+
+1. In the service, open **Settings** → **Networking** (or **Deployments**).
+2. Click **Generate Domain**. Railway will assign a URL like `your-service-name-production.up.railway.app`.
+3. Copy that URL (no trailing slash). This is your **email API base URL**.
+
+### 5. Tell the frontend to use it
+
+1. In **Ensend**, add your **production site URL** (e.g. `https://yourdomain.com`) to **Authorized Origins**.
+2. In **GitHub**: repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+   - Name: `VITE_EMAIL_API_URL`
+   - Value: the Railway URL you copied (e.g. `https://your-service-name-production.up.railway.app`).
+3. Push to `main` (or re-run the deploy workflow) so the next build uses this URL. After that, the live site will send emails through your Railway server.
+
+---
+
+**Other hosts (Render, Fly.io, etc.):** Deploy the repo, set the same env vars, and run `npm start` (or `node server/index.js`). Then set `VITE_EMAIL_API_URL` in GitHub Actions to that host’s URL.
 
 ## Endpoint
 

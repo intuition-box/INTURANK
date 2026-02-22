@@ -129,9 +129,9 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     )}
                 </Link>
                 <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5 opacity-60">
-                        <Fingerprint size={8} style={{ color: colorHex }} />
-                        <span className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-widest leading-none">Citizenship_ID</span>
+                    <div className="flex items-center gap-1.5">
+                        <Fingerprint size={10} style={{ color: colorHex }} />
+                        <span className="text-[9px] font-bold font-mono text-slate-400 uppercase tracking-wider leading-none">User</span>
                     </div>
                     <Link to={`/profile/${event.sender?.id}`} className="text-sm font-black text-white hover:text-white transition-colors truncate max-w-[140px] uppercase tracking-tighter font-display leading-none mt-2 group-hover:text-glow-white">
                         {event.sender?.label || `${event.sender?.id?.slice(0, 8)}...`}
@@ -162,7 +162,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     </div>
                 )}
 
-                <span className="text-slate-800 uppercase font-black italic tracking-tighter px-2 opacity-40">{" >> "}</span>
+                <span className="text-slate-500 uppercase font-bold italic tracking-tighter px-2">{" >> "}</span>
 
                 <div className="flex items-center gap-4 bg-black/60 border border-white/5 px-5 py-2.5 clip-path-slant hover:border-white transition-all group/target cursor-pointer shadow-inner">
                     <div className="w-6 h-6 bg-black flex items-center justify-center overflow-hidden border border-white/10 rounded-sm group-hover:scale-110 transition-transform">
@@ -194,10 +194,10 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     <div className="absolute inset-0 w-1/2 h-full bg-white opacity-[0.03] skew-x-[-20deg] -translate-x-full group-hover/badge:translate-x-[200%] transition-transform duration-[1500ms]"></div>
                 </div>
                 <div className="flex flex-col items-end">
-                    <div className="text-[7px] font-black text-slate-700 uppercase tracking-[0.4em] mb-1">Logic_Model</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Curve</div>
                     <div 
-                        className="px-3 py-0.5 bg-black border text-[8px] font-black uppercase tracking-widest clip-path-slant"
-                        style={{ borderColor: `${colorHex}22`, color: `${colorHex}aa` }}
+                        className="px-3 py-0.5 bg-black border text-[10px] font-bold uppercase tracking-wider clip-path-slant"
+                        style={{ borderColor: `${colorHex}44`, color: colorHex }}
                     >
                         {curveLabel}
                     </div>
@@ -205,10 +205,10 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             </div>
 
             {/* Time & Explorer */}
-            <div className="flex items-center gap-4 sm:gap-6 shrink-0 min-w-0 md:min-w-[140px] justify-end relative z-10 border-l border-white/5 pl-4 sm:pl-6 md:pl-8">
+            <div className="flex items-center gap-4 sm:gap-6 shrink-0 min-w-0 md:min-w-[140px] justify-end relative z-10 border-l border-white/10 pl-4 sm:pl-6 md:pl-8">
                 <div className="text-right">
-                    <div className="text-[7px] font-black text-slate-700 uppercase tracking-[0.4em] mb-1">Temporal_Log</div>
-                    <span className="text-[10px] font-black font-mono text-slate-500 group-hover:text-white transition-colors uppercase tracking-widest">
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Time</div>
+                    <span className="text-xs font-bold font-mono text-slate-300 group-hover:text-white transition-colors uppercase tracking-wider">
                         {formatRelativeTime(event.timestamp)}
                     </span>
                 </div>
