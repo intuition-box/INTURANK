@@ -32,6 +32,17 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ ok: true, service: 'email-api' });
 });
 
+// So root URL doesn't show "Cannot GET /" and you can confirm env is set (no secrets exposed)
+app.get('/', (_req, res) => {
+  const secret = process.env.ENSEND_PROJECT_SECRET;
+  const sender = process.env.ENSEND_SENDER_EMAIL;
+  res.status(200).json({
+    service: 'inturank-email-api',
+    ok: true,
+    emailConfigured: !!(secret && sender),
+  });
+});
+
 app.post('/api/send-email', async (req, res) => {
   const secret = process.env.ENSEND_PROJECT_SECRET;
   const senderEmail = process.env.ENSEND_SENDER_EMAIL;

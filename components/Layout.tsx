@@ -358,15 +358,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {isMenuOpen && (
           <>
-            <div className="lg:hidden fixed inset-0 top-[5rem] z-[99] bg-black" aria-hidden />
-            <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 animate-in slide-in-from-top-4 duration-300 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)]">
+            <div className="lg:hidden fixed inset-0 top-[5rem] z-[99] bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" aria-hidden />
+            <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)] animate-in slide-in-from-top-2 fade-in duration-500">
             <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
-              {[...mainNavItems, ...intelItems].map((item) => (
+              {[...mainNavItems, ...intelItems].map((item, index) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   onClick={() => { playClick(); setIsMenuOpen(false); }}
-                  className={`relative flex items-center gap-3 min-w-0 pl-5 pr-5 py-4 border-2 text-[9px] sm:text-[10px] font-black font-mono tracking-widest transition-all rounded-sm ${isActive(item.path)
+                  style={{ animationDelay: `${index * 45}ms` }}
+                  className={`relative flex items-center gap-3 min-w-0 pl-5 pr-5 py-4 border-2 text-[9px] sm:text-[10px] font-black font-mono tracking-widest transition-all rounded-sm animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both ${isActive(item.path)
                     ? 'text-black bg-intuition-primary border-intuition-primary'
                     : 'text-slate-400 border-slate-900 hover:text-white bg-white/5'
                     }`}
@@ -384,14 +385,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => { playClick(); setIsMenuOpen(false); }}
-                className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest clip-path-slant mt-6 hover:bg-intuition-success hover:text-black transition-all"
+                style={{ animationDelay: `${([...mainNavItems, ...intelItems].length) * 45}ms` }}
+                className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest clip-path-slant mt-6 hover:bg-intuition-success hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
               >
                 <Coins size={18} /> ACQUIRE_₸_TOKEN
               </a>
 
               <button
                 onClick={handleNewSignal}
-                className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest clip-path-slant shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform"
+                style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 1) * 45}ms` }}
+                className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest clip-path-slant shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
               >
                 <Plus size={18} /> NEW_SIGNAL_INBOUND
               </button>
@@ -399,14 +402,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               {walletAddress ? (
                 <button
                   onClick={handleDisconnect}
-                  className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 clip-path-slant mt-2"
+                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
+                  className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                 >
                   EXIT_SECURE_SESSION
                 </button>
               ) : (
                 <button
                   onClick={() => { playClick(); setIsMenuOpen(false); setIsWalletModalOpen(true); }}
-                  className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 clip-path-slant mt-2"
+                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
+                  className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                 >
                   ESTABLISH_NEURAL_LINK
                 </button>

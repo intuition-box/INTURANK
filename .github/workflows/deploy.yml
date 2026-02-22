@@ -41,11 +41,13 @@ jobs:
           PORT: 3001
 
       - name: Build site
-        run: npm run build
+        run: |
+          if [ -z "${{ secrets.VITE_EMAIL_API_URL }}" ]; then
+            echo "::warning::VITE_EMAIL_API_URL is not set. Emails on production will not work. Add it in repo Settings → Secrets → Actions."
+          fi
+          npm run build
         env:
           API_KEY: ${{ secrets.API_KEY }}
-          # Production email API: set in repo Secrets (e.g. https://your-email-api.up.railway.app).
-          # Build bakes this into the app so the live site sends emails to your deployed server.
           VITE_EMAIL_API_URL: ${{ secrets.VITE_EMAIL_API_URL }}
 
       - name: Upload artifact

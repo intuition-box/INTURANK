@@ -153,17 +153,18 @@ export async function sendWelcomeEmail(to: string, _nickname?: string): Promise<
   const plainMessage = "You're subscribed to IntuRank email alerts. We'll notify you when there's activity on your holdings.";
   const html = getWelcomeEmailHtml({ email: to, nickname: _nickname });
   try {
-    const res = await fetch(getEmailApiUrl(), {
+    const url = getEmailApiUrl();
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to, subject, message: plainMessage, html }),
     });
-    if (!res.ok && import.meta.env?.DEV) {
+    if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      console.warn('[Welcome email send failed]', res.status, err);
+      console.warn('[Welcome email send failed]', res.status, url, err);
     }
   } catch (e) {
-    if (import.meta.env?.DEV) console.warn('[Welcome email error]', e);
+    console.warn('[Welcome email error]', getEmailApiUrl(), e);
   }
 }
 
@@ -181,16 +182,17 @@ async function sendEmailWithHtml(payload: {
       message: payload.message,
     };
     if (payload.html) body.html = payload.html;
-    const res = await fetch(getEmailApiUrl(), {
+    const url = getEmailApiUrl();
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok && import.meta.env?.DEV) {
+    if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      console.warn('[Email send failed]', res.status, err);
+      console.warn('[Email send failed]', res.status, url, err);
     }
   } catch (e) {
-    if (import.meta.env?.DEV) console.warn('[Email send error]', e);
+    console.warn('[Email send error]', getEmailApiUrl(), e);
   }
 }
