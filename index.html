@@ -3,6 +3,38 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (function() {
+        function isTronLinkProxyError(msg) {
+          if (typeof msg !== 'string') return false;
+          return (msg.indexOf("'set' on proxy") !== -1 || msg.indexOf('set on proxy') !== -1) && msg.indexOf('tronlinkParams') !== -1;
+        }
+        var prevOnError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (isTronLinkProxyError(message)) {
+            console.warn('[IntuRank] Suppressed TronLink proxy error. Disable the TronLink extension for this site if you don’t use it.');
+            return true;
+          }
+          if (prevOnError) return prevOnError.apply(this, arguments);
+          return false;
+        };
+        window.addEventListener('error', function(ev) {
+          if (isTronLinkProxyError(ev.message)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return true;
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(ev) {
+          var msg = (ev.reason && ev.reason.message) || String(ev.reason || '');
+          if (isTronLinkProxyError(msg)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            console.warn('[IntuRank] Suppressed TronLink proxy error (promise). Disable the TronLink extension for this site if you don’t use it.');
+          }
+        }, true);
+      })();
+    </script>
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline';">
     <title>IntuRank | Trust Intelligence Layer</title>
     <link rel="icon" type="image/png" href="/icon.png">

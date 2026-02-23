@@ -61,6 +61,8 @@ export interface Transaction {
   shares: string;
   timestamp: number;
   vaultId: string;
+  /** Curve id (1 = offset progressive / exponential, 2 = linear) for correct PnL per curve */
+  curveId?: number;
   assetLabel?: string;
   user?: string;
 }

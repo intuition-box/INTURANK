@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatEther, getAddress } from 'viem';
 import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds, getAccountPnlCurrent } from '../services/graphql';
+import { getUserPositions, getUserHistory, getVaultsByIds, getAccountPnlCurrent, getCurveLabel } from '../services/graphql';
 import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers, LogOut } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -101,7 +101,7 @@ const Portfolio: React.FC = () => {
       let aggregatedValue = 0;
       let aggregatedPnL = 0;
 
-      const DUST = 1e-10; // treat below this as zero (sold / dust)
+      const DUST = 1e-8; // treat below this as zero (sold / dust) — strict so closed positions never show
       const graphWithShares = graphPositionsRaw.filter((p: any) => {
         const s = p.shares;
         if (s === undefined || s === null) return false;
@@ -112,19 +112,21 @@ const Portfolio: React.FC = () => {
       // Active holdings = only what the user is currently holding (on-chain verified)
       for (const p of graphWithShares) {
           try {
-              const id = p.vault.term_id.toLowerCase();
-              const curveId = Number(p.vault.curve_id || 1);
+              const rawId = p.vault?.term_id;
+              if (!rawId || typeof rawId !== 'string') continue;
+              const id = rawId.toLowerCase();
+              const meta = metadata.find(m => m.id.toLowerCase() === id);
+              const rawCurve = p.vault.curve_id ?? meta?.curveId;
+              const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
 
               const sharesRaw = await getShareBalance(address, id, curveId);
-              const sharesNum = parseFloat(sharesRaw);
-              
-              // Only show positions with current on-chain balance (exclude sold / dust)
-              if (!(sharesNum > DUST)) continue;
+              const sharesNum = typeof sharesRaw === 'string' ? parseFloat(sharesRaw) : Number(sharesRaw);
+              const hasBalance = Number.isFinite(sharesNum) && sharesNum > DUST;
+              if (!hasBalance) continue;
 
-              const valueStr = await getQuoteRedeem(sharesRaw, id, address, curveId);
+              const valueStr = await getQuoteRedeem(String(sharesRaw), id, address, curveId);
               const value = parseFloat(valueStr);
 
-              let meta = metadata.find(m => m.id.toLowerCase() === id);
               let label = meta?.label || `Node_${id.slice(0, 8)}`;
               let image = meta?.image;
               let type = meta?.type || 'ATOM';
@@ -141,14 +143,15 @@ const Portfolio: React.FC = () => {
                   type = 'CLAIM';
               }
 
-              const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, networkHistory, id);
-              const depositsForVault = networkHistory.filter((t: Transaction) => t.vaultId?.toLowerCase() === id && t.type === 'DEPOSIT');
+              const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, networkHistory, id, curveId);
+              const depositsForVault = networkHistory.filter((t: Transaction) => t.vaultId?.toLowerCase() === id && t.type === 'DEPOSIT' && (curveId == null || t.curveId == null || t.curveId === curveId));
               const firstDepositTimestamp = depositsForVault.length ? Math.min(...depositsForVault.map((t: Transaction) => t.timestamp)) : Date.now();
 
               aggregatedValue += value;
               aggregatedPnL += profit;
 
-              activePositions.push({ id, shares: sharesNum, value: value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
+              const duplicate = activePositions.some((x: any) => x.id === id && (x.curveId ?? 1) === (curveId ?? 1));
+              if (!duplicate) activePositions.push({ id, curveId, shares: sharesNum, value: value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
           } catch (e) { continue; }
       }
 
@@ -320,23 +323,24 @@ const Portfolio: React.FC = () => {
                     </div>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left font-mono text-[10px] sm:text-xs min-w-[480px]">
+                    <table className="w-full text-left font-mono text-[10px] sm:text-xs min-w-[420px]">
                         <thead className="text-slate-700 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808]">
                             <tr>
-                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Identity_Node</th>
-                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Sector</th>
-                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Magnitude</th>
-                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4">Net_Valuation</th>
-                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4 text-right">PnL</th>
-                                <th className="px-3 sm:px-6 md:px-8 py-3 md:py-4 text-right">Exit</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Identity_Node</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4 hidden lg:table-cell">Sector</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Curve</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Magnitude</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Net_Valuation</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4 text-right">PnL</th>
+                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4 text-right">Exit</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {sortedPositions.length > 0 ? sortedPositions.map((pos) => {
                                 const isOpposition = pos.atom.label.includes('OPPOSING');
                                 return (
-                                <tr key={pos.id} className="hover:bg-white/5 transition-all group">
-                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                <tr key={`${pos.id}-${pos.curveId ?? 1}`} className="hover:bg-white/5 transition-all group">
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6">
                                         <Link to={`/markets/${pos.id}`} className="flex items-center gap-2 sm:gap-4">
                                             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
                                                 {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
@@ -347,25 +351,28 @@ const Portfolio: React.FC = () => {
                                             </div>
                                         </Link>
                                     </td>
-                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 hidden lg:table-cell">
                                         <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-widest clip-path-slant group-hover:text-white transition-colors">{pos.atom?.type || 'ATOM'}</span>
                                     </td>
-                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 whitespace-nowrap">
+                                        <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase">{getCurveLabel(pos.curveId ?? 1)}</span>
+                                    </td>
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6">
                                         <div className="text-white font-black text-xs sm:text-sm">{formatDisplayedShares(pos.shares)}</div>
                                         <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
                                     </td>
-                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6">
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6">
                                         <div className="inline-flex items-baseline gap-1.5 text-white font-black text-xs sm:text-sm">
                                             <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
                                             {formatMarketValue(pos.value)}
                                         </div>
                                     </td>
-                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6 text-right">
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 text-right">
                                         <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
                                             {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}%
                                         </div>
                                     </td>
-                                    <td className="px-3 sm:px-6 md:px-8 py-4 md:py-6 text-right">
+                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 text-right">
                                         <Link
                                             to={`/markets/${pos.id}`}
                                             onClick={() => { playClick(); }}
@@ -378,7 +385,7 @@ const Portfolio: React.FC = () => {
                                 </tr>
                             )}) : (
                                 <tr>
-                                    <td colSpan={6} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                                    <td colSpan={7} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
                                         {loading ? (
                                             <div className="flex flex-col items-center gap-4">
                                                 <Loader2 size={24} className="animate-spin text-intuition-primary" />
@@ -431,28 +438,28 @@ const Portfolio: React.FC = () => {
 
         <div className="lg:col-span-4 space-y-10">
             <div className="bg-[#02040a] border border-slate-900 p-10 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all h-[520px] flex flex-col">
-                <div className="flex justify-between items-start mb-12 relative z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="flex flex-col items-center mr-1">
+                <div className="flex justify-between items-start mb-12 relative z-10 gap-4 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 shrink">
+                        <div className="flex flex-col items-center mr-1 shrink-0">
                             <span className="text-[9px] font-black text-intuition-primary leading-none">01</span>
                             <span className="text-[9px] font-black text-intuition-primary leading-none">10</span>
                         </div>
-                        <h4 className="text-[12px] font-black font-display text-white uppercase tracking-[0.4em] flex items-center gap-2">
+                        <h4 className="text-[12px] font-black font-display text-white uppercase tracking-[0.4em] flex items-center gap-2 truncate">
                             EQUITY_VOLUME_TEMPORAL
                         </h4>
                     </div>
-                    <div className="text-right">
-                        <div className="text-2xl font-black text-intuition-primary font-mono text-glow-blue leading-none inline-flex items-baseline gap-2">
-                            <CurrencySymbol size="xl" leading className="text-intuition-primary/90" />
-                            {portfolioValue}
+                    <div className="text-right shrink-0 pr-1">
+                        <div className="text-xl sm:text-2xl font-black text-intuition-primary font-mono text-glow-blue leading-none inline-flex items-baseline gap-2 min-w-0">
+                            <CurrencySymbol size="xl" leading className="text-intuition-primary/90 shrink-0" />
+                            <span className="tabular-nums truncate max-w-[120px] sm:max-w-[140px]" title={portfolioValue}>{portfolioValue}</span>
                         </div>
                         <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">CURRENT_EST_VALUE</div>
                     </div>
                 </div>
 
-                <div className="flex-1 w-full relative z-10 py-6">
+                <div className="flex-1 w-full min-h-0 relative z-10 py-6">
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <AreaChart data={chartData} margin={{ top: 8, right: 44, left: 8, bottom: 8 }}>
                             <defs>
                                 <linearGradient id="temporalGrad" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.05}/>
@@ -464,11 +471,12 @@ const Portfolio: React.FC = () => {
                             <YAxis 
                                 orientation="right" 
                                 stroke="#475569" 
-                                fontSize={10} 
+                                width={40}
+                                tick={{ fill: '#94a3b8', fontSize: 9, fontFamily: 'monospace' }}
                                 tickLine={false} 
                                 axisLine={false} 
                                 domain={['auto', 'auto']}
-                                tickFormatter={(v) => v.toFixed(2)}
+                                tickFormatter={(v) => Number(v).toFixed(0)}
                             />
                             <RechartTooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
                             <Area 

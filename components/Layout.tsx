@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useConnect } from 'wagmi';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX } from 'lucide-react';
 import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { CHAIN_ID } from '../constants';
-import { playHover, playClick } from '../services/audio';
+import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../services/audio';
 import Logo from './Logo';
 import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
@@ -66,6 +66,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
   const [isIntelOpen, setIsIntelOpen] = useState(false);
+  const [soundEnabled, setSoundEnabledState] = useState(() => getSoundEnabled());
 
   const { openConnectModal } = useConnectModal();
   const { address: walletAddress, isConnected, chainId = 0 } = useAccount();
@@ -252,7 +253,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 onMouseEnter={playHover}
                 className="group relative hidden md:flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant bg-intuition-secondary text-white shadow-[0_0_20px_rgba(255,30,109,0.4)] hover:bg-white hover:text-intuition-secondary active:scale-95 border-2 border-transparent"
               >
-                <Plus size={16} /> NEW_SIGNAL
+                <Plus size={16} /> NEW CLAIM
               </button>
 
               {walletAddress && chainId !== CHAIN_ID && (
@@ -325,6 +326,26 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         <Copy size={14} /> COPY_IDENT_HASH
                       </button>
                       <button
+                        type="button"
+                        onClick={() => {
+                          const next = !soundEnabled;
+                          setSoundEnabled(next);
+                          setSoundEnabledState(next);
+                          if (next) playClick();
+                        }}
+                        onMouseEnter={playHover}
+                        style={{ animationDelay: '175ms' }}
+                        className="w-full flex items-center justify-between gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest animate-dropdown-item-in border-t border-white/5"
+                      >
+                        <span className="flex items-center gap-4">
+                          {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                          Sound effects
+                        </span>
+                        <span className={`inline-flex h-5 w-9 shrink-0 items-center rounded-sm border-2 transition-colors ${soundEnabled ? 'border-intuition-primary bg-intuition-primary/30' : 'border-slate-600 bg-slate-800'}`}>
+                          <span className={`inline-block h-4 w-4 translate-x-0.5 rounded-sm bg-white transition-transform ${soundEnabled ? 'translate-x-4' : ''}`} />
+                        </span>
+                      </button>
+                      <button
                         onClick={handleDisconnect}
                         onMouseEnter={playHover}
                         style={{ animationDelay: '200ms' }}
@@ -390,13 +411,33 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 1) * 45}ms` }}
                 className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest clip-path-slant shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
               >
-                <Plus size={18} /> NEW_SIGNAL_INBOUND
+                <Plus size={18} /> NEW CLAIM
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  setSoundEnabledState(next);
+                  if (next) playClick();
+                }}
+                style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
+                className="w-full flex items-center justify-between gap-3 px-5 py-4 border-2 border-slate-700 text-slate-300 font-mono font-black text-[10px] tracking-widest clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+              >
+                <span className="flex items-center gap-3">
+                  {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                  Sound effects
+                </span>
+                <span className={`inline-flex h-5 w-9 shrink-0 items-center rounded-sm border-2 transition-colors ${soundEnabled ? 'border-intuition-primary bg-intuition-primary/30' : 'border-slate-600 bg-slate-800'}`}>
+                  <span className={`inline-block h-4 w-4 translate-x-0.5 rounded-sm bg-white transition-transform ${soundEnabled ? 'translate-x-4' : ''}`} />
+                </span>
               </button>
 
               {walletAddress ? (
                 <button
                   onClick={handleDisconnect}
-                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
+                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms` }}
                   className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                 >
                   EXIT_SECURE_SESSION
@@ -404,7 +445,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               ) : (
                 <button
                   onClick={() => { playClick(); setIsMenuOpen(false); openModal(); }}
-                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
+                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms` }}
                   className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                 >
                   ESTABLISH_NEURAL_LINK
@@ -429,8 +470,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             <div className="md:col-span-2 space-y-10">
               <div className="flex items-center gap-6 group cursor-pointer" onMouseEnter={playHover}>
-<div className="w-16 h-16 sm:w-20 sm:h-20 md:w-28 md:h-28 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 clip-path-slant">
-                <Logo className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 group-hover:rotate-3 transition-transform" />
+<div className="w-16 h-16 sm:w-20 sm:h-20 md:w-28 md:h-28 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 clip-path-slant overflow-hidden p-1">
+                <Logo className="w-full h-full object-contain group-hover:rotate-3 transition-transform" />
                 </div>
                 <span className="text-3xl sm:text-4xl md:text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
                   INTU<span className="group-hover:text-white transition-colors">RANK</span>

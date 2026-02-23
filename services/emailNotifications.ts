@@ -11,12 +11,17 @@ import type { TransactionReceiptData } from './emailTemplates';
 
 const STORAGE_KEY = 'inturank_email_subscriptions';
 const NOTIFIED_IDS_KEY_PREFIX = 'inturank_notified_activity_';
+const NOTIFIED_FOLLOW_KEY_PREFIX = 'inturank_notified_follow_';
 const MAX_NOTIFIED_IDS = 2000;
+
+export type EmailAlertFrequency = 'per_tx' | 'daily';
 
 export interface EmailSubscription {
   email: string;
   nickname?: string;
   subscribedAt: number;
+  /** Per-transaction (one email per buy/sell) or daily digest (one email per day with all activity). */
+  alertFrequency?: EmailAlertFrequency;
 }
 
 function normalizeWallet(addr: string): string {
@@ -52,15 +57,28 @@ export function getEmailSubscription(walletAddress: string): EmailSubscription |
 export function setEmailSubscription(
   walletAddress: string,
   email: string,
-  nickname?: string
+  nickname?: string,
+  alertFrequency?: EmailAlertFrequency
 ): void {
   const key = normalizeWallet(walletAddress);
   const subs = loadSubscriptions();
+  const existing = subs[key];
   subs[key] = {
     email: email.trim().toLowerCase(),
     nickname: nickname?.trim() || undefined,
-    subscribedAt: Date.now(),
+    subscribedAt: existing?.subscribedAt ?? Date.now(),
+    alertFrequency: alertFrequency ?? existing?.alertFrequency ?? 'per_tx',
   };
+  saveSubscriptions(subs);
+}
+
+/** Update only the alert frequency for an existing subscription. */
+export function setEmailAlertFrequency(walletAddress: string, alertFrequency: EmailAlertFrequency): void {
+  const key = normalizeWallet(walletAddress);
+  const subs = loadSubscriptions();
+  const sub = subs[key];
+  if (!sub?.email) return;
+  subs[key] = { ...sub, alertFrequency };
   saveSubscriptions(subs);
 }
 
@@ -93,6 +111,26 @@ function saveNotifiedIds(walletAddress: string, ids: Set<string>): void {
   } catch (_) {}
 }
 
+function loadNotifiedFollowIds(walletAddress: string): Set<string> {
+  try {
+    const key = NOTIFIED_FOLLOW_KEY_PREFIX + normalizeWallet(walletAddress);
+    const raw = localStorage.getItem(key);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr.slice(-MAX_NOTIFIED_IDS)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveNotifiedFollowIds(walletAddress: string, ids: Set<string>): void {
+  try {
+    const key = NOTIFIED_FOLLOW_KEY_PREFIX + normalizeWallet(walletAddress);
+    const arr = Array.from(ids).slice(-MAX_NOTIFIED_IDS);
+    localStorage.setItem(key, JSON.stringify(arr));
+  } catch (_) {}
+}
+
 /**
  * Called when there's activity on a claim the user holds (someone else bought/sold).
  * Sends a rich HTML email to the subscribed address for that wallet.
@@ -104,6 +142,7 @@ export async function requestEmailNotification(
 ): Promise<void> {
   const sub = getEmailSubscription(walletAddress);
   if (!sub?.email) return;
+  if (sub.alertFrequency === 'daily') return; // Daily digest sent separately; skip per-tx email
 
   const notified = loadNotifiedIds(walletAddress);
   if (notified.has(notification.id)) return;
@@ -126,6 +165,53 @@ export async function requestEmailNotification(
   const html = getActivityNotificationHtml({
     marketLabel: notification.marketLabel,
     senderLabel: notification.senderLabel,
+    type: notification.type,
+    sharesFormatted,
+    assetsFormatted,
+    txHash: notification.txHash,
+  });
+
+  await sendEmailWithHtml({
+    to: sub.email,
+    subject,
+    message: plainBody,
+    html,
+  });
+}
+
+/**
+ * Send email when someone you follow buys or sells (activity by followed identity).
+ * Uses a separate "notified follow" set per wallet so we don't duplicate.
+ */
+export async function requestFollowedActivityEmail(
+  walletAddress: string,
+  followedLabel: string,
+  notification: PositionActivityNotification
+): Promise<void> {
+  const sub = getEmailSubscription(walletAddress);
+  if (!sub?.email) return;
+
+  const notified = loadNotifiedFollowIds(walletAddress);
+  if (notified.has(notification.id)) return;
+  notified.add(notification.id);
+  saveNotifiedFollowIds(walletAddress, notified);
+
+  const sharesFormatted = notification.shares ? formatDisplayedShares(notification.shares) : '—';
+  const assetsNum = notification.assets ? parseFloat(formatEther(BigInt(notification.assets))) : 0;
+  const assetsFormatted = assetsNum > 0 ? `₸${formatMarketValue(assetsNum)}` : '—';
+
+  const subject = `IntuRank: ${followedLabel} ${notification.type === 'liquidated' ? 'liquidated' : 'acquired'} in ${notification.marketLabel}`;
+  const plainBody = [
+    `${followedLabel} ${notification.type === 'liquidated' ? 'liquidated' : 'acquired'}${notification.shares ? ` ${sharesFormatted} shares` : ''}${assetsNum > 0 ? ` (₸${formatMarketValue(assetsNum)})` : ''} in ${notification.marketLabel}.`,
+    notification.txHash ? `Tx: ${notification.txHash}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const { getActivityNotificationHtml } = await import('./emailTemplates');
+  const html = getActivityNotificationHtml({
+    marketLabel: notification.marketLabel,
+    senderLabel: followedLabel,
     type: notification.type,
     sharesFormatted,
     assetsFormatted,

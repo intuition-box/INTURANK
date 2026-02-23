@@ -73,7 +73,7 @@ const CreateSignal: React.FC = () => {
   const handleBroadcastSdk = async () => {
     playClick();
     if (!payload.trim()) {
-      toast.error('ENTER_SIGNAL_PAYLOAD');
+      toast.error('Enter claim payload');
       return;
     }
     try {
@@ -84,7 +84,7 @@ const CreateSignal: React.FC = () => {
       const termId = result.state.termId as Hex;
       setLastTermId(termId);
       setSuccessModal({ termId, type: 'signal' });
-      toast.success('SIGNAL_BROADCAST_SUCCESS');
+      toast.success('Claim created successfully');
     } catch (err: any) {
       toast.error((err?.message || 'BROADCAST_FAILED').slice(0, 120));
     } finally {
@@ -413,7 +413,7 @@ const CreateSignal: React.FC = () => {
               <div>
                 <h2 id="success-modal-title" className="text-lg font-black text-white uppercase tracking-widest mb-1">Transaction confirmed</h2>
                 <p className="text-[10px] font-black text-intuition-success uppercase tracking-[0.2em]">
-                  {successModal.type === 'signal' && 'SIGNAL_BROADCAST'}
+                  {successModal.type === 'signal' && 'Claim created'}
                   {successModal.type === 'atom' && 'ATOM_ESTABLISHED'}
                   {successModal.type === 'synapse' && 'SYNAPSE_LINKED'}
                 </p>
@@ -424,7 +424,7 @@ const CreateSignal: React.FC = () => {
                   onClick={() => { playClick(); setSuccessModal(null); }}
                   className="flex items-center gap-2 px-6 py-3 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest transition-colors clip-path-slant"
                 >
-                  <ExternalLink size={14} /> Open market
+                  <ExternalLink size={14} /> Open claim
                 </Link>
               )}
               <button
@@ -454,7 +454,7 @@ const CreateSignal: React.FC = () => {
                   onMouseEnter={playHover}
                   className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200"
                 >
-                  <ArrowLeft size={16} /> Back to markets
+                  <ArrowLeft size={16} /> Back to claims
                 </Link>
                 <span className="text-[9px] text-intuition-primary uppercase tracking-[0.4em] font-black">CREATE</span>
               </div>
@@ -661,10 +661,10 @@ const CreateSignal: React.FC = () => {
             <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               {frameHeader}
-              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">SIGNAL_INGRESS</h1>
+              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">Create claim</h1>
               <h1 className="text-3xl md:text-5xl font-black text-intuition-primary font-display tracking-tighter uppercase text-center mb-8">ACTIVE</h1>
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center mb-10">
-                Choose how to create a new signal on the global trust graph.
+                Choose how to create a new claim on the Intuition trust graph.
               </p>
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
                 <button
@@ -675,7 +675,7 @@ const CreateSignal: React.FC = () => {
                   <Terminal size={32} className="text-intuition-primary mb-4 group-hover:scale-110 transition-transform" />
                   <div className="text-white font-black text-sm uppercase tracking-widest mb-2">USE_SDK</div>
                   <div className="text-[10px] text-slate-500 leading-relaxed">Quick broadcast. Payload + deposit; SDK handles creation on-chain.</div>
-                  <div className="mt-4 text-intuition-primary text-[10px] font-black uppercase tracking-widest">BROADCAST_SIGNAL →</div>
+                  <div className="mt-4 text-intuition-primary text-[10px] font-black uppercase tracking-widest">Create claim →</div>
                 </button>
                 <button
                   onClick={() => { playClick(); setView('manual_pathway'); }}
@@ -705,7 +705,7 @@ const CreateSignal: React.FC = () => {
               </p>
               <div className="w-full max-w-md space-y-4 mb-8 text-left">
                 <div>
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">SIGNAL_PAYLOAD</label>
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">Claim payload</label>
                   <input
                     value={payload}
                     onChange={(e) => setPayload(e.target.value)}
@@ -718,13 +718,13 @@ const CreateSignal: React.FC = () => {
                   <input type="number" min="0" step="0.001" value={deposit} onChange={(e) => setDeposit(e.target.value)} className="w-32 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono focus:border-intuition-primary outline-none" />
                 </div>
                 <button onClick={handleBroadcastSdk} disabled={creating} className="w-full py-4 bg-intuition-primary hover:bg-white text-black font-black text-xs tracking-[0.3em] uppercase flex items-center justify-center gap-3 transition-all shadow-glow-blue clip-path-slant disabled:opacity-60">
-                  {creating ? <><Loader2 size={16} className="animate-spin" /> BROADCASTING...</> : <>BROADCAST_SIGNAL</>}
+                  {creating ? <><Loader2 size={16} className="animate-spin" /> Creating...</> : <>Create claim</>}
                 </button>
                 {lastTermId && (
                   <div className="pt-4 border-t border-white/10 space-y-1">
                     <div className="text-[9px] text-slate-500 uppercase tracking-widest">Term ID</div>
                     <Link to={`/markets/${lastTermId}`} className="block text-intuition-primary font-mono text-xs break-all hover:underline">{lastTermId}</Link>
-                    <Link to={`/markets/${lastTermId}`} className="inline-block mt-2 text-[10px] font-black text-white uppercase tracking-widest hover:text-intuition-primary">→ OPEN_MARKET</Link>
+                    <Link to={`/markets/${lastTermId}`} className="inline-block mt-2 text-[10px] font-black text-white uppercase tracking-widest hover:text-intuition-primary">→ Open claim</Link>
                   </div>
                 )}
               </div>
@@ -745,13 +745,13 @@ const CreateSignal: React.FC = () => {
               <div className="w-full mb-8">
                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.25em] mb-4">CHOOSE_PATHWAY</div>
                 <p className="text-[10px] text-slate-500 leading-relaxed mb-8">
-                  Select the type of signal to commit to the global trust graph. All creations utilize the linear utility curve for initial predictable ingress.
+                  Select the type of claim to create on the Intuition trust graph. All creations use the linear curve for initial predictable liquidity.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <button onClick={() => { playClick(); setView('construct_atom'); }} onMouseEnter={playHover} className="p-8 bg-white/5 border border-intuition-primary/40 hover:border-intuition-primary clip-path-slant text-left transition-all group">
                     <Database size={28} className="text-intuition-primary mb-4" />
                     <div className="text-white font-black text-sm uppercase tracking-widest mb-2">CONSTRUCT_ATOM</div>
-                    <div className="text-[10px] text-slate-500 leading-relaxed mb-4">Anchor a new identity node. Define its metadata, biometric visual, and establish its initial market liquidity.</div>
+                    <div className="text-[10px] text-slate-500 leading-relaxed mb-4">Create a new atom (identity). Add metadata, image, and initial liquidity.</div>
                     <span className="text-intuition-primary text-[10px] font-black uppercase tracking-widest">INITIALIZE_GENESIS →</span>
                   </button>
                   <button onClick={() => { playClick(); setView('establish_synapse'); }} onMouseEnter={playHover} className="p-8 bg-white/5 border border-[#a855f7]/40 hover:border-[#a855f7] clip-path-slant text-left transition-all group">

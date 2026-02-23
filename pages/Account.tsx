@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { Wallet, Mail, Copy, Loader2, UserCircle, ChevronRight, BarChart2, ExternalLink, Trash2 } from 'lucide-react';
 import { getConnectedAccount, connectWallet } from '../services/web3';
-import { getEmailSubscription, removeEmailSubscription } from '../services/emailNotifications';
+import { getEmailSubscription, removeEmailSubscription, setEmailAlertFrequency, type EmailAlertFrequency } from '../services/emailNotifications';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
@@ -11,7 +11,7 @@ import { toast } from '../components/Toast';
 const Account: React.FC = () => {
   const { address: wagmiAddress } = useAccount();
   const [wallet, setWallet] = useState<string | null>(null);
-  const [subscription, setSubscription] = useState<{ email: string; nickname?: string; subscribedAt?: number } | null>(null);
+  const [subscription, setSubscription] = useState<{ email: string; nickname?: string; subscribedAt?: number; alertFrequency?: EmailAlertFrequency } | null>(null);
   const [connecting, setConnecting] = useState(false);
   const { openEmailNotify, isEmailNotifyOpen } = useEmailNotify();
 
@@ -19,7 +19,7 @@ const Account: React.FC = () => {
     setWallet(addr || null);
     if (addr) {
       const sub = getEmailSubscription(addr);
-      setSubscription(sub ? { email: sub.email, nickname: sub.nickname, subscribedAt: sub.subscribedAt } : null);
+      setSubscription(sub ? { email: sub.email, nickname: sub.nickname, subscribedAt: sub.subscribedAt, alertFrequency: sub.alertFrequency } : null);
     } else {
       setSubscription(null);
     }
@@ -51,7 +51,7 @@ const Account: React.FC = () => {
       setWallet(addr || null);
       if (addr) {
         const sub = getEmailSubscription(addr);
-        setSubscription(sub ? { email: sub.email, nickname: sub.nickname, subscribedAt: sub.subscribedAt } : null);
+        setSubscription(sub ? { email: sub.email, nickname: sub.nickname, subscribedAt: sub.subscribedAt, alertFrequency: sub.alertFrequency } : null);
       } else {
         toast.error('Connect your wallet first');
       }
@@ -134,6 +134,49 @@ const Account: React.FC = () => {
               <p className="text-slate-500 text-[10px] font-mono">Alerts since {new Date(subscription.subscribedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             )}
             <p className="text-slate-500 text-[10px]">We send activity on your holdings, app updates, and TRUST (₸) campaigns to this address.</p>
+            <div className="space-y-3">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alert frequency</span>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="radio"
+                    name="alertFrequency"
+                    checked={(subscription.alertFrequency ?? 'per_tx') === 'per_tx'}
+                    onChange={() => {
+                      if (!wallet) return;
+                      playClick();
+                      setEmailAlertFrequency(wallet, 'per_tx');
+                      setSubscription(prev => prev ? { ...prev, alertFrequency: 'per_tx' } : null);
+                      toast.success('You’ll get an email after each buy/sell.');
+                    }}
+                    className="sr-only"
+                  />
+                  <span className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center ${(subscription.alertFrequency ?? 'per_tx') === 'per_tx' ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600 bg-transparent'}`}>
+                    {(subscription.alertFrequency ?? 'per_tx') === 'per_tx' && <span className="w-1.5 h-1.5 bg-black rounded-sm" />}
+                  </span>
+                  <span className="text-slate-300 font-mono text-xs">After every buy/sell</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="radio"
+                    name="alertFrequency"
+                    checked={subscription.alertFrequency === 'daily'}
+                    onChange={() => {
+                      if (!wallet) return;
+                      playClick();
+                      setEmailAlertFrequency(wallet, 'daily');
+                      setSubscription(prev => prev ? { ...prev, alertFrequency: 'daily' } : null);
+                      toast.success('You’ll get one daily summary of activity.');
+                    }}
+                    className="sr-only"
+                  />
+                  <span className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center ${subscription.alertFrequency === 'daily' ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600 bg-transparent'}`}>
+                    {subscription.alertFrequency === 'daily' && <span className="w-1.5 h-1.5 bg-black rounded-sm" />}
+                  </span>
+                  <span className="text-slate-300 font-mono text-xs">Daily summary</span>
+                </label>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={() => { playClick(); openEmailNotify(); }}

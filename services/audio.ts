@@ -1,6 +1,23 @@
 // PROCEDURAL AUDIO ENGINE V3 (Cyberpunk/Tech)
 // High-tech, gritty, and futuristic UI sounds.
 
+const SOUND_PREF_KEY = 'inturank_sound_effects';
+
+export function getSoundEnabled(): boolean {
+  try {
+    const v = localStorage.getItem(SOUND_PREF_KEY);
+    return v !== 'false'; // default on
+  } catch {
+    return true;
+  }
+}
+
+export function setSoundEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(SOUND_PREF_KEY, String(enabled));
+  } catch (_) {}
+}
+
 let audioCtx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
 
@@ -38,6 +55,7 @@ export const playHover = () => {
 
 // --- CLICK: "Servo Lock" ---
 export const playClick = () => {
+  if (!getSoundEnabled()) return;
   try {
     const ctx = initAudio();
     if (!ctx || !masterGain || ctx.state !== 'running') return;
@@ -90,6 +108,7 @@ export const playClick = () => {
 
 // --- SUCCESS: "System Override" ---
 export const playSuccess = () => {
+  if (!getSoundEnabled()) return;
   try {
     const ctx = initAudio();
     if (!ctx || !masterGain || ctx.state !== 'running') return;

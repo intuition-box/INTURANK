@@ -2,6 +2,29 @@ import React, { ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+// Suppress known third-party errors that can break the app (e.g. TronLink extension
+// setting tronlinkParams on a proxy that rejects it). Log but do not throw.
+if (typeof window !== 'undefined') {
+  const originalOnError = window.onerror;
+  window.onerror = function (message, source, lineno, colno, error) {
+    const msg = typeof message === 'string' ? message : '';
+    if (msg.includes("'set' on proxy") && msg.includes('tronlinkParams')) {
+      console.warn('[IntuRank] Suppressed TronLink proxy error. If you don’t use TronLink, try disabling the extension for this site.');
+      return true; // prevent default handling
+    }
+    if (originalOnError) return originalOnError.call(this, message, source, lineno, colno, error);
+    return false;
+  };
+  window.addEventListener('unhandledrejection', (ev) => {
+    const msg = ev.reason?.message ?? String(ev.reason ?? '');
+    if (msg.includes("'set' on proxy") && msg.includes('tronlinkParams')) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      console.warn('[IntuRank] Suppressed TronLink proxy error (promise). If you don’t use TronLink, try disabling the extension for this site.');
+    }
+  });
+}
+
 // SYSTEM ERROR BOUNDARY
 // Catches crashes to prevent "White Screen of Death"
 interface ErrorBoundaryProps {
@@ -17,10 +40,17 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   public state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: any): ErrorBoundaryState {
+    const msg = error?.message ?? String(error ?? '');
+    if (msg.includes("'set' on proxy") && msg.includes('tronlinkParams')) {
+      if (typeof console !== 'undefined') console.warn('[IntuRank] Suppressed TronLink proxy error (Error Boundary). If you don’t use TronLink, try disabling the extension for this site.');
+      return { hasError: false, error: null };
+    }
     return { hasError: true, error };
   }
 
   componentDidCatch(error: any, errorInfo: any) {
+    const msg = error?.message ?? String(error ?? '');
+    if (msg.includes("'set' on proxy") && msg.includes('tronlinkParams')) return;
     console.error("CRITICAL_SYSTEM_FAILURE:", error, errorInfo);
   }
 

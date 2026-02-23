@@ -1,5 +1,6 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle, ShieldAlert, BadgeCheck, UserCog } from 'lucide-react';
 import { getTopPositions, getAllAgents, getTopClaims, getAccountPnlCurrent, getPnlLeaderboard, searchAccountsByLabel } from '../services/graphql';
 import { reverseResolveENS, resolveENS } from '../services/web3';
@@ -38,7 +39,15 @@ const Stats: React.FC = () => {
   const [error, setError] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isResolving, setIsResolving] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<{ id: string; label: string | null; image?: string | null }[]>([]);
+  const [ensSuggestion, setEnsSuggestion] = useState<{ address: string; name: string } | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsFetched, setSuggestionsFetched] = useState(false);
+  const searchSuggestionsRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const pnlCacheRef = React.useRef<{ entries: LeaderboardEntry[]; at: number } | null>(null);
+  const suggestionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- NAME RESOLUTION EFFECT ---
   useEffect(() => {
@@ -260,7 +269,88 @@ const Stats: React.FC = () => {
     fetchData();
   }, [activeTab]);
 
+  // ENS / name search suggestions: pop up from first character when not typing a wallet address
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (isAddress(q)) {
+      setSearchSuggestions([]);
+      setEnsSuggestion(null);
+      setShowSuggestions(false);
+      setSuggestionsFetched(false);
+      return;
+    }
+    if (!q) {
+      setSearchSuggestions([]);
+      setEnsSuggestion(null);
+      setShowSuggestions(false);
+      setSuggestionsLoading(false);
+      setSuggestionsFetched(false);
+      return;
+    }
+    if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
+    setShowSuggestions(true);
+    setSuggestionsLoading(true);
+    setSuggestionsFetched(false);
+    suggestionDebounceRef.current = setTimeout(async () => {
+      const ensName = q.toLowerCase().endsWith('.eth') ? q : `${q}.eth`;
+      try {
+        const [accounts, resolvedAddress] = await Promise.all([
+          searchAccountsByLabel(q),
+          q.length >= 2 ? resolveENS(ensName) : Promise.resolve(null),
+        ]);
+        setSearchSuggestions(accounts || []);
+        setEnsSuggestion(resolvedAddress ? { address: resolvedAddress, name: ensName } : null);
+        setShowSuggestions(true);
+      } catch {
+        setSearchSuggestions([]);
+        setEnsSuggestion(null);
+        setShowSuggestions(true);
+      } finally {
+        setSuggestionsLoading(false);
+        setSuggestionsFetched(true);
+      }
+      suggestionDebounceRef.current = null;
+    }, 280);
+    return () => {
+      if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
+    };
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchSuggestionsRef.current && !searchSuggestionsRef.current.contains(e.target as Node)) setShowSuggestions(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const q = searchQuery.trim();
+  const isQueryNonAddress = q.length > 0 && !isAddress(q);
+  const showSuggestionsDropdown = isQueryNonAddress && (showSuggestions || suggestionsLoading || suggestionsFetched);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!showSuggestionsDropdown || !searchInputRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const update = () => {
+      if (searchInputRef.current) {
+        const r = searchInputRef.current.getBoundingClientRect();
+        setDropdownRect({ top: r.bottom + 4, left: r.left, width: r.width });
+      }
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [showSuggestionsDropdown, searchQuery]);
+
   const handleSearch = async () => {
+      setShowSuggestions(false);
       const query = searchQuery.trim();
       if (!query) return;
 
@@ -324,7 +414,7 @@ const Stats: React.FC = () => {
                 { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-glow-blue' },
                 { id: 'PNL', icon: TrendingUp, label: 'TOP PNL', color: 'bg-amber-500', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(245,158,11,0.4)]' },
                 { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_25px_#00ff9d]' },
-                { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'MARKET ENTROPY', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
+                { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'Claim entropy', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
                 { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-glow-purple' }
             ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -356,16 +446,65 @@ const Stats: React.FC = () => {
                         <div className="bg-intuition-primary/10 h-16 flex items-center px-6 border-r-2 border-slate-900">
                             <Terminal size={24} className="text-intuition-primary animate-pulse" />
                         </div>
-                        <div className="flex-1 relative">
+                        <div className="flex-1 relative" ref={searchSuggestionsRef}>
                             <input 
+                                ref={searchInputRef}
                                 type="text" 
                                 placeholder="QUERY_DATABASE: [WALLET_ADDRESS | ENS_NAME]" 
                                 className="w-full h-16 bg-transparent text-white font-mono text-sm px-8 outline-none placeholder-slate-700 uppercase tracking-widest font-black"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                onFocus={() => isQueryNonAddress && setShowSuggestions(true)}
                                 disabled={isResolving}
                             />
+                            {showSuggestionsDropdown && createPortal(
+                              <div
+                                className="fixed bg-black border-2 border-intuition-primary/30 clip-path-slant shadow-2xl z-[100] max-h-64 overflow-y-auto"
+                                style={
+                                  dropdownRect
+                                    ? { top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, minWidth: 280 }
+                                    : { display: 'none' }
+                                }
+                              >
+                                {suggestionsLoading && !suggestionsFetched ? (
+                                  <div className="flex items-center gap-3 px-4 py-4 text-slate-400 font-mono text-xs">
+                                    <Loader2 size={14} className="animate-spin" /> Searching…
+                                  </div>
+                                ) : (searchSuggestions.length > 0 || ensSuggestion) ? (
+                                  <>
+                                    {ensSuggestion && (
+                                      <button
+                                        type="button"
+                                        onClick={() => { playClick(); setShowSuggestions(false); setSearchQuery(ensSuggestion.name); navigate(`/profile/${ensSuggestion.address}`); }}
+                                        onMouseEnter={playHover}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-intuition-primary/10 border-b border-white/5"
+                                      >
+                                        <span className="text-intuition-primary font-mono text-xs font-black">{ensSuggestion.name}</span>
+                                        <span className="text-slate-500 text-[10px] font-mono">ENS → {ensSuggestion.address.slice(0, 8)}...</span>
+                                      </button>
+                                    )}
+                                    {searchSuggestions.map((acc) => (
+                                      <button
+                                        key={acc.id}
+                                        type="button"
+                                        onClick={() => { playClick(); setShowSuggestions(false); setSearchQuery(acc.label || acc.id); navigate(`/profile/${acc.id}`); }}
+                                        onMouseEnter={playHover}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-intuition-primary/10 border-b border-white/5"
+                                      >
+                                        {acc.image && <img src={acc.image} alt="" className="w-8 h-8 rounded-full object-cover" />}
+                                        <span className="text-white font-mono text-xs font-bold truncate">{acc.label || `${acc.id.slice(0, 10)}...`}</span>
+                                      </button>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <div className="px-4 py-3 text-slate-500 font-mono text-[10px] uppercase tracking-widest">
+                                    No matches for “{q}”
+                                  </div>
+                                )}
+                              </div>,
+                              document.body
+                            )}
                         </div>
                         {(() => {
                             const query = searchQuery.trim();
@@ -417,7 +556,7 @@ const Stats: React.FC = () => {
            </div>
         ) : data.length === 0 ? (
            <div className="text-center py-40 text-slate-800 font-mono border-2 border-dashed border-slate-900 bg-black/40 clip-path-slant font-black tracking-[0.5em] uppercase">
-              [NULL_SET] NO_SIGNAL_DATA_RECOVERED
+              [NULL_SET] No claim data
            </div>
         ) : activeTab === 'PNL' ? (
             <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">

@@ -277,6 +277,7 @@ const Markets: React.FC = () => {
         <div className="flex bg-black border-2 border-slate-900 p-1 clip-path-slant relative z-10 h-fit self-center">
             {(['NODES', 'SYNAPSES', 'VECTORS'] as MarketSegment[]).map((seg) => {
                 const isActive = activeSegment === seg;
+                const label = seg === 'NODES' ? 'Atoms' : seg === 'SYNAPSES' ? 'Claims' : 'Lists';
                 return (
                     <button 
                         key={seg}
@@ -285,7 +286,7 @@ const Markets: React.FC = () => {
                         className={`px-8 py-3 flex items-center gap-3 font-mono text-[11px] font-black uppercase transition-all clip-path-slant ${isActive ? 'text-black bg-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white'}`}
                     >
                         {seg === 'NODES' ? <Hexagon size={16} /> : seg === 'SYNAPSES' ? <Network size={16} /> : <Layers size={16} />} 
-                        {seg}
+                        {label}
                     </button>
                 );
             })}
@@ -327,7 +328,7 @@ const Markets: React.FC = () => {
               </div>
               <input 
                   type="text" 
-                  placeholder={`QUERY_GLOBAL_DATABASE_${activeSegment}...`} 
+                  placeholder={`Search ${activeSegment === 'NODES' ? 'atoms' : activeSegment === 'SYNAPSES' ? 'claims' : 'lists'}...`} 
                   className="w-full bg-black rounded-none py-4 pl-12 pr-12 text-white font-mono text-xs focus:outline-none transition-all placeholder-slate-800 uppercase tracking-widest clip-path-slant"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}

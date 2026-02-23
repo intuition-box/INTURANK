@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { X, Mail, User, Loader2, CheckCircle } from 'lucide-react';
 import { getConnectedAccount, connectWallet } from '../services/web3';
-import { setEmailSubscription, getEmailSubscription, sendWelcomeEmail } from '../services/emailNotifications';
+import { setEmailSubscription, getEmailSubscription, sendWelcomeEmail, type EmailAlertFrequency } from '../services/emailNotifications';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { playClick, playHover } from '../services/audio';
 import { toast } from './Toast';
@@ -14,6 +14,7 @@ const EmailNotifyModal: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [nickname, setNickname] = useState('');
+  const [alertFrequency, setAlertFrequency] = useState<EmailAlertFrequency>('per_tx');
   const [connecting, setConnecting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -32,9 +33,11 @@ const EmailNotifyModal: React.FC = () => {
         if (sub) {
           setEmail(sub.email);
           setNickname(sub.nickname || '');
+          setAlertFrequency(sub.alertFrequency ?? 'per_tx');
         } else {
           setEmail('');
           setNickname('');
+          setAlertFrequency('per_tx');
         }
       } else {
         setEmail('');
@@ -83,7 +86,7 @@ const EmailNotifyModal: React.FC = () => {
     setLoading(true);
     try {
       // Subscription is stored by wallet address so alerts are tied to the connected wallet
-      setEmailSubscription(wallet, trimmedEmail, nickname.trim() || undefined);
+      setEmailSubscription(wallet, trimmedEmail, nickname.trim() || undefined, alertFrequency);
       await sendWelcomeEmail(trimmedEmail, nickname.trim() || undefined);
       setShowSuccess(true);
       if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
@@ -141,7 +144,7 @@ const EmailNotifyModal: React.FC = () => {
               You’re subscribed!
             </h3>
             <p className="text-sm font-mono text-slate-300 mb-6 max-w-xs mx-auto">
-              We’ll email you when there’s activity on your holdings.
+              We’ll email you when there’s activity on your claims.
             </p>
             <button
               type="button"
@@ -163,7 +166,7 @@ const EmailNotifyModal: React.FC = () => {
                   EMAIL ALERTS
                 </h2>
                 <p className="text-[10px] font-mono text-slate-300 uppercase tracking-wider mt-0.5">
-                  Get notified about your shares & holdings
+                  Get notified about activity on your claims
                 </p>
               </div>
             </div>
@@ -219,6 +222,37 @@ const EmailNotifyModal: React.FC = () => {
                       placeholder="How we should address you"
                       className="w-full bg-black border-2 border-white/15 py-2.5 pl-9 pr-3 text-sm text-white font-mono focus:border-amber-400 focus:shadow-[0_0_0_3px_rgba(251,191,36,0.25)] outline-none placeholder-slate-600 transition-all duration-200"
                     />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Alert frequency</span>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="modal-alertFrequency"
+                        checked={alertFrequency === 'per_tx'}
+                        onChange={() => setAlertFrequency('per_tx')}
+                        className="sr-only"
+                      />
+                      <span className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center ${alertFrequency === 'per_tx' ? 'border-amber-400 bg-amber-400' : 'border-slate-600 bg-transparent'}`}>
+                        {alertFrequency === 'per_tx' && <span className="w-1.5 h-1.5 bg-black rounded-sm" />}
+                      </span>
+                      <span className="text-slate-300 font-mono text-xs">After every buy/sell</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="modal-alertFrequency"
+                        checked={alertFrequency === 'daily'}
+                        onChange={() => setAlertFrequency('daily')}
+                        className="sr-only"
+                      />
+                      <span className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center ${alertFrequency === 'daily' ? 'border-amber-400 bg-amber-400' : 'border-slate-600 bg-transparent'}`}>
+                        {alertFrequency === 'daily' && <span className="w-1.5 h-1.5 bg-black rounded-sm" />}
+                      </span>
+                      <span className="text-slate-300 font-mono text-xs">Daily summary</span>
+                    </label>
                   </div>
                 </div>
                 <button

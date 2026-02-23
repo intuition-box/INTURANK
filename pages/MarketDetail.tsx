@@ -115,12 +115,12 @@ const AgentShareModal: React.FC<{
 
     const handleCopyLink = () => {
         navigator.clipboard.writeText(canonicalLink);
-        toast.success("SIGNAL_UPLINK_COPIED");
+        toast.success("Link copied");
         playClick();
     };
 
     const handleShareX = () => {
-        const text = `Inspecting ${agent.label} on @IntuRank. Quantifying trust at ${strength.toFixed(1)}% conviction. 🚀\n\nJoin the reputation market:`;
+        const text = `Inspecting ${agent.label} on @IntuRank. Quantifying trust at ${strength.toFixed(1)}% conviction. 🚀\n\nJoin the claim:`;
         const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(canonicalLink)}`;
         window.open(xUrl, '_blank');
         playClick();
@@ -140,7 +140,7 @@ const AgentShareModal: React.FC<{
             });
             const link = document.createElement('a');
             link.href = canvas.toDataURL('image/png');
-            link.download = `inturank-${agent.label.toLowerCase()}-signal.png`;
+            link.download = `inturank-${agent.label.toLowerCase()}-claim.png`;
             link.click();
             toast.success("NEURAL_FRAME_DOWNLOADED");
         } catch (e) {
@@ -172,7 +172,7 @@ const AgentShareModal: React.FC<{
                     <div className="flex justify-between items-center mb-8 relative z-10 gap-10">
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 text-[10px] font-black font-mono uppercase tracking-[0.5em] mb-3 transition-colors duration-1000" style={{ color: theme.color }}>
-                                <Activity size={14} className="animate-pulse" /> Neural_Signal_Packet
+                                <Activity size={14} className="animate-pulse" /> Activity
                             </div>
                             <h2 
                                 className="text-4xl md:text-5xl lg:text-6xl font-black font-display text-white tracking-tighter uppercase leading-tight break-all transition-all duration-1000"
@@ -508,7 +508,7 @@ const MarketDetail: React.FC = () => {
         }
 
         if (!activeTargetId) {
-            toast.error("VAULT_NOT_FOUND: Opposition node not initialized.");
+            toast.error("Claim not found: opposition not initialized.");
             return;
         }
 
@@ -532,7 +532,7 @@ const MarketDetail: React.FC = () => {
         setTxModal({ 
             isOpen: true, 
             status: 'processing', 
-            title: action === 'ACQUIRE' ? 'SIGNAL_ACQUISITION' : 'LIQUIDITY_RECLAMATION', 
+            title: action === 'ACQUIRE' ? 'Acquire shares' : 'Redeem', 
             message: 'Executing protocol handshake...',
             logs: ['Initializing Secure Uplink...'] 
         });
@@ -581,7 +581,7 @@ const MarketDetail: React.FC = () => {
             setTxModal(prev => ({ 
                 ...prev, 
                 status: 'success', 
-                title: 'SIGNAL_LOCKED', 
+                title: 'Done', 
                 message: 'Transaction verified on-chain.', 
                 hash: res.hash,
                 logs: [...prev.logs, 'Finalizing Local Ledger Sync...', 'Uplink Synchronized.']
@@ -631,11 +631,11 @@ const MarketDetail: React.FC = () => {
     if (pct >= 5) return { label: 'MAX_CONVICTION', color: 'text-intuition-primary border-intuition-primary/40 bg-intuition-primary/10 shadow-glow-blue' };
     if (pct >= 1) return { label: 'HIGH_CONVICTION', color: 'text-white border-white/20 bg-white/5' };
     if (pct >= 0.1) return { label: 'MID_CONVICTION', color: 'text-slate-400 border-slate-800' };
-    return { label: 'SIGNAL_STAKE', color: 'text-slate-600 border-slate-900 opacity-60' };
+    return { label: 'Acquire / Redeem', color: 'text-slate-600 border-slate-900 opacity-60' };
   };
 
   if (loading || !agent)
-        return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Syncing_Signal...</div>;
+        return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Loading claim...</div>;
   
   const currentSpotPrice = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const currentStrength = computeTrust(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
@@ -658,7 +658,7 @@ const MarketDetail: React.FC = () => {
           onMouseEnter={playHover}
           className="inline-flex items-center gap-2 px-4 py-2.5 mb-6 border-2 border-slate-700 text-slate-400 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 hover:shadow-glow-blue"
         >
-          <ArrowLeft size={16} /> Back to markets
+          <ArrowLeft size={16} /> Back to claims
         </Link>
         <TransactionModal 
             isOpen={txModal.isOpen} 
@@ -736,7 +736,7 @@ const MarketDetail: React.FC = () => {
             </div>
             <div className="hidden lg:block w-[1px] h-4 bg-white/10"></div>
             <div className="flex items-center gap-5 lg:ml-auto">
-                <button onClick={() => { playClick(); setIsShareModalOpen(true); }} onMouseEnter={playHover} className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue" title="SHARE_NODE_SIGNAL"><Share2 size={20} className="group-hover:scale-110 transition-transform" /></button>
+                <button onClick={() => { playClick(); setIsShareModalOpen(true); }} onMouseEnter={playHover} className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue" title="Share claim"><Share2 size={20} className="group-hover:scale-110 transition-transform" /></button>
                 <a href={`${EXPLORER_URL}/address/${agent.id}`} target="_blank" rel="noreferrer" onMouseEnter={playHover} className="w-11 h-11 flex items-center justify-center bg-black border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all rounded-full group shadow-2xl hover:shadow-glow-blue" title="INITIALIZE_NODE_RECON"><ScanSearch size={20} className="group-hover:scale-110 transition-transform" /></a>
             </div>
         </div>
@@ -795,7 +795,7 @@ const MarketDetail: React.FC = () => {
                     <div className="p-4 sm:p-6 md:p-10 flex flex-col md:flex-row justify-between items-end bg-[#02040a]/80 backdrop-blur-md relative z-20 border-b border-white/5 gap-4 md:gap-8">
                         <div>
                             <div className="flex items-baseline gap-2 sm:gap-3 mb-2 flex-wrap"><div className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700 flex items-baseline gap-2"><CurrencySymbol size="3xl" leading className="text-white/90" /><span>{formatMarketValue(displayPrice)}</span></div><div className="text-[10px] sm:text-[14px] text-slate-500 font-mono tracking-widest uppercase font-black">/ PORTAL_SHARE</div></div>
-                            <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.4em] mt-3 text-glow" style={{ color: theme.color }}><Activity size={12} className="animate-pulse shadow-[0_0_15px_currentColor]" /> SIGNAL_TELEMETRY_LIVE</div>
+                            <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.4em] mt-3 text-glow" style={{ color: theme.color }}><Activity size={12} className="animate-pulse shadow-[0_0_15px_currentColor]" /> Live</div>
                         </div>
                         <div className="flex gap-12 font-black text-right pb-1">
                              <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">24H_VOLATILITY</span><span className="text-2xl text-white font-display tracking-tight text-glow-white">0.82%</span></div>
@@ -851,7 +851,7 @@ const MarketDetail: React.FC = () => {
                         {isPolarityAvailable && (
                             <div className="mb-10 animate-in fade-in slide-in-from-top-2 duration-500">
                                 <div className="flex justify-between items-center mb-4 px-1">
-                                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Signal_Polarity</span>
+                                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Position</span>
                                     {sentiment === 'DISTRUST' && (
                                         <span className="text-[8px] font-black text-intuition-danger uppercase tracking-tighter">Opposing Node active</span>
                                     )}
@@ -892,8 +892,8 @@ const MarketDetail: React.FC = () => {
                         
                         <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 group/btn ${sentiment === 'DISTRUST' ? 'bg-intuition-danger border-intuition-danger text-white hover:bg-white hover:text-intuition-danger' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '', borderColor: sentiment === 'TRUST' ? theme.color : '', color: sentiment === 'TRUST' ? '#000' : '' }}>
                             <span className="group-hover/btn:scale-105 transition-transform block">
-                                {!isApproved && action === 'ACQUIRE' ? 'ENABLE_PROTOCOL' : 
-                                 action === 'ACQUIRE' ? `SIGNAL_${sentiment}` : `LIQUIDATE_${sentiment}`}
+                                {!isApproved && action === 'ACQUIRE' ? 'Approve' : 
+                                 action === 'ACQUIRE' ? `Acquire · ${sentiment}` : `Redeem · ${sentiment}`}
                             </span>
                         </button>
                     </div>

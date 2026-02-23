@@ -130,10 +130,15 @@ export const formatDisplayedShares = (val: string | bigint | number): string => 
 /**
  * Calculates accurate PnL. 
  * Unrealized PnL should use Spot Price (valuation) to avoid spread red ink on new positions.
+ * When curveId is provided, only deposits/redemptions for that curve are used (linear vs exponential).
  */
-export const calculatePositionPnL = (sharesHeld: number, valuationPrice: number, unifiedHistory: Transaction[], vaultId: string) => {
+export const calculatePositionPnL = (sharesHeld: number, valuationPrice: number, unifiedHistory: Transaction[], vaultId: string, curveId?: number) => {
     const normalizedId = vaultId.toLowerCase();
-    const filteredHistory = unifiedHistory.filter(tx => tx.vaultId?.toLowerCase() === normalizedId);
+    const filteredHistory = unifiedHistory.filter(tx => {
+        if (tx.vaultId?.toLowerCase() !== normalizedId) return false;
+        if (curveId != null && tx.curveId != null && tx.curveId !== curveId) return false;
+        return true;
+    });
     
     let totalSpent = 0;
     let totalSharesBought = 0;

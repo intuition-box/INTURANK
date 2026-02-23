@@ -72,20 +72,21 @@ const Dashboard: React.FC = () => {
 
       const graphPositions = await getUserPositions(address).catch(() => []);
 
+      const DUST = 1e-8; // only show positions with real on-chain balance (exclude sold / dust)
       const livePositionsData = await Promise.all(
         graphPositions.map(async (p: any) => {
           try {
-            const atom = p.vault.term.atom;
-            const triple = p.vault.term.triple;
-            const id = atom?.term_id || triple?.term_id;
+            const atom = p.vault?.term?.atom;
+            const triple = p.vault?.term?.triple;
+            const id = (p.vault?.term_id || atom?.term_id || triple?.term_id)?.toString?.()?.toLowerCase?.();
             if (!id) return null;
 
-            const curveId = atom ? 1 : 2;
+            const rawCurve = p.vault?.curve_id;
+            const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
             
             const sharesStr = await getShareBalance(address, id, curveId);
-            const shares = parseFloat(sharesStr || '0');
-            
-            if (shares <= 0.000001) return null;
+            const shares = typeof sharesStr === 'string' ? parseFloat(sharesStr) : Number(sharesStr ?? 0);
+            if (!Number.isFinite(shares) || shares <= DUST) return null;
 
             const valueStr = await getQuoteRedeem(sharesStr, id, address, curveId);
             const value = parseFloat(valueStr);

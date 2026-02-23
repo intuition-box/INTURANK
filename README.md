@@ -102,6 +102,17 @@ All write helpers automatically:
 
 For full protocol and SDK docs, see the upstream monorepo: `https://github.com/0xIntuition/intuition-ts`.
 
+## 🔧 Troubleshooting
+
+### `'set' on proxy: trap returned falsish for property 'tronlinkParams'`
+This comes from the **TronLink** browser extension when it tries to inject into the page. The app now suppresses this so it doesn’t crash. If you don’t use TronLink, disable the extension for this site or use a different browser profile.
+
+### `The source http://localhost:3000/ has not been authorized yet`
+This is **WalletConnect** (used by RainbowKit) rejecting the page origin. It usually appears if you open the app at `http://localhost:3000` (e.g. after changing Vite’s port or running Remotion Studio on 3000).
+
+- **Fix:** In the [WalletConnect Cloud](https://cloud.walletconnect.com) dashboard, open your project → **Settings** → add `http://localhost:3000` to the **Allowed origins** list. Changes can take a few minutes to apply.
+- **Alternative:** Run the app on the default Vite port so the URL is `http://localhost:5173`, which is typically already allowed (`npm run dev`).
+
 ---
 
 *Powered by [Intuition Systems](https://intuition.systems).*

@@ -278,10 +278,10 @@ const Home: React.FC = () => {
           </Reveal>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
-            <Reveal delay={100}><StatBox label="Protocol Volume" value={formattedVolume} sub={`${CURRENCY_SYMBOL} EQUITY`} icon={<Box size={18}/>} color="secondary" /></Reveal>
-            <Reveal delay={200}><StatBox label="Semantic Nodes" value={stats.atoms.toLocaleString()} sub="VERIFIED ATOMS" icon={<HardDrive size={18}/>} color="primary" /></Reveal>
-            <Reveal delay={300}><StatBox label="Signal Density" value={stats.signals.toLocaleString()} sub="GRAPH TRIPLES" icon={<Binary size={18}/>} color="secondary" /></Reveal>
-            <Reveal delay={400}><StatBox label="Uplink Flux" value={`${stats.positions.toLocaleString()}Hz`} sub="THROUGHPUT" icon={<Activity size={18}/>} color="primary" /></Reveal>
+            <Reveal delay={100}><div className="min-w-0"><StatBox label="Protocol Volume" value={formattedVolume} sub={`${CURRENCY_SYMBOL} EQUITY`} icon={<Box size={18}/>} color="secondary" /></div></Reveal>
+            <Reveal delay={200}><div className="min-w-0"><StatBox label="Semantic Nodes" value={stats.atoms.toLocaleString()} sub="VERIFIED ATOMS" icon={<HardDrive size={18}/>} color="primary" /></div></Reveal>
+            <Reveal delay={300}><div className="min-w-0"><StatBox label="Claims" value={stats.signals.toLocaleString()} sub="ON GRAPH" icon={<Binary size={18}/>} color="secondary" /></div></Reveal>
+            <Reveal delay={400}><div className="min-w-0"><StatBox label="Active positions" value={stats.positions.toLocaleString()} sub="ON PROTOCOL" icon={<Activity size={18}/>} color="primary" /></div></Reveal>
           </div>
         </div>
       </div>
@@ -297,7 +297,7 @@ const Home: React.FC = () => {
               EMAIL ALERTS
             </div>
             <h3 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black font-display text-white uppercase tracking-tighter mb-4 text-glow-white leading-tight">
-              Get notified about your shares & holdings<br className="hidden sm:block" /> <span className="text-amber-300 text-glow-gold">via email</span>
+              Get notified about activity on your claims<br className="hidden sm:block" /> <span className="text-amber-300 text-glow-gold">via email</span>
             </h3>
             <p className="text-slate-300 font-mono text-sm sm:text-base max-w-xl mx-auto mb-10 leading-relaxed">
               When others buy or sell in claims you hold, we’ll notify you in the app and by email. Connect your wallet and add your email below.
@@ -349,15 +349,15 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
     const valLength = valStr.length;
     
     const getFontSize = () => {
-        if (valLength > 15) return 'text-xl sm:text-2xl md:text-3xl';
-        if (valLength > 12) return 'text-2xl sm:text-3xl md:text-4xl';
-        if (valLength > 10) return 'text-3xl sm:text-4xl md:text-5xl';
-        if (valLength > 8) return 'text-4xl sm:text-5xl md:text-6xl';
-        return 'text-5xl sm:text-6xl md:text-7xl';
+        if (valLength > 14) return 'text-base sm:text-lg md:text-xl';
+        if (valLength > 12) return 'text-lg sm:text-xl md:text-2xl';
+        if (valLength > 10) return 'text-xl sm:text-2xl md:text-3xl';
+        if (valLength > 8) return 'text-2xl sm:text-3xl md:text-4xl';
+        return 'text-3xl sm:text-4xl md:text-5xl';
     };
 
     return (
-      <div className={`relative p-8 bg-[#02040a] group motion-hover-lift flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none hover:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]`}>
+      <div className={`relative p-8 bg-[#02040a] group motion-hover-lift flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none hover:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] min-w-0`}>
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-10 pointer-events-none"></div>
         
         <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
@@ -365,18 +365,18 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
         
         <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent opacity-40 pointer-events-none"></div>
         
-        <div className="flex justify-between items-start mb-6 relative z-10">
-            <div className="flex flex-col gap-1.5">
-                <span className="text-slate-500 font-mono text-[9px] uppercase tracking-[0.4em] font-black group-hover:text-white transition-colors">{label}</span>
+        <div className="flex justify-between items-start mb-6 relative z-10 shrink-0">
+            <div className="flex flex-col gap-1.5 min-w-0">
+                <span className="text-slate-500 font-mono text-[9px] uppercase tracking-[0.4em] font-black group-hover:text-white transition-colors truncate">{label}</span>
                 <div className={`h-[1px] w-12 ${isRed ? 'bg-intuition-secondary' : 'bg-intuition-primary'} opacity-40 group-hover:w-full transition-all duration-1000`}></div>
             </div>
-            <div className={`p-3 bg-black border border-white/10 rounded-none clip-path-slant transition-all duration-500 group-hover:scale-110 group-hover:border-current shadow-inner ${textClass}`}>
+            <div className={`p-3 bg-black border border-white/10 rounded-none clip-path-slant transition-all duration-500 group-hover:scale-110 group-hover:border-current shadow-inner shrink-0 ${textClass}`}>
                 {icon}
             </div>
         </div>
 
-        <div className="flex-1 flex items-center justify-start relative z-10 min-h-0 overflow-hidden">
-            <div className={`font-black text-white font-display transition-all duration-500 tracking-tighter w-full break-all leading-[1.35] min-h-[1.35em] group-hover:scale-[1.02] ${getFontSize()} ${glowClass}`}>
+        <div className="flex-1 flex items-center justify-start relative z-10 min-h-0 min-w-0 overflow-hidden">
+            <div title={valStr} className={`font-black text-white font-display transition-all duration-500 tracking-tighter w-full min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[1.35] group-hover:scale-[1.02] ${getFontSize()} ${glowClass}`}>
                 {value}
             </div>
         </div>

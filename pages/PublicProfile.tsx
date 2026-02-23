@@ -1,10 +1,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount } from '../services/graphql';
-import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon } from 'lucide-react';
+import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount, getCurveLabel } from '../services/graphql';
+import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail } from 'lucide-react';
 import { formatEther, isAddress } from 'viem';
 import { Transaction } from '../types';
 import { calculateCategoryExposure, calculateSentimentBias, formatMarketValue, formatDisplayedShares } from '../services/analytics';
@@ -12,13 +13,16 @@ import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { playClick } from '../services/audio';
 import { toast } from '../components/Toast';
+import { isFollowing, addFollow, removeFollow, setFollowEmailAlerts, type FollowEntry } from '../services/follows';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#ff0055', '#facc15', '#94a3b8'];
 
 const PublicProfile: React.FC = () => {
   const { address } = useParams<{ address: string }>();
   const navigate = useNavigate();
+  const { address: connectedAddress } = useAccount();
   const [ensName, setEnsName] = useState<string | null>(null);
+  const [followEntry, setFollowEntry] = useState<FollowEntry | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [history, setHistory] = useState<Transaction[]>([]);
   const [volumeData, setVolumeData] = useState<any[]>([]);
@@ -35,6 +39,11 @@ const PublicProfile: React.FC = () => {
   useEffect(() => {
     if (address) fetchUserData(address);
   }, [address]);
+
+  useEffect(() => {
+    if (connectedAddress && address) setFollowEntry(isFollowing(connectedAddress, address) ?? null);
+    else setFollowEntry(null);
+  }, [connectedAddress, address]);
 
   const fetchUserData = async (addr: string) => {
     setLoading(true);
@@ -60,7 +69,7 @@ const PublicProfile: React.FC = () => {
       
       let totalAssetsSum = 0;
 
-      const DUST = 1e-10; // treat below this as zero (sold / dust)
+      const DUST = 1e-8; // treat below this as zero (sold / dust) — strict so closed positions never show
       const graphWithShares = graphPositions.filter((p: any) => {
         const s = p.shares;
         if (s === undefined || s === null) return false;
@@ -70,14 +79,17 @@ const PublicProfile: React.FC = () => {
 
       // Only show positions the user currently holds (on-chain verified)
       const livePositions = await Promise.all(graphWithShares.map(async (p: any) => {
-          const id = p.vault.term_id.toLowerCase();
-          const curveId = Number(p.vault.curve_id || 1);
+          const rawId = p.vault?.term_id;
+          if (!rawId || typeof rawId !== 'string') return null;
+          const id = rawId.toLowerCase();
           const meta = metadata.find(m => m.id.toLowerCase() === id);
+          const rawCurve = p.vault.curve_id ?? meta?.curveId;
+          const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
           
           const sharesRaw = await getShareBalance(addr, id, curveId);
-          const sharesNum = parseFloat(sharesRaw);
-          
-          if (!(sharesNum > DUST)) return null;
+          const sharesNum = typeof sharesRaw === 'string' ? parseFloat(sharesRaw) : Number(sharesRaw);
+          const hasBalance = Number.isFinite(sharesNum) && sharesNum > DUST;
+          if (!hasBalance) return null;
 
           const valueStr = await getQuoteRedeem(sharesRaw, id, addr, curveId);
           const value = parseFloat(valueStr);
@@ -101,6 +113,7 @@ const PublicProfile: React.FC = () => {
 
           return {
               id,
+              curveId,
               shares: sharesNum,
               value: value,
               atom: { label, id, image, type }
@@ -215,29 +228,94 @@ const PublicProfile: React.FC = () => {
       <div className="mb-12 p-1 bg-gradient-to-r from-intuition-primary/40 via-white/10 to-intuition-primary/40 rounded-none clip-path-slant shadow-[0_0_50px_rgba(0,243,255,0.05)]">
         <div className="bg-[#050505] p-10 flex flex-col md:flex-row items-center gap-10 clip-path-slant relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-          <div className="w-28 h-28 bg-black border-2 border-slate-800 flex items-center justify-center shadow-2xl group relative clip-path-slant">
+          <div className="w-28 h-28 bg-black border-2 border-slate-800 flex items-center justify-center shadow-2xl group relative clip-path-slant shrink-0">
             <div className="absolute inset-0 bg-intuition-primary/5 group-hover:bg-intuition-primary/10 transition-colors"></div>
             <User size={56} className="text-slate-600 group-hover:text-intuition-primary transition-colors" />
           </div>
-          <div className="flex-1 text-center md:text-left relative z-10">
-            <div className="text-slate-500 font-mono text-[10px] tracking-[0.4em] uppercase mb-3 font-black">Reputation_Profile_S04</div>
+          <div className="flex-1 min-w-0 text-center md:text-left relative z-10">
+            <div className="text-slate-400 font-mono text-[11px] tracking-[0.3em] uppercase mb-3 font-black antialiased">Reputation_Profile_S04</div>
             <h1 className="text-4xl md:text-5xl font-black text-white font-display tracking-tighter mb-1 text-glow-white uppercase">
                 {ensName || (address ? address.slice(0, 6) + "..." + address.slice(-4) : "INVALID_IDENT")}
             </h1>
             {ensName && (
-                <div className="text-[11px] font-black font-mono text-intuition-primary/60 tracking-widest mb-6 bg-black w-fit px-3 py-1 border border-intuition-primary/20 clip-path-slant">
+                <div className="text-xs font-black font-mono text-intuition-primary/80 tracking-widest mb-6 bg-black w-fit px-3 py-1.5 border border-intuition-primary/30 clip-path-slant mx-auto md:mx-0 antialiased">
                     {address}
                 </div>
             )}
             {!ensName && <div className="mb-4"></div>}
-            <div className="flex flex-wrap gap-4 justify-center md:justify-start font-mono text-[9px] font-black uppercase">
-              <span className="bg-intuition-primary/10 text-intuition-primary px-3 py-1.5 border border-intuition-primary/30 clip-path-slant">LEVEL: {activeHoldingsCount > 50 ? 'ELITE_TRADER' : activeHoldingsCount > 10 ? 'MASTER_TRADER' : 'RECON_LEVEL_1'}</span>
-              <span className="bg-white/5 text-slate-400 px-3 py-1.5 border border-white/10 clip-path-slant">
-                  {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} ACTIVE_HOLDINGS
-              </span>
-              <span className="bg-black text-slate-300 px-3 py-1.5 border border-slate-800 flex items-center gap-2 clip-path-slant">
-                  <Wallet size={10} className="text-intuition-primary" /> {ethBalance} {CURRENCY_SYMBOL}
-              </span>
+            <div className="flex flex-wrap items-center gap-3 justify-between font-mono font-black uppercase antialiased">
+              <div className="flex flex-wrap gap-3 justify-center md:justify-start items-center">
+                <span className="bg-intuition-primary/20 text-intuition-primary px-3 py-2 border border-intuition-primary/40 clip-path-slant text-xs tracking-wide">LEVEL: {activeHoldingsCount > 50 ? 'ELITE_TRADER' : activeHoldingsCount > 10 ? 'MASTER_TRADER' : 'RECON_LEVEL_1'}</span>
+                <span className="bg-white/10 text-slate-200 px-3 py-2 border border-white/20 clip-path-slant text-xs tracking-wide">
+                    {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} ACTIVE CLAIMS
+                </span>
+                <span className="bg-black text-slate-200 px-3 py-2 border border-slate-600 flex items-center gap-2 clip-path-slant text-xs tracking-wide">
+                    <Wallet size={12} className="text-intuition-primary" /> {ethBalance} {CURRENCY_SYMBOL}
+                </span>
+              </div>
+              {connectedAddress && address && (address.toLowerCase() !== connectedAddress.toLowerCase()) && (
+                <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 shrink-0">
+                  {followEntry ? (
+                    <>
+                      <span className="bg-intuition-success/20 text-intuition-success px-3 py-2 border border-intuition-success/40 clip-path-slant flex items-center gap-1.5 text-xs font-black uppercase tracking-wide">
+                        <UserMinus size={12} /> Following
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClick();
+                          removeFollow(connectedAddress, address);
+                          setFollowEntry(null);
+                          toast.success('Unfollowed');
+                        }}
+                        className="px-3 py-2 text-xs font-black border-2 border-slate-500 text-slate-200 hover:text-white hover:border-slate-400 clip-path-slant uppercase tracking-wide"
+                      >
+                        Unfollow
+                      </button>
+                      <label
+                        className="flex items-center gap-2 px-3 py-2 border-2 border-slate-600 rounded-sm cursor-pointer hover:border-amber-500/50 hover:text-amber-400/90 transition-all duration-200"
+                        title="Email when they buy or sell"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={followEntry.emailAlerts}
+                          onChange={(e) => {
+                            playClick();
+                            setFollowEmailAlerts(connectedAddress, address, e.target.checked);
+                            setFollowEntry((prev) => (prev ? { ...prev, emailAlerts: e.target.checked } : null));
+                          }}
+                          className="sr-only"
+                        />
+                        <span className={`flex items-center justify-center w-5 h-5 border-2 rounded-sm shrink-0 ${followEntry.emailAlerts ? 'bg-amber-500 border-amber-400 text-black' : 'bg-black border-slate-500 text-transparent'}`}>
+                          {followEntry.emailAlerts && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </span>
+                        <Mail size={14} className={followEntry.emailAlerts ? 'text-amber-400' : 'text-slate-400'} />
+                        <span className="text-xs font-semibold tracking-normal text-slate-200 antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                          Email alerts
+                        </span>
+                      </label>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClick();
+                        const label = ensName || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
+                        addFollow(connectedAddress, address, { label, emailAlerts: true });
+                        setFollowEntry(isFollowing(connectedAddress, address) ?? null);
+                        toast.success('Following — you’ll get alerts when they buy');
+                      }}
+                      className="bg-black text-amber-400 border-2 border-amber-400 px-4 py-2.5 clip-path-slant flex items-center gap-2.5 shadow-[0_0_14px_rgba(251,191,36,0.5),0_0_28px_rgba(245,158,11,0.2)] hover:border-amber-300 hover:text-amber-300 hover:shadow-[0_0_18px_rgba(251,191,36,0.6),0_0_36px_rgba(245,158,11,0.25)] transition-all duration-200"
+                      title="Get email when they buy or sell"
+                    >
+                      <UserPlus size={16} strokeWidth={2} className="shrink-0" />
+                      <span className="text-sm font-semibold tracking-normal antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                        Follow · Email when they buy
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -325,7 +403,7 @@ const PublicProfile: React.FC = () => {
           </div>
           <div className="lg:col-span-2 bg-[#020408] border border-slate-900 p-10 clip-path-slant h-[360px] flex flex-col shadow-2xl group overflow-hidden relative">
               <div className="absolute inset-0 bg-gradient-to-tr from-intuition-primary/5 via-transparent to-transparent opacity-40"></div>
-              <h3 className="text-[10px] font-black text-white uppercase mb-8 tracking-[0.4em] flex items-center gap-4 relative z-10"><Activity size={16} className="text-intuition-primary animate-pulse"/> Temporal_Signal_Volume</h3>
+              <h3 className="text-[10px] font-black text-white uppercase mb-8 tracking-[0.4em] flex items-center gap-4 relative z-10"><Activity size={16} className="text-intuition-primary animate-pulse"/> Activity over time</h3>
               <div className="flex-1 relative z-10">
                 {volumeData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
@@ -352,7 +430,7 @@ const PublicProfile: React.FC = () => {
 
       <div className="bg-black border border-slate-900 clip-path-slant overflow-hidden shadow-2xl">
           <div className="p-4 sm:p-6 md:p-8 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h3 className="text-[10px] sm:text-xs font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase flex items-center gap-4"><Fingerprint size={20} className="text-slate-500 shrink-0"/> Public_Holding_Ledger</h3>
+              <h3 className="text-[10px] sm:text-xs font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase flex items-center gap-4"><Fingerprint size={20} className="text-slate-500 shrink-0"/> Claims you hold</h3>
               <div className="text-[8px] font-black text-slate-700 uppercase tracking-[0.4em]">Verified_On_Intuition_Mainnet</div>
           </div>
           <div className="overflow-x-auto">
@@ -361,6 +439,7 @@ const PublicProfile: React.FC = () => {
                       <tr>
                           <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Identity_Node</th>
                           <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Sector</th>
+                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Curve</th>
                           <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Magnitude</th>
                           <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Net_Valuation</th>
                           <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Recon</th>
@@ -368,7 +447,7 @@ const PublicProfile: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-white/5">
                       {positions.length > 0 ? positions.map((p, i) => (
-                          <tr key={i} className="hover:bg-white/5 transition-all group relative">
+                          <tr key={`${p.id}-${p.curveId ?? 1}-${i}`} className="hover:bg-white/5 transition-all group relative">
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6">
                                   <Link to={`/markets/${p.id}`} className="flex items-center gap-3 sm:gap-6 group-hover:text-intuition-primary transition-colors">
                                       <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 border-2 border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shadow-xl shrink-0">
@@ -383,6 +462,9 @@ const PublicProfile: React.FC = () => {
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6">
                                   <span className="px-2 sm:px-3 py-0.5 sm:py-1 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-[0.1em] clip-path-slant group-hover:text-white transition-colors">{p.atom?.type || 'STANDARD_ATOM'}</span>
                               </td>
+                              <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 whitespace-nowrap">
+                                  <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase">{getCurveLabel(p.curveId ?? 1)}</span>
+                              </td>
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right font-black text-xs sm:text-sm text-white">{formatDisplayedShares(p.shares)}</td>
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">
                                   <div className="inline-flex items-baseline gap-1.5 justify-end font-black text-xs sm:text-sm text-intuition-success tracking-tight">
@@ -395,14 +477,14 @@ const PublicProfile: React.FC = () => {
                               </td>
                           </tr>
                       )) : (
-                          <tr><td colSpan={5} className="p-20 text-center text-slate-700 uppercase font-black tracking-[0.5em] text-[10px]">
+                          <tr><td colSpan={6} className="p-20 text-center text-slate-700 uppercase font-black tracking-[0.5em] text-[10px]">
                               {loading ? (
                                   <div className="flex flex-col items-center gap-5">
                                       <div className="w-10 h-10 border-2 border-intuition-primary/20 border-t-intuition-primary rounded-full animate-spin"></div>
                                       <span>Synchronizing_Public_Sync...</span>
                                   </div>
                               ) : (
-                                  'NULL_HOLDINGS_RECOVERED_FROM_MAINNET'
+                                  'No claims recovered from mainnet'
                               )}
                           </td></tr>
                       )}

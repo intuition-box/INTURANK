@@ -229,24 +229,24 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
       }) {
         id created_at type transaction_hash atom { term_id label data type }
         triple { term_id subject { label term_id data } predicate { label term_id } object { label term_id data } creator { id label image } }
-        deposit { shares assets_after_fees } redemption { assets shares }
+        deposit { shares assets_after_fees vault { term_id curve_id } } redemption { assets shares vault { term_id curve_id } }
       }
   }`;
   try {
     const data = await fetchGraphQL(q, { userAddress: userAddress.toLowerCase() });
     const events = data?.events ?? [];
     return events.map((ev: any) => {
-        let label = 'Unknown Node', vaultId = '0x', shares = '0', assets = '0', type: 'DEPOSIT' | 'REDEEM' = 'DEPOSIT';
+        let label = 'Unknown Node', vaultId = '0x', shares = '0', assets = '0', type: 'DEPOSIT' | 'REDEEM' = 'DEPOSIT', curveId: number | undefined;
         if (ev.type === 'AtomCreated' && ev.atom) { label = resolveMetadata(ev.atom).label; vaultId = ev.atom.term_id; }
         else if (ev.type === 'TripleCreated' && ev.triple) { label = `${resolveMetadata(ev.triple.subject).label} ${ev.triple.predicate?.label || 'LINK'} ${resolveMetadata(ev.triple.object).label}`; vaultId = ev.triple.term_id; }
-        else if (ev.type === 'Deposited' && ev.deposit) { assets = ev.deposit.assets_after_fees || '0'; shares = ev.deposit.shares || '0'; 
-            if (ev.atom) { label = resolveMetadata(ev.atom).label; vaultId = ev.atom.term_id; } 
-            else if (ev.triple) { label = `${resolveMetadata(ev.triple.subject).label} ${resolveMetadata(ev.triple.predicate).label} ${resolveMetadata(ev.triple.object).label}`; vaultId = ev.triple.term_id; }
-        } else if (ev.type === 'Redeemed' && ev.redemption) { assets = ev.redemption.assets || '0'; shares = ev.redemption.shares || '0'; type = 'REDEEM';
-            if (ev.atom) { label = resolveMetadata(ev.atom).label; vaultId = ev.atom.term_id; }
-            else if (ev.triple) { label = `${resolveMetadata(ev.triple.subject).label} ${resolveMetadata(ev.triple.predicate).label} ${resolveMetadata(ev.triple.object).label}`; vaultId = ev.triple.term_id; }
+        else if (ev.type === 'Deposited' && ev.deposit) { assets = ev.deposit.assets_after_fees || '0'; shares = ev.deposit.shares || '0'; const v = ev.deposit.vault; const rawCurve = v?.curve_id ?? (ev.deposit as any).curve_id; if (rawCurve != null) curveId = typeof rawCurve === 'string' ? parseInt(rawCurve, 10) : rawCurve; if (v?.term_id) vaultId = v.term_id;
+            if (ev.atom) { label = resolveMetadata(ev.atom).label; if (!vaultId || vaultId === '0x') vaultId = ev.atom.term_id; } 
+            else if (ev.triple) { label = `${resolveMetadata(ev.triple.subject).label} ${resolveMetadata(ev.triple.predicate).label} ${resolveMetadata(ev.triple.object).label}`; if (!vaultId || vaultId === '0x') vaultId = ev.triple.term_id; }
+        } else if (ev.type === 'Redeemed' && ev.redemption) { assets = ev.redemption.assets || '0'; shares = ev.redemption.shares || '0'; type = 'REDEEM'; const v = ev.redemption.vault; const rawCurve = v?.curve_id ?? (ev.redemption as any).curve_id; if (rawCurve != null) curveId = typeof rawCurve === 'string' ? parseInt(rawCurve, 10) : rawCurve; if (v?.term_id) vaultId = v.term_id;
+            if (ev.atom) { label = resolveMetadata(ev.atom).label; if (!vaultId || vaultId === '0x') vaultId = ev.atom.term_id; }
+            else if (ev.triple) { label = `${resolveMetadata(ev.triple.subject).label} ${resolveMetadata(ev.triple.predicate).label} ${resolveMetadata(ev.triple.object).label}`; if (!vaultId || vaultId === '0x') vaultId = ev.triple.term_id; }
         }
-        return { id: ev.transaction_hash || ev.id, type, shares, assets, timestamp: ev.created_at ? new Date(ev.created_at).getTime() : Date.now(), vaultId, assetLabel: label };
+        return { id: ev.transaction_hash || ev.id, type, shares, assets, timestamp: ev.created_at ? new Date(ev.created_at).getTime() : Date.now(), vaultId, curveId, assetLabel: label };
     });
   } catch (e) { return []; }
 };
@@ -339,12 +339,13 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
   } catch (e) { return { items: [], hasMore: false }; }
 };
 
+/** Fetches all user positions (linear and exponential curves). No curve_id filter — both curve 1 and 2 are included. */
 export const getUserPositions = async (address: string) => {
   const ids = [address, address.toLowerCase()];
   const q = `query ($ids: [String!]!) {
       positions(where: { account: { id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 1000) { 
         id shares account { id label image } 
-        vault { term_id curve_id term { atom { term_id label data image type creator { id label image } } triple { term_id subject { label term_id data type image } predicate { label } object { label term_id data type image } counter_term_id creator { id label image } } } } 
+        vault { term_id curve_id total_assets total_shares current_share_price term { atom { term_id label data image type creator { id label image } } triple { term_id subject { label term_id data type image } predicate { label } object { label term_id data type image } counter_term_id creator { id label image } } } } 
       }
   }`;
   try {
@@ -486,10 +487,21 @@ export const getVaultsByIds = async (ids: string[]) => {
 };
 
 export const getNetworkStats = async () => {
-  const q = `query { vaults_aggregate { aggregate { sum { total_assets } } } atoms_aggregate { aggregate { count } } triples_aggregate { aggregate { count } } }`;
+  const q = `query {
+    vaults_aggregate { aggregate { sum { total_assets } } }
+    atoms_aggregate { aggregate { count } }
+    triples_aggregate { aggregate { count } }
+    positions_aggregate(where: { shares: { _gt: "0" } }) { aggregate { count } }
+  }`;
   try {
     const data = await fetchGraphQL(q);
-    return { tvl: data?.vaults_aggregate?.aggregate?.sum?.total_assets || "0", atoms: data?.atoms_aggregate?.aggregate?.count || 0, signals: data?.triples_aggregate?.aggregate?.count || 0, positions: 0 };
+    const positionCount = data?.positions_aggregate?.aggregate?.count ?? 0;
+    return {
+      tvl: data?.vaults_aggregate?.aggregate?.sum?.total_assets || "0",
+      atoms: data?.atoms_aggregate?.aggregate?.count || 0,
+      signals: data?.triples_aggregate?.aggregate?.count || 0,
+      positions: typeof positionCount === 'number' ? positionCount : 0
+    };
   } catch (e) { return { tvl: "0", atoms: 0, signals: 0, positions: 0 }; }
 };
 
@@ -766,15 +778,18 @@ export interface PositionActivityNotification {
   shares?: string;
   /** Assets/value in wei (raw) — ₸ amount for deposit, proceeds for redeem */
   assets?: string;
-  /** Curve used: 1 = Offset Progressive (exponential), 2 = Linear */
+  /** Curve used: 1 = Linear, 2 = Offset Progressive (exponential) */
   curveId?: number | string;
 }
 
-/** Human-readable curve label for notifications. */
+/** Human-readable curve label for UI / notifications. */
 export function getCurveLabel(curveId: number | string | undefined): string {
-  if (curveId === undefined || curveId === null) return 'Linear';
+  if (curveId === undefined || curveId === null) return 'LINEAR';
   const id = typeof curveId === 'string' ? parseInt(curveId, 10) : curveId;
-  return id === 1 ? 'Offset Progressive' : id === 2 ? 'Linear' : 'Linear';
+  // Protocol semantics: curve_id 1 = Linear, 2 = Offset Progressive
+  if (id === 1) return 'LINEAR';
+  if (id === 2) return 'OFFSET PROGRESSIVE';
+  return 'LINEAR';
 }
 
 export const getActivityOnMyMarkets = async (
@@ -836,6 +851,88 @@ export const getActivityOnMyMarkets = async (
       const vault = ev.deposit?.vault || ev.redemption?.vault;
       const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
       // Use event id so one event = one notification; tx_hash alone can repeat for multiple events in same tx
+      const notificationId = ev.id ? `${ev.id}` : (ev.transaction_hash || `ev-${vaultId}-${ev.created_at}`);
+      out.push({
+        id: notificationId,
+        type: ev.type === 'Redeemed' ? 'liquidated' : 'acquired',
+        senderLabel,
+        senderId: sender.id,
+        marketLabel: label,
+        vaultId,
+        timestamp: new Date(ev.created_at).getTime(),
+        txHash: ev.transaction_hash,
+        shares: (ev.deposit?.shares || ev.redemption?.shares || '0')?.toString(),
+        assets: (ev.deposit?.assets_after_fees || ev.redemption?.assets || '0')?.toString(),
+        curveId,
+      });
+    }
+    return out;
+  } catch (e) {
+    return [];
+  }
+};
+
+/**
+ * Activity (deposits/redemptions) by a list of sender identities — for "follow" feed and email alerts.
+ * Returns same shape as getActivityOnMyMarkets so UI/email can reuse.
+ */
+export const getActivityBySenderIds = async (
+  senderIds: string[],
+  limit: number = 40
+): Promise<PositionActivityNotification[]> => {
+  if (!senderIds?.length) return [];
+  const ids = Array.from(new Set(senderIds.map((s) => normalize(s)).filter(Boolean)));
+  if (!ids.length) return [];
+  const q = `query GetActivityBySenders($ids: [String!]!, $limit: Int!) {
+    events(
+      where: {
+        _and: [
+          { type: { _in: ["Deposited", "Redeemed"] } },
+          { _or: [
+            { deposit: { sender: { id: { _in: $ids } } } },
+            { redemption: { sender: { id: { _in: $ids } } } }
+          ] }
+        ]
+      },
+      order_by: { created_at: desc },
+      limit: $limit
+    ) {
+      id created_at type transaction_hash
+      atom { term_id label data image type }
+      triple { term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } }
+      deposit { shares assets_after_fees sender { id label image } vault { term_id curve_id } }
+      redemption { shares assets sender { id label image } vault { term_id curve_id } }
+    }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { ids, limit });
+    const rawEvents = data?.events ?? [];
+    const seenEventIds = new Set<string>();
+    const events = rawEvents.filter((ev: any) => {
+      const eid = ev?.id ?? ev?.transaction_hash;
+      if (!eid || seenEventIds.has(eid)) return false;
+      seenEventIds.add(eid);
+      return true;
+    });
+    const out: PositionActivityNotification[] = [];
+    for (const ev of events) {
+      const sender = ev.deposit?.sender || ev.redemption?.sender;
+      if (!sender) continue;
+      let label = 'Unknown';
+      const vaultId = ev.atom?.term_id || ev.triple?.term_id || '';
+      if (ev.atom) {
+        const meta = resolveMetadata(ev.atom);
+        label = meta.label;
+      } else if (ev.triple) {
+        const sMeta = resolveMetadata(ev.triple.subject);
+        const oMeta = resolveMetadata(ev.triple.object);
+        label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
+      }
+      const senderLabel = (sender.label && sender.label !== '0x' && !sender.label.startsWith('0x00'))
+        ? sender.label
+        : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
+      const vault = ev.deposit?.vault || ev.redemption?.vault;
+      const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
       const notificationId = ev.id ? `${ev.id}` : (ev.transaction_hash || `ev-${vaultId}-${ev.created_at}`);
       out.push({
         id: notificationId,
