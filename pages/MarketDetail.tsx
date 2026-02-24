@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
-import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionLists, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple } from '../services/graphql';
+import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionLists, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { formatEther, parseEther } from 'viem';
@@ -13,12 +13,13 @@ import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
 import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
-import { OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
+import { LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
 import { sendTransactionReceiptEmail } from '../services/emailNotifications';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import html2canvas from 'html2canvas';
 import Logo from '../components/Logo';
 import ShareCard from '../components/ShareCard';
+import BondingCurvesInfoPanel from '../components/BondingCurvesInfoPanel';
 
 type Timeframe = '15M' | '30M' | '1H' | '4H' | '1D' | '1W' | '1M' | '1Y' | 'ALL';
 type DetailTab = 'OVERVIEW' | 'POSITIONS' | 'IDENTITIES' | 'CLAIMS' | 'LISTS' | 'ACTIVITY' | 'CONNECTIONS';
@@ -317,6 +318,9 @@ const MarketDetail: React.FC = () => {
   const [cardStats, setCardStats] = useState<any>(null);
   const [estimatedProceeds, setEstimatedProceeds] = useState<string>('0.00');
   const [isQuoting, setIsQuoting] = useState(false);
+  const [vaultsByCurve, setVaultsByCurve] = useState<VaultByCurve[]>([]);
+  const [selectedCurveId, setSelectedCurveId] = useState<1 | 2>(LINEAR_CURVE_ID as 1);
+  const [isCurveInfoOpen, setIsCurveInfoOpen] = useState(false);
 
   // Determine if sentiment toggle should be available (Strictly Claims and Lists)
   const isPolarityAvailable = useMemo(() => {
@@ -335,7 +339,7 @@ const MarketDetail: React.FC = () => {
                 checkProxyApproval(acc).then(setIsApproved);
             }
 
-            const [agentData, oppoData, triplesData, activityData, holderResult, listData, engagedData, incomingResult] = await Promise.all([
+            const [agentData, oppoData, triplesData, activityData, holderResult, listData, engagedData, incomingResult, vaults] = await Promise.all([
                 getAgentById(id),
                 getOppositionTriple(id),
                 getAgentTriples(id),
@@ -343,7 +347,8 @@ const MarketDetail: React.FC = () => {
                 getHoldersForVault(id),
                 getAtomInclusionLists(id),
                 getIdentitiesEngaged(id),
-                getIncomingTriplesForStats(id)
+                getIncomingTriplesForStats(id),
+                getVaultsForTerm(id)
             ]);
 
             setAgent(agentData);
@@ -365,24 +370,25 @@ const MarketDetail: React.FC = () => {
             setLists(listData || []);
             setEngagedIdentities(engagedData || []);
             setFollowersCount(incomingResult.totalCount);
+            setVaultsByCurve(vaults || []);
             setChartData(generateAnchoredHistory(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice, timeframe));
-            
+
             if (acc) {
                 setWalletBalance(await getWalletBalance(acc));
-                
-                const tShares = await getShareBalance(acc, id, OFFSET_PROGRESSIVE_CURVE_ID);
+                const curveId = selectedCurveId;
+                const tShares = await getShareBalance(acc, id, curveId);
                 setTrustBalance(tShares);
 
                 let dShares = '0.00';
                 if (agentData.type === 'CLAIM') {
                     const cId = agentData.counterTermId || calculateCounterTripleId(id!);
-                    dShares = await getShareBalance(acc, cId, OFFSET_PROGRESSIVE_CURVE_ID);
+                    dShares = await getShareBalance(acc, cId, curveId);
                 } else if (oppoData) {
-                    dShares = await getShareBalance(acc, oppoData.id, OFFSET_PROGRESSIVE_CURVE_ID);
+                    dShares = await getShareBalance(acc, oppoData.id, curveId);
                 }
                 setDistrustBalance(dShares);
 
-                updatePositionSummary(acc, sentiment, mergedActivity, agentData, oppoData);
+                updatePositionSummary(acc, sentiment, mergedActivity, agentData, oppoData, curveId);
             }
         } catch (e) {
             console.error(e);
@@ -391,22 +397,22 @@ const MarketDetail: React.FC = () => {
         }
   };
 
-  const updatePositionSummary = async (acc: string, side: 'TRUST' | 'DISTRUST', activity: Transaction[], agentData: any, oppoData: any) => {
+  const updatePositionSummary = async (acc: string, side: 'TRUST' | 'DISTRUST', activity: Transaction[], agentData: any, oppoData: any, curveId: number = selectedCurveId) => {
     let currentVaultId = id;
     if (side === 'DISTRUST') {
         currentVaultId = agentData?.type === 'CLAIM' ? (agentData.counterTermId || calculateCounterTripleId(id!)) : oppoData?.id;
     }
-    
+
     if (!currentVaultId) {
         setUserPosition(null);
         return;
     }
 
-    const sharesRaw = await getShareBalance(acc, currentVaultId, OFFSET_PROGRESSIVE_CURVE_ID);
+    const sharesRaw = await getShareBalance(acc, currentVaultId, curveId);
     const sharesNum = parseFloat(sharesRaw);
 
     if (sharesNum > 0.0001) {
-        const redeemableQuote = await getQuoteRedeem(sharesRaw, currentVaultId, acc, OFFSET_PROGRESSIVE_CURVE_ID);
+        const redeemableQuote = await getQuoteRedeem(sharesRaw, currentVaultId, acc, curveId);
         const redeemableNum = parseFloat(redeemableQuote);
         const { pnlPercent, avgEntryPrice } = calculatePositionPnL(sharesNum, redeemableNum, activity, currentVaultId);
         
@@ -423,6 +429,24 @@ const MarketDetail: React.FC = () => {
   };
 
   useEffect(() => { fetchData(); }, [id]);
+
+  // When selected curve changes, refresh chart from that vault and user balances/position for that curve
+  useEffect(() => {
+    const vault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
+    if (vault) {
+      setChartData(generateAnchoredHistory(vault.total_assets, vault.total_shares, vault.current_share_price, timeframe));
+    }
+    if (wallet && id) {
+      getShareBalance(wallet, id, selectedCurveId).then(setTrustBalance);
+      if (agent?.type === 'CLAIM') {
+        const cId = agent.counterTermId || calculateCounterTripleId(id);
+        getShareBalance(wallet, cId, selectedCurveId).then(setDistrustBalance);
+      } else if (oppositionAgent) {
+        getShareBalance(wallet, oppositionAgent.id, selectedCurveId).then(setDistrustBalance);
+      }
+      if (agent && id) updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
+    }
+  }, [selectedCurveId, vaultsByCurve, timeframe]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync wallet from wagmi so Execution Deck / SIGNAL_TRUST has connected wallet when user connected in header
   useEffect(() => {
@@ -446,9 +470,9 @@ const MarketDetail: React.FC = () => {
 
   useEffect(() => {
       if (wallet && agent) {
-          updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent);
+          updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
       }
-  }, [sentiment, wallet, activityLog]);
+  }, [sentiment, wallet, activityLog, selectedCurveId]);
 
   // Lock sentiment to TRUST for standard atoms
   useEffect(() => {
@@ -466,7 +490,7 @@ const MarketDetail: React.FC = () => {
         const timer = setTimeout(async () => {
             setIsQuoting(true);
             try {
-                const quote = await getQuoteRedeem(inputAmount, activeTargetId, wallet, OFFSET_PROGRESSIVE_CURVE_ID);
+                const quote = await getQuoteRedeem(inputAmount, activeTargetId, wallet, selectedCurveId);
                 setEstimatedProceeds(parseFloat(quote).toFixed(4));
             } catch (e) {
                 setEstimatedProceeds('0.0000');
@@ -478,7 +502,7 @@ const MarketDetail: React.FC = () => {
     } else {
         setEstimatedProceeds('0.0000');
     }
-  }, [inputAmount, action, wallet, id, sentiment, agent, oppositionAgent]);
+  }, [inputAmount, action, wallet, id, sentiment, agent, oppositionAgent, selectedCurveId]);
 
   const addLog = (log: string) => {
     setTxModal(prev => ({ ...prev, logs: [...prev.logs, log] }));
@@ -542,9 +566,9 @@ const MarketDetail: React.FC = () => {
             const logHandler = (msg: string) => addLog(msg);
 
             if (action === 'ACQUIRE') {
-                res = await depositToVault(inputAmount, activeTargetId, activeWallet, logHandler);
+                res = await depositToVault(inputAmount, activeTargetId, activeWallet, selectedCurveId, logHandler);
             } else {
-                res = await redeemFromVault(inputAmount, activeTargetId, activeWallet, logHandler);
+                res = await redeemFromVault(inputAmount, activeTargetId, activeWallet, selectedCurveId, logHandler);
             }
             
             playSuccess();
@@ -587,8 +611,18 @@ const MarketDetail: React.FC = () => {
                 logs: [...prev.logs, 'Finalizing Local Ledger Sync...', 'Uplink Synchronized.']
             }));
             setInputAmount('');
-            
-            // Re-fetch with slight delay to allow indexer to breathe
+
+            // Refresh share balance for selected curve so LIQUIDATE shows correct balance (RPC may lag briefly)
+            getShareBalance(activeWallet, id!, selectedCurveId).then(setTrustBalance);
+            if (agent?.type === 'CLAIM') {
+              const cId = agent.counterTermId || calculateCounterTripleId(id!);
+              getShareBalance(activeWallet, cId, selectedCurveId).then(setDistrustBalance);
+            } else if (oppositionAgent) {
+              getShareBalance(activeWallet, oppositionAgent.id, selectedCurveId).then(setDistrustBalance);
+            }
+            updatePositionSummary(activeWallet, sentiment, [localTx, ...activityLog], agent!, oppositionAgent, selectedCurveId);
+
+            // Re-fetch with slight delay to allow indexer to breathe (use selected curve for balances)
             setTimeout(() => { fetchData(); }, 4000);
         } catch (e) {
             setTxModal(prev => ({ 
@@ -636,10 +670,15 @@ const MarketDetail: React.FC = () => {
 
   if (loading || !agent)
         return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Loading claim...</div>;
-  
-  const currentSpotPrice = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+
+  const selectedVault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
+  const currentSpotPrice = selectedVault
+    ? calculateAgentPrice(selectedVault.total_assets, selectedVault.total_shares, selectedVault.current_share_price)
+    : calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const currentStrength = computeTrust(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
-  const mktCapVal = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+  const mktCapVal = selectedVault
+    ? calculateMarketCap(selectedVault.total_assets, selectedVault.total_shares, selectedVault.current_share_price)
+    : calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
   const displayPrice = hoverData ? hoverData.price : currentSpotPrice;
   const theme = getTierTheme(currentStrength);
   const verified = isSystemVerified(agent);
@@ -670,6 +709,7 @@ const MarketDetail: React.FC = () => {
             onClose={() => setTxModal(p => ({ ...p, isOpen: false }))} 
         />
         <CreateModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
+        <BondingCurvesInfoPanel isOpen={isCurveInfoOpen} onClose={() => setIsCurveInfoOpen(false)} />
         <AgentShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} agent={agent} mktCap={mktCapVal} price={currentSpotPrice} holders={totalHoldersCount} tags={tags} />
         
         {showShareCard && cardStats && (
@@ -802,7 +842,19 @@ const MarketDetail: React.FC = () => {
                              <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">LINEAR_MARKET_RATE</span><span className="text-2xl font-display tracking-tight uppercase text-glow" style={{ color: theme.color }}>STABLE</span></div>
                         </div>
                     </div>
-                    <div className="px-3 sm:px-6 md:px-10 py-3 bg-white/5 border-b border-white/5 flex items-center justify-between z-20 overflow-x-auto"><div className="flex gap-1.5 sm:gap-2 min-w-0">{(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (<button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`min-h-[44px] px-3 sm:px-4 py-2.5 sm:py-2 text-[9px] sm:text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest shrink-0 ${timeframe === tf ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>{tf}</button>))}</div></div>
+                    <div className="px-3 sm:px-6 md:px-10 py-3 bg-white/5 border-b border-white/5 flex flex-wrap items-center justify-between gap-3 z-20 overflow-x-auto">
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => { playClick(); setIsCurveInfoOpen(true); }} onMouseEnter={playHover} className="p-1.5 text-slate-500 hover:text-intuition-primary transition-colors" aria-label="How bonding curves work">
+                          <Info size={16} />
+                        </button>
+                        {([LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID] as const).map((cid) => (
+                          <button key={cid} onClick={() => { playClick(); setSelectedCurveId(cid); }} className={`min-h-[40px] px-3 py-2 text-[9px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest shrink-0 ${selectedCurveId === cid ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>
+                            {getCurveLabel(cid) === 'LINEAR' ? 'Linear' : 'Exponential'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1.5 sm:gap-2 min-w-0">{(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (<button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`min-h-[44px] px-3 sm:px-4 py-2.5 sm:py-2 text-[9px] sm:text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest shrink-0 ${timeframe === tf ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>{tf}</button>))}</div>
+                    </div>
                     <div className="flex-1 w-full relative z-10 p-4 pt-10" style={{ background: `radial-gradient(circle at 50% -20%, ${theme.bgGlow}, transparent 70%)` }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={chartData} onMouseMove={(e: any) => { if (e?.activePayload) setHoverData(e.activePayload[0].payload); }} onMouseLeave={() => setHoverData(null)} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
@@ -824,85 +876,148 @@ const MarketDetail: React.FC = () => {
                     <div className="absolute inset-0 bg-white/[0.02] opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="flex justify-between items-center mb-6">
                         <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.5em]">CIRCULATING_SHARES</h4>
-                        <span className="text-[11px] font-black text-glow" style={{ color: theme.color }}>{formatDisplayedShares(agent.totalShares || '0')} UNITS</span>
+                        <span className="text-[11px] font-black text-glow" style={{ color: theme.color }}>{formatDisplayedShares(selectedVault?.total_shares ?? (agent.totalShares || '0'))} UNITS</span>
                     </div>
                     <div className="flex gap-2.5 h-4 px-1">
                         {[...Array(12)].map((_, i) => {
-                            const assetsVal = safeParseUnits(agent.totalAssets);
+                            const assetsVal = safeParseUnits(selectedVault?.total_assets ?? (agent.totalAssets || '0'));
                             const fill = Math.min(12, Math.floor(assetsVal / 8));
                             return <div key={i} className={`flex-1 h-full clip-path-slant transition-all duration-1000 ${i < fill ? 'shadow-glow' : 'bg-slate-900 opacity-20'}`} style={{ backgroundColor: i < fill ? theme.color : '' }}></div>;
                         })}
                     </div>
-                    <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">Linear_Curve_Handshake_Active</div>
+                    <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">{getCurveLabel(selectedCurveId)}_Curve_Active</div>
                 </div>
 
                 <div className={`bg-black border-2 p-1 clip-path-slant shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 hover:border-white/40 ${sentiment === 'DISTRUST' ? 'border-intuition-danger/40' : ''}`} style={{ borderColor: sentiment === 'TRUST' ? `${theme.color}44` : '' }}>
-                    <div className="bg-[#050505] p-8 border border-white/5 relative overflow-hidden">
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-                        <div className="flex justify-between items-center mb-10">
-                            <h2 className={`font-black font-display text-[11px] uppercase tracking-[0.6em] text-glow transition-colors duration-700 ${sentiment === 'DISTRUST' ? 'text-intuition-danger text-glow-red' : ''}`} style={{ color: sentiment === 'TRUST' ? theme.color : '' }}>EXECUTION DECK</h2>
-                            <div className={`w-2 h-2 rounded-full animate-ping shadow-glow transition-all duration-700 ${sentiment === 'DISTRUST' ? 'bg-intuition-danger shadow-glow-red' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '' }}></div>
+                    <div className="bg-[#050505] p-6 sm:p-8 border border-white/5 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none" aria-hidden />
+                        <h2 className={`text-sm font-black uppercase tracking-wider mb-6 flex items-center gap-2 ${sentiment === 'DISTRUST' ? 'text-intuition-danger' : ''}`} style={{ color: sentiment === 'TRUST' ? theme.color : '' }}>
+                          Trade
+                          <span className={`w-1.5 h-1.5 rounded-full ${sentiment === 'DISTRUST' ? 'bg-intuition-danger' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '' }} />
+                        </h2>
+                        <div className="flex gap-1.5 mb-6">
+                            <button onClick={() => { setAction('ACQUIRE'); playClick(); }} className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${action === 'ACQUIRE' ? 'bg-white text-black border-white' : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'}`}>Buy</button>
+                            <button onClick={() => { setAction('LIQUIDATE'); playClick(); }} className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${action === 'LIQUIDATE' ? 'bg-intuition-secondary text-white border-intuition-secondary' : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'}`}>Sell</button>
                         </div>
-                        <div className="flex gap-1.5 mb-10">
-                            <button onClick={() => { setAction('ACQUIRE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'ACQUIRE' ? 'bg-white text-black border-white shadow-glow-white' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>ACQUIRE</button>
-                            <button onClick={() => { setAction('LIQUIDATE'); playClick(); }} className={`flex-1 py-4 text-[10px] font-black clip-path-slant transition-all uppercase tracking-[0.3em] border-2 shadow-lg ${action === 'LIQUIDATE' ? 'bg-intuition-secondary text-white border-intuition-secondary shadow-glow-red' : 'border-slate-800 text-slate-600 hover:text-white hover:border-slate-700'}`}>LIQUIDATE</button>
+
+                        <div className="mb-6 flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-400">
+                              {getCurveLabel(selectedCurveId) === 'LINEAR' ? 'Linear' : 'Exponential'}
+                            </span>
+                            <button type="button" onClick={() => { playClick(); setIsCurveInfoOpen(true); }} onMouseEnter={playHover} className="p-1 text-slate-500 hover:text-intuition-primary transition-colors" aria-label="How curves work">
+                              <Info size={12} />
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            {selectedCurveId === LINEAR_CURVE_ID ? 'Low risk' : 'Higher risk, higher returns'}
+                          </p>
                         </div>
                         
                         {isPolarityAvailable && (
-                            <div className="mb-10 animate-in fade-in slide-in-from-top-2 duration-500">
-                                <div className="flex justify-between items-center mb-4 px-1">
-                                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Position</span>
-                                    {sentiment === 'DISTRUST' && (
-                                        <span className="text-[8px] font-black text-intuition-danger uppercase tracking-tighter">Opposing Node active</span>
-                                    )}
-                                </div>
+                            <div className="mb-6">
+                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">Side</p>
                                 <div className="flex gap-1.5 p-1 bg-black border border-white/5 clip-path-slant">
-                                    <button onClick={() => { setSentiment('TRUST'); playClick(); }} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'text-slate-600 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'SUPPORT' : 'TRUST'}</button>
-                                    <button onClick={() => { setSentiment('DISTRUST'); playClick(); }} className={`flex-1 py-3 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'DISTRUST' ? 'bg-intuition-danger text-white' : 'text-slate-600 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'OPPOSE' : 'DISTRUST'}</button>
+                                    <button onClick={() => { setSentiment('TRUST'); playClick(); }} className={`flex-1 py-2.5 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'text-slate-500 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'Support' : 'Trust'}</button>
+                                    <button onClick={() => { setSentiment('DISTRUST'); playClick(); }} className={`flex-1 py-2.5 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'DISTRUST' ? 'bg-intuition-danger text-white' : 'text-slate-500 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'Oppose' : 'Distrust'}</button>
                                 </div>
                             </div>
                         )}
                         
-                        <div className="mb-8">
-                            <div className="flex justify-between items-center mb-4 px-1">
-                                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{action === 'ACQUIRE' ? 'TRANSMISSION_VOLUME' : 'VOLUME_LIQUIDATE'}</span>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-[10px] font-black text-slate-500 font-mono flex items-center gap-2">BAL: <span className="text-white text-glow-white">{action === 'ACQUIRE' ? parseFloat(walletBalance).toFixed(4) : activeBalance}</span></span>
-                                    <button onClick={handleMax} className={`px-3 py-0.5 bg-white/5 border border-white/10 hover:border-white hover:text-white text-slate-600 text-[8px] font-black uppercase clip-path-slant transition-all shadow-inner`}>MAX</button>
+                        <div className="mb-6">
+                            <div className="flex justify-between items-center gap-2 mb-2">
+                                <span className="text-[10px] font-bold text-slate-500">
+                                  {action === 'ACQUIRE' ? 'Amount' : 'Shares to sell'}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500">
+                                      Balance: <span className="text-white font-mono">{action === 'ACQUIRE' ? parseFloat(walletBalance).toFixed(4) : activeBalance}</span>
+                                    </span>
+                                    <button onClick={handleMax} type="button" className="text-[9px] font-bold text-slate-400 hover:text-white px-2 py-0.5 border border-slate-600 hover:border-slate-500 transition-colors">Max</button>
                                 </div>
                             </div>
-                            <div className={`relative group/input border-2 p-1 clip-path-slant transition-all duration-300 border-slate-900 focus-within:border-white/40`}>
-                                <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-5 text-right text-white font-black font-mono text-3xl focus:outline-none transition-all shadow-inner" placeholder="0.00" />
-                                <div className={`absolute left-5 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none z-20 transition-all text-slate-700 group-focus-within/input:text-white`}>
-                                {action === 'ACQUIRE' ? <CurrencySymbol size="xl" leading className="font-black" /> : <span className="text-[10px] font-black uppercase">SHARES</span>}
-                            </div>
+                            <div className="relative border-2 border-slate-800 focus-within:border-white/30 p-1 transition-colors">
+                                <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-4 pr-4 text-right text-white font-black font-mono text-2xl focus:outline-none" placeholder="0" />
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono pointer-events-none">
+                                  {action === 'ACQUIRE' ? <CurrencySymbol size="sm" leading /> : 'shares'}
+                                </span>
                             </div>
                             
                             {action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && (
-                                <div className="mt-4 p-4 bg-black/60 border border-white/5 flex items-center justify-between clip-path-slant animate-in fade-in slide-in-from-top-2">
-                                    <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Est_Proceeds</span>
-                                    <div className="flex items-center gap-2">
-                                        {isQuoting ? <Loader2 size={12} className="animate-spin text-intuition-primary" /> : (
-                                            <span className="text-sm font-black text-intuition-success font-mono inline-flex items-baseline gap-1">{estimatedProceeds} <CurrencySymbol size="sm" className="text-slate-600" /></span>
-                                        )}
-                                    </div>
+                                <div className="mt-3 py-3 px-4 bg-white/5 border border-white/10 flex items-center justify-between">
+                                    <span className="text-[10px] text-slate-500">You receive</span>
+                                    {isQuoting ? <Loader2 size={14} className="animate-spin text-intuition-primary" /> : (
+                                        <span className="text-sm font-bold text-intuition-success font-mono">{estimatedProceeds} <CurrencySymbol size="sm" className="text-slate-500" /></span>
+                                    )}
                                 </div>
                             )}
                         </div>
                         
-                        <button onClick={handleExecute} className={`w-full py-6 font-black text-sm tracking-[0.5em] clip-path-slant shadow-2xl transition-all uppercase active:scale-95 border-2 group/btn ${sentiment === 'DISTRUST' ? 'bg-intuition-danger border-intuition-danger text-white hover:bg-white hover:text-intuition-danger' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '', borderColor: sentiment === 'TRUST' ? theme.color : '', color: sentiment === 'TRUST' ? '#000' : '' }}>
-                            <span className="group-hover/btn:scale-105 transition-transform block">
-                                {!isApproved && action === 'ACQUIRE' ? 'Approve' : 
-                                 action === 'ACQUIRE' ? `Acquire · ${sentiment}` : `Redeem · ${sentiment}`}
-                            </span>
+                        <button onClick={handleExecute} type="button" className={`w-full py-5 font-black text-sm uppercase tracking-wider clip-path-slant border-2 transition-all active:scale-[0.99] ${sentiment === 'DISTRUST' ? 'bg-intuition-danger border-intuition-danger text-white hover:bg-intuition-danger/90' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '', borderColor: sentiment === 'TRUST' ? theme.color : '', color: sentiment === 'TRUST' ? '#000' : '' }}>
+                            {!isApproved && action === 'ACQUIRE' ? 'Approve' : action === 'ACQUIRE' ? 'Acquire' : 'Redeem'}
                         </button>
                     </div>
                 </div>
 
+                {vaultsByCurve.length > 0 && (
+                  <div className="bg-black border border-slate-800 p-5 clip-path-slant">
+                    <h4 className="text-xs font-bold text-slate-400 mb-3">Curve</h4>
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="text-slate-500 border-b border-white/10">
+                          <th className="pb-2 pr-2 font-medium w-8" />
+                          <th className="pb-2 pr-3 font-medium">Price</th>
+                          <th className="pb-2 pr-3 font-medium">Market cap</th>
+                          <th className="pb-2 font-medium">Holders</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID].map((cid) => {
+                          const v = vaultsByCurve.find((x) => x.curve_id === cid);
+                          const price = v ? calculateAgentPrice(v.total_assets, v.total_shares, v.current_share_price) : 0;
+                          const mcap = v ? calculateMarketCap(v.total_assets, v.total_shares, v.current_share_price) : 0;
+                          const label = getCurveLabel(cid) === 'LINEAR' ? 'Linear' : 'Exponential';
+                          return (
+                            <tr key={cid} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                              <td className="py-2.5 pr-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                  <input type="radio" name="curve-select" checked={selectedCurveId === cid} onChange={() => { playClick(); setSelectedCurveId(cid as 1 | 2); }} className="sr-only" />
+                                  <span className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center shrink-0 ${selectedCurveId === cid ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`}>
+                                    {selectedCurveId === cid && <span className="w-1.5 h-1.5 bg-black rounded-sm" />}
+                                  </span>
+                                  <span className="text-white font-medium">{label}</span>
+                                </label>
+                              </td>
+                              <td className="py-2.5 pr-3 text-slate-300 font-mono">{v ? formatMarketValue(price) : '—'}</td>
+                              <td className="py-2.5 pr-3 text-slate-300 font-mono">{v ? formatMarketValue(mcap) : '—'}</td>
+                              <td className="py-2.5 text-slate-300 font-mono">{v ? formatLargeNumber(v.position_count) : '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 {userPosition && (
-                    <button onClick={() => { playClick(); setCardStats({ pnl: userPosition.pnl, entry: userPosition.entry, exit: userPosition.exit }); setShowShareCard(true); }} className={`w-full bg-black border-2 p-6 clip-path-slant group transition-all duration-500 shadow-2xl overflow-hidden border-intuition-success/40 hover:border-intuition-success`}>
-                        <div className="flex justify-between items-center mb-4"><h3 className={`text-[9px] font-black uppercase tracking-[0.4em] flex items-center gap-2 text-intuition-success`}><TrendingUp size={14} className="animate-pulse" /> POSITION_ACTIVE</h3><span className={`text-[10px] font-black font-mono px-2 py-0.5 rounded border ${parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400 border-emerald-500/50 bg-emerald-500/10' : 'text-rose-400 border-rose-500/50 bg-rose-500/10'}`}>{parseFloat(userPosition.pnl) >= 0 ? '+' : ''}{userPosition.pnl}%</span></div>
-                        <div className="flex items-center justify-between"><div className="text-left"><div className="text-[7px] text-slate-600 font-black uppercase tracking-widest mb-1">Estimated_Value</div><div className="text-xl font-black text-white font-mono inline-flex items-baseline gap-1">{userPosition.value} <CurrencySymbol size="md" className="text-slate-500" /></div></div><div className={`w-10 h-10 bg-white/5 border border-white/10 rounded-full flex items-center justify-center transition-all group-hover:bg-intuition-success group-hover:text-black`}><Share size={16} /></div></div>
+                    <button type="button" onClick={() => { playClick(); setCardStats({ pnl: userPosition.pnl, entry: userPosition.entry, exit: userPosition.exit }); setShowShareCard(true); }} className="w-full bg-black border-2 border-slate-800 p-5 clip-path-slant text-left hover:border-intuition-success/50 transition-colors group">
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="text-xs font-bold text-intuition-success flex items-center gap-1.5">
+                            <TrendingUp size={12} /> Your position
+                          </span>
+                          <span className={`text-xs font-bold font-mono px-2 py-0.5 ${parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {parseFloat(userPosition.pnl) >= 0 ? '+' : ''}{userPosition.pnl}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-[10px] text-slate-500 mb-0.5">Value</p>
+                            <p className="text-lg font-bold text-white font-mono">{userPosition.value} <CurrencySymbol size="sm" className="text-slate-500" /></p>
+                          </div>
+                          <div className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center group-hover:border-intuition-success transition-colors">
+                            <Share size={14} className="text-slate-500 group-hover:text-intuition-success" />
+                          </div>
+                        </div>
                     </button>
                 )}
             </div>

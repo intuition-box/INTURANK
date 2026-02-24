@@ -2,7 +2,7 @@
 import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, encodePacked, decodeEventLog } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
-import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL } from '../constants';
+import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL } from '../constants';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import EthereumProvider from '@walletconnect/ethereum-provider';
@@ -249,40 +249,43 @@ export const getQuoteRedeem = async (sharesAmount: string, termId: string, accou
     } catch { return "0"; }
 };
 
-export const depositToVault = async (amount: string, termId: string, receiver: string, onProgress?: (log: string) => void) => {
+export const depositToVault = async (amount: string, termId: string, receiver: string, curveIdOrOnProgress?: number | ((log: string) => void), onProgress?: (log: string) => void) => {
+  const curveId = typeof curveIdOrOnProgress === 'function' ? LINEAR_CURVE_ID : (curveIdOrOnProgress ?? LINEAR_CURVE_ID);
+  const progressCb = typeof curveIdOrOnProgress === 'function' ? curveIdOrOnProgress : onProgress;
   const checksumReceiver = getAddress(receiver);
   const termIdBytes32 = pad((termId.startsWith('0x') ? termId : `0x${termId}`) as Hex, { size: 32 });
   const provider = getProvider();
   const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
   const assets = parseEther(amount);
-  
+  const curveIdBigInt = BigInt(curveId);
+
   try {
-      onProgress?.("Simulating Gas & Total Cost Basis...");
+      progressCb?.("Simulating Gas & Total Cost Basis...");
       const totalCost = await publicClient.readContract({
           address: FEE_PROXY_ADDRESS as `0x${string}`,
           abi: FEE_PROXY_ABI,
           functionName: 'getTotalDepositCost',
           args: [assets]
       } as any) as bigint;
-      onProgress?.(`Handshake Cost Calculated: ${formatEther(totalCost)} ${CURRENCY_SYMBOL}`);
+      progressCb?.(`Handshake Cost Calculated: ${formatEther(totalCost)} ${CURRENCY_SYMBOL}`);
 
-      onProgress?.("Awaiting Biometric Signature...");
+      progressCb?.("Awaiting Biometric Signature...");
       const { request } = await publicClient.simulateContract({
           address: FEE_PROXY_ADDRESS as `0x${string}`,
           abi: FEE_PROXY_ABI,
           functionName: 'deposit',
           account: checksumReceiver,
-          args: [checksumReceiver, termIdBytes32, BigInt(OFFSET_PROGRESSIVE_CURVE_ID), 0n, assets],
+          args: [checksumReceiver, termIdBytes32, curveIdBigInt, 0n, assets],
           value: totalCost,
       } as any);
 
       const hash = await walletClient.writeContract(request);
-      onProgress?.(`Broadcasting Packet to Mainnet... Hash: ${hash.slice(0,10)}...`);
+      progressCb?.(`Broadcasting Packet to Mainnet... Hash: ${hash.slice(0,10)}...`);
       
       let actualShares = 0n;
       try {
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
-          onProgress?.("Transaction Reconciled in Block.");
+          progressCb?.("Transaction Reconciled in Block.");
           
           for (const log of receipt.logs) {
               try {
@@ -300,7 +303,7 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
           // If the RPC cannot look up the hash yet (or returns malformed),
           // fall back to a heuristic and let the indexer reconcile later.
           console.warn("DEPOSIT_RECEIPT_TIMEOUT:", waitError);
-          onProgress?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
+          progressCb?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
       }
 
       if (actualShares === 0n) {
@@ -314,39 +317,42 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
   }
 };
 
-export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, onProgress?: (log: string) => void) => {
+export const redeemFromVault = async (sharesAmount: string, termId: string, receiver: string, curveIdOrOnProgress?: number | ((log: string) => void), onProgress?: (log: string) => void) => {
+  const curveId = typeof curveIdOrOnProgress === 'function' ? LINEAR_CURVE_ID : (curveIdOrOnProgress ?? LINEAR_CURVE_ID);
+  const progressCb = typeof curveIdOrOnProgress === 'function' ? curveIdOrOnProgress : onProgress;
   const checksumReceiver = getAddress(receiver);
   const termIdBytes32 = pad((termId.startsWith('0x') ? termId : `0x${termId}`) as Hex, { size: 32 });
   const provider = getProvider();
   const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
   const shares = parseEther(sharesAmount);
-  
+  const curveIdBigInt = BigInt(curveId);
+
   try {
-      onProgress?.("Calculating Exit Liquidity...");
+      progressCb?.("Calculating Exit Liquidity...");
       const preview = await publicClient.readContract({
           address: MULTI_VAULT_ADDRESS as `0x${string}`,
           abi: MULTI_VAULT_ABI,
           functionName: 'previewRedeem',
-          args: [termIdBytes32, BigInt(OFFSET_PROGRESSIVE_CURVE_ID), shares]
+          args: [termIdBytes32, curveIdBigInt, shares]
       } as any) as [bigint, bigint];
-      onProgress?.(`Projected Proceeds: ${formatEther(preview[0])} ${CURRENCY_SYMBOL}`);
+      progressCb?.(`Projected Proceeds: ${formatEther(preview[0])} ${CURRENCY_SYMBOL}`);
 
-      onProgress?.("Awaiting Exit Signature...");
+      progressCb?.("Awaiting Exit Signature...");
       const { request } = await publicClient.simulateContract({
           address: MULTI_VAULT_ADDRESS as `0x${string}`,
           abi: MULTI_VAULT_ABI,
           functionName: 'redeemBatch',
           account: checksumReceiver,
-          args: [checksumReceiver, [termIdBytes32], [BigInt(OFFSET_PROGRESSIVE_CURVE_ID)], [shares], [0n]],
+          args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [shares], [0n]],
       } as any);
 
       const hash = await walletClient.writeContract(request);
-      onProgress?.(`Liquidating Position... Hash: ${hash.slice(0,10)}...`);
+      progressCb?.(`Liquidating Position... Hash: ${hash.slice(0,10)}...`);
       
       let actualAssets = preview[0];
       try {
           const receipt = await publicClient.waitForTransactionReceipt({ hash });
-          onProgress?.("Handshake Cleared. Position Terminated.");
+          progressCb?.("Handshake Cleared. Position Terminated.");
           
           for (const log of receipt.logs) {
               try {
@@ -362,7 +368,7 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
           }
       } catch (waitError: any) {
           console.warn("REDEEM_RECEIPT_TIMEOUT:", waitError);
-          onProgress?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
+          progressCb?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
       }
 
       return { hash, assets: actualAssets, shares };

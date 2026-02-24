@@ -218,6 +218,35 @@ export const getAgentById = async (termId: string) => {
   } catch (e) { return { id: termId, label: 'Offline', totalAssets: "0", totalShares: "0", type: 'ATOM', links: [] }; }
 };
 
+/** Per-curve vault data for a term (Linear = 1, Offset Progressive / Exponential = 2). Used for curve switching in market detail. */
+export interface VaultByCurve {
+  term_id: string;
+  total_assets: string;
+  total_shares: string;
+  current_share_price: string;
+  curve_id: number;
+  position_count: number;
+}
+
+export const getVaultsForTerm = async (termId: string): Promise<VaultByCurve[]> => {
+  const ids = prepareQueryIds(termId);
+  const q = `query ($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
+  try {
+    const res = await fetchGraphQL(q, { ids });
+    const vaults = res?.vaults ?? [];
+    return vaults.map((v: any) => ({
+      term_id: v.term_id,
+      total_assets: v.total_assets ?? '0',
+      total_shares: v.total_shares ?? '0',
+      current_share_price: v.current_share_price ?? '0',
+      curve_id: v.curve_id != null ? (typeof v.curve_id === 'string' ? parseInt(v.curve_id, 10) : v.curve_id) : 1,
+      position_count: Number(v.position_count ?? 0),
+    }));
+  } catch (e) {
+    return [];
+  }
+};
+
 export const getUserHistory = async (userAddress: string): Promise<Transaction[]> => {
   const q = `query ($userAddress: String!) {
       events(limit: 500, order_by: {created_at: desc}, where: {

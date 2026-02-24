@@ -8,7 +8,9 @@ export const CURRENCY_SYMBOL = "₸";
 export const MULTI_VAULT_ADDRESS = "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e";
 export const FEE_PROXY_ADDRESS = "0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93";
 export const OFFSET_PROGRESSIVE_CURVE_ADDRESS = "0x23afF95153aa88D28B9B97Ba97629E05D5fD335d";
-export const OFFSET_PROGRESSIVE_CURVE_ID = 1;
+/** Curve ID 1 = Linear (stable). Curve ID 2 = Offset Progressive (exponential). */
+export const LINEAR_CURVE_ID = 1;
+export const OFFSET_PROGRESSIVE_CURVE_ID = 2;
 
 // Standard Semantic Predicates & Objects
 export const IS_PREDICATE_ID = "0x0000000000000000000000000000000000000000000000000000000000000001";

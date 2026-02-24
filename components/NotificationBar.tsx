@@ -14,6 +14,8 @@ import { playClick, playHover } from '../services/audio';
 const REFRESH_INTERVAL_MS = 60_000;
 const READ_STORAGE_KEY_PREFIX = 'inturank_notification_read_';
 const MAX_READ_IDS = 2000;
+/** Activity within this window (on first load) will trigger an email if not already notified. */
+const RECENT_ACTIVITY_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 function normalizeWallet(addr: string): string {
   return (addr || '').toLowerCase();
@@ -111,9 +113,16 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
           .map((p: any) => p.vault?.term_id)
           .filter(Boolean);
         const list = await getActivityOnMyMarkets(walletAddress, vaultIds, 40);
+        const now = Date.now();
         if (!initialFetchDoneRef.current) {
           initialFetchDoneRef.current = true;
-          list.forEach((n) => seenIdsRef.current.add(n.id));
+          list.forEach((n) => {
+            seenIdsRef.current.add(n.id);
+            // Request email for recent activity so user gets alerts for events that happened while app was closed.
+            if (n.timestamp && now - n.timestamp <= RECENT_ACTIVITY_MS) {
+              requestEmailNotification(walletAddress, n).catch(() => {});
+            }
+          });
         } else {
           list.forEach((n) => {
             if (!seenIdsRef.current.has(n.id)) {
