@@ -672,13 +672,28 @@ const MarketDetail: React.FC = () => {
         return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Loading claim...</div>;
 
   const selectedVault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
+  const overallSpotPrice = calculateAgentPrice(
+    agent.totalAssets || '0',
+    agent.totalShares || '0',
+    agent.currentSharePrice
+  );
   const currentSpotPrice = selectedVault
-    ? calculateAgentPrice(selectedVault.total_assets, selectedVault.total_shares, selectedVault.current_share_price)
-    : calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
-  const currentStrength = computeTrust(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
-  const mktCapVal = selectedVault
-    ? calculateMarketCap(selectedVault.total_assets, selectedVault.total_shares, selectedVault.current_share_price)
-    : calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
+    ? calculateAgentPrice(
+        selectedVault.total_assets,
+        selectedVault.total_shares,
+        selectedVault.current_share_price
+      )
+    : overallSpotPrice;
+  const currentStrength = computeTrust(
+    agent.totalAssets || '0',
+    agent.totalShares || '0',
+    agent.currentSharePrice
+  );
+  const mktCapVal = calculateMarketCap(
+    agent.marketCap || agent.totalAssets || '0',
+    agent.totalShares || '0',
+    agent.currentSharePrice
+  );
   const displayPrice = hoverData ? hoverData.price : currentSpotPrice;
   const theme = getTierTheme(currentStrength);
   const verified = isSystemVerified(agent);

@@ -5,6 +5,7 @@ import { ArrowLeft, Terminal, Zap, Loader2, Database, GitBranch, Search, Camera,
 import { Hex, pad } from 'viem';
 import { createStringAtom, createThingAtom, createSingleTriple } from '../services/intuitionSdk';
 import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, checkProxyApproval, grantProxyApproval, parseProtocolError } from '../services/web3';
+import { uploadImageToIpfs, ensureIpfsUploadConfigured } from '../services/ipfs';
 import { searchGlobalAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
@@ -101,12 +102,34 @@ const CreateSignal: React.FC = () => {
     try {
       await ensureWallet();
       setCreatingAtom(true);
+      let resolvedImageUrl = imageUrl.trim();
+
+      // If user selected a file and IPFS upload is configured, upload the file and
+      // use the returned ipfs:// URL instead of a transient data: URL.
+      if (imageFile && (!resolvedImageUrl || resolvedImageUrl.startsWith('data:'))) {
+        if (!ensureIpfsUploadConfigured()) {
+          // If not configured, fall back to no image; user can paste a URL instead.
+          resolvedImageUrl = '';
+        } else {
+          try {
+            const ipfsUrl = await uploadImageToIpfs(imageFile);
+            resolvedImageUrl = ipfsUrl;
+          } catch (err: any) {
+            toast.error(
+              (err?.message || 'IPFS_UPLOAD_FAILED').slice(0, 160)
+            );
+            resolvedImageUrl = '';
+          }
+        }
+      }
+
       const thing: Record<string, unknown> = {
         name: nodeAlias.trim(),
         description: descriptionPayload.trim() || undefined,
-        ...(imageUrl.trim() && { image: imageUrl.trim() }),
+        ...(resolvedImageUrl && { image: resolvedImageUrl }),
         ...(identityUrl.trim() && { url: identityUrl.trim() }),
       };
+
       const result = await createThingAtom(thing, atomDeposit || '0.1');
       setImageFile(null);
       const termId = (result as any).state?.termId ?? (result as any).termId ?? null;
