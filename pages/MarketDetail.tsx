@@ -446,7 +446,7 @@ const MarketDetail: React.FC = () => {
       }
       if (agent && id) updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
     }
-  }, [selectedCurveId, vaultsByCurve, timeframe]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCurveId, vaultsByCurve, timeframe, wallet, id, agent, oppositionAgent, sentiment, activityLog]);
 
   // Sync wallet from wagmi so Execution Deck / SIGNAL_TRUST has connected wallet when user connected in header
   useEffect(() => {
@@ -896,8 +896,33 @@ const MarketDetail: React.FC = () => {
                           <span className={`w-1.5 h-1.5 rounded-full ${sentiment === 'DISTRUST' ? 'bg-intuition-danger' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '' }} />
                         </h2>
                         <div className="flex gap-1.5 mb-6">
-                            <button onClick={() => { setAction('ACQUIRE'); playClick(); }} className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${action === 'ACQUIRE' ? 'bg-white text-black border-white' : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'}`}>Buy</button>
-                            <button onClick={() => { setAction('LIQUIDATE'); playClick(); }} className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${action === 'LIQUIDATE' ? 'bg-intuition-secondary text-white border-intuition-secondary' : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'}`}>Sell</button>
+                            <button
+                              onClick={() => {
+                                setAction('ACQUIRE');
+                                playClick();
+                              }}
+                              className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${
+                                action === 'ACQUIRE'
+                                  ? 'bg-white text-black border-white'
+                                  : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              Buy
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAction('LIQUIDATE');
+                                setSelectedCurveId(LINEAR_CURVE_ID);
+                                playClick();
+                              }}
+                              className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${
+                                action === 'LIQUIDATE'
+                                  ? 'bg-intuition-secondary text-white border-intuition-secondary'
+                                  : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              Sell
+                            </button>
                         </div>
 
                         <div className="mb-6 flex items-center justify-between gap-2 flex-wrap">
@@ -1000,25 +1025,47 @@ const MarketDetail: React.FC = () => {
                 )}
 
                 {userPosition && (
-                    <button type="button" onClick={() => { playClick(); setCardStats({ pnl: userPosition.pnl, entry: userPosition.entry, exit: userPosition.exit }); setShowShareCard(true); }} className="w-full bg-black border-2 border-slate-800 p-5 clip-path-slant text-left hover:border-intuition-success/50 transition-colors group">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-xs font-bold text-intuition-success flex items-center gap-1.5">
-                            <TrendingUp size={12} /> Your position
-                          </span>
-                          <span className={`text-xs font-bold font-mono px-2 py-0.5 ${parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {parseFloat(userPosition.pnl) >= 0 ? '+' : ''}{userPosition.pnl}%
-                          </span>
+                  <div className="space-y-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClick();
+                        setCardStats({
+                          pnl: userPosition.pnl,
+                          entry: userPosition.entry,
+                          exit: userPosition.exit,
+                        });
+                        setShowShareCard(true);
+                      }}
+                      className="w-full bg-black border-2 border-slate-800 p-5 clip-path-slant text-left hover:border-intuition-success/50 transition-colors group"
+                    >
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-xs font-bold text-intuition-success flex items-center gap-1.5">
+                          <TrendingUp size={12} /> Your position
+                        </span>
+                        <span
+                          className={`text-xs font-bold font-mono px-2 py-0.5 ${
+                            parseFloat(userPosition.pnl) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {parseFloat(userPosition.pnl) >= 0 ? '+' : ''}
+                          {userPosition.pnl}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-[10px] text-slate-500 mb-0.5">Value</p>
+                          <p className="text-lg font-bold text-white font-mono">
+                            {userPosition.value}{' '}
+                            <CurrencySymbol size="sm" className="text-slate-500" />
+                          </p>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="text-[10px] text-slate-500 mb-0.5">Value</p>
-                            <p className="text-lg font-bold text-white font-mono">{userPosition.value} <CurrencySymbol size="sm" className="text-slate-500" /></p>
-                          </div>
-                          <div className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center group-hover:border-intuition-success transition-colors">
-                            <Share size={14} className="text-slate-500 group-hover:text-intuition-success" />
-                          </div>
+                        <div className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center group-hover:border-intuition-success transition-colors">
+                          <Share size={14} className="text-slate-500 group-hover:text-intuition-success" />
                         </div>
+                      </div>
                     </button>
+                  </div>
                 )}
             </div>
         </div>

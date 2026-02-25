@@ -1,7 +1,10 @@
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";
-export const GRAPHQL_URL = "https://mainnet.intuition.sh/v1/graphql";
+// For local dev we go through a same-origin proxy (see vite.config.ts).
+// In production you can set VITE_GRAPHQL_URL to your own backend/proxy URL.
+// Default path is /v1/graphql so it matches the Intuition endpoint shape.
+export const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_URL || "/v1/graphql";
 export const EXPLORER_URL = "https://explorer.intuition.systems";
 export const CURRENCY_SYMBOL = "₸";
 

@@ -10,6 +10,14 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      // Dev-only proxy for the Intuition GraphQL endpoint so the browser
+      // talks to localhost (no CORS), and Vite forwards to mainnet.
+      // /v1/graphql on localhost -> https://mainnet.intuition.sh/v1/graphql
+      '/v1/graphql': {
+        target: 'https://mainnet.intuition.sh',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   build: {
