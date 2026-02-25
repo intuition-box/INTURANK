@@ -10,7 +10,7 @@ import {
   intuitionMainnet,
   getMultiVaultAddressFromChainId,
 } from '@0xintuition/sdk';
-import { publicClient, intuitionChain, getConnectedAccount } from './web3';
+import { publicClient, intuitionChain, getConnectedAccount, getProvider } from './web3';
 
 /**
  * MultiVault address resolved via the official Intuition SDK.
@@ -28,13 +28,13 @@ const getWriteConfig = async (): Promise<WriteConfig | null> => {
   if (typeof window === 'undefined') return null;
 
   const account = await getConnectedAccount();
-  const ethereum = (window as any).ethereum;
+  const provider = getProvider();
 
-  if (!account || !ethereum) return null;
+  if (!account || !provider) return null;
 
   const walletClient = createWalletClient({
     chain: intuitionChain,
-    transport: custom(ethereum),
+    transport: custom(provider),
     account: account as `0x${string}`,
   });
 

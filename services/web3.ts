@@ -72,7 +72,7 @@ const getBrowserProvider = (preference: InjectedPreference = 'default') => {
   }
 };
 
-const getProvider = () => {
+export const getProvider = () => {
   return activeProvider || getBrowserProvider('default');
 };
 
