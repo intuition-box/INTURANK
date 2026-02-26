@@ -164,7 +164,7 @@ const KPIDashboard: React.FC = () => {
         : marketShareVal.toFixed(2);
 
     return (
-        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-mono min-w-0 overflow-x-hidden">
+        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-mono min-w-0">
             {/* Header */}
             <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between mb-12 gap-6 border-b border-slate-900 pb-8">
                 <div>
@@ -211,9 +211,9 @@ const KPIDashboard: React.FC = () => {
                     <KPIStatCard label="Semantic Nodes" value={stats?.atomCount || 0} sub="ATOMS" icon={Database} color="secondary" isZero={isProxyEmpty} />
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
-                    {/* Main Table */}
-                    <div className="lg:col-span-8 space-y-6">
+                <div className="grid grid-cols-1 gap-8 relative z-10">
+                    {/* Citizen Ledger: full width so it scales with viewport */}
+                    <div className="w-full min-w-0">
                         <div className="bg-[#02040a] border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
                             <div className="p-6 border-b border-slate-900 bg-white/[0.02] flex justify-between items-center">
                                 <div className="flex items-center gap-4">
@@ -224,50 +224,58 @@ const KPIDashboard: React.FC = () => {
                             </div>
                             <div className="overflow-x-auto min-h-[400px]">
                                 {stats?.userLedger?.length > 0 ? (
-                                    <table className="w-full text-left font-mono">
+                                    <table className="w-full text-left font-mono table-fixed">
+                                        <colgroup>
+                                            <col style={{ width: '4%' }} />
+                                            <col style={{ width: '28%' }} />
+                                            <col style={{ width: '10%' }} />
+                                            <col style={{ width: '18%' }} />
+                                            <col style={{ width: '22%' }} />
+                                            <col style={{ width: '18%' }} />
+                                        </colgroup>
                                         <thead className="bg-[#080808] text-slate-400 text-[10px] sm:text-xs font-black uppercase tracking-[0.3em] border-b border-slate-800">
                                             <tr>
-                                                <th className="px-4 sm:px-6 py-4 w-12 text-center">#</th>
-                                                <th className="px-4 sm:px-6 py-4">RECON_ID</th>
-                                                <th className="px-4 sm:px-6 py-4 text-center">TOTAL_TXS</th>
-                                                <th className="px-4 sm:px-6 py-4 text-right">VOLUME_SIGNALED</th>
-                                                <th className="px-4 sm:px-6 py-4 text-right">{`${CURRENCY_SYMBOL}_BAL`}</th>
-                                                <th className="px-4 sm:px-6 py-4 text-right">RANK</th>
+                                                <th className="px-3 sm:px-4 py-4 w-12 text-center">#</th>
+                                                <th className="px-3 sm:px-4 py-4">RECON_ID</th>
+                                                <th className="px-3 sm:px-4 py-4 text-center">TOTAL_TXS</th>
+                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">VOLUME_SIGNALED</th>
+                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">{`${CURRENCY_SYMBOL}_BAL`}</th>
+                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">RANK</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5">
                                             {stats.userLedger.map((user: any, i: number) => (
                                                 <tr key={user.id} className="hover:bg-white/5 transition-all group cursor-pointer">
-                                                    <td className="px-4 sm:px-6 py-5 text-center">
+                                                    <td className="px-3 sm:px-4 py-5 text-center">
                                                         <span className="text-sm sm:text-base font-black text-slate-400 group-hover:text-white transition-colors tabular-nums">{i + 1}</span>
                                                     </td>
-                                                    <td className="px-4 sm:px-6 py-5">
-                                                        <div className="flex items-center gap-3 sm:gap-4">
+                                                    <td className="px-3 sm:px-4 py-5 min-w-0">
+                                                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                                                             <div className="w-10 h-10 bg-black border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-secondary transition-all shrink-0">
                                                                 {user.image ? <img src={user.image} className="w-full h-full object-cover" alt="" /> : <UserCircle size={20} className="text-slate-600" />}
                                                             </div>
-                                                            <div className="min-w-0">
-                                                                <div className="text-sm font-black text-white uppercase group-hover:text-intuition-secondary transition-colors truncate max-w-[140px] sm:max-w-[200px]">{user.label || user.id.slice(0, 14)}</div>
-                                                                <div className="text-[10px] text-slate-500 font-mono truncate max-w-[100px] sm:max-w-[160px] mt-0.5">{user.id}</div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="text-sm font-black text-white uppercase group-hover:text-intuition-secondary transition-colors truncate">{user.label || user.id.slice(0, 14)}</div>
+                                                                <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{user.id}</div>
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 sm:px-6 py-5 text-center">
+                                                    <td className="px-3 sm:px-4 py-5 text-center">
                                                         <div className="text-base sm:text-lg font-black text-white font-display group-hover:text-glow-white leading-none tabular-nums">{user.txCount}</div>
                                                     </td>
-                                                    <td className="px-4 sm:px-6 py-5 text-right">
+                                                    <td className="px-3 sm:px-4 py-5 text-right whitespace-nowrap">
                                                         <div className="text-base sm:text-lg font-black text-intuition-success font-mono group-hover:text-glow-success leading-none tabular-nums">
                                                             {user.volume.toLocaleString(undefined, { maximumFractionDigits: 4 })}
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 sm:px-6 py-5 text-right">
+                                                    <td className="px-3 sm:px-4 py-5 text-right whitespace-nowrap">
                                                         <div className="text-sm font-black text-intuition-primary font-mono group-hover:text-glow-blue leading-none tabular-nums">
                                                             {userBalances[user.id] || "0.00"}
                                                         </div>
                                                         <div className="text-[9px] text-slate-500 uppercase mt-1 font-black tracking-wider">WALLET_BALANCE</div>
                                                     </td>
-                                                    <td className="px-4 sm:px-6 py-5 text-right">
-                                                        <span className={`px-3 py-1.5 border text-[9px] font-black uppercase clip-path-slant ${i < 3 ? 'border-intuition-secondary text-intuition-secondary bg-intuition-secondary/10 shadow-glow-red' : 'border-slate-600 text-slate-400'}`}>
+                                                    <td className="px-3 sm:px-4 py-5 text-right whitespace-nowrap">
+                                                        <span className={`inline-block px-3 py-1.5 border text-[9px] font-black uppercase clip-path-slant ${i < 3 ? 'border-intuition-secondary text-intuition-secondary bg-intuition-secondary/10 shadow-glow-red' : 'border-slate-600 text-slate-400'}`}>
                                                             {i < 3 ? 'ELITE' : 'CORE'}
                                                         </span>
                                                     </td>
@@ -285,8 +293,8 @@ const KPIDashboard: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Sidebar Components */}
-                    <div className="lg:col-span-4 space-y-8">
+                    {/* Sidebar: full-width grid below ledger so table gets all horizontal space */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
                         {/* Terminal */}
                         <div className="bg-black border border-intuition-primary/20 p-6 clip-path-slant shadow-2xl group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500">
                             <div className="flex items-center gap-3 mb-6 border-b border-intuition-primary/20 pb-3">

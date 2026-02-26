@@ -295,147 +295,126 @@ const Portfolio: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        <div className="lg:col-span-8 space-y-8">
-            <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
-                <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div className="flex items-center gap-4">
-                        <Zap size={20} className="text-intuition-primary animate-pulse shrink-0" />
-                        <h3 className="text-xs sm:text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mr-2">Sort:</span>
-                        <select
-                            value={sortBy}
-                            onChange={(e) => { playClick(); setSortBy(e.target.value as any); }}
+      <div className="grid grid-cols-1 gap-10">
+        {/* Row 1: Ledger beside Equity Vol + Asset Exposure */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        {/* Active Holdings Ledger */}
+        <div className="lg:col-span-8 w-full min-w-0">
+          <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+            <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-4">
+                <Zap size={20} className="text-intuition-primary animate-pulse shrink-0" />
+                <h3 className="text-xs sm:text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mr-2">Sort:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => { playClick(); setSortBy(e.target.value as any); }}
+                  onMouseEnter={playHover}
+                  className="bg-black border border-slate-700 text-slate-300 font-mono text-[10px] font-black uppercase tracking-wider px-3 py-2 clip-path-slant focus:border-intuition-primary outline-none"
+                >
+                  <option value="value_desc">Largest → Lowest</option>
+                  <option value="value_asc">Lowest → Largest</option>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+                <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest hidden sm:inline">Verified_On_Intuition_Mainnet</span>
+                <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors p-1">
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto min-h-[320px]">
+              <table className="w-full text-left font-mono text-[10px] sm:text-xs table-fixed" style={{ minWidth: 'min(100%, 720px)' }}>
+                <colgroup>
+                  <col style={{ width: '26%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '12%' }} />
+                </colgroup>
+                <thead className="text-slate-700 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808]">
+                  <tr>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4">Identity_Node</th>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 hidden lg:table-cell">Sector</th>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 whitespace-nowrap">Curve</th>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 whitespace-nowrap">Magnitude</th>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 whitespace-nowrap">Net_Valuation</th>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 text-right whitespace-nowrap">PnL</th>
+                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 text-right whitespace-nowrap">Exit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {sortedPositions.length > 0 ? sortedPositions.map((pos) => {
+                    const isOpposition = pos.atom.label.includes('OPPOSING');
+                    return (
+                      <tr key={`${pos.id}-${pos.curveId ?? 1}`} className="hover:bg-white/5 transition-all group">
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 min-w-0">
+                          <Link to={`/markets/${pos.id}`} className="flex items-center gap-2 sm:gap-4 min-w-0">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
+                              {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" alt="" /> : <User size={16} className="text-slate-700" />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className={`font-black uppercase text-sm group-hover:text-intuition-primary transition-colors truncate ${isOpposition ? 'text-intuition-danger' : 'text-white'}`} title={pos.atom.label}>{pos.atom.label}</div>
+                              <div className="text-[9px] text-slate-600 font-bold truncate">UID: {pos.id.slice(0, 14)}...</div>
+                            </div>
+                          </Link>
+                        </td>
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 hidden lg:table-cell">
+                          <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-widest clip-path-slant group-hover:text-white transition-colors whitespace-nowrap">{pos.atom?.type || 'ATOM'}</span>
+                        </td>
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 whitespace-nowrap">
+                          <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase">{getCurveLabel(pos.curveId ?? 1)}</span>
+                        </td>
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 whitespace-nowrap">
+                          <div className="text-white font-black text-xs sm:text-sm">{formatDisplayedShares(pos.shares)}</div>
+                          <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
+                        </td>
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 whitespace-nowrap">
+                          <div className="inline-flex items-baseline gap-1.5 text-white font-black text-xs sm:text-sm">
+                            <CurrencySymbol size="sm" leading className="text-intuition-primary/90 shrink-0" />
+                            {formatMarketValue(pos.value)}
+                          </div>
+                        </td>
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 text-right whitespace-nowrap">
+                          <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
+                            {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}%
+                          </div>
+                        </td>
+                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 text-right whitespace-nowrap">
+                          <Link
+                            to={`/markets/${pos.id}`}
+                            onClick={() => { playClick(); }}
                             onMouseEnter={playHover}
-                            className="bg-black border border-slate-700 text-slate-300 font-mono text-[10px] font-black uppercase tracking-wider px-3 py-2 clip-path-slant focus:border-intuition-primary outline-none"
-                        >
-                            <option value="value_desc">Largest → Lowest</option>
-                            <option value="value_asc">Lowest → Largest</option>
-                            <option value="newest">Newest first</option>
-                            <option value="oldest">Oldest first</option>
-                        </select>
-                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest hidden sm:inline">Verified_On_Intuition_Mainnet</span>
-                        <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors p-1">
-                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                        </button>
-                    </div>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left font-mono text-[10px] sm:text-xs min-w-[420px]">
-                        <thead className="text-slate-700 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808]">
-                            <tr>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Identity_Node</th>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4 hidden lg:table-cell">Sector</th>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Curve</th>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Magnitude</th>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4">Net_Valuation</th>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4 text-right">PnL</th>
-                                <th className="px-2 sm:px-4 md:px-6 lg:px-8 py-3 md:py-4 text-right">Exit</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {sortedPositions.length > 0 ? sortedPositions.map((pos) => {
-                                const isOpposition = pos.atom.label.includes('OPPOSING');
-                                return (
-                                <tr key={`${pos.id}-${pos.curveId ?? 1}`} className="hover:bg-white/5 transition-all group">
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6">
-                                        <Link to={`/markets/${pos.id}`} className="flex items-center gap-2 sm:gap-4">
-                                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
-                                                {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
-                                            </div>
-                                            <div>
-                                                <div className={`font-black uppercase text-sm group-hover:text-intuition-primary transition-colors ${isOpposition ? 'text-intuition-danger' : 'text-white'}`}>{pos.atom.label}</div>
-                                                <div className="text-[9px] text-slate-600 font-bold">UID: {pos.id.slice(0, 14)}...</div>
-                                            </div>
-                                        </Link>
-                                    </td>
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 hidden lg:table-cell">
-                                        <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-widest clip-path-slant group-hover:text-white transition-colors">{pos.atom?.type || 'ATOM'}</span>
-                                    </td>
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 whitespace-nowrap">
-                                        <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase">{getCurveLabel(pos.curveId ?? 1)}</span>
-                                    </td>
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6">
-                                        <div className="text-white font-black text-xs sm:text-sm">{formatDisplayedShares(pos.shares)}</div>
-                                        <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
-                                    </td>
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6">
-                                        <div className="inline-flex items-baseline gap-1.5 text-white font-black text-xs sm:text-sm">
-                                            <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
-                                            {formatMarketValue(pos.value)}
-                                        </div>
-                                    </td>
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 text-right">
-                                        <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
-                                            {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}%
-                                        </div>
-                                    </td>
-                                    <td className="px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 text-right">
-                                        <Link
-                                            to={`/markets/${pos.id}`}
-                                            onClick={() => { playClick(); }}
-                                            onMouseEnter={playHover}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[9px] uppercase tracking-widest clip-path-slant transition-all"
-                                        >
-                                            <LogOut size={12} /> Exit
-                                        </Link>
-                                    </td>
-                                </tr>
-                            )}) : (
-                                <tr>
-                                    <td colSpan={7} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
-                                        {loading ? (
-                                            <div className="flex flex-col items-center gap-4">
-                                                <Loader2 size={24} className="animate-spin text-intuition-primary" />
-                                                SYNCHRONIZING_NETWORK_DATA...
-                                            </div>
-                                        ) : 'NULL_POSITIONS_DETECTED'}
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[9px] uppercase tracking-widest clip-path-slant transition-all"
+                          >
+                            <LogOut size={12} /> Exit
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={7} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                        {loading ? (
+                          <div className="flex flex-col items-center gap-4">
+                            <Loader2 size={24} className="animate-spin text-intuition-primary" />
+                            SYNCHRONIZING_NETWORK_DATA...
+                          </div>
+                        ) : 'NULL_POSITIONS_DETECTED'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-
-            <div className="bg-black border border-slate-900 clip-path-slant p-8">
-                <h3 className="text-xs font-black text-white uppercase tracking-[0.4em] mb-8 flex items-center gap-3">
-                    <Clock size={16} className="text-intuition-secondary" /> Transmission_History
-                </h3>
-                <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                    {history.map((tx, idx) => (
-                        <div key={tx.id + idx} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 clip-path-slant group hover:border-white/10 transition-all">
-                            <div className="flex items-center gap-5">
-                                <div className={`w-1 h-8 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'}`}></div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-[10px] font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
-                                        <span className="text-white font-black text-xs uppercase">{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
-                                    </div>
-                                    <div className="text-[8px] text-slate-600 font-mono">TX: {tx.id.slice(0, 24)}...</div>
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <div className="text-white font-black text-sm">{(() => {
-                                    try {
-                                        return safeParseUnits(tx.assets).toFixed(4);
-                                    } catch { return '0.0000'; }
-                                })()} <CurrencySymbol size="md" /></div>
-                                <div className="text-[8px] text-slate-600 font-mono uppercase">{new Date(tx.timestamp).toLocaleString()}</div>
-                            </div>
-                        </div>
-                    ))}
-                    {history.length === 0 && (
-                        <div className="text-center py-20 text-slate-700 uppercase font-black tracking-widest text-[10px]">
-                            AWAITING_INGRESS_SIGNALS...
-                        </div>
-                    )}
-                </div>
-            </div>
+          </div>
         </div>
 
+        {/* Sidebar: Equity Vol + Asset Exposure (beside ledger) */}
         <div className="lg:col-span-4 space-y-10">
             <div className="bg-[#02040a] border border-slate-900 p-10 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all h-[520px] flex flex-col">
                 <div className="flex justify-between items-start mb-12 relative z-10 gap-4 min-w-0">
@@ -552,6 +531,43 @@ const Portfolio: React.FC = () => {
                     </div>
                 </div>
             </div>
+        </div>
+        </div>
+
+        {/* Row 2: Transmission History (full width) */}
+        <div className="w-full space-y-4">
+          <h3 className="text-xs font-black text-white uppercase tracking-[0.4em] mb-8 flex items-center gap-3">
+            <Clock size={16} className="text-intuition-secondary" /> Transmission_History
+          </h3>
+          <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+            {history.map((tx, idx) => (
+              <div key={tx.id + idx} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 clip-path-slant group hover:border-white/10 transition-all">
+                <div className="flex items-center gap-5">
+                  <div className={`w-1 h-8 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'}`}></div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
+                      <span className="text-white font-black text-xs uppercase">{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
+                    </div>
+                    <div className="text-[8px] text-slate-600 font-mono">TX: {tx.id.slice(0, 24)}...</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white font-black text-sm">{(() => {
+                    try {
+                      return safeParseUnits(tx.assets).toFixed(4);
+                    } catch { return '0.0000'; }
+                  })()} <CurrencySymbol size="md" /></div>
+                  <div className="text-[8px] text-slate-600 font-mono uppercase">{new Date(tx.timestamp).toLocaleString()}</div>
+                </div>
+              </div>
+            ))}
+            {history.length === 0 && (
+              <div className="text-center py-20 text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                AWAITING_INGRESS_SIGNALS...
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

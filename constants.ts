@@ -4,7 +4,10 @@ export const RPC_URL = "https://rpc.intuition.systems/http";
 // For local dev we go through a same-origin proxy (see vite.config.ts).
 // In production you can set VITE_GRAPHQL_URL to your own backend/proxy URL.
 // Default path is /v1/graphql so it matches the Intuition endpoint shape.
-export const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_URL || "/v1/graphql";
+// Prefer official Intuition Graph endpoints when available, fall back to /v1/graphql proxy for dev
+import { API_URL_PROD } from '@0xintuition/graphql';
+export const GRAPHQL_URL =
+  import.meta.env.VITE_GRAPHQL_URL || API_URL_PROD || "/v1/graphql";
 export const EXPLORER_URL = "https://explorer.intuition.systems";
 export const CURRENCY_SYMBOL = "₸";
 

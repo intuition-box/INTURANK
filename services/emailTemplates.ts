@@ -250,3 +250,81 @@ export function getActivityNotificationHtml(notification: ActivityNotificationFo
 </html>
 `.replace(/\n\s+/g, '\n').trim();
 }
+
+/** Daily digest: your receipts + activity on holdings in one email. */
+export function getDailyDigestHtml(options: {
+  receipts: TransactionReceiptData[];
+  activities: ActivityNotificationFormatted[];
+  dateLabel: string;
+}): string {
+  const { receipts, activities, dateLabel } = options;
+  const receiptRows = receipts.map((r) => {
+    const action = r.type === 'acquired' ? 'Acquired' : 'Liquidated';
+    const side = r.side === 'trust' ? 'Trust' : 'Distrust';
+    return `<tr><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; color: ${TEXT};">${escapeHtml(r.marketLabel)}</td><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; text-align: right; color: ${r.type === 'acquired' ? NEON_GREEN : NEON_RED};">${action} · ${side}</td><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; text-align: right;">${escapeHtml(r.sharesFormatted)}</td><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; text-align: right;">${escapeHtml(r.assetsFormatted)}</td></tr>`;
+  }).join('');
+  const activityRows = activities.map((a) => {
+    const action = a.type === 'liquidated' ? 'Liquidated' : 'Acquired';
+    return `<tr><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; color: ${TEXT};">${escapeHtml(a.marketLabel)}</td><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; color: ${NEON_CYAN};">${escapeHtml(a.senderLabel)}</td><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; text-align: right; color: ${a.type === 'liquidated' ? NEON_RED : NEON_GREEN};">${action}</td><td style="padding: 8px 12px; border-bottom: 1px solid ${BORDER}; text-align: right;">${escapeHtml(a.sharesFormatted)}</td></tr>`;
+  }).join('');
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily digest — ${BRAND}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0; padding:0; background-color:#050508; font-family: Orbitron, Arial, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#050508;">
+    <tr>
+      <td align="center" style="padding: 32px 20px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="max-width: 560px; width: 100%; background-color:${BG_CARD}; border: 2px solid ${NEON_GLOW_BORDER};">
+          <tr>
+            <td style="padding: 0 24px 20px 24px; border-bottom: 2px solid ${NEON_GLOW_BORDER};">
+              <img src="${LOGO_URL}" alt="${BRAND}" width="56" height="56" style="display: block; width: 56px; height: 56px; margin: 24px auto 16px auto; object-fit: contain;" />
+              <p style="margin: 0 0 4px 0; font-size: 9px; font-weight: 700; letter-spacing: 0.25em; color: ${NEON_CYAN}; text-transform: uppercase; text-align: center;">${BRAND} · Daily digest</p>
+              <p style="margin: 0; font-size: 11px; color: ${TEXT_MUTED}; text-align: center;">${escapeHtml(dateLabel)}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 24px 28px 24px;">
+              ${receipts.length > 0 ? `
+              <p style="margin: 0 0 10px 0; font-size: 10px; font-weight: 700; letter-spacing: 0.2em; color: ${NEON_CYAN}; text-transform: uppercase;">Your transactions</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size: 12px; color: ${TEXT}; border: 1px solid ${NEON_GLOW_BORDER}; margin-bottom: 24px;">
+                <tr><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; font-weight: 700;">Market</td><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; text-align: right; font-weight: 700;">Action</td><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; text-align: right; font-weight: 700;">Shares</td><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; text-align: right; font-weight: 700;">Amount</td></tr>
+                ${receiptRows}
+              </table>
+              ` : ''}
+              ${activities.length > 0 ? `
+              <p style="margin: 0 0 10px 0; font-size: 10px; font-weight: 700; letter-spacing: 0.2em; color: ${NEON_CYAN}; text-transform: uppercase;">Activity on your holdings</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size: 12px; color: ${TEXT}; border: 1px solid ${NEON_GLOW_BORDER};">
+                <tr><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; font-weight: 700;">Market</td><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; font-weight: 700;">Sender</td><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; text-align: right; font-weight: 700;">Action</td><td style="padding: 8px 12px; background: rgba(0,0,0,0.3); color: ${TEXT_MUTED}; text-align: right; font-weight: 700;">Shares</td></tr>
+                ${activityRows}
+              </table>
+              ` : ''}
+              ${receipts.length === 0 && activities.length === 0 ? `<p style="margin: 0; color: ${TEXT_MUTED};">No new activity in this period.</p>` : ''}
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top: 24px;">
+                <tr>
+                  <td style="background-color: ${NEON_CYAN}; padding: 14px 28px; border: 1px solid ${NEON_CYAN};">
+                    <a href="${APP_PORTFOLIO_URL}" style="font-family: Orbitron, Arial, sans-serif; font-size: 11px; font-weight: 900; letter-spacing: 0.1em; color: #000000; text-decoration: none; text-transform: uppercase;">Open IntuRank</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 24px; border-top: 1px solid ${NEON_GLOW_BORDER};">
+              <p style="margin: 0; font-size: 10px; color: ${TEXT_MUTED}; letter-spacing: 0.08em;">Semantic markets · Quantify identity · Trust layer</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`.replace(/\n\s+/g, '\n').trim();
+}

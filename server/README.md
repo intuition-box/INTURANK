@@ -83,3 +83,11 @@ Do **not** set `PORT`; Railway sets it automatically.
 - **POST /api/send-email**  
   Body: `{ "to": "user@example.com", "subject": "...", "message": "..." }`  
   Responds with `{ "ok": true }` on success or an error object on failure.
+
+## Follow / activity emails not arriving?
+
+1. **Add your email in the app** — Click the bell (Activity) → **Get email alerts** and enter your email. Follow alerts and activity-on-holdings emails are sent only to that address (stored per wallet in the browser).
+
+2. **Production: set `VITE_EMAIL_API_URL`** — The frontend must know where the email API lives. In production there is no dev proxy: set `VITE_EMAIL_API_URL` to your email server URL (e.g. the Railway URL from step 4 above) in your build environment (e.g. GitHub Actions secret) so the built app calls the correct host.
+
+3. **Server env** — Ensure `ENSEND_PROJECT_SECRET` and `ENSEND_SENDER_EMAIL` are set where this server runs (e.g. Railway variables). If either is missing, the server returns 503 and the app will show "Email is not configured."

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Bell, TrendingDown, TrendingUp, ExternalLink, Loader2, Mail, CheckCheck } from 'lucide-react';
+import { Bell, TrendingDown, TrendingUp, ExternalLink, Loader2, Mail, CheckCheck, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatEther } from 'viem';
 import { getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getCurveLabel, type PositionActivityNotification } from '../services/graphql';
@@ -81,6 +81,9 @@ const TIME_GROUP_LABELS: Record<string, string> = {
   older: 'Older',
 };
 
+/** Item in the panel: activity on your holdings or from someone you follow */
+export type NotificationPanelItem = PositionActivityNotification & { source?: 'holdings' | 'follow' };
+
 interface NotificationBarProps {
   walletAddress: string | null;
 }
@@ -88,7 +91,7 @@ interface NotificationBarProps {
 const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
   const { openEmailNotify } = useEmailNotify();
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<PositionActivityNotification[]>([]);
+  const [items, setItems] = useState<NotificationPanelItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
   const [readIds, setReadIds] = useState<Set<string>>(() => (walletAddress ? loadReadIds(walletAddress) : new Set()));
@@ -112,41 +115,58 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         const vaultIds = (positions || [])
           .map((p: any) => p.vault?.term_id)
           .filter(Boolean);
-        const list = await getActivityOnMyMarkets(walletAddress, vaultIds, 40);
+        const holdingsList = await getActivityOnMyMarkets(walletAddress, vaultIds, 40);
         const now = Date.now();
         if (!initialFetchDoneRef.current) {
           initialFetchDoneRef.current = true;
-          list.forEach((n) => {
+          holdingsList.forEach((n) => {
             seenIdsRef.current.add(n.id);
-            // Request email for recent activity so user gets alerts for events that happened while app was closed.
             if (n.timestamp && now - n.timestamp <= RECENT_ACTIVITY_MS) {
               requestEmailNotification(walletAddress, n).catch(() => {});
             }
           });
         } else {
-          list.forEach((n) => {
+          holdingsList.forEach((n) => {
             if (!seenIdsRef.current.has(n.id)) {
               seenIdsRef.current.add(n.id);
               requestEmailNotification(walletAddress, n).catch(() => {});
             }
           });
         }
-        setItems(list);
 
-        // Followed identities: fetch their buy/activity and send email if they have emailAlerts on
-        const follows = getFollowedIdentities(walletAddress).filter((f) => f.emailAlerts);
-        if (follows.length > 0) {
-          const senderIds = follows.map((f) => f.identityId);
-          const followActivity = await getActivityBySenderIds(senderIds, 30);
-          const bySender = new Map(follows.map((f) => [f.identityId.toLowerCase(), f]));
+        // Followed identities: fetch activity for ALL follows (panel) and send email only for those with emailAlerts
+        const allFollows = getFollowedIdentities(walletAddress);
+        let followActivity: PositionActivityNotification[] = [];
+        if (allFollows.length > 0) {
+          const senderIds = allFollows.map((f) => f.identityId);
+          followActivity = await getActivityBySenderIds(senderIds, 30);
+          const bySender = new Map(allFollows.map((f) => [f.identityId.toLowerCase(), f]));
           followActivity.forEach((n) => {
             const follow = bySender.get((n.senderId || '').toLowerCase());
-            if (follow) {
+            if (follow?.emailAlerts) {
               const label = follow.label || n.senderLabel || `${n.senderId?.slice(0, 6)}...`;
               requestFollowedActivityEmail(walletAddress, label, n).catch(() => {});
             }
           });
         }
+
+        // Merge: tag source, dedupe by id, sort by timestamp desc
+        const seen = new Set<string>();
+        const merged: NotificationPanelItem[] = [];
+        for (const n of holdingsList) {
+          if (!seen.has(n.id)) {
+            seen.add(n.id);
+            merged.push({ ...n, source: 'holdings' });
+          }
+        }
+        for (const n of followActivity) {
+          if (!seen.has(n.id)) {
+            seen.add(n.id);
+            merged.push({ ...n, source: 'follow' });
+          }
+        }
+        merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        setItems(merged);
       } catch (_) {
         setItems([]);
       } finally {
@@ -172,7 +192,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
   }, [items, filter, readIds]);
 
   const grouped = useMemo(() => {
-    const groups: Record<string, PositionActivityNotification[]> = { today: [], yesterday: [], week: [], older: [] };
+    const groups: Record<string, NotificationPanelItem[]> = { today: [], yesterday: [], week: [], older: [] };
     filtered.forEach((n) => {
       const g = getTimeGroup(n.timestamp);
       groups[g].push(n);
@@ -204,7 +224,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
             ? 'border-intuition-primary bg-intuition-primary/10 text-intuition-primary'
             : 'border-slate-800 text-slate-400 hover:border-intuition-primary/50 hover:text-intuition-primary'
         }`}
-        aria-label="Activity on your claims"
+        aria-label="Activity and notifications"
       >
         <Bell size={18} />
         {unreadCount > 0 && (
@@ -218,10 +238,10 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         <div className="absolute top-full right-0 mt-2 w-[400px] max-w-[calc(100vw-2rem)] max-h-[75vh] overflow-hidden bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant animate-notification-panel-in">
           <div className="p-3 border-b border-white/10 bg-white/[0.02]">
             <h3 className="text-[12px] font-black font-mono text-white uppercase tracking-widest">
-              Activity on your claims
+              Activity
             </h3>
             <p className="text-[10px] font-bold font-mono text-slate-300 mt-1">
-              Others buying or selling in claims you hold
+              Your claims and people you follow
             </p>
             {items.length > 0 && (
               <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
@@ -261,7 +281,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
             ) : filtered.length === 0 ? (
               <div className="py-10 px-4 text-center text-[11px] font-bold font-mono text-slate-400 uppercase tracking-widest">
                 {items.length === 0
-                  ? 'No recent activity in claims you hold. When others buy or sell in a claim you hold, it will appear here.'
+                  ? 'No recent activity. Activity in claims you hold and from people you follow will appear here.'
                   : items.every((n) => readIds.has(n.id))
                     ? 'Cleared. New activity will show here.'
                     : `No ${filter === 'all' ? '' : filter + ' '}activity in this period.`}
@@ -283,6 +303,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                             const currentIndex = globalItemIndex++;
                             const sharesNum = n.shares ? parseFloat(formatEther(BigInt(n.shares))) : 0;
                             const assetsNum = n.assets ? parseFloat(formatEther(BigInt(n.assets))) : 0;
+                            const isFollow = n.source === 'follow';
                             return (
                               <li
                                 key={n.id}
@@ -295,6 +316,11 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-[11px] font-bold font-mono text-white leading-tight">
+                                    {isFollow && (
+                                      <span className="inline-flex items-center gap-1 mr-1 text-amber-400/90" title="Someone you follow">
+                                        <UserPlus size={10} />
+                                      </span>
+                                    )}
                                     <span className="font-black text-intuition-primary">{n.senderLabel}</span>
                                     {' '}
                                     <span className="text-slate-200">{n.type === 'liquidated' ? 'liquidated' : 'acquired'}</span>
@@ -355,14 +381,24 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
             )}
           </div>
           <div className="p-3 border-t border-white/10 bg-white/[0.02]">
-            <button
-              type="button"
-              onClick={() => { playClick(); openEmailNotify(); }}
-              onMouseEnter={playHover}
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-[10px] font-black font-mono text-slate-400 hover:text-intuition-primary uppercase tracking-widest transition-colors"
-            >
-              <Mail size={12} /> Get email alerts
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Link
+                to="/feed"
+                onClick={() => { playClick(); setOpen(false); }}
+                onMouseEnter={playHover}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-[10px] font-black font-mono uppercase tracking-widest border border-intuition-primary/60 text-intuition-primary hover:bg-intuition-primary/15 transition-colors clip-path-slant"
+              >
+                <ExternalLink size={12} /> Expand view
+              </Link>
+              <button
+                type="button"
+                onClick={() => { playClick(); openEmailNotify(); }}
+                onMouseEnter={playHover}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-[10px] font-black font-mono text-slate-400 hover:text-intuition-primary uppercase tracking-widest border border-slate-700 hover:border-intuition-primary/60 transition-colors clip-path-slant"
+              >
+                <Mail size={12} /> Get email alerts
+              </button>
+            </div>
           </div>
         </div>
       )}

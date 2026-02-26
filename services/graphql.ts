@@ -1,5 +1,5 @@
 
-import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS } from '../constants';
+import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
 import { Transaction, Claim, Triple } from '../types';
 import { hexToString, formatEther, parseEther } from 'viem';
 
@@ -874,9 +874,13 @@ export const getActivityOnMyMarkets = async (
         const oMeta = resolveMetadata(ev.triple.object);
         label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
       }
+      const senderIdNorm = normalize(sender.id);
+      const isProxy = senderIdNorm === normalize(FEE_PROXY_ADDRESS) || senderIdNorm === normalize(MULTI_VAULT_ADDRESS);
       const senderLabel = (sender.label && sender.label !== '0x' && !sender.label.startsWith('0x00'))
         ? sender.label
-        : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
+        : isProxy
+          ? 'IntuRank routing contract'
+          : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
       const vault = ev.deposit?.vault || ev.redemption?.vault;
       const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
       // Use event id so one event = one notification; tx_hash alone can repeat for multiple events in same tx
@@ -957,9 +961,13 @@ export const getActivityBySenderIds = async (
         const oMeta = resolveMetadata(ev.triple.object);
         label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
       }
+      const senderIdNorm = normalize(sender.id);
+      const isProxy = senderIdNorm === normalize(FEE_PROXY_ADDRESS) || senderIdNorm === normalize(MULTI_VAULT_ADDRESS);
       const senderLabel = (sender.label && sender.label !== '0x' && !sender.label.startsWith('0x00'))
         ? sender.label
-        : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
+        : isProxy
+          ? 'IntuRank routing contract'
+          : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
       const vault = ev.deposit?.vault || ev.redemption?.vault;
       const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
       const notificationId = ev.id ? `${ev.id}` : (ev.transaction_hash || `ev-${vaultId}-${ev.created_at}`);

@@ -165,8 +165,8 @@ const EmailNotifyModal: React.FC = () => {
                 <h2 id="email-notify-title" className="text-lg font-black font-mono text-amber-300 uppercase tracking-[0.25em] text-glow-gold">
                   EMAIL ALERTS
                 </h2>
-                <p className="text-[10px] font-mono text-slate-300 uppercase tracking-wider mt-0.5">
-                  Get notified about activity on your claims
+                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mt-0.5">
+                  Get notified about activity on your claims and when people you follow buy or sell
                 </p>
               </div>
             </div>
@@ -174,7 +174,7 @@ const EmailNotifyModal: React.FC = () => {
             {!wallet ? (
               <div className="space-y-4">
                 <p className="text-[11px] font-mono text-slate-300 leading-relaxed">
-                  Connect your wallet so we can tie email alerts to your address. When others buy or sell in claims you hold, you’ll get an in-app notification and an email.
+                  Connect your wallet so we can tie email alerts to your address. When others buy or sell in claims you hold, or when people you follow trade, you’ll get an in-app notification and an email.
                 </p>
                 <button
                   type="button"
@@ -226,6 +226,7 @@ const EmailNotifyModal: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Alert frequency</span>
+                  <p className="text-[9px] text-slate-500 mb-2">Your receipts and activity on your holdings. People you follow: always one email per trade.</p>
                   <div className="flex gap-6">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input

@@ -1,15 +1,30 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Search, RefreshCw, ChevronDown, ListFilter, Terminal, Wifi, ShieldCheck, Zap, Brain, Sparkles } from 'lucide-react';
-import { getGlobalActivity } from '../services/graphql';
+import { Activity, Search, RefreshCw, ChevronDown, ListFilter, Terminal, Wifi, ShieldCheck, Zap, Brain, Sparkles, TrendingDown, TrendingUp, UserPlus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAccount } from 'wagmi';
+import { getGlobalActivity, getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getUserHistory, getCurveLabel, type PositionActivityNotification } from '../services/graphql';
 import ActivityRow from '../components/ActivityRow';
 import { playClick, playHover } from '../services/audio';
 import { GoogleGenAI } from "@google/genai";
 import { formatEther } from 'viem';
+import { getFollowedIdentities } from '../services/follows';
+import { CurrencySymbol } from '../components/CurrencySymbol';
+import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
+import { EXPLORER_URL } from '../constants';
+import { Transaction } from '../types';
+import { getLocalTransactions } from '../services/web3';
 
 type SortOption = 'Newest' | 'Oldest' | 'Highest Volume';
 
+type PersonalItem = PositionActivityNotification & { source?: 'holdings' | 'follow' };
+
 const Feed: React.FC = () => {
+    const { address: walletAddress } = useAccount();
     const [events, setEvents] = useState<any[]>([]);
+    const [personalItems, setPersonalItems] = useState<PersonalItem[]>([]);
+    const [personalLoading, setPersonalLoading] = useState(false);
+    const [ownHistory, setOwnHistory] = useState<Transaction[]>([]);
+    const [ownLoading, setOwnLoading] = useState(false);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -149,6 +164,75 @@ const Feed: React.FC = () => {
                (ev.target?.id || '').toLowerCase().includes(term);
     });
 
+    const holdingsItems = personalItems.filter((n) => n.source !== 'follow');
+    const followItems = personalItems.filter((n) => n.source === 'follow');
+
+    // Personalized notifications: activity on holdings + followed accounts
+    useEffect(() => {
+        const fetchPersonal = async () => {
+            if (!walletAddress) {
+                setPersonalItems([]);
+                return;
+            }
+            setPersonalLoading(true);
+            setOwnLoading(true);
+            try {
+                const [positions, historyFromGraph] = await Promise.all([
+                    getUserPositions(walletAddress),
+                    getUserHistory(walletAddress).catch(() => []),
+                ]);
+                const vaultIds = (positions || [])
+                    .map((p: any) => p.vault?.term_id)
+                    .filter(Boolean);
+                const holdings = await getActivityOnMyMarkets(walletAddress, vaultIds, 40);
+
+                const follows = getFollowedIdentities(walletAddress);
+                let followActivity: PositionActivityNotification[] = [];
+                if (follows.length > 0) {
+                    const senderIds = follows.map((f) => f.identityId);
+                    followActivity = await getActivityBySenderIds(senderIds, 30);
+                }
+
+                const seen = new Set<string>();
+                const merged: PersonalItem[] = [];
+                for (const n of holdings) {
+                    if (!seen.has(n.id)) {
+                        seen.add(n.id);
+                        merged.push({ ...n, source: 'holdings' });
+                    }
+                }
+                for (const n of followActivity) {
+                    if (!seen.has(n.id)) {
+                        seen.add(n.id);
+                        merged.push({ ...n, source: 'follow' });
+                    }
+                }
+                merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setPersonalItems(merged);
+
+                // Own history: merge graph history with local txs so buys/sells always show up
+                const local = getLocalTransactions(walletAddress) || [];
+                const combinedHistory: Transaction[] = [...local, ...(historyFromGraph || [])];
+                const historyMap = new Map<string, Transaction>();
+                combinedHistory.forEach((tx) => {
+                    if (!tx?.id) return;
+                    if (!historyMap.has(tx.id)) historyMap.set(tx.id, tx);
+                });
+                const mergedHistory = Array.from(historyMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setOwnHistory(mergedHistory.slice(0, 60));
+            } catch (e) {
+                setPersonalItems([]);
+                setOwnHistory([]);
+            } finally {
+                setPersonalLoading(false);
+                setOwnLoading(false);
+            }
+        };
+        fetchPersonal();
+        const t = setInterval(fetchPersonal, 60_000);
+        return () => clearInterval(t);
+    }, [walletAddress]);
+
     return (
         <div className="w-full max-w-[1600px] mx-auto px-6 py-12 pb-40 font-mono relative z-10">
             {/* Header Readout */}
@@ -217,8 +301,271 @@ const Feed: React.FC = () => {
                 </div>
             </div>
 
+            {/* Personalized Notifications */}
+            <div className="mb-14 grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div className="xl:col-span-1 space-y-5">
+                    {/* Header card */}
+                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
+                            <div>
+                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 flex items-center gap-2">
+                                    <Zap size={12} className="text-intuition-secondary" /> Personalized notifications
+                                </div>
+                                <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-[0.25em]">
+                                    YOUR GRAPH SIGNALS
+                                </h2>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Card 1: Holdings activity */}
+                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                        <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
+                            <span className="text-[10px] font-mono text-slate-100 uppercase tracking-[0.25em]">
+                                Holdings activity
+                            </span>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
+                            {!walletAddress && (
+                                <div className="px-4 py-6 text-[11px] font-mono text-slate-400 uppercase tracking-widest text-center">
+                                    Connect your wallet to see activity on your claims.
+                                </div>
+                            )}
+                            {walletAddress && personalLoading && holdingsItems.length === 0 && (
+                                <div className="flex items-center justify-center py-6 text-slate-400 text-[10px] font-mono uppercase tracking-widest">
+                                    <RefreshCw size={16} className="animate-spin mr-2" /> Synchronizing…
+                                </div>
+                            )}
+                            {walletAddress && !personalLoading && holdingsItems.length === 0 && (
+                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
+                                    No recent activity detected on your holdings.
+                                </div>
+                            )}
+                            {walletAddress && holdingsItems.slice(0, 15).map((n) => {
+                                const sharesNum = n.shares ? parseFloat(formatEther(BigInt(n.shares))) : 0;
+                                const assetsNum = n.assets ? parseFloat(formatEther(BigInt(n.assets))) : 0;
+                                return (
+                                    <div
+                                        key={n.id}
+                                        className="flex items-start gap-2 px-3 py-2.5 border border-slate-800 hover:border-intuition-primary/50 hover:bg-white/5 transition-all duration-200 group motion-hover-lift"
+                                    >
+                                        <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
+                                            {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[11px] font-bold font-mono text-white leading-tight">
+                                                <span className="font-black text-intuition-primary">{n.senderLabel}</span>
+                                                {' '}
+                                                <span className="text-slate-200">{n.type === 'liquidated' ? 'liquidated' : 'acquired'}</span>
+                                                {sharesNum > 0 ? (
+                                                    <span className="text-slate-300 font-semibold">
+                                                        {' '}{formatDisplayedShares(n.shares!)} shares
+                                                        {assetsNum > 0 && (
+                                                            <span className="text-slate-400 font-bold">
+                                                                {' '}(<CurrencySymbol size="sm" leading className="text-slate-400" />{formatMarketValue(assetsNum)})
+                                                            </span>
+                                                        )}
+                                                        {' '}in{' '}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-300"> shares in </span>
+                                                )}
+                                                <Link
+                                                    to={`/markets/${n.vaultId}`}
+                                                    onClick={playClick}
+                                                    onMouseEnter={playHover}
+                                                    className="font-bold text-slate-100 group-hover:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover:underline"
+                                                >
+                                                    {n.marketLabel}
+                                                </Link>
+                                            </p>
+                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] font-mono text-slate-500">
+                                                <span>{new Date(n.timestamp).toLocaleString()}</span>
+                                                <span className="border border-slate-700 px-2 py-0.5 clip-path-slant" title="Bonding curve type">
+                                                    {getCurveLabel(n.curveId)}
+                                                </span>
+                                                {n.txHash && (
+                                                    <a
+                                                        href={`${EXPLORER_URL}/tx/${n.txHash}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        onMouseEnter={playHover}
+                                                        className="text-slate-500 hover:text-intuition-primary inline-flex items-center gap-1"
+                                                    >
+                                                        <Terminal size={10} /> TX
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Card 2: People you follow */}
+                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                        <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
+                            <span className="text-[10px] font-mono text-amber-300 uppercase tracking-[0.25em] flex items-center gap-1">
+                                <UserPlus size={10} /> People you follow
+                            </span>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
+                            {!walletAddress && (
+                                <div className="px-4 py-6 text-[11px] font-mono text-slate-400 uppercase tracking-widest text-center">
+                                    Connect your wallet and follow accounts to see their trades.
+                                </div>
+                            )}
+                            {walletAddress && personalLoading && followItems.length === 0 && (
+                                <div className="flex items-center justify-center py-6 text-slate-400 text-[10px] font-mono uppercase tracking-widest">
+                                    <RefreshCw size={16} className="animate-spin mr-2" /> Synchronizing…
+                                </div>
+                            )}
+                            {walletAddress && !personalLoading && followItems.length === 0 && (
+                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
+                                    No recent trades from people you follow.
+                                </div>
+                            )}
+                            {walletAddress && followItems.slice(0, 15).map((n) => {
+                                const sharesNum = n.shares ? parseFloat(formatEther(BigInt(n.shares))) : 0;
+                                const assetsNum = n.assets ? parseFloat(formatEther(BigInt(n.assets))) : 0;
+                                return (
+                                    <div
+                                        key={n.id}
+                                        className="flex items-start gap-2 px-3 py-2.5 border border-slate-800 hover:border-amber-400/70 hover:bg-amber-500/5 transition-all duration-200 group motion-hover-lift"
+                                    >
+                                        <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
+                                            {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[11px] font-bold font-mono text-white leading-tight">
+                                                <span className="inline-flex items-center gap-1 mr-1 text-amber-300/90 text-[9px] border border-amber-500/60 px-1 py-0.5 clip-path-slant" title="Someone you follow">
+                                                    <UserPlus size={9} /> FOLLOW
+                                                </span>
+                                                <span className="font-black text-intuition-primary">{n.senderLabel}</span>
+                                                {' '}
+                                                <span className="text-slate-200">{n.type === 'liquidated' ? 'liquidated' : 'acquired'}</span>
+                                                {sharesNum > 0 ? (
+                                                    <span className="text-slate-300 font-semibold">
+                                                        {' '}{formatDisplayedShares(n.shares!)} shares
+                                                        {assetsNum > 0 && (
+                                                            <span className="text-slate-400 font-bold">
+                                                                {' '}(<CurrencySymbol size="sm" leading className="text-slate-400" />{formatMarketValue(assetsNum)})
+                                                            </span>
+                                                        )}
+                                                        {' '}in{' '}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-300"> shares in </span>
+                                                )}
+                                                <Link
+                                                    to={`/markets/${n.vaultId}`}
+                                                    onClick={playClick}
+                                                    onMouseEnter={playHover}
+                                                    className="font-bold text-slate-100 group-hover:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover:underline"
+                                                >
+                                                    {n.marketLabel}
+                                                </Link>
+                                            </p>
+                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] font-mono text-slate-500">
+                                                <span>{new Date(n.timestamp).toLocaleString()}</span>
+                                                <span className="border border-slate-700 px-2 py-0.5 clip-path-slant" title="Bonding curve type">
+                                                    {getCurveLabel(n.curveId)}
+                                                </span>
+                                                {n.txHash && (
+                                                    <a
+                                                        href={`${EXPLORER_URL}/tx/${n.txHash}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        onMouseEnter={playHover}
+                                                        className="text-slate-500 hover:text-intuition-primary inline-flex items-center gap-1"
+                                                    >
+                                                        <Terminal size={10} /> TX
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Card 3: Your actions */}
+                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                        <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
+                            <span className="text-[10px] font-mono text-slate-100 uppercase tracking-[0.25em] flex items-center gap-1">
+                                <ShieldCheck size={10} className="text-intuition-success" /> Your actions
+                            </span>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
+                            {!walletAddress && (
+                                <div className="px-4 py-6 text-[11px] font-mono text-slate-400 uppercase tracking-widest text-center">
+                                    Connect your wallet to see your own buys, sells, and creations.
+                                </div>
+                            )}
+                            {walletAddress && ownLoading && ownHistory.length === 0 && (
+                                <div className="flex items-center justify-center py-6 text-slate-400 text-[10px] font-mono uppercase tracking-widest">
+                                    <RefreshCw size={16} className="animate-spin mr-2" /> Loading your history…
+                                </div>
+                            )}
+                            {walletAddress && !ownLoading && ownHistory.length === 0 && (
+                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
+                                    No recent buys, sells, or creations.
+                                </div>
+                            )}
+                            {walletAddress && !ownLoading && ownHistory.slice(0, 20).map((tx) => {
+                                const assetsNum = tx.assets ? parseFloat(formatEther(BigInt(tx.assets))) : 0;
+                                const isRedeem = tx.type === 'REDEEM';
+                                return (
+                                    <div
+                                        key={tx.id}
+                                        className="flex items-start gap-2 px-3 py-2.5 border border-slate-800 hover:border-intuition-primary/60 hover:bg-white/5 transition-all duration-200 group motion-hover-lift"
+                                    >
+                                        <span className={`flex-shrink-0 mt-0.5 ${isRedeem ? 'text-intuition-danger' : 'text-intuition-success'}`}>
+                                            {isRedeem ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[11px] font-bold font-mono text-white leading-tight">
+                                                <span className="font-black text-intuition-primary">You</span>
+                                                {' '}
+                                                <span className="text-slate-200">{isRedeem ? 'liquidated' : 'acquired'}</span>
+                                                {' '}
+                                                <span className="text-slate-300 font-semibold">
+                                                    {formatDisplayedShares(tx.shares)} shares
+                                                    {assetsNum > 0 && (
+                                                        <span className="text-slate-400 font-bold">
+                                                            {' '}(<CurrencySymbol size="sm" leading className="text-slate-400" />{formatMarketValue(assetsNum)})
+                                                        </span>
+                                                    )}
+                                                    {' '}in{' '}
+                                                </span>
+                                                <Link
+                                                    to={`/markets/${tx.vaultId}`}
+                                                    onClick={playClick}
+                                                    onMouseEnter={playHover}
+                                                    className="font-bold text-slate-100 group-hover:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover:underline"
+                                                >
+                                                    {tx.assetLabel || tx.vaultId.slice(0, 10) + '…'}
+                                                </Link>
+                                            </p>
+                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] font-mono text-slate-500">
+                                                <span>{new Date(tx.timestamp).toLocaleString()}</span>
+                                                <span className="border border-slate-700 px-2 py-0.5 clip-path-slant" title="Bonding curve type">
+                                                    {getCurveLabel(tx.curveId)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+                <div className="xl:col-span-2">
+
             {/* Action Bar */}
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 mb-10">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-5 mb-8">
                 <div className="flex-1 relative group p-[2px] bg-slate-900 clip-path-slant focus-within:bg-intuition-primary/40 transition-colors">
                     <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-intuition-primary transition-colors">
                         <Search size={18} />
@@ -226,21 +573,21 @@ const Feed: React.FC = () => {
                     <input 
                         type="text" 
                         placeholder="Search by wallet, node or claim…" 
-                        className="w-full bg-[#050505] py-4 sm:py-5 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-sm focus:outline-none placeholder-slate-500 uppercase tracking-wider clip-path-slant min-h-[48px]"
+                        className="w-full bg-[#050505] py-3 sm:py-4 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-xs sm:text-sm focus:outline-none placeholder-slate-500 uppercase tracking-wider clip-path-slant min-h-[42px]"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <button className="flex items-center gap-2 sm:gap-3 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 border-slate-800 text-slate-300 hover:text-white hover:border-white transition-all text-xs sm:text-sm font-bold uppercase tracking-wider clip-path-slant group relative overflow-hidden">
+                    <button className="flex items-center gap-2 sm:gap-3 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 border-slate-800 text-slate-300 hover:text-white hover:border-white transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider clip-path-slant group relative overflow-hidden">
                         <ListFilter size={16} className="shrink-0" /> <span className="hidden sm:inline">Filter</span>
                     </button>
                     
                     <div className="relative min-w-0 flex-1 sm:flex-initial">
                         <button 
                             onClick={() => { playClick(); setIsSortOpen(!isSortOpen); }}
-                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[44px] px-4 sm:px-6 md:px-10 py-4 md:py-5 bg-black border-2 transition-all text-xs sm:text-sm font-bold uppercase tracking-wider clip-path-slant min-w-0 sm:min-w-[200px] md:min-w-[240px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-800 text-slate-300'}`}
+                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider clip-path-slant min-w-0 sm:min-w-[180px] md:min-w-[220px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-800 text-slate-300'}`}
                         >
                             {activeSort} <ChevronDown size={14} className={`transition-transform duration-500 ${isSortOpen ? 'rotate-180' : ''}`} />
                         </button>
@@ -321,6 +668,8 @@ const Feed: React.FC = () => {
                             </div>
                         </div>
                     )}
+                </div>
+            </div>
                 </div>
             </div>
 

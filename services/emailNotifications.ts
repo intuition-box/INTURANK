@@ -13,6 +13,12 @@ const STORAGE_KEY = 'inturank_email_subscriptions';
 const NOTIFIED_IDS_KEY_PREFIX = 'inturank_notified_activity_';
 const NOTIFIED_FOLLOW_KEY_PREFIX = 'inturank_notified_follow_';
 const MAX_NOTIFIED_IDS = 2000;
+const DIGEST_QUEUE_KEY_PREFIX = 'inturank_digest_queue_';
+const DIGEST_LAST_SENT_KEY_PREFIX = 'inturank_digest_last_sent_';
+const DIGEST_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_DIGEST_ITEMS = 100;
+/** Only send follow-activity emails for events within this window (avoids spamming 30 emails on first load). */
+const RECENT_FOLLOW_ACTIVITY_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 export type EmailAlertFrequency = 'per_tx' | 'daily';
 
@@ -20,7 +26,7 @@ export interface EmailSubscription {
   email: string;
   nickname?: string;
   subscribedAt: number;
-  /** Per-transaction (one email per buy/sell) or daily digest (one email per day with all activity). */
+  /** Applies to: (1) your transaction receipts, (2) activity on your holdings. Follow alerts are always every transaction. */
   alertFrequency?: EmailAlertFrequency;
 }
 
@@ -131,10 +137,57 @@ function saveNotifiedFollowIds(walletAddress: string, ids: Set<string>): void {
   } catch (_) {}
 }
 
+/** Digest queue: receipts and activity-on-holdings when frequency is daily. */
+export type DigestQueueItem =
+  | {
+      kind: 'receipt';
+      receipt: TransactionReceiptData;
+    }
+  | {
+      kind: 'activity';
+      notification: PositionActivityNotification;
+    };
+
+function loadDigestQueue(walletAddress: string): DigestQueueItem[] {
+  try {
+    const key = DIGEST_QUEUE_KEY_PREFIX + normalizeWallet(walletAddress);
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.slice(-MAX_DIGEST_ITEMS) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDigestQueue(walletAddress: string, items: DigestQueueItem[]): void {
+  try {
+    const key = DIGEST_QUEUE_KEY_PREFIX + normalizeWallet(walletAddress);
+    localStorage.setItem(key, JSON.stringify(items.slice(-MAX_DIGEST_ITEMS)));
+  } catch (_) {}
+}
+
+function loadDigestLastSent(walletAddress: string): number {
+  try {
+    const key = DIGEST_LAST_SENT_KEY_PREFIX + normalizeWallet(walletAddress);
+    const raw = localStorage.getItem(key);
+    if (!raw) return 0;
+    return parseInt(raw, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveDigestLastSent(walletAddress: string, ts: number): void {
+  try {
+    const key = DIGEST_LAST_SENT_KEY_PREFIX + normalizeWallet(walletAddress);
+    localStorage.setItem(key, String(ts));
+  } catch (_) {}
+}
+
 /**
  * Called when there's activity on a claim the user holds (someone else bought/sold).
- * Sends a rich HTML email to the subscribed address for that wallet.
- * Uses persisted "already notified" IDs so we never send duplicates or re-send old activities (e.g. after remount or new tab).
+ * Respects alert frequency: per_tx = email now; daily = add to digest queue.
  */
 export async function requestEmailNotification(
   walletAddress: string,
@@ -142,12 +195,18 @@ export async function requestEmailNotification(
 ): Promise<void> {
   const sub = getEmailSubscription(walletAddress);
   if (!sub?.email) return;
-  if (sub.alertFrequency === 'daily') return; // Daily digest sent separately; skip per-tx email
 
   const notified = loadNotifiedIds(walletAddress);
   if (notified.has(notification.id)) return;
   notified.add(notification.id);
   saveNotifiedIds(walletAddress, notified);
+
+  if (sub.alertFrequency === 'daily') {
+    const queue = loadDigestQueue(walletAddress);
+    queue.push({ kind: 'activity', notification });
+    saveDigestQueue(walletAddress, queue);
+    return;
+  }
 
   const sharesFormatted = notification.shares ? formatDisplayedShares(notification.shares) : '—';
   const assetsNum = notification.assets ? parseFloat(formatEther(BigInt(notification.assets))) : 0;
@@ -182,6 +241,7 @@ export async function requestEmailNotification(
 /**
  * Send email when someone you follow buys or sells (activity by followed identity).
  * Uses a separate "notified follow" set per wallet so we don't duplicate.
+ * Only sends for activity within RECENT_FOLLOW_ACTIVITY_MS so we don't spam on first load.
  */
 export async function requestFollowedActivityEmail(
   walletAddress: string,
@@ -193,6 +253,13 @@ export async function requestFollowedActivityEmail(
 
   const notified = loadNotifiedFollowIds(walletAddress);
   if (notified.has(notification.id)) return;
+  // Only email for recent activity (same as activity-on-my-markets); avoids 30 emails on first load
+  const now = Date.now();
+  if (notification.timestamp && now - notification.timestamp > RECENT_FOLLOW_ACTIVITY_MS) {
+    notified.add(notification.id);
+    saveNotifiedFollowIds(walletAddress, notified);
+    return;
+  }
   notified.add(notification.id);
   saveNotifiedFollowIds(walletAddress, notified);
 
@@ -228,14 +295,21 @@ export async function requestFollowedActivityEmail(
 
 /**
  * Send transaction receipt email when the user buys or sells shares.
- * Looks up email by wallet (localStorage); if the user removed their email in Profile, no email is sent.
+ * Respects alert frequency: per_tx = email now; daily = add to digest queue.
  */
 export async function sendTransactionReceiptEmail(
   walletAddress: string,
   receipt: TransactionReceiptData
 ): Promise<void> {
   const sub = getEmailSubscription(walletAddress);
-  if (!sub?.email) return; // User removed email or never added one
+  if (!sub?.email) return;
+
+  if (sub.alertFrequency === 'daily') {
+    const queue = loadDigestQueue(walletAddress);
+    queue.push({ kind: 'receipt', receipt });
+    saveDigestQueue(walletAddress, queue);
+    return;
+  }
 
   const subject = `IntuRank: ${receipt.type === 'acquired' ? 'Acquired' : 'Liquidated'} — ${receipt.marketLabel}`;
   const plainMessage = [
@@ -252,10 +326,62 @@ export async function sendTransactionReceiptEmail(
   await sendEmailWithHtml({ to: sub.email, subject, message: plainMessage, html });
 }
 
+/**
+ * If user has daily digest and queue has items and 24h have passed since last digest, send one digest email and clear queue.
+ * Call when app loads (e.g. Layout when wallet is set).
+ */
+export async function maybeSendDailyDigest(walletAddress: string): Promise<void> {
+  const sub = getEmailSubscription(walletAddress);
+  if (!sub?.email || sub.alertFrequency !== 'daily') return;
+
+  const queue = loadDigestQueue(walletAddress);
+  if (queue.length === 0) return;
+
+  const lastSent = loadDigestLastSent(walletAddress);
+  if (Date.now() - lastSent < DIGEST_INTERVAL_MS) return;
+
+  const receipts: TransactionReceiptData[] = [];
+  const activities: Array<{ marketLabel: string; senderLabel: string; type: 'acquired' | 'liquidated'; sharesFormatted: string; assetsFormatted: string; txHash?: string }> = [];
+
+  for (const item of queue) {
+    if (item.kind === 'receipt') receipts.push(item.receipt);
+    else {
+      const n = item.notification;
+      const sharesFormatted = n.shares ? formatDisplayedShares(n.shares) : '—';
+      const assetsNum = n.assets ? parseFloat(formatEther(BigInt(n.assets))) : 0;
+      const assetsFormatted = assetsNum > 0 ? `₸${formatMarketValue(assetsNum)}` : '—';
+      activities.push({
+        marketLabel: n.marketLabel,
+        senderLabel: n.senderLabel,
+        type: n.type,
+        sharesFormatted,
+        assetsFormatted,
+        txHash: n.txHash,
+      });
+    }
+  }
+
+  const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  const { getDailyDigestHtml } = await import('./emailTemplates');
+  const html = getDailyDigestHtml({ receipts, activities, dateLabel });
+  const subject = `IntuRank: Daily digest — ${receipts.length + activities.length} update${receipts.length + activities.length === 1 ? '' : 's'}`;
+  const plainMessage = `Your IntuRank daily digest: ${receipts.length} transaction(s), ${activities.length} activity update(s) on your holdings.`;
+
+  await sendEmailWithHtml({ to: sub.email, subject, message: plainMessage, html });
+  saveDigestQueue(walletAddress, []);
+  saveDigestLastSent(walletAddress, Date.now());
+}
+
 const EMAIL_API_BASE = import.meta.env.VITE_EMAIL_API_URL || '';
 
 function getEmailApiUrl(): string {
   return EMAIL_API_BASE ? `${EMAIL_API_BASE.replace(/\/$/, '')}/api/send-email` : '/api/send-email';
+}
+
+/** Optional: set from app to surface email delivery failures (e.g. toast). */
+let onEmailFailure: ((message: string) => void) | null = null;
+export function setEmailFailureHandler(handler: ((message: string) => void) | null): void {
+  onEmailFailure = handler;
 }
 
 /**
@@ -305,9 +431,15 @@ async function sendEmailWithHtml(payload: {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      const msg = err?.message || err?.error || res.statusText;
       console.warn('[Email send failed]', res.status, url, err);
+      if (onEmailFailure) {
+        if (res.status === 503) onEmailFailure('Email is not configured. Contact support.');
+        else onEmailFailure('Email delivery failed. Try again later.');
+      }
     }
   } catch (e) {
     console.warn('[Email send error]', getEmailApiUrl(), e);
+    if (onEmailFailure) onEmailFailure('Email delivery failed. Check your connection.');
   }
 }

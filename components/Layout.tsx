@@ -9,6 +9,7 @@ import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../servi
 import Logo from './Logo';
 import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
+import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -111,6 +112,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Surface email delivery failures to the user (e.g. follow alerts, activity notifications)
+  useEffect(() => {
+    setEmailFailureHandler((msg) => toast.error(msg));
+    return () => setEmailFailureHandler(null);
+  }, []);
+
+  // When wallet is set and user has daily digest, send digest if 24h passed and queue has items
+  useEffect(() => {
+    if (walletAddress) maybeSendDailyDigest(walletAddress).catch(() => {});
+  }, [walletAddress]);
 
   const openModal = () => {
     playClick();

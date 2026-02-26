@@ -79,7 +79,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
 
     return (
         <div 
-            className={`group flex flex-col md:flex-row items-center gap-4 sm:gap-6 p-4 sm:p-6 border-2 bg-black transition-all duration-500 relative overflow-hidden mb-2 clip-path-slant hover:border-white/40 overflow-x-auto min-w-0 ${isWhale ? 'animate-pulse' : ''}`}
+            className={`group flex flex-col md:flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4 border-2 bg-black transition-all duration-500 relative overflow-hidden mb-2 clip-path-slant hover:border-white/40 overflow-x-auto min-w-0 ${isWhale ? 'animate-pulse' : ''}`}
             style={cardStyle}
             onMouseEnter={playHover}
         >
@@ -105,10 +105,10 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             ></div>
 
             {/* Identity Segment */}
-            <div className="flex items-center gap-3 sm:gap-4 shrink-0 min-w-0 md:min-w-[200px] relative z-10">
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0 min-w-0 md:min-w-[180px] relative z-10">
                 <Link to={`/profile/${event.sender?.id}`} className="relative group/avatar">
                     <div 
-                        className="w-12 h-12 sm:w-14 sm:h-14 bg-black border-2 flex items-center justify-center transition-all group-hover:scale-105 relative overflow-hidden shadow-2xl clip-path-slant shrink-0"
+                        className="w-10 h-10 sm:w-12 sm:h-12 bg-black border-2 flex items-center justify-center transition-all group-hover:scale-105 relative overflow-hidden shadow-2xl clip-path-slant shrink-0"
                         style={{ borderColor: `${colorHex}66` }}
                     >
                         {event.sender?.image ? (
@@ -133,16 +133,16 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                         <Fingerprint size={10} style={{ color: colorHex }} />
                         <span className="text-[9px] font-bold font-mono text-slate-400 uppercase tracking-wider leading-none">User</span>
                     </div>
-                    <Link to={`/profile/${event.sender?.id}`} className="text-sm font-black text-white hover:text-white transition-colors truncate max-w-[140px] uppercase tracking-tighter font-display leading-none mt-2 group-hover:text-glow-white">
+                    <Link to={`/profile/${event.sender?.id}`} className="text-[11px] sm:text-sm font-black text-white hover:text-white transition-colors truncate max-w-[140px] uppercase tracking-tighter font-display leading-none mt-1.5 group-hover:text-glow-white">
                         {event.sender?.label || `${event.sender?.id?.slice(0, 8)}...`}
                     </Link>
                 </div>
             </div>
 
             {/* Narrative Segment */}
-            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-mono relative z-10 py-1">
+            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-xs font-mono relative z-10 py-1">
                 <div 
-                    className={`px-4 py-1.5 border-2 clip-path-slant font-black uppercase text-[9px] tracking-widest shadow-xl transition-all duration-700`}
+                    className={`px-3 py-1 border-2 clip-path-slant font-black uppercase text-[8px] sm:text-[9px] tracking-widest shadow-xl transition-all duration-700`}
                     style={{ 
                         backgroundColor: `${colorHex}15`, 
                         borderColor: `${colorHex}66`,
@@ -165,21 +165,21 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                 <span className="text-slate-500 uppercase font-bold italic tracking-tighter px-2">{" >> "}</span>
 
                 <div className="flex items-center gap-4 bg-black/60 border border-white/5 px-5 py-2.5 clip-path-slant hover:border-white transition-all group/target cursor-pointer shadow-inner">
-                    <div className="w-6 h-6 bg-black flex items-center justify-center overflow-hidden border border-white/10 rounded-sm group-hover:scale-110 transition-transform">
+                    <div className="w-5 h-5 sm:w-6 sm:h-6 bg-black flex items-center justify-center overflow-hidden border border-white/10 rounded-sm group-hover:scale-110 transition-transform">
                         {event.target?.image ? (
                             <img src={event.target.image} className="w-full h-full object-cover" alt="" />
                         ) : (
                             <Box size={12} className="text-slate-700" />
                         )}
                     </div>
-                    <Link to={`/markets/${event.target?.id}`} className="text-white font-black hover:text-white transition-colors truncate max-w-[200px] tracking-tight text-sm uppercase group-hover:text-glow-white">
+                    <Link to={`/markets/${event.target?.id}`} className="text-white font-black hover:text-white transition-colors truncate max-w-[180px] sm:max-w-[220px] tracking-tight text-[11px] sm:text-sm uppercase group-hover:text-glow-white">
                         {event.target?.label}
                     </Link>
                 </div>
             </div>
 
             {/* Metadata Badges */}
-            <div className="flex items-center gap-4 shrink-0 relative z-10">
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0 relative z-10">
                 <div 
                     className={`px-5 py-1.5 border text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-2 clip-path-slant transition-all shadow-lg overflow-hidden group/badge`}
                     style={{ 
@@ -194,9 +194,9 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     <div className="absolute inset-0 w-1/2 h-full bg-white opacity-[0.03] skew-x-[-20deg] -translate-x-full group-hover/badge:translate-x-[200%] transition-transform duration-[1500ms]"></div>
                 </div>
                 <div className="flex flex-col items-end">
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Curve</div>
+                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Curve</div>
                     <div 
-                        className="px-3 py-0.5 bg-black border text-[10px] font-bold uppercase tracking-wider clip-path-slant"
+                        className="px-2.5 py-0.5 bg-black border text-[9px] sm:text-[10px] font-bold uppercase tracking-wider clip-path-slant"
                         style={{ borderColor: `${colorHex}44`, color: colorHex }}
                     >
                         {curveLabel}
@@ -205,10 +205,10 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             </div>
 
             {/* Time & Explorer */}
-            <div className="flex items-center gap-4 sm:gap-6 shrink-0 min-w-0 md:min-w-[140px] justify-end relative z-10 border-l border-white/10 pl-4 sm:pl-6 md:pl-8">
+            <div className="flex items-center gap-3 sm:gap-5 shrink-0 min-w-0 md:min-w-[130px] justify-end relative z-10 border-l border-white/10 pl-3 sm:pl-5 md:pl-7">
                 <div className="text-right">
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Time</div>
-                    <span className="text-xs font-bold font-mono text-slate-300 group-hover:text-white transition-colors uppercase tracking-wider">
+                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Time</div>
+                    <span className="text-[11px] sm:text-xs font-bold font-mono text-slate-300 group-hover:text-white transition-colors uppercase tracking-wider">
                         {formatRelativeTime(event.timestamp)}
                     </span>
                 </div>
@@ -217,7 +217,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     target="_blank" 
                     rel="noreferrer"
                     onClick={(e) => { e.stopPropagation(); playClick(); }}
-                    className="w-12 h-12 bg-black border transition-all flex items-center justify-center clip-path-slant shadow-2xl group/link"
+                    className="w-9 h-9 sm:w-11 sm:h-11 bg-black border transition-all flex items-center justify-center clip-path-slant shadow-2xl group/link"
                     style={{ borderColor: `${colorHex}44`, color: colorHex }}
                 >
                     <ExternalLink size={18} className="group-hover/link:scale-110 group-hover/link:text-glow-white transition-all" />

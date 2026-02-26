@@ -14,6 +14,8 @@ import { CurrencySymbol } from '../components/CurrencySymbol';
 import { playClick } from '../services/audio';
 import { toast } from '../components/Toast';
 import { isFollowing, addFollow, removeFollow, setFollowEmailAlerts, type FollowEntry } from '../services/follows';
+import { getEmailSubscription } from '../services/emailNotifications';
+import { useEmailNotify } from '../contexts/EmailNotifyContext';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#ff0055', '#facc15', '#94a3b8'];
 
@@ -21,6 +23,7 @@ const PublicProfile: React.FC = () => {
   const { address } = useParams<{ address: string }>();
   const navigate = useNavigate();
   const { address: connectedAddress } = useAccount();
+  const { openEmailNotify } = useEmailNotify();
   const [ensName, setEnsName] = useState<string | null>(null);
   const [followEntry, setFollowEntry] = useState<FollowEntry | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
@@ -44,6 +47,15 @@ const PublicProfile: React.FC = () => {
     if (connectedAddress && address) setFollowEntry(isFollowing(connectedAddress, address) ?? null);
     else setFollowEntry(null);
   }, [connectedAddress, address]);
+
+  // If follow has emailAlerts on but user never added email, turn alerts off so UI and backend stay in sync
+  useEffect(() => {
+    if (!connectedAddress || !address || !followEntry?.emailAlerts) return;
+    if (!getEmailSubscription(connectedAddress)) {
+      setFollowEmailAlerts(connectedAddress, address, false);
+      setFollowEntry((prev) => (prev ? { ...prev, emailAlerts: false } : null));
+    }
+  }, [connectedAddress, address, followEntry?.emailAlerts]);
 
   const fetchUserData = async (addr: string) => {
     setLoading(true);
@@ -278,16 +290,23 @@ const PublicProfile: React.FC = () => {
                       >
                         <input
                           type="checkbox"
-                          checked={followEntry.emailAlerts}
+                          checked={followEntry.emailAlerts && !!getEmailSubscription(connectedAddress)}
                           onChange={(e) => {
                             playClick();
-                            setFollowEmailAlerts(connectedAddress, address, e.target.checked);
-                            setFollowEntry((prev) => (prev ? { ...prev, emailAlerts: e.target.checked } : null));
+                            const wantOn = e.target.checked;
+                            const hasEmail = !!getEmailSubscription(connectedAddress);
+                            if (wantOn && !hasEmail) {
+                              openEmailNotify();
+                              toast.info('Add your email to receive alerts when they buy or sell');
+                              return; // don't persist emailAlerts until they have an email
+                            }
+                            setFollowEmailAlerts(connectedAddress, address, wantOn);
+                            setFollowEntry((prev) => (prev ? { ...prev, emailAlerts: wantOn } : null));
                           }}
                           className="sr-only"
                         />
-                        <span className={`flex items-center justify-center w-5 h-5 border-2 rounded-sm shrink-0 ${followEntry.emailAlerts ? 'bg-amber-500 border-amber-400 text-black' : 'bg-black border-slate-500 text-transparent'}`}>
-                          {followEntry.emailAlerts && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                        <span className={`flex items-center justify-center w-5 h-5 border-2 rounded-sm shrink-0 ${(followEntry.emailAlerts && getEmailSubscription(connectedAddress)) ? 'bg-amber-500 border-amber-400 text-black' : 'bg-black border-slate-500 text-transparent'}`}>
+                          {(followEntry.emailAlerts && getEmailSubscription(connectedAddress)) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                         </span>
                         <Mail size={14} className={followEntry.emailAlerts ? 'text-amber-400' : 'text-slate-400'} />
                         <span className="text-xs font-semibold tracking-normal text-slate-200 antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -301,9 +320,15 @@ const PublicProfile: React.FC = () => {
                       onClick={() => {
                         playClick();
                         const label = ensName || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
-                        addFollow(connectedAddress, address, { label, emailAlerts: true });
+                        const hasEmail = !!getEmailSubscription(connectedAddress);
+                        addFollow(connectedAddress, address, { label, emailAlerts: hasEmail });
                         setFollowEntry(isFollowing(connectedAddress, address) ?? null);
-                        toast.success('Following — you’ll get alerts when they buy');
+                        if (hasEmail) {
+                          toast.success('Following — you’ll get alerts when they buy');
+                        } else {
+                          openEmailNotify();
+                          toast.info('Add your email to get alerts when they buy or sell');
+                        }
                       }}
                       className="bg-black text-amber-400 border-2 border-amber-400 px-4 py-2.5 clip-path-slant flex items-center gap-2.5 shadow-[0_0_14px_rgba(251,191,36,0.5),0_0_28px_rgba(245,158,11,0.2)] hover:border-amber-300 hover:text-amber-300 hover:shadow-[0_0_18px_rgba(251,191,36,0.6),0_0_36px_rgba(245,158,11,0.25)] transition-all duration-200"
                       title="Get email when they buy or sell"
