@@ -816,7 +816,9 @@ const MarketDetail: React.FC = () => {
                             </span>
                         )}
                     </div>
-                    <h1 className="text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-tight mb-2 sm:mb-4 break-words">{agent.label}</h1>
+                    <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-tight mb-2 sm:mb-4 break-words max-w-full">
+                      {agent.label}
+                    </h1>
                     <div className="flex items-center gap-5 text-[9px] font-black text-slate-600 uppercase tracking-widest"><div className="flex items-center gap-2"><Hash size={13} className="text-slate-700" /><span>NODE_ID: <span className="text-slate-500 font-mono">{agent.id.slice(0, 18)}...</span></span></div><div className="w-1 h-1 rounded-full bg-slate-800"></div><span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em]" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>LINEAR_CURVE_UTILITY</span></div>
                 </div>
             </div>
@@ -839,7 +841,12 @@ const MarketDetail: React.FC = () => {
                     <div className="bg-black border p-8 clip-path-slant relative overflow-hidden group shadow-2xl h-full flex flex-col justify-center hover:border-white/40 transition-colors duration-700" style={{ borderColor: `${theme.color}44` }}>
                         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-125 transition-transform duration-1000"><Shield size={100} /></div>
                         <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-8 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full animate-pulse shadow-[0_0_12px_currentColor]" style={{ backgroundColor: theme.color }}></div> REPUTATION CLASS</div>
-                        <div className="text-2xl sm:text-3xl md:text-5xl font-black font-display text-white text-glow-white mb-2 leading-none uppercase tracking-tighter transition-all duration-700" style={{ color: theme.color, textShadow: `0 0 20px ${theme.color}66` }}>{theme.label}</div>
+                        <div
+                          className="font-black font-display text-white text-glow-white mb-2 leading-tight uppercase tracking-tight transition-all duration-700 text-lg sm:text-xl md:text-2xl lg:text-3xl max-w-full"
+                          style={{ color: theme.color, textShadow: `0 0 20px ${theme.color}66` }}
+                        >
+                          {theme.label}
+                        </div>
                         <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest font-mono">NEURAL_CONVERGENCE: <span style={{ color: theme.color }}>{currentStrength.toFixed(1)}%</span></div>
                     </div>
                     <div className="md:col-span-2"><AIBriefing agent={agent} triples={triples} history={activityLog} /></div>
@@ -849,7 +856,15 @@ const MarketDetail: React.FC = () => {
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none"></div>
                     <div className="p-4 sm:p-6 md:p-10 flex flex-col md:flex-row justify-between items-end bg-[#02040a]/80 backdrop-blur-md relative z-20 border-b border-white/5 gap-4 md:gap-8">
                         <div>
-                            <div className="flex items-baseline gap-2 sm:gap-3 mb-2 flex-wrap"><div className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700 flex items-baseline gap-2"><CurrencySymbol size="3xl" leading className="text-white/90" /><span>{formatMarketValue(displayPrice)}</span></div><div className="text-[10px] sm:text-[14px] text-slate-500 font-mono tracking-widest uppercase font-black">/ PORTAL_SHARE</div></div>
+                            <div className="flex items-baseline gap-2 sm:gap-3 mb-2 flex-wrap">
+                              <div className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white font-display tracking-tighter leading-none group-hover/chart:text-glow-white transition-all duration-700 flex items-baseline gap-2">
+                                <CurrencySymbol size="2xl" leading className="text-white/90" />
+                                <span className="break-words max-w-full">{formatMarketValue(displayPrice)}</span>
+                              </div>
+                              <div className="text-[10px] sm:text-[12px] text-slate-500 font-mono tracking-widest uppercase font-black">
+                                / PORTAL_SHARE
+                              </div>
+                            </div>
                             <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.4em] mt-3 text-glow" style={{ color: theme.color }}><Activity size={12} className="animate-pulse shadow-[0_0_15px_currentColor]" /> Live</div>
                         </div>
                         <div className="flex gap-12 font-black text-right pb-1">
