@@ -8,33 +8,18 @@ let isGlobalClaimsFetching = false;
 
 const LIST_PREDICATE_ID = "0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908fb1b0a7d067c3c3cc1f5";
 
-const fetchGraphQL = async (query: string, variables: any = {}, retries = 2) => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000); 
-
-  try {
-    const response = await fetch(GRAPHQL_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables }),
-      signal: controller.signal,
-      cache: 'no-store' 
-    });
-    clearTimeout(timeoutId);
-    const result = await response.json();
-    if (result.errors) {
-      console.warn("GraphQL Query Error:", result.errors);
-      return { data: null };
-    }
-    return result.data;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (retries > 0 && error.name !== 'AbortError') {
-      await new Promise(r => setTimeout(r, 1000 * (3 - retries)));
-      return fetchGraphQL(query, variables, retries - 1);
-    }
-    return { data: null };
+const fetchGraphQL = async (query: string, variables: any = {}) => {
+  const response = await fetch(GRAPHQL_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  const result = await response.json();
+  if (result.errors) {
+    console.warn("GraphQL Query Error:", result.errors);
+    throw new Error("GraphQL error");
   }
+  return result.data;
 };
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
