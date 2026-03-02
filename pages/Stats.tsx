@@ -48,6 +48,16 @@ const Stats: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pnlCacheRef = React.useRef<{ entries: LeaderboardEntry[]; at: number } | null>(null);
   const suggestionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [diagnostic, setDiagnostic] = useState<{
+    address: string;
+    label: string;
+    txCount: number;
+    holdingsCount: number;
+    equityValue?: number | null;
+    pnlPct?: number | null;
+  } | null>(null);
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
 
   // --- NAME RESOLUTION EFFECT ---
   useEffect(() => {
@@ -360,6 +370,28 @@ const Stats: React.FC = () => {
       if (isWallet) { 
           playClick(); 
           navigate(`/profile/${query}`); 
+          // Also load diagnostics for this address
+          try {
+            setDiagnosticLoading(true);
+            setDiagnosticError(null);
+            const [stats, pnl] = await Promise.all([
+              getUserActivityStats(query),
+              getAccountPnlCurrent(query).catch(() => null),
+            ]);
+            setDiagnostic({
+              address: query,
+              label: ensNameForDisplay(query),
+              txCount: stats.txCount,
+              holdingsCount: stats.holdingsCount,
+              equityValue: pnl ? Number(pnl.equity_value) : null,
+              pnlPct: pnl ? Number(pnl.pnl_pct) : null,
+            });
+          } catch {
+            setDiagnosticError('Failed to load diagnostics');
+            setDiagnostic(null);
+          } finally {
+            setDiagnosticLoading(false);
+          }
           return; 
       }
 
@@ -371,6 +403,28 @@ const Stats: React.FC = () => {
               const address = await resolveENS(query);
               if (address) {
                   navigate(`/profile/${address}`);
+                  // diagnostics for resolved address
+                  try {
+                    setDiagnosticLoading(true);
+                    setDiagnosticError(null);
+                    const [stats, pnl] = await Promise.all([
+                      getUserActivityStats(address),
+                      getAccountPnlCurrent(address).catch(() => null),
+                    ]);
+                    setDiagnostic({
+                      address,
+                      label: query,
+                      txCount: stats.txCount,
+                      holdingsCount: stats.holdingsCount,
+                      equityValue: pnl ? Number(pnl.equity_value) : null,
+                      pnlPct: pnl ? Number(pnl.pnl_pct) : null,
+                    });
+                  } catch {
+                    setDiagnosticError('Failed to load diagnostics');
+                    setDiagnostic(null);
+                  } finally {
+                    setDiagnosticLoading(false);
+                  }
                   return;
               }
 
@@ -440,7 +494,7 @@ const Stats: React.FC = () => {
 
         {/* SEARCH BAR - COMMAND LINE STYLE */}
         {(activeTab === 'STAKERS' || activeTab === 'PNL') && (
-            <div className="max-w-3xl mx-auto mb-20 relative z-20 group">
+            <div className="max-w-3xl mx-auto mb-12 relative z-20 group">
                 <div className="bg-black border-2 border-slate-900 p-1 clip-path-slant shadow-2xl group-hover:border-intuition-primary/40 transition-all duration-500">
                     <div className="flex items-center gap-0 bg-[#05080f]">
                         <div className="bg-intuition-primary/10 h-16 flex items-center px-6 border-r-2 border-slate-900">
@@ -528,6 +582,63 @@ const Stats: React.FC = () => {
                     </div>
                 </div>
             </div>
+        )}
+
+        {/* Account diagnostics: shows stats for the last searched wallet / ENS */}
+        {diagnostic && (
+          <div className="max-w-3xl mx-auto mb-16 bg-black border-2 border-slate-900 clip-path-slant shadow-2xl relative z-10">
+            <div className="px-5 py-4 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.3em]">
+                  Account diagnostics
+                </span>
+                <span className="text-sm font-black text-white font-mono uppercase tracking-[0.18em] truncate">
+                  {diagnostic.label}
+                </span>
+                <span className="text-[10px] font-mono text-slate-500 tracking-widest truncate">
+                  {diagnostic.address}
+                </span>
+              </div>
+            </div>
+            <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-[11px] font-mono text-slate-200">
+              <div>
+                <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500 mb-1">
+                  Transactions
+                </div>
+                <div className="text-xl font-black text-white">
+                  {diagnostic.txCount}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500 mb-1">
+                  Active holdings
+                </div>
+                <div className="text-xl font-black text-white">
+                  {diagnostic.holdingsCount}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500 mb-1">
+                  Equity / PnL
+                </div>
+                <div className="text-xs font-bold text-slate-300">
+                  {diagnostic.equityValue != null
+                    ? `${diagnostic.equityValue.toFixed(2)} ${CURRENCY_SYMBOL}`
+                    : 'N/A'}
+                  {diagnostic.pnlPct != null && (
+                    <span className={`ml-2 ${diagnostic.pnlPct >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
+                      ({diagnostic.pnlPct >= 0 ? '+' : ''}{diagnostic.pnlPct.toFixed(2)}%)
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            {diagnosticError && (
+              <div className="px-5 pb-4 text-[10px] text-intuition-danger font-mono uppercase tracking-widest">
+                {diagnosticError}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Content Area */}

@@ -69,13 +69,30 @@ export function setEmailSubscription(
   const key = normalizeWallet(walletAddress);
   const subs = loadSubscriptions();
   const existing = subs[key];
+  const trimmedEmail = email.trim().toLowerCase();
   subs[key] = {
-    email: email.trim().toLowerCase(),
+    email: trimmedEmail,
     nickname: nickname?.trim() || undefined,
     subscribedAt: existing?.subscribedAt ?? Date.now(),
     alertFrequency: alertFrequency ?? existing?.alertFrequency ?? 'per_tx',
   };
   saveSubscriptions(subs);
+
+  // Also persist subscription on the backend so the email worker can send alerts when the app is closed
+  try {
+    fetch('/api/email-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wallet: walletAddress,
+        email: trimmedEmail,
+        nickname: nickname?.trim() || undefined,
+        alertFrequency: alertFrequency ?? existing?.alertFrequency ?? 'per_tx',
+      }),
+    }).catch(() => {});
+  } catch {
+    // best-effort; frontend still works with local subscription even if this fails
+  }
 }
 
 /** Update only the alert frequency for an existing subscription. */
@@ -94,6 +111,16 @@ export function removeEmailSubscription(walletAddress: string): void {
   const subs = loadSubscriptions();
   delete subs[key];
   saveSubscriptions(subs);
+
+  try {
+    fetch('/api/email-unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: walletAddress }),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
 }
 
 /** Persisted set of activity notification IDs we already emailed (per wallet) so we never send duplicates or re-send old activities. */

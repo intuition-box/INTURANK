@@ -15,6 +15,9 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Load .env and .env.local from project root (when run as node server/index.js)
 dotenv.config();
@@ -24,6 +27,28 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const ENSEND_SEND_URL = 'https://api.ensend.co/send';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SUBS_PATH = path.join(__dirname, 'email-subs.json');
+
+async function loadSubscriptions() {
+  try {
+    const raw = await fs.readFile(SUBS_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveSubscriptions(subs) {
+  try {
+    await fs.writeFile(SUBS_PATH, JSON.stringify(subs, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[email-api] Failed to persist subscriptions', e);
+  }
+}
 
 app.use(cors({ origin: true }));
 app.use(express.json());
@@ -41,6 +66,49 @@ app.get('/', (_req, res) => {
     ok: true,
     emailConfigured: !!(secret && sender),
   });
+});
+
+// Store email subscriptions server-side so worker can send alerts for everyone
+app.post('/api/email-subscribe', async (req, res) => {
+  const { wallet, email, nickname, alertFrequency } = req.body || {};
+  if (!wallet || !email) {
+    return res.status(400).json({ error: 'Missing wallet or email' });
+  }
+  const normalizedWallet = String(wallet).toLowerCase();
+  const normalizedEmail = String(email).trim().toLowerCase();
+  try {
+    const subs = await loadSubscriptions();
+    const idx = subs.findIndex((s) => s.wallet.toLowerCase() === normalizedWallet);
+    const next = {
+      wallet: normalizedWallet,
+      email: normalizedEmail,
+      nickname: nickname?.trim() || undefined,
+      alertFrequency: alertFrequency === 'daily' ? 'daily' : 'per_tx',
+      subscribedAt: Date.now(),
+    };
+    if (idx >= 0) subs[idx] = { ...subs[idx], ...next };
+    else subs.push(next);
+    await saveSubscriptions(subs);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[email-api] subscribe error', e);
+    res.status(500).json({ error: 'Failed to save subscription' });
+  }
+});
+
+app.post('/api/email-unsubscribe', async (req, res) => {
+  const { wallet } = req.body || {};
+  if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
+  const normalizedWallet = String(wallet).toLowerCase();
+  try {
+    const subs = await loadSubscriptions();
+    const filtered = subs.filter((s) => s.wallet.toLowerCase() !== normalizedWallet);
+    await saveSubscriptions(filtered);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[email-api] unsubscribe error', e);
+    res.status(500).json({ error: 'Failed to update subscriptions' });
+  }
 });
 
 app.post('/api/send-email', async (req, res) => {
@@ -146,3 +214,16 @@ app.post('/api/send-email', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Email API running at http://localhost:${PORT}`);
 });
+
+// Optionally start the background email worker in the same process.
+// This is useful in production (e.g. Railway) so a single always-on service
+// can both serve the API and send alerts, without relying on the user's PC.
+if (process.env.ENABLE_EMAIL_WORKER === 'true') {
+  import('./email-worker.js')
+    .then(() => {
+      console.log('[email-api] Email worker attached (ENABLE_EMAIL_WORKER=true).');
+    })
+    .catch((err) => {
+      console.error('[email-api] Failed to start email worker', err);
+    });
+}

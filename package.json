@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "email-server": "node server/index.js"
+    "email-server": "node server/index.js",
+    "email-worker": "node server/email-worker.js"
   },
   "dependencies": {
     "@0xintuition/graphql": "^2.0.2",
