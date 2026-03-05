@@ -1,13 +1,22 @@
 
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Shield, Activity, ChevronDown, Binary, Box, HardDrive, Terminal, AlertCircle, Cpu, Network, Zap, Mail } from 'lucide-react';
+import { useConnectModal } from '@rainbow-me/rainbowkit';
+import { useAccount } from 'wagmi';
+import { ArrowRight, Shield, Activity, ChevronDown, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2 } from 'lucide-react';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { formatEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
-import { getAllAgents, getNetworkStats } from '../services/graphql';
-import { CURRENCY_SYMBOL } from '../constants';
-
+import { getAllAgents, getHomeAtomSections, getNetworkStats, getPnlLeaderboard, getPnlLeaderboardPeriod, getPnlLeaderboardPeriodAccount, buildPnlLeaderboardPeriodArgs, prepareQueryIds } from '../services/graphql';
+import { CURRENCY_SYMBOL, SEASON_2_EPOCH_ID, SEASON_2_EPOCH_8_DATE_RANGE, SEASON_2_EPOCH_8_START, SEASON_2_EPOCH_8_END } from '../constants';
+import { toast } from '../components/Toast';
+import { getConnectedAccount, depositToVault, toggleWatchlist, isInWatchlist, getWalletBalance } from '../services/web3';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import MuiBox from '@mui/material/Box';
+import Drawer from '@mui/material/Drawer';
+import TextField from '@mui/material/TextField';
 interface InViewOptions extends IntersectionObserverInit {
   once?: boolean;
 }
@@ -46,9 +55,9 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: 
   
   const getTransform = () => {
       if (!isInView) {
-          if (direction === 'up') return 'translateY(20px)';
-          if (direction === 'down') return 'translateY(-20px)';
-          return 'scale(0.98)';
+          if (direction === 'up') return 'translateY(16px)';
+          if (direction === 'down') return 'translateY(-16px)';
+          return 'scale(0.99)';
       }
       return 'translateY(0) scale(1)';
   };
@@ -56,8 +65,8 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: 
   return (
     <div
       ref={ref}
-      className={`transition-all duration-[900ms] ${className} ${
-        isInView ? 'opacity-100 blur-none' : 'opacity-0 blur-sm'
+      className={`transition-[opacity,transform] duration-500 ${className} ${
+        isInView ? 'opacity-100' : 'opacity-0'
       }`}
       style={{
         transitionDelay: `${delay}ms`,
@@ -84,7 +93,7 @@ const MissionTerminal: React.FC = () => {
   return (
     <div className="w-full max-w-5xl mx-auto px-6 py-32 relative">
       <Reveal delay={200}>
-        <div className="bg-[#05080f] border-2 border-intuition-primary/40 rounded-xl overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.15)] clip-path-slant group">
+        <div className="bg-[#05080f] border-2 border-intuition-primary/40 rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.15)] group transition-all duration-500">
           <div className="flex items-center justify-between px-6 py-4 bg-black/60 border-b border-white/5">
             <div className="flex gap-2">
               <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
@@ -127,16 +136,718 @@ const MissionTerminal: React.FC = () => {
   );
 };
 
+interface SwipeToBuyProps {
+  onConfirm: () => void;
+}
+
+const SwipeToBuy: React.FC<SwipeToBuyProps> = ({ onConfirm }) => {
+  const [progress, setProgress] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+
+  const updateProgress = (clientX: number) => {
+    if (!trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const raw = (clientX - rect.left) / rect.width;
+    const clamped = Math.max(0, Math.min(1, raw));
+    progressRef.current = clamped;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => setProgress(clamped));
+  };
+
+  const handleEnd = () => {
+    if (!isSwiping) return;
+    setIsSwiping(false);
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    const p = progressRef.current;
+    if (p > 0.65) {
+      setProgress(1);
+      setTimeout(() => {
+        onConfirm();
+        setProgress(0);
+      }, 220);
+    } else {
+      setProgress(0);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsSwiping(true);
+    setProgress(0);
+    progressRef.current = 0;
+    const onMouseMove = (ev: MouseEvent) => updateProgress(ev.clientX);
+    const onMouseUp = () => {
+      handleEnd();
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsSwiping(true);
+    setProgress(0);
+    progressRef.current = 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isSwiping) return;
+    const touch = e.touches[0];
+    if (touch) updateProgress(touch.clientX);
+  };
+
+  const handleTouchEnd = () => {
+    handleEnd();
+  };
+
+  return (
+    <div
+      ref={trackRef}
+      onMouseDown={handleMouseDown}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-full h-10 rounded-full bg-black/60 border border-intuition-primary/30 overflow-hidden select-none group touch-none"
+      style={{ cursor: isSwiping ? 'grabbing' : 'grab' }}
+    >
+      <div
+        className="absolute inset-0 bg-intuition-primary/10 transition-opacity duration-200"
+        style={{ opacity: progress > 0 ? 1 : 0.5 }}
+      />
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+        <span className="text-[10px] font-mono text-slate-400 group-hover:text-intuition-primary transition-colors uppercase tracking-wider">
+          {progress > 0.65 ? 'Release to confirm' : 'Swipe to buy'}
+        </span>
+      </div>
+      <div
+        className="absolute top-1 bottom-1 w-8 rounded-full bg-intuition-primary text-black shadow-[0_0_12px_rgba(0,243,255,0.5)] flex items-center justify-center font-black text-sm will-change-transform"
+        style={{
+          left: `calc(0.25rem + ${progress} * (100% - 2.5rem))`,
+          transition: isSwiping ? 'none' : 'left 0.15s ease-out',
+        }}
+      >
+        →
+      </div>
+    </div>
+  );
+};
+
+interface SwipeCardProps {
+  agent: any;
+  onSwipeBuy: (agent: any, amount: string) => void;
+}
+
+const SwipeTradeCard: React.FC<SwipeCardProps> = ({ agent, onSwipeBuy }) => {
+  const [amount, setAmount] = useState<string>('');
+  const price = parseFloat(formatEther(BigInt(agent.currentSharePrice || '0')) || 0).toFixed(4);
+
+  return (
+    <div className="relative min-w-[320px] sm:min-w-[360px] max-w-sm snap-center">
+      <div className="absolute -inset-0.5 bg-gradient-to-br from-intuition-primary/40 via-intuition-secondary/40 to-transparent rounded-[2.5rem] opacity-40 blur-2 group-hover:opacity-70 transition-opacity" />
+      <div className="relative rounded-[2.5rem] bg-gradient-to-br from-[#050712] via-[#050814] to-[#020308] border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.9)] p-6 flex flex-col gap-5 overflow-hidden">
+        <div className="flex items-center gap-3">
+          <div className="w-14 h-14 rounded-full bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center">
+            {agent.image ? (
+              <img src={agent.image} alt={agent.label} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-lg font-black text-intuition-primary">
+                {agent.label?.slice(0, 2) ?? 'IN'}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col min-w-0">
+            <div className="text-xs font-mono uppercase tracking-[0.35em] text-slate-500">
+              Trending Atom
+            </div>
+            <div className="text-white font-display font-black text-lg truncate">{agent.label}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-xs font-mono uppercase tracking-[0.25em] text-slate-400">
+          <span>Spot Price</span>
+          <span className="text-intuition-primary text-glow-blue">
+            {price} {CURRENCY_SYMBOL}
+          </span>
+        </div>
+
+        <div className="bg-black/40 rounded-3xl border border-white/10 p-4 flex flex-col gap-3">
+          <label className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-400">
+            TRUST TO DEPLOY
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="flex-1 bg-black/60 border border-white/10 rounded-2xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-intuition-primary/70 focus:ring-1 focus:ring-intuition-primary/70"
+              placeholder="0.0"
+            />
+            <button
+              type="button"
+              onClick={() => setAmount('100')}
+              className="px-3 py-1.5 rounded-full text-[10px] font-mono font-black uppercase tracking-[0.3em] bg-white/5 text-slate-200 border border-white/10 hover:bg-intuition-primary hover:text-black hover:border-intuition-primary transition-all"
+            >
+              MAX
+            </button>
+          </div>
+          <div className="text-[10px] text-slate-500 font-mono uppercase tracking-[0.25em]">
+            Approx. {amount ? (Number(amount) * Number(price)).toFixed(3) : '0.000'} {CURRENCY_SYMBOL}
+          </div>
+        </div>
+
+        <SwipeToBuy onConfirm={() => onSwipeBuy(agent, amount)} />
+      </div>
+    </div>
+  );
+};
+
+// --- Stacked cards: vertical swipe = next/prev, horizontal = buy/watchlist (no buttons) ---
+const SWIPE_THRESHOLD = 44;
+const SWIPE_VERTICAL_THRESHOLD = 32;
+
+interface StackedAtomCardProps {
+  agent: any;
+  dragX: number;
+  dragY: number;
+  onSwipeRight: () => void;
+  onSwipeLeft: () => void;
+  isInWatchlist: boolean;
+  isBackCard?: boolean;
+  showRoi?: boolean;
+}
+
+const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, onSwipeRight, onSwipeLeft, isInWatchlist, isBackCard, showRoi }) => {
+  const price = parseFloat(formatEther(BigInt(agent.currentSharePrice || '0')) || '0').toFixed(4);
+  const marketCapRaw = agent.marketCap ? parseFloat(agent.marketCap) : 0;
+  const formatCompact = (value: number) => {
+    if (!value || !Number.isFinite(value)) return '0';
+    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return value.toFixed(2);
+  };
+  const marketCapDisplay = formatCompact(marketCapRaw);
+
+  // Unified card size — compact, scales down on narrow screens
+  const cardClass = 'relative w-full max-w-[280px] min-h-[200px] sm:min-h-[220px] rounded-xl overflow-hidden select-none touch-none flex-shrink-0';
+
+  const cardInner = (
+    <div
+      className={cardClass}
+      style={isBackCard ? {
+        boxShadow: '0 0 0 1px rgba(0,243,255,0.2), 0 6px 20px rgba(0,0,0,0.5)',
+        background: 'linear-gradient(160deg, #060a12 0%, #050814 100%)',
+        border: '1px solid rgba(0,243,255,0.3)',
+      } : {
+        boxShadow: '0 0 0 1px rgba(0,243,255,0.4), 0 0 24px rgba(0,243,255,0.25), 0 0 48px rgba(0,243,255,0.12), 0 18px 48px rgba(0,0,0,0.85)',
+        background:
+          'radial-gradient(circle at top left, rgba(0,243,255,0.26), transparent 55%), radial-gradient(circle at bottom right, rgba(255,30,109,0.22), transparent 60%), linear-gradient(160deg, #050814 0%, #02040a 60%, #050814 100%)',
+        border: '2px solid rgba(0,243,255,0.5)',
+      }}
+    >
+      {/* Horizontal swipe hints — only on front card when dragging */}
+      {!isBackCard && (
+      <div className="absolute left-4 right-4 top-14 flex items-center justify-between pointer-events-none z-10">
+        <div
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-150 ${
+            dragX < -30 ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
+          }`}
+          style={{ background: 'rgba(255,30,109,0.2)', color: '#ff6b9d' }}
+        >
+          <Heart size={16} strokeWidth={2} />
+          <span className="text-[11px] font-semibold uppercase tracking-wide">Watchlist</span>
+        </div>
+        <div
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-150 ${
+            dragX > 30 ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
+          }`}
+          style={{ background: 'rgba(0,243,255,0.2)', color: '#22d3ee' }}
+        >
+          <span className="text-[11px] font-semibold uppercase tracking-wide">Infuse trust</span>
+          <ShoppingCart size={16} strokeWidth={2} />
+        </div>
+      </div>
+      )}
+
+      <div className="relative p-4 sm:p-5 min-h-[160px]">
+        {/* Top: Atom label + clear watchlist badge (no overlap with value) */}
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.3em]">Atom</span>
+          {isInWatchlist && !isBackCard && (
+            <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-rose-500/20 text-rose-300 text-[9px] font-mono font-semibold uppercase tracking-wider">
+              <Heart size={12} className="flex-shrink-0" />
+              In watchlist
+            </span>
+          )}
+        </div>
+
+        {/* Main: avatar + name + metrics — bold, neon layout */}
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 ring-1 ring-white/10 bg-slate-800/90 flex items-center justify-center">
+            {agent.image ? (
+              <img src={agent.image} alt={agent.label} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-base font-semibold text-slate-500">{agent.label?.slice(0, 2) ?? '—'}</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h3 className="text-base font-black font-display text-white leading-snug break-words line-clamp-2 uppercase tracking-tight text-glow-white">
+              {agent.label || 'Unnamed'}
+            </h3>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-[#050916] border-2 border-intuition-primary/40 px-3 py-2 shadow-[0_0_12px_rgba(0,243,255,0.1)]">
+            <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-0.5">Total Mkt Cap</p>
+            <p className="text-[13px] font-black font-mono text-intuition-primary tabular-nums text-glow-blue">
+              {marketCapDisplay} {CURRENCY_SYMBOL}
+            </p>
+          </div>
+          <div className="rounded-lg bg-[#050916] border-2 border-emerald-400/40 px-3 py-2 shadow-[0_0_12px_rgba(34,197,94,0.08)]">
+            <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-0.5">Price / Unit</p>
+            <p className="text-[13px] font-black font-mono text-emerald-300 tabular-nums text-glow-success">
+              {price} {CURRENCY_SYMBOL}
+            </p>
+            {showRoi && (
+              <p className="text-[11px] font-mono text-emerald-400 mt-0.5">
+                {(() => {
+                  const p = parseFloat(price || '0');
+                  if (!Number.isFinite(p)) return 'ROI 0%';
+                  const raw = (p - 1) * 100;
+                  const clamped = Math.max(-99.9, Math.min(999.9, raw));
+                  const sign = clamped > 0 ? '+' : '';
+                  return `${sign}${clamped.toFixed(1)}% ROI`;
+                })()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Back cards: full content but subtle (less visible, shows details)
+  if (isBackCard) {
+    return (
+      <div className="pointer-events-none" style={{ opacity: 0.38 }}>
+        {cardInner}
+      </div>
+    );
+  }
+  return cardInner;
+};
+
+interface AtomSectionCarouselProps {
+  title: string;
+  subtitle: string;
+  agents: any[];
+  walletAddress: string | undefined;
+  onSwipeRight: (agent: any) => void;
+  onSwipeLeft: (agent: any) => void;
+  isInWatchlist: (id: string) => boolean;
+  showRoi?: boolean;
+}
+
+const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtitle, agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi }) => {
+  const [index, setIndex] = useState(0);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragX, setDragX] = useState(0);
+  const [dragY, setDragY] = useState(0);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragXYRef = useRef({ x: 0, y: 0 });
+  const total = agents.length;
+  const currentAgent = total > 0 ? agents[index % total] : null;
+  const prevAgent = total > 1 ? agents[(index - 1 + total) % total] : null;
+  const nextAgent = total > 1 ? agents[(index + 1) % total] : null;
+
+  dragXYRef.current = { x: dragX, y: dragY };
+
+  const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const y = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const start = { x, y };
+    setDragStart(start);
+    dragStartRef.current = start;
+    setDragX(0);
+    setDragY(0);
+    dragXYRef.current = { x: 0, y: 0 };
+  };
+
+  // Window-level move/end so swipe stays fluid when finger/mouse leaves the card
+  useEffect(() => {
+    if (dragStartRef.current == null) return;
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      const x = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
+      const y = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
+      const start = dragStartRef.current!;
+      const dx = x - start.x;
+      const dy = y - start.y;
+      dragXYRef.current = { x: dx, y: dy };
+      setDragX(dx);
+      setDragY(dy);
+    };
+    const onEnd = () => {
+      if (dragStartRef.current == null) return;
+      const { x: dx, y: dy } = dragXYRef.current;
+      const cur = total > 0 ? agents[index % total] : null;
+      const isVertical = Math.abs(dy) > Math.abs(dx);
+      if (isVertical && Math.abs(dy) > SWIPE_VERTICAL_THRESHOLD) {
+        playClick();
+        if (dy < 0) setIndex((i) => (i + 1) % total);
+        else setIndex((i) => (i - 1 + total) % total);
+      } else if (!isVertical && Math.abs(dx) > SWIPE_THRESHOLD && cur) {
+        playClick();
+        if (dx > 0) onSwipeRight(cur);
+        else onSwipeLeft(cur);
+      }
+      dragStartRef.current = null;
+      setDragStart(null);
+      setDragX(0);
+      setDragY(0);
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchcancel', onEnd);
+    };
+  }, [dragStart, index, total, agents, onSwipeRight, onSwipeLeft]);
+
+  const handleEndLocal = () => {
+    if (dragStartRef.current == null) return;
+    const dx = dragX;
+    const dy = dragY;
+    const isVertical = Math.abs(dy) > Math.abs(dx);
+    if (isVertical && Math.abs(dy) > SWIPE_VERTICAL_THRESHOLD) {
+      playClick();
+      if (dy < 0) setIndex((i) => (i + 1) % total);
+      else setIndex((i) => (i - 1 + total) % total);
+    } else if (!isVertical && Math.abs(dx) > SWIPE_THRESHOLD && currentAgent) {
+      playClick();
+      if (dx > 0) onSwipeRight(currentAgent);
+      else onSwipeLeft(currentAgent);
+    }
+    dragStartRef.current = null;
+    setDragStart(null);
+    setDragX(0);
+    setDragY(0);
+  };
+
+  if (total === 0) return null;
+
+  const isDragging = dragStart != null;
+
+  return (
+    <MuiBox sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+      <div className="w-full text-center mb-2">
+        <h3 className="text-sm sm:text-base font-bold font-display text-white tracking-wider mb-1 uppercase">{title}</h3>
+        <div className="h-0.5 w-8 mx-auto rounded-full bg-intuition-primary/60 shadow-[0_0_8px_rgba(0,243,255,0.5)]" />
+      </div>
+      <p className="text-[10px] font-mono text-slate-500 tracking-[0.15em] uppercase mb-2">{subtitle}</p>
+
+      <MuiBox
+        onMouseDown={handleStart}
+        onTouchStart={handleStart}
+        onMouseUp={handleEndLocal}
+        onMouseLeave={handleEndLocal}
+        onTouchEnd={handleEndLocal}
+        sx={{
+          position: 'relative',
+          width: '100%',
+          minHeight: 320,
+          overflow: 'visible',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          touchAction: 'none',
+        }}
+      >
+        {/* Above: previous card peeks from top (subtle) */}
+        {prevAgent && (
+          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ top: 8, transform: 'translateX(-50%) scale(0.85)' }}>
+            <StackedAtomCard agent={prevAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && prevAgent ? isInWatchlist(prevAgent.id) : false} isBackCard showRoi={showRoi} />
+          </div>
+        )}
+        {/* Below: next card peeks from bottom (subtle) */}
+        {nextAgent && (
+          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ bottom: 8, transform: 'translateX(-50%) scale(0.85)' }}>
+            <StackedAtomCard agent={nextAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && nextAgent ? isInWatchlist(nextAgent.id) : false} isBackCard showRoi={showRoi} />
+          </div>
+        )}
+        {/* Current: centered */}
+        <div
+          className="absolute left-1/2 z-10 will-change-transform w-full max-w-[280px]"
+          style={{
+            top: '50%',
+            transform: `translate(calc(-50% + ${dragX}px), calc(-50% + ${dragY}px))`,
+            transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.33, 1, 0.68, 1)',
+          }}
+        >
+          <StackedAtomCard
+            agent={currentAgent}
+            dragX={dragX}
+            dragY={dragY}
+            onSwipeRight={() => currentAgent && onSwipeRight(currentAgent)}
+            onSwipeLeft={() => currentAgent && onSwipeLeft(currentAgent)}
+            isInWatchlist={walletAddress && currentAgent ? isInWatchlist(currentAgent.id) : false}
+          />
+        </div>
+      </MuiBox>
+
+      <p className="text-[10px] font-mono text-slate-500 mt-1 tabular-nums tracking-wider"><span className="text-intuition-primary/80">{index + 1}</span><span className="text-slate-600"> / </span>{total}</p>
+    </MuiBox>
+  );
+};
+
+interface BuySidePanelProps {
+  agent: any;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (agentLabel: string) => void;
+  walletAddress: string | undefined;
+  openConnectModal: (() => void) | undefined;
+}
+
+const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onSuccess, walletAddress, openConnectModal }) => {
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [walletBalance, setWalletBalance] = useState('0');
+  const price = agent ? parseFloat(formatEther(BigInt(agent.currentSharePrice || '0')) || '0').toFixed(4) : '0';
+
+  useEffect(() => {
+    if (isOpen && walletAddress) {
+      getWalletBalance(walletAddress).then((b) => setWalletBalance(b || '0'));
+    } else {
+      setWalletBalance('0');
+    }
+  }, [isOpen, walletAddress]);
+
+  const handleConfirm = async () => {
+    if (loading) return;
+    if (!walletAddress) {
+      openConnectModal?.();
+      return;
+    }
+    const trimmed = (amount || '').trim();
+    if (!trimmed || Number(trimmed) <= 0) {
+      toast.error('Enter amount to deploy.');
+      return;
+    }
+    const acc = await getConnectedAccount();
+    if (!acc) {
+      toast.error('Wallet not ready.');
+      return;
+    }
+    setLoading(true);
+    try {
+      playClick();
+      toast.info('Awaiting signature…');
+      await depositToVault(trimmed, agent.id, acc, 1, (log) => toast.info(log));
+      toast.success('Acquisition complete.');
+      onSuccess(agent.label || 'this atom');
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || 'Transaction failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Drawer
+      anchor="right"
+      open={isOpen}
+      onClose={() => {
+        playClick();
+        onClose();
+      }}
+      slotProps={{ backdrop: { sx: { bgcolor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' } } }}
+      PaperProps={{
+        sx: {
+          width: { xs: 320, sm: 360 },
+          maxWidth: '92vw',
+          height: 'auto',
+          top: '22%',
+          transform: 'translateY(-50%)',
+          bottom: 'auto',
+          maxHeight: 520,
+          borderTopLeftRadius: 16,
+          borderBottomLeftRadius: 16,
+          overflow: 'hidden',
+          bgcolor: '#020308',
+          borderLeft: '2px solid rgba(0,243,255,0.5)',
+          boxShadow: '0 0 40px rgba(0,243,255,0.15), 0 0 80px rgba(0,0,0,0.9)',
+        },
+      }}
+    >
+      <MuiBox sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Orbitron', sans-serif" }}>
+        <MuiBox
+          sx={{
+            px: 2,
+            py: 1.5,
+            borderBottom: '1px solid rgba(0,243,255,0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography
+            sx={{
+              fontFamily: "'Orbitron', sans-serif",
+              fontWeight: 900,
+              letterSpacing: '0.25em',
+              textTransform: 'uppercase',
+              fontSize: 11,
+              color: '#00f3ff',
+              textShadow: '0 0 8px rgba(0,243,255,0.5)',
+            }}
+          >
+            Buy
+          </Typography>
+          <IconButton onClick={() => { playClick(); onClose(); }} aria-label="Close" size="small" sx={{ color: 'rgba(148,163,184,0.9)' }}>
+            <Typography component="span" sx={{ fontSize: '1.1rem', lineHeight: 1 }}>&times;</Typography>
+          </IconButton>
+        </MuiBox>
+        {agent && (
+          <MuiBox sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+            <MuiBox sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <MuiBox
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 2,
+                  bgcolor: '#050814',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  border: '1px solid rgba(0,243,255,0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {agent.image ? (
+                  <img src={agent.image} alt={agent.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <Typography sx={{ color: '#00f3ff', fontWeight: 700, fontSize: 14 }}>
+                    {agent.label?.slice(0, 2)}
+                  </Typography>
+                )}
+              </MuiBox>
+              <MuiBox sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: 13, color: '#fff', noWrap: true }}>
+                  {agent.label}
+                </Typography>
+                <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 12, color: '#00f3ff', mt: 0.5 }}>
+                  {price} {CURRENCY_SYMBOL}
+                </Typography>
+                {walletAddress && (
+                  <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 11, color: 'rgba(0,255,157,0.9)', mt: 0.5 }}>
+                    Balance: {parseFloat(walletBalance).toFixed(4)} {CURRENCY_SYMBOL}
+                  </Typography>
+                )}
+              </MuiBox>
+            </MuiBox>
+            <MuiBox>
+              <Typography
+                sx={{ mb: 1, fontFamily: "'Fira Code', monospace", fontSize: 10, color: 'rgba(148,163,184,0.9)', letterSpacing: '0.2em', textTransform: 'uppercase' }}
+              >
+                Amount to deposit
+              </Typography>
+              <MuiBox sx={{ display: 'flex', gap: 1 }}>
+                <TextField
+                  type="number"
+                  inputProps={{ min: 0, step: 0.01 }}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.0"
+                  fullWidth
+                  size="small"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 12,
+                      bgcolor: '#050814',
+                      fontSize: 14,
+                      '& fieldset': { borderColor: 'rgba(0,243,255,0.3)' },
+                      '&:hover fieldset': { borderColor: 'rgba(0,243,255,0.5)' },
+                      '&.Mui-focused fieldset': { borderColor: 'rgba(0,243,255,0.8)', boxShadow: '0 0 12px rgba(0,243,255,0.2)' },
+                    },
+                  }}
+                />
+                <IconButton
+                  onClick={() => setAmount(parseFloat(walletBalance).toFixed(4))}
+                  sx={{
+                    bgcolor: '#050814',
+                    borderRadius: 2,
+                    px: 1.5,
+                    border: '1px solid rgba(0,243,255,0.4)',
+                    '&:hover': { bgcolor: 'rgba(0,243,255,0.1)', borderColor: 'rgba(0,243,255,0.6)' },
+                  }}
+                  aria-label="Max amount"
+                >
+                  <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#fff' }}>
+                    MAX
+                  </Typography>
+                </IconButton>
+              </MuiBox>
+              <Typography sx={{ mt: 0.75, fontSize: 11, color: 'rgba(148,163,184,0.8)', fontFamily: "'Fira Code', monospace" }}>
+                ≈ {amount ? (Number(amount) * Number(price)).toFixed(3) : '0'} {CURRENCY_SYMBOL}
+              </Typography>
+            </MuiBox>
+            <MuiBox sx={{ pt: 2 }}>
+              <SwipeToBuy onConfirm={handleConfirm} />
+              {loading && (
+                <Typography sx={{ mt: 1.5, fontSize: 11, color: 'rgba(148,163,184,0.7)', textAlign: 'center', fontFamily: "'Fira Code', monospace" }}>
+                  Processing…
+                </Typography>
+              )}
+            </MuiBox>
+          </MuiBox>
+        )}
+      </MuiBox>
+    </Drawer>
+  );
+};
+
 const Home: React.FC = () => {
   const { openEmailNotify } = useEmailNotify();
   const [tickerData, setTickerData] = useState<any[]>([]);
   const [stats, setStats] = useState({ tvl: "0", atoms: 0, signals: 0, positions: 0 });
+  const [atomSections, setAtomSections] = useState<{ roiDaily: any[]; byMarketcap: any[]; newlyCreated: any[] }>({ roiDaily: [], byMarketcap: [], newlyCreated: [] });
+  const [buyPanelAgent, setBuyPanelAgent] = useState<any | null>(null);
+  const [acquisitionSuccess, setAcquisitionSuccess] = useState<{ agentLabel: string } | null>(null);
+  const [pnlTop, setPnlTop] = useState<any[]>([]);
+  const [pnlLoading, setPnlLoading] = useState(true);
+  const [userPnlPosition, setUserPnlPosition] = useState<{ rank: number; account_label?: string; total_pnl_raw?: string; pnl_pct?: number } | null>(null);
+  const { openConnectModal } = useConnectModal();
+  const { address: walletAddress } = useAccount();
 
   useEffect(() => {
     const initData = async () => {
       try {
         const agentsData = await getAllAgents().catch(() => ({ items: [], hasMore: false }));
-        const agents = agentsData.items;
+        const agents = agentsData.items || [];
         const topAgents = agents.slice(0, 15).map(a => {
            const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
            const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
@@ -144,11 +855,99 @@ const Home: React.FC = () => {
            return { symbol: (a.label || 'NODE').toUpperCase().slice(0, 12), price, isUp: Math.random() > 0.45 };
         });
         setTickerData(topAgents);
+        const sections = await getHomeAtomSections(10).catch(() => ({ roiDaily: [], byMarketcap: [], newlyCreated: [] }));
+        setAtomSections(sections);
         const netStats = await getNetworkStats().catch(() => ({ tvl: "0", atoms: 0, signals: 0, positions: 0 }));
         setStats(netStats);
       } catch (e) { console.error(e); }
+      // Season 2 PnL leaderboard (epoch 8) — try period query first, fallback to get_pnl_leaderboard if schema differs
+      setPnlLoading(true);
+      try {
+        const args = buildPnlLeaderboardPeriodArgs(SEASON_2_EPOCH_8_START, SEASON_2_EPOCH_8_END, { limit: 10 });
+        const pnl = await getPnlLeaderboardPeriod(args, 10);
+        if (pnl && pnl.length > 0) {
+          setPnlTop(pnl.slice(0, 10));
+        } else {
+          const fallback = await getPnlLeaderboard(0, 10);
+          setPnlTop((fallback || []).slice(0, 10));
+        }
+      } catch (e) {
+        console.warn("Season 2 PnL period fetch failed, using fallback:", e);
+        try {
+          const fallback = await getPnlLeaderboard(0, 10);
+          setPnlTop((fallback || []).slice(0, 10));
+        } catch (e2) {
+          console.error("PnL leaderboard fetch failed:", e2);
+          setPnlTop([]);
+        }
+      } finally {
+        setPnlLoading(false);
+      }
     };
     initData();
+  }, []);
+
+  useEffect(() => {
+    if (!walletAddress) { setUserPnlPosition(null); return; }
+    const fetchUserPosition = async () => {
+      try {
+        const args = buildPnlLeaderboardPeriodArgs(SEASON_2_EPOCH_8_START, SEASON_2_EPOCH_8_END, { limit: 250 });
+        let pos = await getPnlLeaderboardPeriodAccount(walletAddress, args);
+        if (pos) {
+          setUserPnlPosition({ rank: pos.rank, account_label: pos.account_label, total_pnl_raw: pos.total_pnl_raw, pnl_pct: pos.pnl_pct });
+          return;
+        }
+        const all = await getPnlLeaderboardPeriod(args, 250);
+        if (all && all.length > 0) {
+          const variants = prepareQueryIds(walletAddress);
+          const found = all.find((e: any) => {
+            const id = (e.account_id || '').trim();
+            return variants.some((v) => v.toLowerCase() === id.toLowerCase());
+          });
+          setUserPnlPosition(found ? { rank: found.rank, account_label: found.account_label, total_pnl_raw: found.total_pnl_raw, pnl_pct: found.pnl_pct } : null);
+          return;
+        }
+        const fallback = await getPnlLeaderboard(0, 250);
+        const variants = prepareQueryIds(walletAddress);
+        const found = fallback?.find((e: any) => {
+          const id = (e.account_id || '').trim();
+          return variants.some((v) => v.toLowerCase() === id.toLowerCase());
+        });
+        setUserPnlPosition(found ? { rank: found.rank, account_label: found.account_label, total_pnl_raw: found.total_pnl_raw, pnl_pct: found.pnl_pct } : null);
+      } catch {
+        try {
+          const fallback = await getPnlLeaderboard(0, 250);
+          const variants = prepareQueryIds(walletAddress);
+          const found = fallback?.find((e: any) => {
+            const id = (e.account_id || '').trim();
+            return variants.some((v) => v.toLowerCase() === id.toLowerCase());
+          });
+          setUserPnlPosition(found ? { rank: found.rank, account_label: found.account_label, total_pnl_raw: found.total_pnl_raw, pnl_pct: found.pnl_pct } : null);
+        } catch {
+          setUserPnlPosition(null);
+        }
+      }
+    };
+    fetchUserPosition();
+  }, [walletAddress]);
+
+  // Sync user position from pnlTop when user appears in the table (e.g. top 10)
+  useEffect(() => {
+    if (!walletAddress || pnlLoading || pnlTop.length === 0) return;
+    const variants = prepareQueryIds(walletAddress);
+    const pos = pnlTop.find((e: any) => {
+      const id = (e.account_id || '').trim();
+      return variants.some((v) => v.toLowerCase() === id.toLowerCase());
+    });
+    if (pos) {
+      setUserPnlPosition({ rank: pos.rank, account_label: pos.account_label, total_pnl_raw: pos.total_pnl_raw, pnl_pct: pos.pnl_pct });
+    }
+  }, [walletAddress, pnlTop, pnlLoading]);
+
+  useEffect(() => {
+    const onWatchlistUpdate = () => setAtomSections((prev) => ({ ...prev }));
+    window.addEventListener('watchlist-updated', onWatchlistUpdate);
+    return () => window.removeEventListener('watchlist-updated', onWatchlistUpdate);
   }, []);
 
   const volumeValue = parseFloat(formatEther(BigInt(stats.tvl)));
@@ -157,62 +956,336 @@ const Home: React.FC = () => {
     : "0.0";
 
   return (
-    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white max-w-[100vw] overflow-x-hidden">
-      
-      <div className="relative h-[90vh] flex flex-col justify-center items-center overflow-hidden border-b border-white/10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,_rgba(0,243,255,0.1),_transparent_60%)]"></div>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,_rgba(255,0,85,0.12),_transparent_40%)]"></div>
-        <div className="absolute top-0 left-0 w-full h-full opacity-[0.08] retro-grid pointer-events-none"></div>
-        
-        <div className="relative z-10 text-center max-w-6xl w-full min-w-0 px-4 sm:px-6 flex flex-col items-center">
-          <Reveal delay={100} direction="down">
-            <div className="inline-flex items-center gap-3 px-4 sm:px-6 py-2 mb-8 bg-black border-2 border-intuition-secondary text-[9px] sm:text-[10px] font-black font-mono tracking-[0.4em] sm:tracking-[0.5em] text-intuition-secondary uppercase shadow-[0_0_30px_rgba(255,0,85,0.6)] clip-path-slant group mobile-break">
-              <div className="absolute inset-0 bg-intuition-secondary/10 animate-pulse"></div>
-              <Terminal size={14} className="text-intuition-secondary shrink-0" />
-              IDENTITY_PROTOCOL_ACTIVE // ARES_HIGH_STAKES
+    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white w-full min-w-0 max-w-[100vw] overflow-x-hidden">
+      {/* Success popup: portaled to body so it stays viewport-centered */}
+      {acquisitionSuccess && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-backdrop-fade-fluid"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={() => setAcquisitionSuccess(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Acquisition successful"
+        >
+          <div
+            className="relative w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl animate-modal-pop-fluid"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute -inset-[1px] rounded-[2.5rem] bg-gradient-to-br from-intuition-primary/60 via-intuition-secondary/40 to-intuition-primary/50 opacity-90 blur-[0.5px]" />
+            <div className="absolute inset-0 rounded-[2.5rem] bg-gradient-to-br from-[#050712] via-[#0a0e1a] to-[#050712] border border-white/10" />
+            <div className="relative p-8 sm:p-10 flex flex-col items-center text-center">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-intuition-primary/30 to-intuition-secondary/20 border-2 border-intuition-primary/50 flex items-center justify-center mb-6 shadow-[0_0_40px_rgba(0,243,255,0.25)]">
+                <Sparkles className="w-10 h-10 text-intuition-primary" />
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-black font-display text-white mb-3 tracking-tight">
+                Yayyy, you did it!
+              </h3>
+              <p className="text-slate-300 text-sm sm:text-base font-mono leading-relaxed mb-2">
+                You just added TRUST to <span className="text-intuition-primary font-semibold">{acquisitionSuccess.agentLabel}</span>. Your position is live on the protocol.
+              </p>
+              <p className="text-slate-400 text-xs font-mono uppercase tracking-[0.3em] mb-8">
+                Check out your positions below
+              </p>
+              <Link
+                to="/portfolio"
+                onClick={() => { playClick(); setAcquisitionSuccess(null); }}
+                onMouseEnter={playHover}
+                className="inline-flex items-center gap-3 px-8 py-4 rounded-full bg-gradient-to-r from-intuition-primary/20 to-intuition-secondary/20 border-2 border-intuition-primary/60 text-intuition-primary font-black font-mono text-sm uppercase tracking-[0.25em] hover:from-intuition-primary/30 hover:to-intuition-secondary/30 hover:border-intuition-primary hover:text-white hover:shadow-[0_0_35px_rgba(0,243,255,0.4)] transition-all duration-300"
+              >
+                Check out your positions
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => { playClick(); setAcquisitionSuccess(null); }}
+                className="mt-6 text-slate-500 hover:text-slate-300 text-xs font-mono uppercase tracking-widest transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 1. TRENDING ATOMS — first */}
+      <section id="trending-atoms" className="relative overflow-x-hidden overflow-y-visible min-w-0 py-10 sm:py-16 border-b border-white/5 bg-[#04060a] scroll-mt-6" style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(0,243,255,0.08),_transparent_50%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_80%_50%,rgba(168,85,247,0.04),_transparent_60%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.3)_100%)] pointer-events-none" />
+        <div className="relative mx-auto z-10 min-w-0 w-full" style={{ maxWidth: 1280 }}>
+          <Reveal delay={80}>
+            <div className="text-center mb-8">
+              {/* Stacked title */}
+              <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black font-display tracking-tighter uppercase leading-[0.88] mb-2">
+                <span className="block text-white text-glow-white">TRENDING</span>
+                <span className="block text-intuition-secondary text-glow-red mt-0.5">ATOMS</span>
+              </h2>
+              <p className="text-sm sm:text-base max-w-xl mx-auto leading-relaxed mb-6 font-display text-[13px] sm:text-[15px] tracking-wide">
+                <span className="font-black text-intuition-primary text-glow-blue">Welcome to IntuRank</span>
+                <span className="text-slate-300"> — the gamified arena of trading atoms. </span>
+                <span className="text-white font-semibold">Stake. Swipe. Climb.</span>
+                <span className="text-slate-400"> Dominate the Intuition ecosystem.</span>
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+                <div className="group flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-br from-intuition-primary/20 to-intuition-primary/5 border-2 border-intuition-primary/50 shadow-[0_0_20px_rgba(0,243,255,0.15)] hover:border-intuition-primary hover:shadow-[0_0_30px_rgba(0,243,255,0.4),0_0_0_1px_rgba(0,243,255,0.5)] hover:-translate-y-0.5 transition-all duration-300">
+                  <ArrowRight size={16} className="text-intuition-primary group-hover:scale-110 transition-transform" />
+                  <span className="text-[12px] font-black font-display uppercase tracking-wider text-intuition-primary text-glow-blue">Right → Buy</span>
+                </div>
+                <div className="group flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-br from-intuition-secondary/20 to-intuition-secondary/5 border-2 border-intuition-secondary/50 shadow-[0_0_20px_rgba(255,30,109,0.1)] hover:border-intuition-secondary hover:shadow-[0_0_30px_rgba(255,30,109,0.35),0_0_0_1px_rgba(255,30,109,0.5)] hover:-translate-y-0.5 transition-all duration-300">
+                  <Activity size={16} className="text-intuition-secondary group-hover:scale-110 transition-transform" />
+                  <span className="text-[12px] font-black font-display uppercase tracking-wider text-intuition-secondary text-glow-red">Left → Watchlist</span>
+                </div>
+                <div className="group flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-br from-amber-400/15 to-amber-400/5 border-2 border-amber-400/40 shadow-[0_0_15px_rgba(250,204,21,0.08)] hover:border-amber-400 hover:shadow-[0_0_25px_rgba(250,204,21,0.25),0_0_0_1px_rgba(250,204,21,0.4)] hover:-translate-y-0.5 transition-all duration-300">
+                  <ChevronsUpDown size={16} className="text-amber-400 group-hover:scale-110 transition-transform" />
+                  <span className="text-[12px] font-black font-display uppercase tracking-wider text-amber-400 text-glow-gold">Up & down → Browse</span>
+                </div>
+              </div>
             </div>
           </Reveal>
 
-          <Reveal delay={300}>
-            <div className="relative mb-8 min-w-0 w-full">
-               <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-[8.5rem] font-black tracking-tighter text-white leading-[0.9] font-display text-glow-white uppercase mobile-break">
-                 SEMANTIC<br />
-                 <span className="text-intuition-secondary text-glow-red animate-pulse">CAPITALISM</span>
-               </h1>
-            </div>
-          </Reveal>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 md:gap-8 min-w-0">
+            <Reveal delay={150}>
+              <div className="rounded-xl p-4 sm:p-5 flex flex-col items-center border-2 border-intuition-primary/40 bg-[#050814] min-w-0 w-full max-w-full shadow-[0_0_0_1px_rgba(0,243,255,0.3),0_0_20px_rgba(0,243,255,0.1),0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-500 hover:border-intuition-primary/60 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.4),0_0_30px_rgba(0,243,255,0.15),0_12px_32px_rgba(0,0,0,0.5)]">
+                <AtomSectionCarousel
+                  title="Top by ROI (daily)"
+                  subtitle="Updates daily · most activity"
+                  agents={atomSections.roiDaily}
+                  walletAddress={walletAddress}
+                  onSwipeRight={(a) => setBuyPanelAgent(a)}
+                  onSwipeLeft={(a) => {
+                    if (!walletAddress) { openConnectModal?.(); return; }
+                    const added = toggleWatchlist(a.id, walletAddress);
+                    toast.success(added ? 'Added to watchlist' : 'Removed from watchlist');
+                  }}
+                  isInWatchlist={(id) => (walletAddress ? isInWatchlist(id, walletAddress) : false)}
+                  showRoi
+                />
+              </div>
+            </Reveal>
+            <Reveal delay={280}>
+              <div className="rounded-xl p-4 sm:p-5 flex flex-col items-center border-2 border-intuition-primary/40 bg-[#050814] min-w-0 w-full max-w-full shadow-[0_0_0_1px_rgba(0,243,255,0.3),0_0_20px_rgba(0,243,255,0.1),0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-500 hover:border-intuition-primary/60 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.4),0_0_30px_rgba(0,243,255,0.15),0_12px_32px_rgba(0,0,0,0.5)]">
+                <AtomSectionCarousel
+                  title="Top by market cap"
+                  subtitle="Largest reputation markets"
+                  agents={atomSections.byMarketcap}
+                  walletAddress={walletAddress}
+                  onSwipeRight={(a) => setBuyPanelAgent(a)}
+                  onSwipeLeft={(a) => {
+                    if (!walletAddress) { openConnectModal?.(); return; }
+                    const added = toggleWatchlist(a.id, walletAddress);
+                    toast.success(added ? 'Added to watchlist' : 'Removed from watchlist');
+                  }}
+                  isInWatchlist={(id) => (walletAddress ? isInWatchlist(id, walletAddress) : false)}
+                />
+              </div>
+            </Reveal>
+            <Reveal delay={410}>
+              <div className="rounded-xl p-4 sm:p-5 flex flex-col items-center border-2 border-intuition-primary/40 bg-[#050814] min-w-0 w-full max-w-full shadow-[0_0_0_1px_rgba(0,243,255,0.3),0_0_20px_rgba(0,243,255,0.1),0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-500 hover:border-intuition-primary/60 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.4),0_0_30px_rgba(0,243,255,0.15),0_12px_32px_rgba(0,0,0,0.5)]">
+                <AtomSectionCarousel
+                  title="Newly created"
+                  subtitle="Fresh atoms as they appear"
+                  agents={atomSections.newlyCreated}
+                  walletAddress={walletAddress}
+                  onSwipeRight={(a) => setBuyPanelAgent(a)}
+                  onSwipeLeft={(a) => {
+                    if (!walletAddress) { openConnectModal?.(); return; }
+                    const added = toggleWatchlist(a.id, walletAddress);
+                    toast.success(added ? 'Added to watchlist' : 'Removed from watchlist');
+                  }}
+                  isInWatchlist={(id) => (walletAddress ? isInWatchlist(id, walletAddress) : false)}
+                />
+              </div>
+            </Reveal>
+          </div>
+        </div>
+      </section>
 
-          <Reveal delay={500}>
-            <p className="max-w-2xl w-full min-w-0 mx-auto text-sm sm:text-base md:text-2xl text-slate-200 mb-12 font-mono leading-relaxed tracking-wide uppercase font-black px-1 mobile-break">
-              Establishing the reputation protocol for a trustless world.<br/>
-              <span className="text-intuition-primary text-glow-blue underline decoration-intuition-secondary/50 underline-offset-8">QUANTIFY IDENTITY. ARBITRAGE TRUTH.</span>
+      {/* 2. SEASON 2 LEADERBOARD — second */}
+      <section className="relative overflow-hidden min-w-0 py-12 sm:py-16 border-b border-white/5 bg-gradient-to-b from-[#060a12] via-[#050810] to-[#04060a]">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(251,191,36,0.06),_transparent_50%)] pointer-events-none" />
+        <div className="relative max-w-6xl mx-auto min-w-0 w-full px-4 sm:px-6 md:px-8" style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}>
+          <Reveal delay={80}>
+            <div className="flex flex-wrap items-center gap-4 mb-8">
+              <div className="inline-flex items-center gap-4 px-6 py-3.5 rounded-2xl bg-amber-400/10 border-2 border-amber-400 text-amber-300 font-display font-black uppercase tracking-[0.25em] text-sm sm:text-base shadow-[0_0_40px_rgba(251,191,36,0.3)]">
+                <Trophy size={24} className="shrink-0" />
+                <span>Intuition&apos;s Season 2 Leaderboard</span>
+              </div>
+              <span className="text-slate-500 font-mono text-xs uppercase tracking-wider">Epoch {SEASON_2_EPOCH_ID} · {SEASON_2_EPOCH_8_DATE_RANGE}</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black font-display text-white tracking-tighter mb-2 text-glow-white">
+              Wanna rank up?
+            </h2>
+            <p className="text-slate-300 font-mono text-sm sm:text-base mb-8 leading-relaxed">
+              Dive into the{' '}
+              <a
+                href="#trending-atoms"
+                onClick={(e) => {
+                  e.preventDefault();
+                  playClick();
+                  document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="font-display font-black text-intuition-primary text-glow-blue hover:text-white hover:shadow-[0_0_12px_rgba(0,243,255,0.6)] transition-all duration-500 cursor-pointer underline decoration-intuition-primary/50 underline-offset-2 hover:decoration-intuition-primary"
+              >
+                Trending Atoms
+              </a>
+              {' '}on the Intuition Network. Swipe, stake, and climb the leaderboard.
             </p>
-          </Reveal>
 
-          <Reveal delay={700}>
-            <div className="flex flex-col sm:flex-row items-center gap-8 mb-16">
-              <Link to="/markets" onClick={playClick} className="btn-cyber btn-cyber-secondary px-16 py-7 text-xl group shadow-[0_0_60px_rgba(255,30,109,0.7)]">
-                ENTER_TERMINAL <ArrowRight className="ml-4 group-hover:translate-x-3 transition-transform duration-300" />
-              </Link>
-              <Link to="/stats" onClick={playClick} className="btn-cyber btn-cyber-outline px-16 py-7 text-xl border-intuition-primary text-intuition-primary hover:text-white shadow-[0_0_30px_rgba(0,243,255,0.3)]">
-                NETWORK_STATS
+            {/* User's position — pinned at the very top */}
+            {walletAddress && userPnlPosition && (
+              <div className="mb-6 px-5 py-4 rounded-xl border border-white/10 bg-white/[0.02]">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <span className="text-intuition-primary font-display font-black text-xl">#{userPnlPosition.rank}</span>
+                    <div>
+                      <p className="text-slate-500 text-xs font-medium mb-0.5">Your position</p>
+                      <p className="text-white font-semibold truncate max-w-[200px]">{userPnlPosition.account_label || `${(walletAddress || '').slice(0,8)}...${(walletAddress || '').slice(-4)}`}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {userPnlPosition.pnl_pct != null && (
+                      <span className="text-intuition-success font-mono font-semibold text-sm">+{(Math.abs(Number(userPnlPosition.pnl_pct)) <= 1 ? Number(userPnlPosition.pnl_pct) * 100 : Number(userPnlPosition.pnl_pct)).toFixed(1)}% ROI</span>
+                    )}
+                    {userPnlPosition.total_pnl_raw && (
+                      <span className="text-slate-300 font-mono font-semibold text-sm">
+                        +{parseFloat(formatEther(BigInt(userPnlPosition.total_pnl_raw))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {CURRENCY_SYMBOL}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            {walletAddress && !userPnlPosition && (
+              <div className="mb-6 py-4 px-5 rounded-2xl bg-black/40 border border-white/10">
+                <p className="text-slate-500 font-mono text-xs uppercase tracking-wider">Connect & trade to see your rank on the leaderboard</p>
+              </div>
+            )}
+
+            {/* Actual leaderboard table */}
+            <div className="rounded-2xl border-2 border-white/10 bg-black/40 overflow-hidden shadow-xl mb-8 min-w-0">
+              <div className="overflow-x-auto overflow-y-visible">
+                <table className="w-full text-left font-mono border-collapse min-w-[520px] text-xs sm:text-sm">
+                  <thead className="bg-black/60 border-b border-white/10">
+                    <tr>
+                      <th className="px-3 sm:px-6 py-3 sm:py-4 w-16 sm:w-20 text-center text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">RANK</th>
+                      <th className="px-3 sm:px-6 py-3 sm:py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">USER</th>
+                      <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">PNL</th>
+                      <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">ROI%</th>
+                      <th className="px-3 sm:px-6 py-3 sm:py-4 w-16 sm:w-24"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {pnlLoading ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 sm:px-6 py-16 text-center">
+                          <div className="flex flex-col items-center gap-4">
+                            <Loader2 className="w-10 h-10 text-intuition-primary animate-spin" />
+                            <span className="text-slate-500 font-mono text-sm uppercase tracking-wider">Loading leaderboard…</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : pnlTop.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 sm:px-6 py-16 text-center text-slate-500 font-mono text-sm uppercase tracking-wider">
+                          No leaderboard data available
+                        </td>
+                      </tr>
+                    ) : (() => {
+                      const top10 = pnlTop.slice(0, 10);
+                      const walletVariants = walletAddress ? prepareQueryIds(walletAddress) : [];
+                      const userInTop = top10.find((x: any) => {
+                        const id = (x.account_id || '').trim();
+                        return walletVariants.some((v) => v.toLowerCase() === id.toLowerCase());
+                      });
+                      const ordered = userInTop ? [userInTop, ...top10.filter((x: any) => x !== userInTop)] : top10;
+                      return ordered.map((e: any, i: number) => {
+                      let pnlEth = 0;
+                      try { pnlEth = parseFloat(formatEther(BigInt(e.total_pnl_raw || '0'))); } catch { /* ignore */ }
+                      const pctRaw = e.pnl_pct != null ? Number(e.pnl_pct) : 0;
+                const pct = Math.abs(pctRaw) <= 1 ? pctRaw * 100 : pctRaw;
+                      const id = (e.account_id || '').trim();
+                      const isUser = walletAddress && walletVariants.some((v) => v.toLowerCase() === id.toLowerCase());
+                      const label = e.account_label || `${(e.account_id || '').slice(0, 10)}...${(e.account_id || '').slice(-6)}`;
+                      const rankColor = e.rank === 1 ? 'text-amber-400' : e.rank === 2 ? 'text-slate-300' : e.rank === 3 ? 'text-amber-600' : 'text-slate-500';
+                      return (
+                        <tr key={e.account_id || i} className={`hover:bg-white/5 transition-colors ${isUser ? 'bg-intuition-primary/10 border-l-4 border-l-intuition-primary' : ''}`}>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-center">
+                            <span className={`font-black font-display text-sm sm:text-lg ${rankColor}`}>#{e.rank}</span>
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4">
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-slate-800 overflow-hidden flex-shrink-0 border border-white/10">
+                                <img src={e.account_image || `https://effigy.im/a/${e.account_id}.png`} alt="" className="w-full h-full object-cover" />
+                              </div>
+                              <span className="font-bold text-white text-xs sm:text-sm truncate max-w-[100px] sm:max-w-[200px]">{label}</span>
+                              {isUser && <span className="text-[9px] font-mono text-intuition-primary uppercase tracking-wider px-2 py-0.5 rounded bg-intuition-primary/20 shrink-0">You</span>}
+                            </div>
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-right font-black text-intuition-success text-xs sm:text-base">
+                            +{pnlEth.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} {CURRENCY_SYMBOL}
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-right font-bold text-intuition-success text-xs sm:text-sm">
+                            +{pct.toFixed(1)}%
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-right">
+                            <Link to={`/profile/${e.account_id}`} onClick={playClick} className="inline-flex px-3 py-1.5 rounded-lg bg-intuition-primary/20 border border-intuition-primary/50 text-intuition-primary font-mono text-[10px] font-bold uppercase tracking-wider hover:bg-intuition-primary hover:text-black transition-colors">
+                              Profile
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <Link
+              to="/stats"
+              onClick={playClick}
+              className="group inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-gradient-to-r from-intuition-primary/20 to-intuition-secondary/20 border-2 border-intuition-primary/50 text-intuition-primary font-black font-mono text-sm uppercase tracking-[0.2em] hover:from-intuition-primary/30 hover:to-intuition-secondary/30 hover:border-intuition-primary hover:text-white hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300"
+            >
+              View full leaderboard
+              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* 3. CTA — third */}
+      <section className="relative overflow-hidden min-w-0 py-20 sm:py-28 md:py-32 border-b border-white/5 bg-gradient-to-b from-[#050810] to-[#04060a]">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_50%,rgba(0,243,255,0.03),transparent)] pointer-events-none" />
+        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 text-center" style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}>
+          <Reveal delay={100}>
+            <div className="relative rounded-[2rem] sm:rounded-[2.5rem] p-12 sm:p-16 md:p-20 border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm">
+              <div className="absolute -inset-px rounded-[2rem] sm:rounded-[2.5rem] bg-gradient-to-b from-intuition-primary/20 via-transparent to-intuition-secondary/20 opacity-60 -z-10" />
+              <p className="text-slate-400 text-base sm:text-lg mb-6 font-medium">
+                Still can&apos;t find what to buy?
+              </p>
+              <p className="text-slate-100 text-xl sm:text-2xl md:text-3xl mb-10 leading-relaxed">
+                Our <Link to="/markets" onClick={playClick} className="text-intuition-primary font-semibold hover:text-intuition-primary/80 transition-colors">Markets</Link> page has a wide variety of Atoms — stake to earn {CURRENCY_SYMBOL}, or trade the <span className="text-intuition-secondary font-semibold">exponential curve</span> for higher rewards.
+              </p>
+              <Link
+                to="/markets"
+                onClick={playClick}
+                className="group inline-flex items-center gap-3 px-10 sm:px-12 py-5 sm:py-6 rounded-2xl bg-gradient-to-r from-intuition-primary/15 to-intuition-secondary/15 border border-intuition-primary/40 text-white font-semibold text-base sm:text-lg hover:from-intuition-primary/25 hover:to-intuition-secondary/25 hover:border-intuition-primary/60 hover:shadow-[0_0_30px_rgba(0,243,255,0.15)] transition-all duration-300"
+              >
+                Explore Markets
+                <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 group-hover:translate-x-0.5 transition-transform text-intuition-primary" />
               </Link>
             </div>
           </Reveal>
         </div>
+      </section>
 
-        <div className="absolute bottom-8 flex flex-col items-center gap-2 opacity-80 animate-bounce">
-            <span className="text-[10px] font-black font-mono tracking-[0.4em] text-intuition-secondary text-glow-red uppercase font-black">Scroll_For_Telemetry</span>
-            <ChevronDown size={24} className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]" />
-        </div>
-      </div>
-
+      {/* System pulse — below LB and Trending Atoms */}
       <div className="w-full min-w-0 border-y-2 border-intuition-secondary/20 bg-black/90 py-1 overflow-hidden flex items-stretch group relative z-20 shadow-2xl">
          <div className="bg-black z-30 px-4 sm:px-6 md:px-8 py-4 sm:py-5 flex items-center gap-2 sm:gap-4 border-r-2 border-intuition-secondary/40 shadow-[25px_0_45px_rgba(0,0,0,1)] shrink-0">
             <div className="w-3 h-3 rounded-full bg-intuition-secondary animate-pulse-fast shadow-[0_0_15px_#ff0055]"></div>
             <span className="text-[9px] sm:text-[11px] font-black font-display text-white tracking-[0.2em] sm:tracking-[0.3em] uppercase text-glow-white whitespace-nowrap">SYSTEM_PULSE</span>
          </div>
-         
          <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden no-scrollbar">
             <div className="flex w-max min-h-full animate-marquee group-hover:[animation-play-state:paused]">
                <div className="flex shrink-0">
@@ -228,6 +1301,15 @@ const Home: React.FC = () => {
             </div>
          </div>
       </div>
+
+      <BuySidePanel
+        agent={buyPanelAgent}
+        isOpen={!!buyPanelAgent}
+        onClose={() => setBuyPanelAgent(null)}
+        onSuccess={(agentLabel) => setAcquisitionSuccess({ agentLabel })}
+        walletAddress={walletAddress}
+        openConnectModal={openConnectModal}
+      />
 
       <div className="py-16 sm:py-24 md:py-40 bg-[#04060b] relative overflow-hidden border-b border-white/5 min-w-0">
         <div className="absolute top-0 right-0 w-[700px] h-[700px] bg-intuition-secondary/[0.06] rounded-full blur-[140px] pointer-events-none"></div>
@@ -316,23 +1398,6 @@ const Home: React.FC = () => {
       </section>
 
       <MissionTerminal />
-
-      <div className="py-64 text-center relative overflow-hidden bg-black border-t-2 border-intuition-secondary/30">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(255,0,85,0.15),_transparent_70%)]"></div>
-        <Reveal delay={200}>
-          <div className="inline-flex items-center gap-3 text-intuition-secondary font-black font-mono text-xs mb-12 tracking-[0.8em] uppercase text-glow-red font-black">
-             <AlertCircle size={18} /> Initializing_Final_Sequence
-          </div>
-          <h2 className="text-6xl md:text-[10rem] font-black font-display text-white mb-16 tracking-tighter text-glow-white uppercase leading-[0.85]">
-            RECLAIM_THE<br/><span className="text-intuition-secondary text-glow-red">REPUTATION</span>
-          </h2>
-          <div className="flex justify-center mb-24">
-            <Link to="/markets" onClick={playClick} className="btn-cyber btn-cyber-secondary px-24 py-10 text-3xl shadow-[0_0_100px_rgba(255,30,109,0.7)] motion-smooth">
-              SYNC_PROTOCOL
-            </Link>
-          </div>
-        </Reveal>
-      </div>
 
     </div>
   );

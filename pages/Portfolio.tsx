@@ -17,18 +17,19 @@ import { Link } from 'react-router-dom';
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
 const StatCard: React.FC<{ label: string; value: string; unit: string | React.ReactNode; icon: any; trendColor?: string }> = ({ label, value, unit, icon: Icon, trendColor }) => (
-  <div className="bg-black/40 border border-slate-900 p-4 sm:p-5 md:p-6 clip-path-slant relative group hover:border-white/20 transition-all flex flex-col justify-between min-h-[120px] sm:h-36">
-    <div className="absolute top-6 right-6 text-slate-700 group-hover:text-slate-500 transition-colors">
-      <Icon size={24} strokeWidth={1.5} />
+  <div className="relative group overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900/90 via-black to-black border border-slate-800/80 p-4 sm:p-5 md:p-6 xl:p-6 shadow-[0_18px_45px_rgba(0,0,0,0.7)] hover:border-intuition-primary/40 transition-all flex flex-col justify-between min-h-[116px] sm:min-h-[128px] xl:min-h-[140px] 2xl:min-h-[152px] min-w-0">
+    <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_top_left,rgba(0,243,255,0.18),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(236,72,153,0.18),transparent_55%)]" />
+    <div className="absolute top-4 right-4 xl:top-5 xl:right-5 text-slate-700 group-hover:text-slate-300 transition-colors z-10 shrink-0">
+      <Icon className="w-5 h-5 sm:w-6 sm:h-6 xl:w-7 xl:h-7 2xl:w-8 2xl:h-8" strokeWidth={1.5} />
     </div>
-    <div className="space-y-1">
-      <div className="flex items-center gap-2 mb-2">
-        <div className="w-1.5 h-1.5 bg-current rounded-full opacity-60"></div>
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{label}</span>
+    <div className="space-y-1 relative z-10 pr-8 sm:pr-10 min-w-0 overflow-hidden">
+      <div className="flex items-center gap-2 mb-1 sm:mb-2 min-w-0">
+        <div className="w-1.5 h-1.5 bg-current rounded-full opacity-60 shrink-0"></div>
+        <span className="text-[10px] xl:text-xs 2xl:text-sm font-black text-slate-500 uppercase tracking-[0.2em] truncate block min-w-0">{label}</span>
       </div>
-      <div className={`text-4xl font-black font-display tracking-tight group-hover:text-intuition-primary transition-colors leading-none flex items-baseline gap-1 ${trendColor || 'text-white'}`}>
-        {typeof unit === 'string' ? <span className="text-4xl font-bold text-intuition-primary/90 mr-2 align-baseline">{unit}</span> : unit}
-        {value}
+      <div className={`text-2xl sm:text-3xl md:text-4xl xl:text-4xl 2xl:text-5xl font-black font-display tracking-tight group-hover:text-intuition-primary transition-colors leading-none flex items-baseline gap-1 min-w-0 overflow-hidden ${trendColor || 'text-white'}`}>
+        {typeof unit === 'string' ? <span className="text-2xl sm:text-3xl md:text-4xl xl:text-4xl 2xl:text-5xl font-bold text-intuition-primary/90 mr-1 sm:mr-2 align-baseline shrink-0">{unit}</span> : unit}
+        <span className="tabular-nums truncate block min-w-0" title={value}>{value}</span>
       </div>
     </div>
   </div>
@@ -237,11 +238,11 @@ const Portfolio: React.FC = () => {
     <div className="min-h-[90vh] flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-mono px-4">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,243,255,0.03)_0%,transparent_70%)] pointer-events-none"></div>
       <div className="relative z-10 w-full max-w-[500px] animate-in fade-in zoom-in-95 duration-700">
-        <div className="bg-[#020308] border-2 border-intuition-primary/20 p-12 flex flex-col items-center text-center clip-path-slant shadow-[0_0_120px_rgba(0,0,0,1)] relative overflow-hidden group">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-intuition-secondary px-8 py-1.5 text-[10px] font-black text-white tracking-[0.4em] uppercase clip-path-slant shadow-glow-red">DISCONNECTED</div>
+        <div className="bg-[#020308] border-2 border-intuition-primary/30 p-10 sm:p-12 flex flex-col items-center text-center rounded-3xl shadow-[0_0_120px_rgba(0,0,0,1)] relative overflow-hidden group">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-intuition-secondary px-8 py-1.5 text-[10px] font-black text-white tracking-[0.4em] uppercase rounded-b-2xl shadow-glow-red">DISCONNECTED</div>
             <div className="mt-12 mb-10 relative">
                 <div className="absolute -inset-10 bg-intuition-primary/10 blur-[40px] rounded-full animate-pulse"></div>
-                <div className="relative w-20 h-20 bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary clip-path-slant shadow-glow-blue transition-all duration-700 group-hover:scale-110">
+                <div className="relative w-20 h-20 bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary rounded-3xl shadow-glow-blue transition-all duration-700 group-hover:scale-110">
                     <Lock size={32} className="animate-pulse" />
                 </div>
             </div>
@@ -251,7 +252,7 @@ const Portfolio: React.FC = () => {
             </div>
             <button 
                 onClick={connectWallet}
-                className="w-full py-5 bg-intuition-primary text-black font-black font-display uppercase tracking-[0.2em] clip-path-slant shadow-glow-blue hover:bg-white transition-all active:scale-95"
+                className="w-full py-5 bg-intuition-primary text-black font-black font-display uppercase tracking-[0.2em] rounded-full shadow-glow-blue hover:bg-white transition-all active:scale-95"
             >
                 ESTABLISH_UPLINK
             </button>
@@ -261,17 +262,19 @@ const Portfolio: React.FC = () => {
   );
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 pt-10 pb-20 font-mono">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+    <div className="w-full min-w-0 max-w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 pt-8 sm:pt-10 pb-16 sm:pb-20 font-mono overflow-x-hidden">
+      <div className="w-full max-w-full mx-auto mb-8 sm:mb-10 rounded-[2rem] sm:rounded-[2.5rem] bg-gradient-to-br from-slate-950 via-[#020818] to-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-slate-900/60 px-4 sm:px-6 md:px-8 xl:px-10 py-6 sm:py-8 md:py-10 min-w-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6 xl:gap-8">
         <StatCard label="Wallet Balance" value={balance} unit={<CurrencySymbol size="2xl" leading />} icon={Wallet} />
         <StatCard label="Total Equity" value={portfolioValue} unit={<CurrencySymbol size="2xl" leading />} icon={Coins} />
         <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit={<CurrencySymbol size="2xl" leading />} icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} />
-        <div className="bg-black/40 border border-slate-900 p-4 sm:p-5 md:p-6 clip-path-slant flex flex-col justify-between min-h-[120px] sm:h-36 group hover:border-intuition-primary/30 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">SENTIMENT_BIAS</span>
-            <PulseIcon size={20} className="text-slate-700 group-hover:text-intuition-primary transition-colors animate-pulse" />
+        <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900/90 via-black to-black border border-slate-800/80 p-4 sm:p-5 md:p-6 flex flex-col justify-between min-h-[116px] sm:min-h-[128px] xl:min-h-[140px] group hover:border-intuition-primary/40 transition-all min-w-0">
+          <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.16),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(248,113,113,0.18),transparent_55%)]" />
+          <div className="flex items-center justify-between relative z-10 min-w-0 gap-2">
+            <span className="text-[10px] xl:text-xs 2xl:text-sm font-black text-slate-500 uppercase tracking-[0.2em] truncate min-w-0" title="SENTIMENT_BIAS">SENTIMENT_BIAS</span>
+            <PulseIcon className="w-5 h-5 sm:w-6 sm:h-6 xl:w-7 xl:h-7 text-slate-700 group-hover:text-intuition-primary transition-colors animate-pulse" />
           </div>
-          <div className="flex items-center gap-1.5 h-2 w-full px-1 relative">
+          <div className="flex items-center gap-1.5 h-2 w-full px-1 relative z-10">
             <div className="flex-1 flex justify-end h-full relative overflow-visible">
                 <div style={{ width: `${sentimentBias.trust}%` }} className="h-full bg-intuition-success shadow-[0_0_30px_#00ff9d] transition-all duration-1000 origin-right"></div>
                 <div style={{ width: `${sentimentBias.trust}%` }} className="absolute inset-0 bg-intuition-success/40 blur-[8px] animate-pulse pointer-events-none"></div>
@@ -294,25 +297,26 @@ const Portfolio: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
 
-      <div className="grid grid-cols-1 gap-10">
+      <div className="w-full max-w-full mx-auto grid grid-cols-1 gap-6 sm:gap-8 lg:gap-10 min-w-0">
         {/* Row 1: Ledger beside Equity Vol + Asset Exposure */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-10 min-w-0">
         {/* Active Holdings Ledger */}
-        <div className="lg:col-span-8 w-full min-w-0">
-          <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
-            <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="flex items-center gap-4">
-                <Zap size={20} className="text-intuition-primary animate-pulse shrink-0" />
-                <h3 className="text-xs sm:text-sm font-black text-white font-display uppercase tracking-widest">Active_Holdings_Ledger</h3>
+        <div className="lg:col-span-7 xl:col-span-8 w-full min-w-0 overflow-hidden">
+          <div className="bg-black border border-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden">
+            <div className="px-4 sm:px-5 md:px-6 xl:px-8 py-4 sm:py-5 md:py-6 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <Zap className="w-5 h-5 sm:w-6 sm:h-6 xl:w-7 xl:h-7 text-intuition-primary animate-pulse shrink-0" />
+                <h3 className="text-xs sm:text-sm md:text-base xl:text-lg font-black text-white font-display uppercase tracking-widest break-words min-w-0">Active_Holdings_Ledger</h3>
               </div>
               <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mr-2">Sort:</span>
+                <span className="text-xs font-black text-slate-600 uppercase tracking-widest mr-2">Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => { playClick(); setSortBy(e.target.value as any); }}
                   onMouseEnter={playHover}
-                  className="bg-black border border-slate-700 text-slate-300 font-mono text-[10px] font-black uppercase tracking-wider px-3 py-2 clip-path-slant focus:border-intuition-primary outline-none"
+                  className="bg-black border border-slate-700 text-slate-300 font-mono text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-full focus:border-intuition-primary outline-none"
                 >
                   <option value="value_desc">Largest → Lowest</option>
                   <option value="value_asc">Lowest → Largest</option>
@@ -325,26 +329,26 @@ const Portfolio: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="overflow-x-auto min-h-[320px]">
-              <table className="w-full text-left font-mono text-[10px] sm:text-xs table-fixed" style={{ minWidth: 'min(100%, 720px)' }}>
+            <div className="overflow-x-auto overflow-y-hidden min-h-[280px] sm:min-h-[320px] -mx-px">
+              <table className="w-full text-left font-mono text-xs sm:text-sm xl:text-base table-fixed min-w-[600px]" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '26%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '14%' }} />
-                  <col style={{ width: '16%' }} />
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '24%', minWidth: 0 }} />
+                  <col style={{ width: '10%', minWidth: 0 }} />
+                  <col style={{ width: '12%', minWidth: 0 }} />
+                  <col style={{ width: '14%', minWidth: 0 }} />
+                  <col style={{ width: '14%', minWidth: 0 }} />
+                  <col style={{ width: '12%', minWidth: 0 }} />
+                  <col style={{ width: '14%', minWidth: 0 }} />
                 </colgroup>
-                <thead className="text-slate-700 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808]">
+                <thead className="text-slate-600 uppercase font-black tracking-widest border-b border-slate-900 bg-[#080808] text-[10px] sm:text-xs xl:text-sm">
                   <tr>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4">Identity_Node</th>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 hidden lg:table-cell">Sector</th>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 whitespace-nowrap">Curve</th>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 whitespace-nowrap">Magnitude</th>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 whitespace-nowrap">Net_Valuation</th>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 text-right whitespace-nowrap">PnL</th>
-                    <th className="px-2 sm:px-3 md:px-4 py-3 md:py-4 text-right whitespace-nowrap">Exit</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 overflow-hidden">Identity_Node</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 hidden lg:table-cell overflow-hidden">Sector</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 overflow-hidden">Curve</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 overflow-hidden">Magnitude</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 overflow-hidden">Net_Valuation</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 text-right overflow-hidden">PnL</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 text-right overflow-hidden">Exit</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -352,53 +356,53 @@ const Portfolio: React.FC = () => {
                     const isOpposition = pos.atom.label.includes('OPPOSING');
                     return (
                       <tr key={`${pos.id}-${pos.curveId ?? 1}`} className="hover:bg-white/5 transition-all group">
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 min-w-0">
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 min-w-0 overflow-hidden align-top">
                           <Link to={`/markets/${pos.id}`} className="flex items-center gap-2 sm:gap-4 min-w-0">
-                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 border border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
-                              {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" alt="" /> : <User size={16} className="text-slate-700" />}
+                            <div className="w-8 h-8 sm:w-9 sm:h-9 xl:w-11 xl:h-11 bg-slate-900 border border-slate-800 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
+                              {pos.atom.image ? <img src={pos.atom.image} className="w-full h-full object-cover" alt="" /> : <User className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-slate-700" />}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className={`font-black uppercase text-sm group-hover:text-intuition-primary transition-colors truncate ${isOpposition ? 'text-intuition-danger' : 'text-white'}`} title={pos.atom.label}>{pos.atom.label}</div>
-                              <div className="text-[9px] text-slate-600 font-bold truncate">UID: {pos.id.slice(0, 14)}...</div>
+                              <div className={`font-black uppercase text-xs sm:text-sm xl:text-base group-hover:text-intuition-primary transition-colors truncate ${isOpposition ? 'text-intuition-danger' : 'text-white'}`} title={pos.atom.label}>{pos.atom.label}</div>
+                              <div className="text-[10px] sm:text-xs text-slate-600 font-bold truncate">UID: {pos.id.slice(0, 14)}...</div>
                             </div>
                           </Link>
                         </td>
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 hidden lg:table-cell">
-                          <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-widest clip-path-slant group-hover:text-white transition-colors whitespace-nowrap">{pos.atom?.type || 'ATOM'}</span>
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 hidden lg:table-cell overflow-hidden align-top">
+                          <span className="inline-block px-2 py-0.5 sm:px-2.5 sm:py-1 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[10px] sm:text-xs tracking-widest rounded-full group-hover:text-white transition-colors whitespace-nowrap max-w-full truncate">{pos.atom?.type || 'ATOM'}</span>
                         </td>
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 whitespace-nowrap">
-                          <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase">{getCurveLabel(pos.curveId ?? 1)}</span>
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 overflow-hidden align-top">
+                          <span className="text-[10px] sm:text-xs xl:text-sm font-black text-slate-400 uppercase block truncate" title={getCurveLabel(pos.curveId ?? 1)}>{getCurveLabel(pos.curveId ?? 1)}</span>
                         </td>
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 whitespace-nowrap">
-                          <div className="text-white font-black text-xs sm:text-sm">{formatDisplayedShares(pos.shares)}</div>
-                          <div className="text-[9px] text-slate-600 uppercase font-bold tracking-widest">PORTAL_UNITS</div>
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 overflow-hidden align-top">
+                          <div className="text-white font-black text-xs sm:text-sm tabular-nums truncate">{formatDisplayedShares(pos.shares)}</div>
+                          <div className="text-[10px] sm:text-xs text-slate-600 uppercase font-bold tracking-widest truncate">PORTAL_UNITS</div>
                         </td>
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 whitespace-nowrap">
-                          <div className="inline-flex items-baseline gap-1.5 text-white font-black text-xs sm:text-sm">
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 overflow-hidden align-top">
+                          <div className="inline-flex items-baseline gap-1.5 text-white font-black text-xs sm:text-sm min-w-0 truncate">
                             <CurrencySymbol size="sm" leading className="text-intuition-primary/90 shrink-0" />
-                            {formatMarketValue(pos.value)}
+                            <span className="truncate">{formatMarketValue(pos.value)}</span>
                           </div>
                         </td>
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 text-right whitespace-nowrap">
-                          <div className={`font-black text-sm ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 text-right overflow-hidden align-top">
+                          <div className={`font-black text-xs sm:text-sm xl:text-base whitespace-nowrap ${pos.pnl >= 0 ? 'text-intuition-success' : 'text-intuition-danger'}`}>
                             {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}%
                           </div>
                         </td>
-                        <td className="px-2 sm:px-3 md:px-4 py-4 md:py-6 text-right whitespace-nowrap">
+                        <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 text-right overflow-hidden align-top">
                           <Link
                             to={`/markets/${pos.id}`}
                             onClick={() => { playClick(); }}
                             onMouseEnter={playHover}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[9px] uppercase tracking-widest clip-path-slant transition-all"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-full transition-all whitespace-nowrap shrink-0"
                           >
-                            <LogOut size={12} /> Exit
+                            <LogOut size={12} className="sm:w-3.5 sm:h-3.5 shrink-0" /> Exit
                           </Link>
                         </td>
                       </tr>
                     );
                   }) : (
                     <tr>
-                      <td colSpan={7} className="px-8 py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">
+                      <td colSpan={7} className="px-8 py-20 text-center text-slate-600 uppercase font-black tracking-widest text-xs sm:text-sm">
                         {loading ? (
                           <div className="flex flex-col items-center gap-4">
                             <Loader2 size={24} className="animate-spin text-intuition-primary" />
@@ -415,30 +419,30 @@ const Portfolio: React.FC = () => {
         </div>
 
         {/* Sidebar: Equity Vol + Asset Exposure (beside ledger) */}
-        <div className="lg:col-span-4 space-y-10">
-            <div className="bg-[#02040a] border border-slate-900 p-10 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all h-[520px] flex flex-col">
-                <div className="flex justify-between items-start mb-12 relative z-10 gap-4 min-w-0">
+        <div className="lg:col-span-5 xl:col-span-4 space-y-6 sm:space-y-8 min-w-0">
+            <div className="bg-[#02040a] border border-slate-900 p-4 sm:p-6 xl:p-8 rounded-2xl sm:rounded-3xl shadow-2xl relative overflow-hidden group hover:border-intuition-primary/20 transition-all min-h-[360px] sm:min-h-[400px] xl:min-h-[440px] 2xl:min-h-[480px] flex flex-col">
+                <div className="flex justify-between items-start mb-4 sm:mb-6 relative z-10 gap-4 min-w-0">
                     <div className="flex items-center gap-3 min-w-0 shrink">
                         <div className="flex flex-col items-center mr-1 shrink-0">
-                            <span className="text-[9px] font-black text-intuition-primary leading-none">01</span>
-                            <span className="text-[9px] font-black text-intuition-primary leading-none">10</span>
+                            <span className="text-[10px] font-black text-intuition-primary leading-none">01</span>
+                            <span className="text-[10px] font-black text-intuition-primary leading-none">10</span>
                         </div>
-                        <h4 className="text-[12px] font-black font-display text-white uppercase tracking-[0.4em] flex items-center gap-2 truncate">
+                        <h4 className="text-[10px] sm:text-xs xl:text-sm font-black font-display text-white uppercase tracking-[0.35em] flex items-center gap-2 truncate">
                             EQUITY_VOLUME_TEMPORAL
                         </h4>
                     </div>
-                    <div className="text-right shrink-0 pr-1">
-                        <div className="text-xl sm:text-2xl font-black text-intuition-primary font-mono text-glow-blue leading-none inline-flex items-baseline gap-2 min-w-0">
+                    <div className="text-right shrink-0 pr-1 min-w-0">
+                        <div className="text-xl sm:text-2xl xl:text-3xl 2xl:text-4xl font-black text-intuition-primary font-mono text-glow-blue leading-none inline-flex items-baseline gap-2 min-w-0">
                             <CurrencySymbol size="xl" leading className="text-intuition-primary/90 shrink-0" />
-                            <span className="tabular-nums truncate max-w-[120px] sm:max-w-[140px]" title={portfolioValue}>{portfolioValue}</span>
+                            <span className="tabular-nums truncate max-w-[100px] sm:max-w-[140px] xl:max-w-[180px]" title={portfolioValue}>{portfolioValue}</span>
                         </div>
-                        <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">CURRENT_EST_VALUE</div>
+                        <div className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-widest mt-1 sm:mt-1.5">CURRENT_EST_VALUE</div>
                     </div>
                 </div>
 
-                <div className="flex-1 w-full min-h-0 relative z-10 py-6">
+                <div className="flex-1 w-full min-h-[200px] sm:min-h-[240px] xl:min-h-[260px] relative z-10 py-1 sm:py-2">
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 8, right: 44, left: 8, bottom: 8 }}>
+                        <AreaChart data={chartData} margin={{ top: 8, right: 48, left: 8, bottom: 8 }}>
                             <defs>
                                 <linearGradient id="temporalGrad" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.05}/>
@@ -450,8 +454,8 @@ const Portfolio: React.FC = () => {
                             <YAxis 
                                 orientation="right" 
                                 stroke="#475569" 
-                                width={40}
-                                tick={{ fill: '#94a3b8', fontSize: 9, fontFamily: 'monospace' }}
+                                width={44}
+                                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
                                 tickLine={false} 
                                 axisLine={false} 
                                 domain={['auto', 'auto']}
@@ -472,28 +476,28 @@ const Portfolio: React.FC = () => {
                     </ResponsiveContainer>
                 </div>
 
-                <div className="mt-8 pt-8 border-t border-white/5 flex items-center justify-between relative z-10">
+                <div className="mt-4 pt-6 border-t border-white/5 flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-3">
-                        <div className="text-[9px] font-black font-mono text-slate-700 uppercase tracking-[0.3em]">MAINNET_NEURAL_TELEMETRY_SYNCHRONIZED</div>
+                        <div className="text-xs font-black font-mono text-slate-600 uppercase tracking-[0.25em]">MAINNET_NEURAL_TELEMETRY_SYNCHRONIZED</div>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-black border border-slate-900 p-10 clip-path-slant min-h-[480px] flex flex-col relative overflow-hidden group hover:border-white/10 transition-all shadow-2xl">
-                <div className="absolute top-0 right-0 p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-1000 text-intuition-primary">
-                    <PulseIcon size={180} />
+            <div className="bg-black border border-slate-900 p-4 sm:p-6 xl:p-8 rounded-2xl sm:rounded-3xl min-h-[320px] sm:min-h-[360px] xl:min-h-[400px] 2xl:min-h-[420px] flex flex-col relative overflow-hidden group hover:border-white/10 transition-all shadow-2xl">
+                <div className="absolute top-0 right-0 p-4 sm:p-6 opacity-[0.03] pointer-events-none group-hover:scale-110 transition-transform duration-1000 text-intuition-primary">
+                    <PulseIcon className="w-40 h-40 sm:w-48 sm:h-48 xl:w-56 xl:h-56" />
                 </div>
                 
-                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mb-12 relative z-10">Asset_Exposure_Index</h4>
+                <h4 className="text-[10px] sm:text-xs xl:text-sm font-black text-slate-500 uppercase tracking-[0.35em] mb-4 sm:mb-6 relative z-10">Asset_Exposure_Index</h4>
                 
-                <div className="flex-1 flex flex-col items-center justify-center relative z-10">
-                    <div className="w-full h-[220px] mb-12">
+                <div className="flex-1 flex flex-col items-center justify-center relative z-10 min-h-0">
+                    <div className="w-full h-[160px] sm:h-[200px] xl:h-[240px] 2xl:h-[260px] mb-6 sm:mb-8">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie 
                                     data={exposureData.length > 0 ? exposureData : [{ name: 'AWAITING_SIGNAL', value: 1 }]} 
-                                    innerRadius={70} 
-                                    outerRadius={95} 
+                                    innerRadius={65} 
+                                    outerRadius={92} 
                                     paddingAngle={8} 
                                     dataKey="value"
                                     nameKey="name"
@@ -513,20 +517,20 @@ const Portfolio: React.FC = () => {
                         </ResponsiveContainer>
                     </div>
 
-                    <div className="w-full space-y-4 overflow-y-auto max-h-[180px] custom-scrollbar pr-2">
+                    <div className="w-full space-y-3 overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
                         {exposureData.length > 0 ? exposureData.map((entry, index) => (
-                            <div key={index} className="flex items-center justify-between group/item">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-3 h-3 rounded-none clip-path-slant shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                                    <span className="text-[10px] font-black text-slate-400 group-hover/item:text-white transition-colors uppercase tracking-widest">{entry.name}</span>
+                            <div key={index} className="flex items-center justify-between group/item py-1">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-3.5 h-3.5 rounded-full shadow-sm shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                    <span className="text-xs font-black text-slate-400 group-hover/item:text-white transition-colors uppercase tracking-wider">{entry.name}</span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <span className="text-xs font-black font-mono text-white text-glow-white">{entry.value.toFixed(1)}%</span>
+                                    <span className="text-sm font-black font-mono text-white text-glow-white">{entry.value.toFixed(1)}%</span>
                                     <div className="w-1 h-3 bg-intuition-danger/40 opacity-0 group-hover/item:opacity-100 transition-opacity"></div>
                                 </div>
                             </div>
                         )) : (
-                            <div className="text-center py-10 opacity-20 text-[8px] font-black font-mono uppercase tracking-[0.5em]">Awaiting_Neural_Sync...</div>
+                            <div className="text-center py-8 opacity-20 text-xs font-black font-mono uppercase tracking-[0.4em]">Awaiting_Neural_Sync...</div>
                         )}
                     </div>
                 </div>
@@ -535,35 +539,35 @@ const Portfolio: React.FC = () => {
         </div>
 
         {/* Row 2: Transmission History (full width) */}
-        <div className="w-full space-y-4">
-          <h3 className="text-xs font-black text-white uppercase tracking-[0.4em] mb-8 flex items-center gap-3">
-            <Clock size={16} className="text-intuition-secondary" /> Transmission_History
+        <div className="w-full min-w-0 space-y-3 sm:space-y-4">
+          <h3 className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-[0.35em] mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-intuition-secondary shrink-0" /> Transmission_History
           </h3>
-          <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+          <div className="space-y-2 sm:space-y-3 max-h-[360px] sm:max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
             {history.map((tx, idx) => (
-              <div key={tx.id + idx} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 clip-path-slant group hover:border-white/10 transition-all">
-                <div className="flex items-center gap-5">
-                  <div className={`w-1 h-8 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'}`}></div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
-                      <span className="text-white font-black text-xs uppercase">{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
+              <div key={tx.id + idx} className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-4 sm:p-5 bg-white/5 border border-white/5 rounded-xl sm:rounded-2xl group hover:border-white/10 transition-all min-w-0">
+                <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                  <div className={`w-1 sm:w-1.5 h-8 sm:h-10 shrink-0 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'} rounded-full`}></div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] sm:text-xs font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
+                      <span className="text-white font-black text-xs sm:text-sm uppercase truncate max-w-[140px] sm:max-w-none" title={tx.assetLabel}>{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
                     </div>
-                    <div className="text-[8px] text-slate-600 font-mono">TX: {tx.id.slice(0, 24)}...</div>
+                    <div className="text-[10px] sm:text-xs text-slate-600 font-mono mt-0.5 truncate">TX: {tx.id.slice(0, 20)}...</div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-white font-black text-sm">{(() => {
+                <div className="text-right shrink-0">
+                  <div className="text-white font-black text-sm sm:text-base">{(() => {
                     try {
                       return safeParseUnits(tx.assets).toFixed(4);
                     } catch { return '0.0000'; }
                   })()} <CurrencySymbol size="md" /></div>
-                  <div className="text-[8px] text-slate-600 font-mono uppercase">{new Date(tx.timestamp).toLocaleString()}</div>
+                  <div className="text-[10px] sm:text-xs text-slate-600 font-mono uppercase mt-0.5">{new Date(tx.timestamp).toLocaleString()}</div>
                 </div>
               </div>
             ))}
             {history.length === 0 && (
-              <div className="text-center py-20 text-slate-700 uppercase font-black tracking-widest text-[10px]">
+              <div className="text-center py-20 text-slate-600 uppercase font-black tracking-widest text-xs sm:text-sm">
                 AWAITING_INGRESS_SIGNALS...
               </div>
             )}

@@ -239,7 +239,7 @@ const Feed: React.FC = () => {
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-12 border-b-2 border-slate-900 pb-10">
                 <div className="relative">
                     <div className="flex items-center gap-6 text-intuition-primary mb-4 relative z-10">
-                        <div className="w-16 h-16 bg-black border-2 border-intuition-primary flex items-center justify-center shadow-glow-blue clip-path-slant">
+                        <div className="w-16 h-16 rounded-2xl bg-black border-2 border-intuition-primary flex items-center justify-center shadow-glow-blue">
                              <Activity size={32} className="animate-pulse" />
                         </div>
                         <div>
@@ -257,7 +257,7 @@ const Feed: React.FC = () => {
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Throughput</div>
                         <div className="flex items-center justify-end gap-4">
                              <span className="text-2xl font-black text-intuition-success font-display tracking-widest uppercase text-glow-success leading-none">LOCKED</span>
-                             <div className="w-4 h-4 rounded-none bg-intuition-success animate-pulse shadow-glow-success clip-path-slant"></div>
+                             <div className="w-4 h-4 rounded-full bg-intuition-success animate-pulse shadow-glow-success"></div>
                         </div>
                     </div>
                     <div className="w-[2px] h-12 bg-slate-800 hidden sm:block"></div>
@@ -269,11 +269,11 @@ const Feed: React.FC = () => {
             </div>
 
             {/* ARES_PULSE Tactical Ticker */}
-            <div className="mb-10 p-1 bg-gradient-to-r from-intuition-primary/20 via-intuition-secondary/20 to-intuition-primary/20 clip-path-slant shadow-2xl">
+            <div className="mb-10 p-1 rounded-2xl bg-gradient-to-r from-intuition-primary/20 via-intuition-secondary/20 to-intuition-primary/20 shadow-2xl">
                 <div className="bg-black p-4 sm:p-6 flex flex-col md:flex-row items-center gap-4 sm:gap-6 md:gap-8 relative overflow-hidden">
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
                     <div className="flex items-center gap-4 shrink-0">
-                        <div className="w-12 h-12 bg-white/5 border border-white/10 flex items-center justify-center text-intuition-primary clip-path-slant shadow-inner">
+                        <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-intuition-primary shadow-inner">
                             <Brain size={24} className="animate-pulse" />
                         </div>
                         <div>
@@ -294,7 +294,7 @@ const Feed: React.FC = () => {
                         onClick={() => generateAresPulse(events)}
                         disabled={isAresLoading}
                         onMouseEnter={playHover}
-                        className="px-8 py-3 bg-white/5 border border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all text-[9px] font-black uppercase tracking-widest clip-path-slant"
+                        className="px-8 py-3 rounded-xl bg-white/5 border-2 border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all duration-300 text-[9px] font-black uppercase tracking-widest"
                     >
                         {isAresLoading ? 'SYNTHESIZING...' : 'FORCE_RECON'}
                     </button>
@@ -305,7 +305,7 @@ const Feed: React.FC = () => {
             <div className="mb-14 grid grid-cols-1 xl:grid-cols-3 gap-8">
                 <div className="xl:col-span-1 space-y-5">
                     {/* Header card */}
-                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
                             <div>
                                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 flex items-center gap-2">
@@ -319,7 +319,7 @@ const Feed: React.FC = () => {
                     </div>
 
                     {/* Card 1: Holdings activity */}
-                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
                         <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
                             <span className="text-[10px] font-mono text-slate-100 uppercase tracking-[0.25em]">
                                 Holdings activity
@@ -347,7 +347,7 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={n.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 border border-slate-800 hover:border-intuition-primary/50 hover:bg-white/5 transition-all duration-200 group motion-hover-lift"
+                                        className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-slate-800 hover:border-intuition-primary/50 hover:bg-white/5 transition-all duration-300 group motion-hover-lift"
                                     >
                                         <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
@@ -381,7 +381,7 @@ const Feed: React.FC = () => {
                                             </p>
                                             <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] font-mono text-slate-500">
                                                 <span>{new Date(n.timestamp).toLocaleString()}</span>
-                                                <span className="border border-slate-700 px-2 py-0.5 clip-path-slant" title="Bonding curve type">
+                                                <span className="border border-slate-700 px-2 py-0.5 rounded-xl" title="Bonding curve type">
                                                     {getCurveLabel(n.curveId)}
                                                 </span>
                                                 {n.txHash && (
@@ -404,7 +404,7 @@ const Feed: React.FC = () => {
                     </div>
 
                     {/* Card 2: People you follow */}
-                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
                         <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
                             <span className="text-[10px] font-mono text-amber-300 uppercase tracking-[0.25em] flex items-center gap-1">
                                 <UserPlus size={10} /> People you follow
@@ -439,7 +439,7 @@ const Feed: React.FC = () => {
                                         </span>
                                         <div className="min-w-0 flex-1">
                                             <p className="text-[11px] font-bold font-mono text-white leading-tight">
-                                                <span className="inline-flex items-center gap-1 mr-1 text-amber-300/90 text-[9px] border border-amber-500/60 px-1 py-0.5 clip-path-slant" title="Someone you follow">
+                                                <span className="inline-flex items-center gap-1 mr-1 text-amber-300/90 text-[9px] border border-amber-500/60 px-1 py-0.5 rounded-xl" title="Someone you follow">
                                                     <UserPlus size={9} /> FOLLOW
                                                 </span>
                                                 <span className="font-black text-intuition-primary">{n.senderLabel}</span>
@@ -469,7 +469,7 @@ const Feed: React.FC = () => {
                                             </p>
                                             <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] font-mono text-slate-500">
                                                 <span>{new Date(n.timestamp).toLocaleString()}</span>
-                                                <span className="border border-slate-700 px-2 py-0.5 clip-path-slant" title="Bonding curve type">
+                                                <span className="border border-slate-700 px-2 py-0.5 rounded-xl" title="Bonding curve type">
                                                     {getCurveLabel(n.curveId)}
                                                 </span>
                                                 {n.txHash && (
@@ -492,7 +492,7 @@ const Feed: React.FC = () => {
                     </div>
 
                     {/* Card 3: Your actions */}
-                    <div className="bg-black border border-slate-900 clip-path-slant shadow-2xl overflow-hidden">
+                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
                         <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
                             <span className="text-[10px] font-mono text-slate-100 uppercase tracking-[0.25em] flex items-center gap-1">
                                 <ShieldCheck size={10} className="text-intuition-success" /> Your actions
@@ -551,7 +551,7 @@ const Feed: React.FC = () => {
                                             </p>
                                             <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] font-mono text-slate-500">
                                                 <span>{new Date(tx.timestamp).toLocaleString()}</span>
-                                                <span className="border border-slate-700 px-2 py-0.5 clip-path-slant" title="Bonding curve type">
+                                                <span className="border border-slate-700 px-2 py-0.5 rounded-xl" title="Bonding curve type">
                                                     {getCurveLabel(tx.curveId)}
                                                 </span>
                                             </div>
@@ -566,33 +566,33 @@ const Feed: React.FC = () => {
 
             {/* Action Bar */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-5 mb-8">
-                <div className="flex-1 relative group p-[2px] bg-slate-900 clip-path-slant focus-within:bg-intuition-primary/40 transition-colors">
+                <div className="flex-1 relative group p-[2px] bg-slate-900 rounded-xl focus-within:bg-intuition-primary/40 transition-colors">
                     <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-intuition-primary transition-colors">
                         <Search size={18} />
                     </div>
                     <input 
                         type="text" 
                         placeholder="Search by wallet, node or claim…" 
-                        className="w-full bg-[#050505] py-3 sm:py-4 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-xs sm:text-sm focus:outline-none placeholder-slate-500 uppercase tracking-wider clip-path-slant min-h-[42px]"
+                        className="w-full bg-[#050505] py-3 sm:py-4 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-xs sm:text-sm focus:outline-none placeholder-slate-500 uppercase tracking-wider rounded-xl min-h-[42px]"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <button className="flex items-center gap-2 sm:gap-3 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 border-slate-800 text-slate-300 hover:text-white hover:border-white transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider clip-path-slant group relative overflow-hidden">
+                    <button className="flex items-center gap-2 sm:gap-3 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 border-slate-800 text-slate-300 hover:text-white hover:border-white transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl group relative overflow-hidden">
                         <ListFilter size={16} className="shrink-0" /> <span className="hidden sm:inline">Filter</span>
                     </button>
                     
                     <div className="relative min-w-0 flex-1 sm:flex-initial">
                         <button 
                             onClick={() => { playClick(); setIsSortOpen(!isSortOpen); }}
-                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider clip-path-slant min-w-0 sm:min-w-[180px] md:min-w-[220px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-800 text-slate-300'}`}
+                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl min-w-0 sm:min-w-[180px] md:min-w-[220px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-800 text-slate-300'}`}
                         >
                             {activeSort} <ChevronDown size={14} className={`transition-transform duration-500 ${isSortOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {isSortOpen && (
-                            <div className="absolute right-0 top-full mt-2 w-full bg-black border-2 border-intuition-primary/40 shadow-[0_0_80px_rgba(0,0,0,1)] z-[100] p-1 clip-path-slant animate-in fade-in slide-in-from-top-3 duration-300">
+                            <div className="absolute right-0 top-full mt-2 w-full bg-black border-2 border-intuition-primary/40 shadow-[0_0_80px_rgba(0,0,0,1)] z-[100] p-1 rounded-xl animate-in fade-in slide-in-from-top-3 duration-300">
                                 {(['Newest', 'Oldest', 'Highest Volume'] as SortOption[]).map((opt) => (
                                     <button 
                                         key={opt}
@@ -628,7 +628,7 @@ const Feed: React.FC = () => {
                         </div>
                     </div>
                 ) : filteredEvents.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-48 border-2 border-dashed border-slate-900 bg-black/40 clip-path-slant relative group">
+                    <div className="flex flex-col items-center justify-center py-48 border-2 border-dashed border-slate-900 bg-black/40 rounded-xl relative group">
                         <div className="absolute inset-0 bg-intuition-danger/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <Zap size={64} className="text-slate-800 mb-8 opacity-40 group-hover:text-intuition-danger transition-colors" />
                         <div className="text-center space-y-2">

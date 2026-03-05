@@ -32,7 +32,7 @@ const CustomTooltip = ({ active, payload }: any) => {
     const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     return (
-      <div className="bg-black/95 border-2 border-intuition-primary p-4 clip-path-slant shadow-[0_0_40px_rgba(0,243,255,0.7)] backdrop-blur-xl z-50">
+      <div className="bg-black/95 border-2 border-intuition-primary p-4 rounded-3xl shadow-[0_0_40px_rgba(0,243,255,0.7)] backdrop-blur-xl z-50">
         <div className="flex items-center justify-between gap-8 mb-3 border-b border-white/10 pb-2">
             <p className="text-[8px] font-black font-mono text-intuition-primary uppercase tracking-[0.3em] text-glow-blue">TELEMETRY_SCAN</p>
             <p className="text-[7px] font-mono text-slate-500 uppercase tracking-widest">{formattedDate} // {formattedTime}</p>
@@ -156,7 +156,7 @@ const AgentShareModal: React.FC<{
             <div className="w-full max-w-4xl" onClick={e => e.stopPropagation()}>
                 <div 
                     ref={cardRef} 
-                    className="relative bg-[#020308] border-2 py-10 px-12 clip-path-slant shadow-[0_0_150px_rgba(0,0,0,1)] overflow-hidden group/modal transition-all duration-1000"
+                    className="relative bg-[#020308] border-2 py-10 px-12 rounded-3xl shadow-[0_0_150px_rgba(0,0,0,1)] overflow-hidden group/modal transition-all duration-1000"
                     style={{ 
                         borderColor: `${theme.color}aa`,
                         boxShadow: `0 0 100px ${theme.bgGlow}`
@@ -183,7 +183,7 @@ const AgentShareModal: React.FC<{
                             </h2>
                         </div>
                         <div 
-                            className="w-24 h-24 bg-black border-2 flex items-center justify-center rounded-none clip-path-slant shrink-0 group-hover/modal:border-white transition-all duration-1000 overflow-hidden shadow-2xl"
+                            className="w-24 h-24 bg-black border-2 flex items-center justify-center rounded-3xl shrink-0 group-hover/modal:border-white transition-all duration-1000 overflow-hidden shadow-2xl"
                             style={{ borderColor: `${theme.color}66`, boxShadow: `0 0 30px ${theme.bgGlow}` }}
                         >
                             {agent.image ? (
@@ -212,7 +212,7 @@ const AgentShareModal: React.FC<{
 
                     <div className="mb-8 relative z-10">
                         <div className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-widest mb-4">DESCRIPTION_PAYLOAD:</div>
-                        <div className="p-6 bg-black border border-white/5 clip-path-slant relative group/desc">
+                        <div className="p-6 bg-black border border-white/5 rounded-2xl relative group/desc">
                             <div 
                                 className="absolute left-0 top-0 bottom-0 w-1 transition-colors duration-1000"
                                 style={{ backgroundColor: `${theme.color}88` }}
@@ -224,15 +224,15 @@ const AgentShareModal: React.FC<{
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 relative z-10">
-                        <div className="bg-black/60 border border-white/10 p-5 clip-path-slant group/stat hover:border-white/30 transition-all">
+                        <div className="bg-black/60 border border-white/10 p-5 rounded-2xl group/stat hover:border-white/30 transition-all">
                             <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-white transition-colors">Mkt_Cap</div>
                             <div className="text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(mktCap)}</div>
                         </div>
-                        <div className="bg-black/60 border border-white/10 p-5 clip-path-slant group/stat hover:border-white/30 transition-all">
+                        <div className="bg-black/60 border border-white/10 p-5 rounded-2xl group/stat hover:border-white/30 transition-all">
                             <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-white transition-colors">Spot_Price</div>
                             <div className="text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(price)}</div>
                         </div>
-                        <div className="bg-black border border-white/10 p-5 clip-path-slant group/stat transition-all" style={{ borderColor: `${theme.color}55` }}>
+                        <div className="bg-black border border-white/10 p-5 rounded-2xl group/stat transition-all" style={{ borderColor: `${theme.color}55` }}>
                             <div 
                                 className="text-[8px] uppercase font-black tracking-widest mb-2 transition-colors duration-1000"
                                 style={{ color: theme.color }}
@@ -242,7 +242,7 @@ const AgentShareModal: React.FC<{
                                 style={{ color: theme.color, textShadow: `0 0 15px ${theme.color}88` }}
                             >{strength.toFixed(1)}%</div>
                         </div>
-                        <div className="bg-black/60 border border-white/10 p-5 clip-path-slant group/stat hover:border-white/30 transition-all">
+                        <div className="bg-black/60 border border-white/10 p-5 rounded-2xl group/stat hover:border-white/30 transition-all">
                             <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-white transition-colors">Holders</div>
                             <div className="text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatLargeNumber(holders)}</div>
                         </div>
@@ -255,16 +255,16 @@ const AgentShareModal: React.FC<{
                 </div>
 
                 <div className="mt-10 flex flex-col md:flex-row gap-4">
-                    <button onClick={handleShareX} className="flex-1 py-5 bg-white/5 border border-white/10 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.4em] clip-path-slant transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl">
+                    <button onClick={handleShareX} className="flex-1 py-5 bg-white/5 border border-white/10 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.4em] rounded-full transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl">
                         <Twitter size={16} /> Share_on_X
                     </button>
-                    <button onClick={handleCopyLink} className="flex-1 py-5 bg-white/5 border border-white/10 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.4em] clip-path-slant transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl">
+                    <button onClick={handleCopyLink} className="flex-1 py-5 bg-white/5 border border-white/10 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.4em] rounded-full transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl">
                         <Copy size={16} /> Copy_Uplink
                     </button>
                     <button 
                         onClick={handleDownload} 
                         disabled={isDownloading} 
-                        className="flex-1 py-5 text-black font-black uppercase text-[10px] tracking-[0.4em] clip-path-slant transition-all flex items-center justify-center gap-3 hover:bg-white active:scale-95 duration-700 shadow-2xl"
+                        className="flex-1 py-5 text-black font-black uppercase text-[10px] tracking-[0.4em] rounded-full transition-all flex items-center justify-center gap-3 hover:bg-white active:scale-95 duration-700 shadow-2xl"
                         style={{ backgroundColor: theme.color, boxShadow: `0 0 50px ${theme.glow}` }}
                     >
                         {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
@@ -321,6 +321,9 @@ const MarketDetail: React.FC = () => {
   const [vaultsByCurve, setVaultsByCurve] = useState<VaultByCurve[]>([]);
   const [selectedCurveId, setSelectedCurveId] = useState<1 | 2>(LINEAR_CURVE_ID as 1);
   const [isCurveInfoOpen, setIsCurveInfoOpen] = useState(false);
+  const [swipeProgress, setSwipeProgress] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const swipeTrackRef = useRef<HTMLDivElement | null>(null);
 
   // Determine if sentiment toggle should be available (Strictly Claims and Lists)
   const isPolarityAvailable = useMemo(() => {
@@ -668,8 +671,86 @@ const MarketDetail: React.FC = () => {
     return { label: 'Acquire / Redeem', color: 'text-slate-600 border-slate-900 opacity-60' };
   };
 
+  const swipeFillRef = useRef<HTMLDivElement | null>(null);
+  const swipeHandleRef = useRef<HTMLDivElement | null>(null);
+  const lastProgressRef = useRef<number>(0);
+
+  const applySwipeProgress = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    lastProgressRef.current = clamped;
+    if (swipeFillRef.current) swipeFillRef.current.style.width = `${clamped}%`;
+    if (swipeHandleRef.current) {
+      const handlePct = Math.max(5, Math.min(95, clamped));
+      swipeHandleRef.current.style.left = `${handlePct}%`;
+    }
+  };
+
+  const updateSwipeFromClientX = (clientX: number) => {
+    if (!swipeTrackRef.current) return;
+    const rect = swipeTrackRef.current.getBoundingClientRect();
+    const raw = ((clientX - rect.left) / rect.width) * 100;
+    applySwipeProgress(raw);
+  };
+
+  const handleSwipeStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsSwiping(true);
+    if ('touches' in e) {
+      if (e.touches.length > 0) updateSwipeFromClientX(e.touches[0].clientX);
+    } else {
+      updateSwipeFromClientX(e.clientX);
+    }
+  };
+
+  const handleSwipeMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    if (!isSwiping) return;
+    e.preventDefault();
+    if ('touches' in e) {
+      if (e.touches.length > 0) updateSwipeFromClientX(e.touches[0].clientX);
+    } else {
+      updateSwipeFromClientX(e.clientX);
+    }
+  };
+
+  const handleSwipeEnd = () => {
+    if (!isSwiping) return;
+    const prev = lastProgressRef.current;
+    setIsSwiping(false);
+    setSwipeProgress(0);
+    applySwipeProgress(0);
+    if (prev >= 55) handleExecute();
+  };
+
+  useEffect(() => {
+    if (!isSwiping) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      updateSwipeFromClientX(e.clientX);
+    };
+    const handleMouseUp = () => handleSwipeEnd();
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        e.preventDefault();
+        updateSwipeFromClientX(e.touches[0].clientX);
+      }
+    };
+    const handleTouchEnd = () => handleSwipeEnd();
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+    window.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove, true);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isSwiping]);
+
   if (loading || !agent)
-        return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-black">Loading claim...</div>;
+        return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-[#020308]">Loading claim...</div>;
 
   const selectedVault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
   const overallSpotPrice = calculateAgentPrice(
@@ -705,14 +786,15 @@ const MarketDetail: React.FC = () => {
   const activeBalance = sentiment === 'TRUST' ? trustBalance : distrustBalance;
 
   return (
-    <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-6 pb-24 sm:pb-32 font-mono text-[#e2e8f0] bg-[#020308] max-w-[100vw] overflow-x-hidden">
+    <div className="w-full px-3 sm:px-6 lg:px-10 pt-6 pb-24 sm:pb-32 font-mono text-[#e2e8f0] bg-gradient-to-br from-[#020308] via-[#020616] to-[#020308] max-w-[100vw] overflow-x-hidden">
+      <div className="max-w-[1400px] mx-auto rounded-[3rem] bg-black/80 border border-slate-900/70 shadow-[0_24px_60px_rgba(0,0,0,0.9)] px-4 sm:px-6 md:px-8 lg:px-10 pt-6 pb-10 space-y-8">
         <Link
           to="/markets"
           onClick={playClick}
           onMouseEnter={playHover}
-          className="inline-flex items-center gap-2 px-4 py-2.5 mb-6 border-2 border-slate-700 text-slate-400 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 hover:shadow-glow-blue"
+          className="inline-flex items-center gap-2 px-4 py-2.5 mb-2 border border-slate-700 text-slate-400 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest rounded-full transition-all duration-200 hover:shadow-glow-blue"
         >
-          <ArrowLeft size={16} /> Back to claims
+          <ArrowLeft size={16} /> Back to markets
         </Link>
         <TransactionModal 
             isOpen={txModal.isOpen} 
@@ -747,7 +829,7 @@ const MarketDetail: React.FC = () => {
         )}
 
         {/* Header telemetry and layout */}
-        <div className="flex flex-wrap items-center gap-3 mb-10 overflow-x-auto pb-2 no-scrollbar">
+        <div className="flex flex-wrap items-center gap-3 mb-8 overflow-x-auto pb-2 no-scrollbar">
             {tags.slice(0, 6).map((tag, idx) => (
                 <div key={idx} className="flex items-center gap-2.5 px-5 py-2.5 bg-white/5 border border-white/10 rounded-full hover:border-intuition-primary/60 transition-all group cursor-default hover:shadow-glow-blue">
                     <span className="text-[10px] font-black text-white uppercase tracking-tight">{tag.label}</span>
@@ -759,8 +841,8 @@ const MarketDetail: React.FC = () => {
                 </div>))}
         </div>
 
-        {/* Header content */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-8 mb-12 py-8 border-b border-white/5 overflow-x-auto no-scrollbar">
+        {/* Top summary row */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-8 mb-10 py-6 border-b border-white/5 overflow-x-auto no-scrollbar">
             <div className="flex items-center gap-4 shrink-0">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] whitespace-nowrap">Total Mkt Cap</span>
                 <div className="flex items-center gap-2.5">
@@ -796,12 +878,12 @@ const MarketDetail: React.FC = () => {
             </div>
         </div>
 
-        <div className="bg-[#02040a] border-2 clip-path-slant p-4 sm:p-6 md:p-8 mb-6 md:mb-8 flex flex-col md:flex-row items-center justify-between relative overflow-hidden shadow-2xl group/header transition-all duration-700" style={{ borderColor: `${theme.color}44`, boxShadow: `0 0 40px ${theme.bgGlow}` }}>
+        <div className="bg-[#02040a] border-2 rounded-[2rem] p-4 sm:p-6 md:p-8 mb-8 flex flex-col md:flex-row items-center justify-between relative overflow-hidden shadow-2xl group/header transition-all duration-500" style={{ borderColor: `${theme.color}44`, boxShadow: `0 0 40px ${theme.bgGlow}` }}>
             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:24px_24px] opacity-10"></div>
             <div className="flex items-center gap-4 sm:gap-6 md:gap-10 relative z-10 w-full min-w-0">
                 <div className="relative shrink-0">
                     <div className="absolute -inset-4 md:-inset-6 blur-2xl opacity-0 group-hover/header:opacity-100 transition-opacity duration-1000" style={{ backgroundColor: `${theme.color}33` }}></div>
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 bg-slate-950 border-2 flex items-center justify-center overflow-hidden clip-path-slant shadow-2xl group-hover/header:scale-105 transition-all duration-700" style={{ borderColor: `${theme.color}66` }}>{agent.image ? <img src={agent.image} alt={agent.label} className="w-full h-full object-cover group-hover/header:scale-110 transition-transform duration-1000" /> : <User size={40} className="text-slate-800 md:w-[52px] md:h-[52px]" />}</div>
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 bg-slate-950 border-2 flex items-center justify-center overflow-hidden rounded-2xl shadow-2xl group-hover/header:scale-105 transition-all duration-500" style={{ borderColor: `${theme.color}66` }}>{agent.image ? <img src={agent.image} alt={agent.label} className="w-full h-full object-cover group-hover/header:scale-110 transition-transform duration-1000" /> : <User size={40} className="text-slate-800 md:w-[52px] md:h-[52px]" />}</div>
                 </div>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
@@ -835,10 +917,11 @@ const MarketDetail: React.FC = () => {
             </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start mb-16">
-            <div className="lg:col-span-8 space-y-10">
+        {/* Core trading layout: left = chart + AI brief, right = trade + metrics */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start mb-12">
+            <div className="lg:col-span-8 space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="bg-black border p-8 clip-path-slant relative overflow-hidden group shadow-2xl h-full flex flex-col justify-center hover:border-white/40 transition-colors duration-700" style={{ borderColor: `${theme.color}44` }}>
+                    <div className="bg-black border p-8 rounded-3xl relative overflow-hidden group shadow-2xl h-full flex flex-col justify-center hover:border-white/40 transition-colors duration-700" style={{ borderColor: `${theme.color}44` }}>
                         <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-125 transition-transform duration-1000"><Shield size={100} /></div>
                         <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-8 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full animate-pulse shadow-[0_0_12px_currentColor]" style={{ backgroundColor: theme.color }}></div> REPUTATION CLASS</div>
                         <div
@@ -852,7 +935,7 @@ const MarketDetail: React.FC = () => {
                     <div className="md:col-span-2"><AIBriefing agent={agent} triples={triples} history={activityLog} /></div>
                 </div>
 
-                <div className="bg-black border border-slate-900 flex flex-col clip-path-slant relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)] min-h-[320px] h-[50vh] sm:h-[420px] md:h-[550px] lg:h-[650px] group/chart">
+                <div className="bg-black border border-slate-900 flex flex-col rounded-[2rem] relative overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.8)] min-h-[320px] h-[50vh] sm:h-[420px] md:h-[550px] lg:h-[650px] group/chart">
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none"></div>
                     <div className="p-4 sm:p-6 md:p-10 flex flex-col md:flex-row justify-between items-end bg-[#02040a]/80 backdrop-blur-md relative z-20 border-b border-white/5 gap-4 md:gap-8">
                         <div>
@@ -878,12 +961,12 @@ const MarketDetail: React.FC = () => {
                           <Info size={16} />
                         </button>
                         {([LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID] as const).map((cid) => (
-                          <button key={cid} onClick={() => { playClick(); setSelectedCurveId(cid); }} className={`min-h-[40px] px-3 py-2 text-[9px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest shrink-0 ${selectedCurveId === cid ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>
+                          <button key={cid} onClick={() => { playClick(); setSelectedCurveId(cid); }} className={`min-h-[40px] px-3 py-2 text-[9px] font-black font-mono transition-all rounded-full uppercase tracking-widest shrink-0 ${selectedCurveId === cid ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>
                             {getCurveLabel(cid) === 'LINEAR' ? 'Linear' : 'Exponential'}
                           </button>
                         ))}
                       </div>
-                      <div className="flex gap-1.5 sm:gap-2 min-w-0">{(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (<button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`min-h-[44px] px-3 sm:px-4 py-2.5 sm:py-2 text-[9px] sm:text-[10px] font-black font-mono transition-all clip-path-slant uppercase tracking-widest shrink-0 ${timeframe === tf ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>{tf}</button>))}</div>
+                      <div className="flex gap-1.5 sm:gap-2 min-w-0">{(['15M', '30M', '1H', '4H', '1D', '1W', '1M', '1Y', 'ALL'] as Timeframe[]).map((tf) => (<button key={tf} onClick={() => { playClick(); setTimeframe(tf); }} className={`min-h-[44px] px-3 sm:px-4 py-2.5 sm:py-2 text-[9px] sm:text-[10px] font-black font-mono transition-all rounded-full uppercase tracking-widest shrink-0 ${timeframe === tf ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>{tf}</button>))}</div>
                     </div>
                     <div className="flex-1 w-full relative z-10 p-4 pt-10" style={{ background: `radial-gradient(circle at 50% -20%, ${theme.bgGlow}, transparent 70%)` }}>
                         <ResponsiveContainer width="100%" height="100%">
@@ -902,7 +985,7 @@ const MarketDetail: React.FC = () => {
             </div>
 
             <div className="lg:col-span-4 space-y-8">
-                <div className="bg-black border border-slate-900 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-white/20 transition-colors duration-700">
+                <div className="bg-black border border-slate-900 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden group hover:border-white/20 transition-all duration-500">
                     <div className="absolute inset-0 bg-white/[0.02] opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="flex justify-between items-center mb-6">
                         <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.5em]">CIRCULATING_SHARES</h4>
@@ -912,16 +995,16 @@ const MarketDetail: React.FC = () => {
                         {[...Array(12)].map((_, i) => {
                             const assetsVal = safeParseUnits(selectedVault?.total_assets ?? (agent.totalAssets || '0'));
                             const fill = Math.min(12, Math.floor(assetsVal / 8));
-                            return <div key={i} className={`flex-1 h-full clip-path-slant transition-all duration-1000 ${i < fill ? 'shadow-glow' : 'bg-slate-900 opacity-20'}`} style={{ backgroundColor: i < fill ? theme.color : '' }}></div>;
+                            return <div key={i} className={`flex-1 h-full rounded-full transition-all duration-1000 ${i < fill ? 'shadow-glow' : 'bg-slate-900 opacity-20'}`} style={{ backgroundColor: i < fill ? theme.color : '' }}></div>;
                         })}
                     </div>
                     <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">{getCurveLabel(selectedCurveId)}_Curve_Active</div>
                 </div>
 
-                <div className={`bg-black border-2 p-1 clip-path-slant shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 hover:border-white/40 ${sentiment === 'DISTRUST' ? 'border-intuition-danger/40' : ''}`} style={{ borderColor: sentiment === 'TRUST' ? `${theme.color}44` : '' }}>
-                    <div className="bg-[#050505] p-6 sm:p-8 border border-white/5 relative overflow-hidden">
+                <div className={`bg-[#050505] border-2 rounded-[2rem] shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 ${sentiment === 'DISTRUST' ? 'border-intuition-danger/40' : 'border-slate-900/80'}`} style={{ borderColor: sentiment === 'TRUST' ? `${theme.color}55` : undefined }}>
+                    <div className="p-6 sm:p-8 border border-white/5 rounded-2xl relative overflow-hidden bg-black/60">
                         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none" aria-hidden />
-                        <h2 className={`text-sm font-black uppercase tracking-wider mb-6 flex items-center gap-2 ${sentiment === 'DISTRUST' ? 'text-intuition-danger' : ''}`} style={{ color: sentiment === 'TRUST' ? theme.color : '' }}>
+                        <h2 className={`text-sm font-black uppercase tracking-wider mb-6 flex items-center gap-2 ${sentiment === 'DISTRUST' ? 'text-intuition-danger' : ''}`} style={{ color: sentiment === 'TRUST' ? theme.color : undefined }}>
                           Trade
                           <span className={`w-1.5 h-1.5 rounded-full ${sentiment === 'DISTRUST' ? 'bg-intuition-danger' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '' }} />
                         </h2>
@@ -931,7 +1014,7 @@ const MarketDetail: React.FC = () => {
                                 setAction('ACQUIRE');
                                 playClick();
                               }}
-                              className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${
+                              className={`flex-1 py-3.5 text-[10px] font-black rounded-2xl transition-all uppercase tracking-wider border-2 ${
                                 action === 'ACQUIRE'
                                   ? 'bg-white text-black border-white'
                                   : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'
@@ -945,7 +1028,7 @@ const MarketDetail: React.FC = () => {
                                 setSelectedCurveId(LINEAR_CURVE_ID);
                                 playClick();
                               }}
-                              className={`flex-1 py-3.5 text-[10px] font-black clip-path-slant transition-all uppercase tracking-wider border-2 ${
+                              className={`flex-1 py-3.5 text-[10px] font-black rounded-2xl transition-all uppercase tracking-wider border-2 ${
                                 action === 'LIQUIDATE'
                                   ? 'bg-intuition-secondary text-white border-intuition-secondary'
                                   : 'border-slate-800 text-slate-500 hover:text-white hover:border-slate-600'
@@ -972,9 +1055,9 @@ const MarketDetail: React.FC = () => {
                         {isPolarityAvailable && (
                             <div className="mb-6">
                                 <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">Side</p>
-                                <div className="flex gap-1.5 p-1 bg-black border border-white/5 clip-path-slant">
-                                    <button onClick={() => { setSentiment('TRUST'); playClick(); }} className={`flex-1 py-2.5 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'text-slate-500 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'Support' : 'Trust'}</button>
-                                    <button onClick={() => { setSentiment('DISTRUST'); playClick(); }} className={`flex-1 py-2.5 text-[9px] font-black uppercase transition-all clip-path-slant ${sentiment === 'DISTRUST' ? 'bg-intuition-danger text-white' : 'text-slate-500 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'Oppose' : 'Distrust'}</button>
+                                <div className="flex gap-1.5 p-1 bg-black border border-white/5 rounded-full">
+                                    <button onClick={() => { setSentiment('TRUST'); playClick(); }} className={`flex-1 py-2.5 text-[9px] font-black uppercase transition-all rounded-full ${sentiment === 'TRUST' ? 'bg-intuition-success text-black' : 'text-slate-500 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'Support' : 'Trust'}</button>
+                                    <button onClick={() => { setSentiment('DISTRUST'); playClick(); }} className={`flex-1 py-2.5 text-[9px] font-black uppercase transition-all rounded-full ${sentiment === 'DISTRUST' ? 'bg-intuition-danger text-white' : 'text-slate-500 hover:text-white'}`}>{agent.type === 'CLAIM' ? 'Oppose' : 'Distrust'}</button>
                                 </div>
                             </div>
                         )}
@@ -991,15 +1074,15 @@ const MarketDetail: React.FC = () => {
                                     <button onClick={handleMax} type="button" className="text-[9px] font-bold text-slate-400 hover:text-white px-2 py-0.5 border border-slate-600 hover:border-slate-500 transition-colors">Max</button>
                                 </div>
                             </div>
-                            <div className="relative border-2 border-slate-800 focus-within:border-white/30 p-1 transition-colors">
-                                <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-4 pr-4 text-right text-white font-black font-mono text-2xl focus:outline-none" placeholder="0" />
+                            <div className="relative border-2 border-slate-800 focus-within:border-white/30 p-1 rounded-2xl transition-all duration-300">
+                                <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-4 pr-4 text-right text-white font-black font-mono text-xl sm:text-2xl focus:outline-none rounded-xl" placeholder="0" />
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono pointer-events-none">
                                   {action === 'ACQUIRE' ? <CurrencySymbol size="sm" leading /> : 'shares'}
                                 </span>
                             </div>
                             
                             {action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && (
-                                <div className="mt-3 py-3 px-4 bg-white/5 border border-white/10 flex items-center justify-between">
+                                <div className="mt-3 py-3 px-4 bg-white/5 border border-white/10 rounded-xl flex items-center justify-between transition-all duration-300">
                                     <span className="text-[10px] text-slate-500">You receive</span>
                                     {isQuoting ? <Loader2 size={14} className="animate-spin text-intuition-primary" /> : (
                                         <span className="text-sm font-bold text-intuition-success font-mono">{estimatedProceeds} <CurrencySymbol size="sm" className="text-slate-500" /></span>
@@ -1008,14 +1091,52 @@ const MarketDetail: React.FC = () => {
                             )}
                         </div>
                         
-                        <button onClick={handleExecute} type="button" className={`w-full py-5 font-black text-sm uppercase tracking-wider clip-path-slant border-2 transition-all active:scale-[0.99] ${sentiment === 'DISTRUST' ? 'bg-intuition-danger border-intuition-danger text-white hover:bg-intuition-danger/90' : ''}`} style={{ backgroundColor: sentiment === 'TRUST' ? theme.color : '', borderColor: sentiment === 'TRUST' ? theme.color : '', color: sentiment === 'TRUST' ? '#000' : '' }}>
-                            {!isApproved && action === 'ACQUIRE' ? 'Approve' : action === 'ACQUIRE' ? 'Acquire' : 'Redeem'}
-                        </button>
+                        <div
+                          ref={swipeTrackRef}
+                          className="mt-4 w-full h-14 rounded-full bg-slate-900/80 border border-slate-700/80 relative overflow-visible cursor-grab active:cursor-grabbing select-none touch-none"
+                          style={{ touchAction: 'none', contain: 'layout' }}
+                          onMouseDown={handleSwipeStart}
+                          onTouchStart={handleSwipeStart}
+                          onTouchMove={handleSwipeMove}
+                        >
+                          <div className="absolute inset-1 rounded-full bg-slate-950/80 overflow-hidden">
+                            <div
+                              ref={swipeFillRef}
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${swipeProgress}%`,
+                                background:
+                                  sentiment === 'DISTRUST'
+                                    ? 'linear-gradient(90deg, rgba(248,113,113,0.2), #f97373)'
+                                    : `linear-gradient(90deg, rgba(56,189,248,0.2), ${theme.color})`,
+                              }}
+                            />
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="text-[11px] font-black font-mono uppercase tracking-[0.3em] text-slate-300">
+                              {!isApproved && action === 'ACQUIRE'
+                                ? 'Swipe to approve'
+                                : action === 'ACQUIRE'
+                                ? 'Swipe to acquire'
+                                : 'Swipe to redeem'}
+                            </span>
+                          </div>
+                          <div
+                            ref={swipeHandleRef}
+                            className="absolute top-1/2 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center pointer-events-none z-10"
+                            style={{
+                              left: `${Math.max(5, Math.min(95, swipeProgress))}%`,
+                              transform: 'translate(-50%, -50%)',
+                            }}
+                          >
+                            <ArrowRight size={18} className="text-slate-900" />
+                          </div>
+                        </div>
                     </div>
                 </div>
 
                 {vaultsByCurve.length > 0 && (
-                  <div className="bg-black border border-slate-800 p-5 clip-path-slant">
+                  <div className="bg-black border border-slate-800 p-5 rounded-3xl">
                     <h4 className="text-xs font-bold text-slate-400 mb-3">Curve</h4>
                     <table className="w-full text-left text-xs">
                       <thead>
@@ -1037,8 +1158,8 @@ const MarketDetail: React.FC = () => {
                               <td className="py-2.5 pr-2">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                   <input type="radio" name="curve-select" checked={selectedCurveId === cid} onChange={() => { playClick(); setSelectedCurveId(cid as 1 | 2); }} className="sr-only" />
-                                  <span className={`w-4 h-4 rounded-sm border-2 flex items-center justify-center shrink-0 ${selectedCurveId === cid ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`}>
-                                    {selectedCurveId === cid && <span className="w-1.5 h-1.5 bg-black rounded-sm" />}
+                                  <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all duration-300 ${selectedCurveId === cid ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`}>
+                                    {selectedCurveId === cid && <span className="w-1.5 h-1.5 bg-black rounded-full" />}
                                   </span>
                                   <span className="text-white font-medium">{label}</span>
                                 </label>
@@ -1067,7 +1188,7 @@ const MarketDetail: React.FC = () => {
                         });
                         setShowShareCard(true);
                       }}
-                      className="w-full bg-black border-2 border-slate-800 p-5 clip-path-slant text-left hover:border-intuition-success/50 transition-colors group"
+                      className="w-full bg-black border-2 border-slate-800 p-5 rounded-3xl text-left hover:border-intuition-success/50 transition-all duration-300 group"
                     >
                       <div className="flex justify-between items-center mb-3">
                         <span className="text-xs font-bold text-intuition-success flex items-center gap-1.5">
@@ -1100,8 +1221,8 @@ const MarketDetail: React.FC = () => {
             </div>
         </div>
 
-        <div className="ares-frame bg-black clip-path-slant shadow-2xl overflow-hidden min-h-[600px]">
-            <div className="flex flex-wrap border-b border-slate-900 bg-white/5">
+        <div className="ares-frame bg-black rounded-[2rem] shadow-2xl overflow-hidden min-h-[600px]">
+            <div className="flex flex-wrap gap-2 p-4 sm:p-5 bg-black/40 border-b border-slate-900/80 overflow-x-auto no-scrollbar">
                 {[
                     { id: 'OVERVIEW', label: 'Overview', icon: Activity },
                     { id: 'POSITIONS', label: 'Positions', icon: Users },
@@ -1110,11 +1231,27 @@ const MarketDetail: React.FC = () => {
                     { id: 'LISTS', label: 'Lists', icon: ListIcon },
                     { id: 'ACTIVITY', label: 'Activity', icon: Clock },
                     { id: 'CONNECTIONS', label: 'Connections', icon: Network }
-                ].map((t) => (
-                    <button key={t.id} onClick={() => { playClick(); setActiveTab(t.id as DetailTab); }} className={`flex-1 min-w-[150px] px-6 py-6 text-[10px] font-black tracking-[0.4em] uppercase flex items-center justify-center gap-3 transition-all relative border-r border-slate-900/50 ${activeTab === t.id ? 'text-white bg-white/5' : 'text-slate-600 hover:text-white hover:bg-white/5'}`}>
-                        <t.icon size={16} className={activeTab === t.id ? 'animate-pulse' : ''} style={{ color: activeTab === t.id ? theme.color : '' }} /> {t.label}
-                        {activeTab === t.id && <div className="absolute bottom-0 left-0 right-0 h-1 shadow-glow" style={{ backgroundColor: theme.color }}></div>}
-                    </button>))}
+                ].map((t) => {
+                    const isActive = activeTab === t.id;
+                    return (
+                        <button
+                            key={t.id}
+                            onClick={() => { playClick(); setActiveTab(t.id as DetailTab); }}
+                            className={`
+                                relative min-w-[120px] sm:min-w-[130px] px-5 py-3 rounded-2xl text-[10px] font-black tracking-[0.3em] uppercase flex items-center justify-center gap-2.5
+                                transition-all duration-300
+                                ${isActive
+                                    ? 'text-black border-2'
+                                    : 'text-slate-500 bg-white/5 border-2 border-transparent hover:text-white hover:bg-white/10 hover:border-white/20 active:scale-[0.98]'
+                                }
+                            `}
+                            style={isActive ? { backgroundColor: theme.color, borderColor: theme.color, boxShadow: `0 0 20px ${theme.color}66, 0 0 40px ${theme.color}22` } : undefined}
+                        >
+                            <t.icon size={14} className={isActive ? 'animate-pulse' : ''} style={{ color: isActive ? '#020308' : undefined }} />
+                            <span>{t.label}</span>
+                        </button>
+                    );
+                })}
             </div>
             
             <div className="p-4 sm:p-6 md:p-10 overflow-x-hidden">
@@ -1125,7 +1262,25 @@ const MarketDetail: React.FC = () => {
                                 <h4 className="text-[11px] font-black uppercase tracking-[0.6em] mb-6 flex items-center gap-3 text-glow" style={{ color: theme.color }}><Terminal size={14}/> Core_Alignment_Matrix</h4>
                                 <p className="text-slate-400 text-base leading-relaxed font-mono font-bold uppercase tracking-tight group-hover:text-white transition-colors">Node <strong className="text-white text-glow-white">{agent.label}</strong> stabilized in Sector_04. Semantic weight currently projected at {triples.length} unique synapses. Linear Curve Utility (ID: 1) engaged.</p>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6"><div className="p-4 md:p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL MKT CAP</div><div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white inline-flex items-baseline gap-1"><CurrencySymbol size="xl" leading className="text-white/90" />{formatMarketValue(mktCapVal)}</div></div><div className="p-4 md:p-6 bg-white/5 border border-white/10 clip-path-slant group hover:border-white/40 transition-all"><div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">TOTAL_SHARES</div><div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">{formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}</div></div></div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+                              <div className="p-4 md:p-6 bg-white/5 border border-white/10 rounded-2xl group hover:border-white/40 transition-all duration-300">
+                                <div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">
+                                  TOTAL MKT CAP
+                                </div>
+                                <div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white inline-flex items-baseline gap-1">
+                                  <CurrencySymbol size="xl" leading className="text-white/90" />
+                                  {formatMarketValue(mktCapVal)}
+                                </div>
+                              </div>
+                              <div className="p-4 md:p-6 bg-white/5 border border-white/10 rounded-2xl group hover:border-white/40 transition-all duration-300">
+                                <div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">
+                                  TOTAL_SHARES
+                                </div>
+                                <div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">
+                                  {formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}
+                                </div>
+                              </div>
+                            </div>
                             
                             {/* NEW: PROVENANCE LINKS SECTION */}
                             {agent.links && agent.links.length > 0 && (
@@ -1145,7 +1300,7 @@ const MarketDetail: React.FC = () => {
                                                     rel="noreferrer" 
                                                     onClick={playClick}
                                                     onMouseEnter={playHover}
-                                                    className="flex items-center justify-between gap-3 p-4 bg-white/5 border border-white/10 clip-path-slant hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all group/link"
+                                                    className="flex items-center justify-between gap-3 p-4 bg-white/5 border border-white/10 rounded-2xl hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all duration-300 group/link"
                                                 >
                                                     <span className="text-[10px] font-black text-slate-400 group-hover/link:text-white uppercase tracking-widest truncate shrink-0">{link.label || 'UPLINK_SOURCE'}</span>
                                                     <span className="px-2.5 py-1 rounded-md bg-[#7c3aed]/90 text-white text-[10px] font-bold truncate min-w-0 flex-1 text-center shadow-[0_0_10px_rgba(124,58,237,0.3)]" title={href}>{displayUrl}</span>
@@ -1159,7 +1314,7 @@ const MarketDetail: React.FC = () => {
                         </div>
                         <div className="space-y-6">
                             <h4 className="text-[11px] font-black text-white uppercase tracking-[0.6em] mb-6 text-glow-white">Protocol_Parameters</h4>
-                            <div className="p-8 border border-white/5 bg-white/5 clip-path-slant font-mono text-xs space-y-5">
+                            <div className="p-8 border border-white/5 bg-white/5 rounded-2xl font-mono text-xs space-y-5 transition-all duration-300">
                                 <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Bonding_Curve</span><span className="font-bold text-glow" style={{ color: theme.color }}>Linear_Utility_1</span></div>
                                 <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.label || agent.creator?.id?.slice(0, 18) || 'Null_Origin'}</span></div>
                                 {(() => {
@@ -1203,7 +1358,7 @@ const MarketDetail: React.FC = () => {
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-600 font-black">#{(i + 1).toString().padStart(2, '0')}</td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
                                                 <Link to={`/profile/${h.account.id}`} className="flex items-center gap-2 sm:gap-4 group-hover:text-white transition-colors">
-                                                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-none clip-path-slant bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden group-hover:border-white transition-all shadow-xl shrink-0">
+                                                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden group-hover:border-white transition-all shadow-xl shrink-0">
                                                         {h.account.image ? <img src={h.account.image} className="w-full h-full object-cover" /> : <User size={12} className="text-slate-700 sm:w-[14px] sm:h-[14px]" />}
                                                     </div>
                                                     <span className="font-black text-white group-hover:text-glow-white transition-colors uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">{h.account.label || h.account.id.slice(0, 24)}...</span>
@@ -1225,15 +1380,15 @@ const MarketDetail: React.FC = () => {
                 {activeTab === 'IDENTITIES' && (
                     <div className="animate-in fade-in duration-700">
                         <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-10 flex items-center gap-4"><Fingerprint size={16}/> Neural Identities Engaged</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (<Link key={i} to={`/markets/${peer.term_id}`} className="p-6 bg-white/[0.02] border-2 border-slate-900 hover:border-white/40 transition-all clip-path-slant group relative overflow-hidden backdrop-blur-sm"><div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div><div className="flex items-center justify-between gap-6 relative z-10"><div className="flex items-center gap-5"><div className="w-14 h-14 bg-black border-2 border-slate-800 clip-path-slant overflow-hidden group-hover:border-white transition-all shadow-xl group-hover:shadow-glow-white">{peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}</div><div className="min-w-0"><div className="text-sm font-black text-white group-hover:text-glow-white transition-colors uppercase truncate max-w-[140px] font-display tracking-tight leading-none mb-1.5">{peer.label}</div><div className="text-[8px] text-slate-600 uppercase font-black tracking-widest">{peer.predicate || 'REPUTATION_LINK'}</div></div></div><div className="flex flex-col items-end"><div className="text-[10px] font-black text-intuition-success animate-pulse text-glow-success">LIVE</div><span className="text-[8px] font-black text-slate-700 uppercase tracking-widest mt-1">L3_SYNC</span></div></div></Link>)) : (<div className="col-span-full py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_IDENTITIES_SYNCED</div>)}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (<Link key={i} to={`/markets/${peer.term_id}`} className="p-6 bg-white/[0.02] border-2 border-slate-900 hover:border-white/40 transition-all rounded-2xl group relative overflow-hidden backdrop-blur-sm"><div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div><div className="flex items-center justify-between gap-6 relative z-10"><div className="flex items-center gap-5"><div className="w-14 h-14 bg-black border-2 border-slate-800 rounded-2xl overflow-hidden group-hover:border-white transition-all shadow-xl group-hover:shadow-glow-white">{peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}</div><div className="min-w-0"><div className="text-sm font-black text-white group-hover:text-glow-white transition-colors uppercase truncate max-w-[140px] font-display tracking-tight leading-none mb-1.5">{peer.label}</div><div className="text-[8px] text-slate-600 uppercase font-black tracking-widest">{peer.predicate || 'REPUTATION_LINK'}</div></div></div><div className="flex flex-col items-end"><div className="text-[10px] font-black text-intuition-success animate-pulse text-glow-success">LIVE</div><span className="text-[8px] font-black text-slate-700 uppercase tracking-widest mt-1">L3_SYNC</span></div></div></Link>)) : (<div className="col-span-full py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_IDENTITIES_SYNCED</div>)}</div>
                     </div>
                 )}
                 {activeTab === 'CLAIMS' && (
                     <div className="animate-in fade-in duration-700">
                         <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-10 flex items-center gap-4"><MessageSquare size={16}/> Semantic Claim Ledger</h4>
-                        <div className="space-y-4">{triples.length > 0 ? triples.map((t, i) => (<div key={i} className="p-6 bg-white/[0.01] border-2 border-slate-900 hover:border-white/30 transition-all clip-path-slant flex flex-col md:flex-row items-center justify-between gap-6 group backdrop-blur-sm shadow-xl"><div className="flex items-center gap-6 flex-1 min-w-0"><div className="flex items-center flex-col"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.subject?.label}</span></div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="px-4 py-1.5 bg-black border text-white font-black text-[9px] uppercase tracking-widest clip-path-slant group-hover:shadow-glow-white transition-all" style={{ borderColor: `${theme.color}44`, color: theme.color }}>{t.predicate?.label}</div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="flex flex-col items-center"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center clip-path-slant mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.object?.image ? <img src={t.object.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.object?.label}</span></div></div><div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="space-y-4">{triples.length > 0 ? triples.map((t, i) => (<div key={i} className="p-6 bg-white/[0.01] border-2 border-slate-900 hover:border-white/30 transition-all rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 group backdrop-blur-sm shadow-xl"><div className="flex items-center gap-6 flex-1 min-w-0"><div className="flex items-center flex-col"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center rounded-2xl mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.subject?.label}</span></div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="px-4 py-1.5 bg-black border text-white font-black text-[9px] uppercase tracking-widest rounded-2xl group-hover:shadow-glow-white transition-all" style={{ borderColor: `${theme.color}44`, color: theme.color }}>{t.predicate?.label}</div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="flex flex-col items-center"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center rounded-2xl mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.object?.image ? <img src={t.object.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.object?.label}</span></div></div><div className="flex flex-col items-end gap-2 shrink-0">
                                 {t.creator && (
-                                    <Link to={`/profile/${t.creator.id}`} onClick={playClick} className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 hover:border-intuition-primary transition-all clip-path-slant group/creator">
+                                    <Link to={`/profile/${t.creator.id}`} onClick={playClick} className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 hover:border-intuition-primary transition-all rounded-2xl group/creator">
                                         <div className="w-4 h-4 bg-black border border-white/10 rounded-full overflow-hidden shrink-0 shadow-sm"><img src={t.creator.image || `https://effigy.im/a/${t.creator.id}.png`} className="w-full h-full object-cover" /></div>
                                         <span className="text-[8px] font-black text-slate-400 group-hover/creator:text-white uppercase tracking-widest">{t.creator.label || t.creator.id.slice(0, 10)}</span>
                                         <UserCircle size={10} className="text-slate-600 group-hover/creator:text-intuition-primary" />
@@ -1249,10 +1404,10 @@ const MarketDetail: React.FC = () => {
                 {activeTab === 'LISTS' && (
                     <div className="animate-in fade-in duration-700">
                         <div className="flex items-center justify-between mb-12"><h4 className="text-[11px] font-black uppercase tracking-[0.6em] flex items-center gap-4" style={{ color: theme.color }}><ListIcon size={16} className="animate-pulse" /> SEMANTIC_INCLUSION_VECTORS</h4><span className="text-[8px] font-mono text-slate-600 uppercase">Buffer: {lists.length} Linked Clusters</span></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">{lists.length > 0 ? lists.map((list, i) => (<Link key={i} to={`/markets/${list.id}`} className="group relative flex flex-col p-10 bg-white/[0.02] border-2 border-slate-800 hover:border-white transition-all shadow-[0_0_40px_rgba(0,243,255,0.5)] overflow-hidden min-h-[340px] text-center backdrop-blur-xl clip-path-slant" onClick={playClick} onMouseEnter={playHover}><div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] opacity-10 pointer-events-none"></div><div className="flex flex-col items-center justify-center flex-1 relative z-10"><div className="relative mb-10 group-hover:scale-110 transition-transform duration-700"><div className="absolute -inset-6 border-2 border-dashed border-white/10 rounded-full animate-spin-slow opacity-40 group-hover:opacity-100 transition-all"></div><div className="w-24 h-24 bg-black border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-white shadow-2xl relative clip-path-slant group-hover:shadow-glow-white">{list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={32} className="text-slate-600 group-hover:text-white" />}</div></div><div className="relative z-10"><div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] mb-4 group-hover:text-white transition-colors">SUB_SECTOR_VECTOR</div><div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tighter leading-none mb-6 drop-shadow-md">{list.label}</div><div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/5 border border-white/5 clip-path-slant text-[9px] font-black text-slate-400 group-hover:text-white transition-all"><Database size={12} className="text-slate-600 group-hover:text-white" />CONSTITUENTS: {list.totalItems || 0}</div></div></div><div className="absolute bottom-6 right-6 text-slate-800 group-hover:text-white group-hover:translate-x-1 transition-all"><ArrowRight size={24} /></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 clip-path-slant">NULL_VECTORS_DETECTED</div>)}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">{lists.length > 0 ? lists.map((list, i) => (<Link key={i} to={`/markets/${list.id}`} className="group relative flex flex-col p-10 bg-white/[0.02] border-2 border-slate-800 hover:border-white transition-all shadow-[0_0_40px_rgba(0,243,255,0.5)] overflow-hidden min-h-[340px] text-center backdrop-blur-xl rounded-2xl" onClick={playClick} onMouseEnter={playHover}><div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] opacity-10 pointer-events-none"></div><div className="flex flex-col items-center justify-center flex-1 relative z-10"><div className="relative mb-10 group-hover:scale-110 transition-transform duration-700"><div className="absolute -inset-6 border-2 border-dashed border-white/10 rounded-full animate-spin-slow opacity-40 group-hover:opacity-100 transition-all"></div><div className="w-24 h-24 bg-black border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-white shadow-2xl relative rounded-2xl group-hover:shadow-glow-white">{list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={32} className="text-slate-600 group-hover:text-white" />}</div></div><div className="relative z-10"><div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] mb-4 group-hover:text-white transition-colors">SUB_SECTOR_VECTOR</div><div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tighter leading-none mb-6 drop-shadow-md">{list.label}</div><div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/5 border border-white/5 rounded-2xl text-[9px] font-black text-slate-400 group-hover:text-white transition-all"><Database size={12} className="text-slate-600 group-hover:text-white" />CONSTITUENTS: {list.totalItems || 0}</div></div></div><div className="absolute bottom-6 right-6 text-slate-800 group-hover:text-white group-hover:translate-x-1 transition-all"><ArrowRight size={24} /></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 rounded-2xl">NULL_VECTORS_DETECTED</div>)}</div>
                     </div>)}
                 {activeTab === 'ACTIVITY' && (
-                    <div className="animate-in fade-in duration-700 overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 clip-path-slant shadow-2xl backdrop-blur-sm">
+                    <div className="animate-in fade-in duration-700 overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 rounded-2xl shadow-2xl backdrop-blur-sm">
                         <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[500px]">
                             <thead className="bg-black border-b border-slate-800 text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
                                 <tr>
@@ -1312,12 +1467,13 @@ const MarketDetail: React.FC = () => {
                 )}
                 {activeTab === 'CONNECTIONS' && (
                     <div className="animate-in fade-in duration-700">
-                        <div className="flex items-center gap-8 mb-12 bg-white/[0.02] p-10 border-2 border-slate-900 clip-path-slant group hover:border-white/20 transition-all shadow-2xl backdrop-blur-md"><div className="w-20 h-20 rounded-none clip-path-slant border-2 flex items-center justify-center bg-black shadow-2xl group-hover:scale-105 duration-500" style={{ borderColor: theme.color, boxShadow: `0 0 30px ${theme.bgGlow}` }}><Activity size={40} className="animate-pulse" style={{ color: theme.color }} /></div><div><h4 className="text-2xl font-black font-display text-white uppercase tracking-[0.4em] mb-2 text-glow-white">NEURAL_TOPOLOGY</h4><p className="text-[11px] text-slate-500 uppercase tracking-widest font-black group-hover:text-slate-300 transition-colors">Mapping semantic adjacency and synapse neighbors within Sector_04.</p></div></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (<Link key={i} to={`/markets/${peer.term_id}`} className="group p-8 bg-black border-2 border-slate-900 hover:border-white transition-all clip-path-slant flex items-center gap-8 relative overflow-hidden shadow-2xl"><div className="absolute inset-0 bg-gradient-to-tr from-white/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div><div className="w-16 h-16 bg-slate-950 border-2 border-slate-800 flex items-center justify-center clip-path-slant shrink-0 group-hover:border-white transition-all shadow-2xl overflow-hidden">{peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}</div><div className="min-w-0"><div className="text-lg font-black text-white group-hover:text-glow-white transition-colors truncate uppercase leading-none mb-2 tracking-tight">{peer.label}</div><div className="text-[8px] font-black font-mono text-slate-600 tracking-widest uppercase">SYMMETRIC_NEIGHBOR</div></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 clip-path-slant">NULL_NETWORK_ADJACENCY</div>)}</div>
+                        <div className="flex items-center gap-8 mb-12 bg-white/[0.02] p-10 border-2 border-slate-900 rounded-2xl group hover:border-white/20 transition-all shadow-2xl backdrop-blur-md"><div className="w-20 h-20 rounded-xl border-2 flex items-center justify-center bg-black shadow-2xl group-hover:scale-105 duration-500" style={{ borderColor: theme.color, boxShadow: `0 0 30px ${theme.bgGlow}` }}><Activity size={40} className="animate-pulse" style={{ color: theme.color }} /></div><div><h4 className="text-2xl font-black font-display text-white uppercase tracking-[0.4em] mb-2 text-glow-white">NEURAL_TOPOLOGY</h4><p className="text-[11px] text-slate-500 uppercase tracking-widest font-black group-hover:text-slate-300 transition-colors">Mapping semantic adjacency and synapse neighbors within Sector_04.</p></div></div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (<Link key={i} to={`/markets/${peer.term_id}`} className="group p-8 bg-black border-2 border-slate-900 hover:border-white transition-all rounded-2xl flex items-center gap-8 relative overflow-hidden shadow-2xl"><div className="absolute inset-0 bg-gradient-to-tr from-white/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div><div className="w-16 h-16 bg-slate-950 border-2 border-slate-800 flex items-center justify-center rounded-2xl shrink-0 group-hover:border-white transition-all shadow-2xl overflow-hidden">{peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}</div><div className="min-w-0"><div className="text-lg font-black text-white group-hover:text-glow-white transition-colors truncate uppercase leading-none mb-2 tracking-tight">{peer.label}</div><div className="text-[8px] font-black font-mono text-slate-600 tracking-widest uppercase">SYMMETRIC_NEIGHBOR</div></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 rounded-2xl">NULL_NETWORK_ADJACENCY</div>)}</div>
                     </div>
                 )}
             </div>
         </div>
+      </div>
     </div>
   );
 };

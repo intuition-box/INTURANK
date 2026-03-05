@@ -16,15 +16,16 @@ const fetchGraphQL = async (query: string, variables: any = {}) => {
   });
   const result = await response.json();
   if (result.errors) {
+    const msg = result.errors.map((e: any) => e.message || JSON.stringify(e)).join("; ");
     console.warn("GraphQL Query Error:", result.errors);
-    throw new Error("GraphQL error");
+    throw new Error(msg || "GraphQL error");
   }
   return result.data;
 };
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
 
-const prepareQueryIds = (id: string) => {
+export const prepareQueryIds = (id: string) => {
     if (!id) return [];
     const base = id.trim();
     const variants = new Set<string>([base, base.toLowerCase()]);
@@ -167,6 +168,19 @@ export const getAllAgents = async (limit = 40, offset = 0) => {
 
     return { items, hasMore: allVaults.length === limit };
   } catch (e) { return { items: [], hasMore: false }; }
+};
+
+/** For Home: three sections — ROI daily (by activity), by marketcap, newly created (proxy by position count). */
+export const getHomeAtomSections = async (limitPerSection = 12) => {
+  const { items } = await getAllAgents(limitPerSection * 4, 0);
+  const byMarketcap = [...items].sort((a, b) => {
+    const ma = parseFloat(a.marketCap || '0');
+    const mb = parseFloat(b.marketCap || '0');
+    return mb - ma;
+  }).slice(0, limitPerSection);
+  const roiDaily = [...items].sort((a, b) => (b.positionCount || 0) - (a.positionCount || 0)).slice(0, limitPerSection);
+  const newlyCreated = [...items].sort((a, b) => (a.positionCount || 0) - (b.positionCount || 0)).slice(0, limitPerSection);
+  return { roiDaily, byMarketcap, newlyCreated };
 };
 
 export const getAgentById = async (termId: string) => {
@@ -477,6 +491,65 @@ export const getPnlLeaderboard = async (p_offset: number = 0, p_limit: number = 
   }
 };
 
+/** Build args for get_pnl_leaderboard_period. Schema requires p_start_date and p_end_date (ISO strings). */
+export const buildPnlLeaderboardPeriodArgs = (
+  startDate: string,
+  endDate: string,
+  options?: { limit?: number; offset?: number; sortBy?: string; sortOrder?: string }
+) => {
+  const args: Record<string, unknown> = { p_start_date: startDate, p_end_date: endDate };
+  if (options?.limit != null) args.p_limit = options.limit;
+  if (options?.offset != null) args.p_offset = options.offset;
+  if (options?.sortBy != null) args.p_sort_by = options.sortBy;
+  if (options?.sortOrder != null) args.p_sort_order = options.sortOrder;
+  return args;
+};
+
+/** Season 2 / epoch-based PnL leaderboard. Uses get_pnl_leaderboard_period for epoch date range (e.g. Epoch 8 = Feb 24 - Mar 10). */
+export const getPnlLeaderboardPeriod = async (args: Record<string, unknown> = {}, limit?: number) => {
+  const q = `query GetPnlLeaderboardPeriod($args: get_pnl_leaderboard_period_args!) {
+    get_pnl_leaderboard_period(args: $args) {
+      rank
+      account_id
+      account_label
+      account_image
+      total_pnl_raw
+      pnl_pct
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { args: args || {} });
+    const arr = res?.get_pnl_leaderboard_period ?? [];
+    return limit != null ? arr.slice(0, limit) : arr;
+  } catch (e) {
+    return [];
+  }
+};
+
+/** User's position on Season 2 / epoch-based PnL leaderboard */
+export const getPnlLeaderboardPeriodAccount = async (accountId: string, args: Record<string, unknown> = {}) => {
+  const q = `query GetPnlLeaderboardPeriodAccount($args: get_pnl_leaderboard_period_args!, $where: pnl_leaderboard_entry_bool_exp) {
+    get_pnl_leaderboard_period(args: $args, where: $where, limit: 1) {
+      rank
+      account_id
+      account_label
+      account_image
+      total_pnl_raw
+      pnl_pct
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, {
+      args: args || {},
+      where: { account_id: { _eq: accountId } },
+    });
+    const arr = res?.get_pnl_leaderboard_period ?? [];
+    return arr[0] ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export const getVaultsByIds = async (ids: string[]) => {
   if (!ids || ids.length === 0) return [];
   const q = `query GetVaultsByIds($ids: [String!]!) {
@@ -655,28 +728,167 @@ export const getTopPositions = async (limit: number = 2500) => {
 };
 
 export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
+  const fetchLimit = Math.max(limit * 10, 1000);
   const q = `query GetTopClaims($limit: Int!, $offset: Int!) {
       vaults(where: { term: { triple: { term_id: { _is_null: false } } } }, limit: $limit, offset: $offset, order_by: { total_assets: desc }) {
         term_id total_assets total_shares current_share_price curve_id position_count
-        term { triple { subject { label term_id data image type } predicate { label term_id } object { label term_id data image type } } }
+        term { triple { counter_term_id subject { label term_id data image type } predicate { label term_id } object { label term_id data image type } } }
       }
   }`;
   try {
-    const res = await fetchGraphQL(q, { limit, offset });
-    const vaults = res?.vaults || [];
-    const items = vaults.map((v: any) => {
-        const t = v.term.triple;
+    const [res, res2] = await Promise.all([
+      fetchGraphQL(q, { limit: fetchLimit, offset: 0 }),
+      fetchGraphQL(q, { limit: 500, offset: fetchLimit }),
+    ]);
+    const vaults = [...(res?.vaults || []), ...(res2?.vaults || [])];
+    const supportIdsForQuery = Array.from(new Set(vaults.flatMap((v: any) => prepareQueryIds(v.term_id)))).slice(0, 800);
+    let supportVaults = vaults;
+    if (supportIdsForQuery.length > 0) {
+      const fullQ = `query GetSupportVaultsFull($ids: [String!]!) {
+        vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
+      }`;
+      const fullRes = await fetchGraphQL(fullQ, { ids: supportIdsForQuery });
+      const allSupportVaults = fullRes?.vaults || [];
+      supportVaults = allSupportVaults.length > 0 ? allSupportVaults : vaults;
+    }
+    const supportAggregated = aggregateVaultData(supportVaults);
+    supportAggregated.sort((a: any, b: any) => {
+      const aVal = (a.computed_mcap ?? 0) > 0 ? a.computed_mcap : parseFloat(formatEther(BigInt(a.total_assets)));
+      const bVal = (b.computed_mcap ?? 0) > 0 ? b.computed_mcap : parseFloat(formatEther(BigInt(b.total_assets)));
+      return bVal - aVal;
+    });
+    const paginated = supportAggregated.slice(offset, offset + limit);
+    const counterTermIds = paginated
+      .map((v: any) => {
+        const v0 = vaults.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+        return v0?.term?.triple?.counter_term_id;
+      })
+      .filter((id: string | null | undefined) => id && id.trim() !== '');
+    const idsForQuery = Array.from(new Set(counterTermIds.flatMap((id: string) => prepareQueryIds(id)))).slice(0, 400);
+    let opposeMap: Record<string, { total_assets: string; computed_mcap: number; position_count: number }> = {};
+    if (idsForQuery.length > 0) {
+      const counterQ = `query GetOpposeVaults($ids: [String!]!) {
+        vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
+      }`;
+      const counterRes = await fetchGraphQL(counterQ, { ids: idsForQuery });
+      const counterVaults = counterRes?.vaults || [];
+      const opposeAggregated = aggregateVaultData(counterVaults);
+      opposeAggregated.forEach((v: any) => {
+        const id = normalize(v.term_id);
+        opposeMap[id] = { total_assets: v.total_assets.toString(), computed_mcap: v.computed_mcap ?? 0, position_count: v.position_count || 0 };
+      });
+    }
+    const allTermIdsForHolders = [
+      ...paginated.map((v: any) => v.term_id),
+      ...counterTermIds
+    ];
+    const holderIdsForQuery = Array.from(new Set(allTermIdsForHolders.flatMap((id: string) => prepareQueryIds(id)))).slice(0, 400);
+    let supportHolderMap: Record<string, number> = {};
+    let opposeHolderMap: Record<string, number> = {};
+    if (holderIdsForQuery.length > 0) {
+      const posQ = `query GetPositionsForHolders($ids: [String!]!) {
+        positions(where: { vault: { term_id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 15000) {
+          account_id
+          account { id }
+          vault { term_id }
+        }
+      }`;
+      const posRes = await fetchGraphQL(posQ, { ids: holderIdsForQuery });
+      const positions = posRes?.positions || [];
+      const supportTermIdSet = new Set(paginated.map((v: any) => normalize(v.term_id)));
+      const opposeTermIdSet = new Set(counterTermIds.filter(Boolean).map((id: string) => normalize(id)));
+      const byTerm = new Map<string, Set<string>>();
+      positions.forEach((p: any) => {
+        const tid = normalize(p.vault?.term_id);
+        if (!tid) return;
+        if (!byTerm.has(tid)) byTerm.set(tid, new Set());
+        const accId = ((p.account_id || p.account?.id) || '').toLowerCase();
+        if (accId) byTerm.get(tid)!.add(accId);
+      });
+      byTerm.forEach((accounts, tid) => {
+        const count = accounts.size;
+        if (supportTermIdSet.has(tid)) supportHolderMap[tid] = count;
+        if (opposeTermIdSet.has(tid)) opposeHolderMap[tid] = count;
+      });
+    }
+    const items = paginated.map((v: any) => {
+        const v0 = vaults.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+        const t = v0?.term?.triple;
+        if (!t) return null;
+        const counterId = t?.counter_term_id ? normalize(t.counter_term_id) : null;
+        const oppose = counterId ? opposeMap[counterId] : null;
+        const supportHolders = supportHolderMap[normalize(v.term_id)] ?? v.position_count ?? 0;
+        const opposeHolders = counterId ? (opposeHolderMap[counterId] ?? oppose?.position_count ?? 0) : 0;
         return {
             id: v.term_id,
             subject: { ...t.subject, label: resolveMetadata(t.subject).label },
             predicate: t.predicate?.label || 'LINK',
             object: { ...t.object, label: resolveMetadata(t.object).label },
-            value: parseFloat(formatEther(BigInt(v.total_assets))),
-            holders: v.position_count
+            value: (v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets))),
+            holders: supportHolders,
+            opposeValue: oppose ? (oppose.computed_mcap ?? 0) > 0 ? oppose.computed_mcap : parseFloat(formatEther(BigInt(oppose.total_assets))) : 0,
+            opposeHolders
         };
-    });
-    return { items, hasMore: vaults.length === limit };
+    }).filter(Boolean);
+    return { items, hasMore: supportAggregated.length > offset + limit };
   } catch (e) { return { items: [], hasMore: false }; }
+};
+
+export const searchClaims = async (term: string): Promise<any[]> => {
+  const t = term.trim();
+  if (!t || t.length < 2) return [];
+  const pattern = `%${t}%`;
+  const q = `query SearchClaims($subj: String!, $obj: String!) {
+    triples(where: { _or: [
+      { subject: { label: { _ilike: $subj } } },
+      { subject: { label: { _ilike: $obj } } },
+      { object: { label: { _ilike: $subj } } },
+      { object: { label: { _ilike: $obj } } }
+    ] }, limit: 30) {
+      term_id counter_term_id subject { label term_id data image type } predicate { label term_id } object { label term_id data image type }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { subj: pattern, obj: pattern });
+    const triples = res?.triples || [];
+    if (triples.length === 0) return [];
+    const termIds = triples.map((x: any) => x.term_id);
+    const idsForVault = Array.from(new Set(termIds.flatMap((id: string) => prepareQueryIds(id)))).slice(0, 100);
+    const vaultQ = `query GetClaimVaults($ids: [String!]!) {
+      vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
+    }`;
+    const vaultRes = await fetchGraphQL(vaultQ, { ids: idsForVault });
+    const allVaults = vaultRes?.vaults || [];
+    const agg = aggregateVaultData(allVaults);
+    const aggMap = new Map(agg.map((v: any) => [normalize(v.term_id), v]));
+    const counterIds = triples.map((t: any) => t.counter_term_id).filter(Boolean);
+    const counterIdsForQuery = Array.from(new Set(counterIds.flatMap((id: string) => prepareQueryIds(id)))).slice(0, 100);
+    let opposeMap: Record<string, { total_assets: string; computed_mcap: number; position_count: number }> = {};
+    if (counterIdsForQuery.length > 0) {
+      const counterRes = await fetchGraphQL(vaultQ, { ids: counterIdsForQuery });
+      const counterVaults = counterRes?.vaults || [];
+      aggregateVaultData(counterVaults).forEach((v: any) => {
+        opposeMap[normalize(v.term_id)] = { total_assets: v.total_assets.toString(), computed_mcap: v.computed_mcap ?? 0, position_count: v.position_count || 0 };
+      });
+    }
+    return triples.map((t: any) => {
+      const v = aggMap.get(normalize(t.term_id));
+      const oppose = t.counter_term_id ? opposeMap[normalize(t.counter_term_id)] : null;
+      return {
+        id: t.term_id,
+        subject: { ...t.subject, label: resolveMetadata(t.subject).label },
+        predicate: t.predicate?.label || 'LINK',
+        object: { ...t.object, label: resolveMetadata(t.object).label },
+        value: v ? ((v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets)))) : 0,
+        holders: v?.position_count ?? 0,
+        opposeValue: oppose ? (oppose.computed_mcap > 0 ? oppose.computed_mcap : parseFloat(formatEther(BigInt(oppose.total_assets)))) : 0,
+        opposeHolders: oppose?.position_count ?? 0,
+      };
+    });
+  } catch (e) {
+    console.warn('searchClaims error', e);
+    return [];
+  }
 };
 
 export const searchGlobalAgents = async (term: string): Promise<{ id: string; label: string; image?: string; type?: string }[]> => {
