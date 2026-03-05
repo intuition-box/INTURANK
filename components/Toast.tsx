@@ -58,11 +58,11 @@ export const ToastContainer: React.FC = () => {
           className={`
             pointer-events-auto relative overflow-hidden w-80 p-4 
             bg-black/90 backdrop-blur-md border-l-4 shadow-[0_0_20px_rgba(0,0,0,0.5)]
-            transition-all duration-500 animate-in slide-in-from-right-full
+            animate-toast-slide-fluid
             ${t.type === 'success' ? 'border-intuition-success text-intuition-success' : ''}
             ${t.type === 'error' ? 'border-intuition-danger text-intuition-danger' : ''}
             ${t.type === 'info' ? 'border-intuition-primary text-intuition-primary' : ''}
-            clip-path-slant
+            rounded-2xl
           `}
         >
           {/* Scanline overlay */}
