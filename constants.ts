@@ -1,3 +1,6 @@
+/** Set to true to show only the maintenance page. Toggle back to false when ready to go live. */
+export const MAINTENANCE_MODE = true;
+
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";
@@ -9,6 +12,16 @@ export const RPC_URL = "https://rpc.intuition.systems/http";
 export const GRAPHQL_URL = "https://mainnet.intuition.sh/v1/graphql";
 export const EXPLORER_URL = "https://explorer.intuition.systems";
 export const CURRENCY_SYMBOL = "₸";
+
+/** Season 2 / current epoch for period-based PnL leaderboard (get_pnl_leaderboard_period) */
+export const SEASON_2_EPOCH_ID = 8;
+
+/** Human-readable date range for Epoch 8 (Season 2 current period) — matches Intuition portal */
+export const SEASON_2_EPOCH_8_DATE_RANGE = 'Feb 24, 4:00 PM – Mar 10, 4:00 PM';
+
+/** ISO date strings for Epoch 8 — required by get_pnl_leaderboard_period (p_start_date, p_end_date) */
+export const SEASON_2_EPOCH_8_START = '2026-02-24T16:00:00Z';
+export const SEASON_2_EPOCH_8_END = '2026-03-10T16:00:00Z';
 
 export const MULTI_VAULT_ADDRESS = "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e";
 export const FEE_PROXY_ADDRESS = "0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93";
