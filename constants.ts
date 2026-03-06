@@ -1,6 +1,4 @@
-/** Set VITE_MAINTENANCE_MODE=true in .env.local / .env.production (or GitHub repo Variables) to show only the maintenance page. */
-export const MAINTENANCE_MODE =
-  String(import.meta.env.VITE_MAINTENANCE_MODE ?? '').toLowerCase() === 'true';
+export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
 
 /** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
 export const getGeminiApiKey = (): string => {
