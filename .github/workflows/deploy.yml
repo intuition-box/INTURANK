@@ -45,11 +45,16 @@ jobs:
           if [ -z "${{ secrets.VITE_EMAIL_API_URL }}" ]; then
             echo "::warning::VITE_EMAIL_API_URL is not set. Emails on production will not work. Add it in repo Settings → Secrets → Actions."
           fi
+          if [ -z "${{ secrets.VITE_GEMINI_API_KEY }}" ]; then
+            echo "::warning::VITE_GEMINI_API_KEY is not set. AI briefing/summary will not work. Add it in repo Settings → Secrets → Actions (single key or comma-separated: key1,key2,key3)."
+          fi
           npm run build
         env:
           API_KEY: ${{ secrets.API_KEY }}
-          VITE_EMAIL_API_URL: ${{ secrets.VITE_EMAIL_API_URL }}
+          VITE_EMAIL_API_URL: ${{ secrets.VITE_EMAIL_API_URL || 'https://inturank-email-production.up.railway.app' }}
           VITE_GRAPHQL_URL: ${{ vars.VITE_GRAPHQL_URL }}
+          VITE_MAINTENANCE_MODE: ${{ vars.VITE_MAINTENANCE_MODE || 'false' }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

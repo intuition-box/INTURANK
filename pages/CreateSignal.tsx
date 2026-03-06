@@ -2,17 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { ArrowLeft, Terminal, Zap, Loader2, Database, GitBranch, Search, Camera, CheckCircle, ExternalLink, UserPlus, FileText, Sparkles, Info } from 'lucide-react';
-import { Hex, pad } from 'viem';
-import { createStringAtom, createThingAtom, createSingleTriple } from '../services/intuitionSdk';
-import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, checkProxyApproval, grantProxyApproval, parseProtocolError } from '../services/web3';
+import { Hex } from 'viem';
+import { createStringAtom } from '../services/intuitionSdk';
+import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, checkProxyApproval, grantProxyApproval, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost } from '../services/web3';
 import { uploadImageToIpfs, ensureIpfsUploadConfigured } from '../services/ipfs';
 import { searchGlobalAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
+import { formatEther } from 'viem';
 import { CURRENCY_SYMBOL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { formatMarketValue } from '../services/analytics';
 
-type View = 'root' | 'identity_choice' | 'identity_manual' | 'identity_review' | 'claim' | 'claim_review' | 'construct_atom' | 'sdk' | 'manual_pathway' | 'establish_synapse';
+type View = 'root' | 'identity_choice' | 'identity_manual' | 'identity_review' | 'claim' | 'claim_review' | 'construct_atom' | 'sdk' | 'manual_pathway' | 'establish_synapse' | 'ingress';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 
@@ -57,6 +59,12 @@ const CreateSignal: React.FC = () => {
   const [returnToSynapseSlot, setReturnToSynapseSlot] = useState<'subject' | 'predicate' | 'object' | null>(null);
   const [claimReviewApproved, setClaimReviewApproved] = useState<boolean | null>(null);
   const [enablingProtocol, setEnablingProtocol] = useState(false);
+  const [minClaimDeposit, setMinClaimDeposit] = useState('0.1');
+  const [totalClaimCost, setTotalClaimCost] = useState<string | null>(null);
+  const [tripleFee, setTripleFee] = useState<string | null>(null);
+  const [totalAtomCost, setTotalAtomCost] = useState<string | null>(null);
+  const [atomFee, setAtomFee] = useState<string | null>(null);
+  const [identityReviewApproved, setIdentityReviewApproved] = useState<boolean | null>(null);
   const nodeSearchInputRef = useRef<HTMLInputElement>(null);
   const prevNodeSearchingRef = useRef(false);
 
@@ -100,8 +108,10 @@ const CreateSignal: React.FC = () => {
       return;
     }
     try {
-      await ensureWallet();
+      const account = await ensureWallet();
       setCreatingAtom(true);
+      const approved = await checkProxyApproval(account);
+      if (!approved) await grantProxyApproval(account);
       let resolvedImageUrl = imageUrl.trim();
 
       // If user selected a file and IPFS upload is configured, upload the file and
@@ -123,17 +133,17 @@ const CreateSignal: React.FC = () => {
         }
       }
 
-      const thing: Record<string, unknown> = {
+      const metadata = {
         name: nodeAlias.trim(),
         description: descriptionPayload.trim() || undefined,
+        type: 'Thing',
         ...(resolvedImageUrl && { image: resolvedImageUrl }),
-        ...(identityUrl.trim() && { url: identityUrl.trim() }),
+        ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
       };
 
-      const result = await createThingAtom(thing, atomDeposit || '0.1');
+      const { termId } = await createIdentityAtom(metadata, atomDeposit || '0.1', account);
       setImageFile(null);
-      const termId = (result as any).state?.termId ?? (result as any).termId ?? null;
-      if (termId) setLastTermId(termId as Hex);
+      if (termId) setLastTermId(termId);
       if (returnToSynapseSlot) {
         const id = termId as string;
         const label = nodeAlias.trim() || 'New atom';
@@ -143,7 +153,7 @@ const CreateSignal: React.FC = () => {
         setView('claim');
         setReturnToSynapseSlot(null);
       }
-      setSuccessModal({ termId: termId as Hex | null, type: 'atom' });
+      setSuccessModal({ termId: termId ?? null, type: 'atom' });
       toast.success('ATOM_ESTABLISHED');
     } catch (err: any) {
       toast.error((err?.message || 'GENESIS_FAILED').slice(0, 120));
@@ -158,17 +168,18 @@ const CreateSignal: React.FC = () => {
       toast.error('CONNECT_ALL_NODES');
       return;
     }
+    const depositAmount = synapseDeposit || '0.1';
+    if (parseFloat(depositAmount) < parseFloat(minClaimDeposit || '0.1')) {
+      toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}.`);
+      return;
+    }
     try {
-      await ensureWallet();
+      const account = await ensureWallet();
       setCreatingSynapse(true);
-      const result = await createSingleTriple(
-        subjectId as Hex,
-        predicateId as Hex,
-        objectId as Hex,
-        synapseDeposit || '0.1',
-      );
-      const tripleTermId = (result as any)?.state?.termId ?? (result as any)?.termId ?? null;
-      setSuccessModal({ termId: tripleTermId as Hex | null, type: 'synapse' });
+      const approved = await checkProxyApproval(account);
+      if (!approved) await grantProxyApproval(account);
+      await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
+      setSuccessModal({ termId: null, type: 'synapse' });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');
@@ -286,6 +297,56 @@ const CreateSignal: React.FC = () => {
     if (view === 'claim_review') toast.dismissAll();
   }, [view]);
 
+  useEffect(() => {
+    if (view === 'claim' || view === 'claim_review' || view === 'establish_synapse') {
+      getMinClaimDeposit().then(setMinClaimDeposit).catch(() => setMinClaimDeposit('0.1'));
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (view === 'claim_review' && (synapseDeposit || '0') !== '') {
+      getTotalTripleCreationCost(synapseDeposit || '0').then(setTotalClaimCost).catch(() => setTotalClaimCost(null));
+      getTripleCost().then(setTripleFee).catch(() => setTripleFee(null));
+    } else {
+      setTotalClaimCost(null);
+      setTripleFee(null);
+    }
+  }, [view, synapseDeposit]);
+
+  useEffect(() => {
+    if (view !== 'identity_review') {
+      setTotalAtomCost(null);
+      setAtomFee(null);
+      return;
+    }
+    const deposit = atomDeposit || '0.1';
+    const isAccount = identitySchemaType === 'Account';
+    const metadata = isAccount
+      ? { type: 'Account', address: accountAddress.trim(), chain: accountChain }
+      : {
+          name: nodeAlias.trim(),
+          description: descriptionPayload.trim() || undefined,
+          type: identitySchemaType,
+          ...(imageUrl.trim() && { image: imageUrl.trim() }),
+          ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
+        };
+    if (isAccount && !accountAddress.trim()) return;
+    if (!isAccount && !nodeAlias.trim()) return;
+    getAtomCreationCost(metadata, deposit)
+      .then((costBigInt) => {
+        const depositBigInt = BigInt(Math.floor(parseFloat(deposit) * 1e18));
+        const feeBigInt = costBigInt > depositBigInt ? costBigInt - depositBigInt : 0n;
+        setTotalAtomCost(formatEther(costBigInt));
+        setAtomFee(formatEther(feeBigInt));
+      })
+      .catch(() => {
+        const dep = parseFloat(deposit);
+        const estFee = dep * 0.05;
+        setTotalAtomCost((dep + estFee).toFixed(6));
+        setAtomFee(estFee.toFixed(6));
+      });
+  }, [view, atomDeposit, identitySchemaType, accountAddress, accountChain, nodeAlias, descriptionPayload, imageUrl, identityUrl]);
+
   // Check protocol approval when on claim review; use wagmi address to stay in sync
   useEffect(() => {
     if (view !== 'claim_review') return;
@@ -301,6 +362,20 @@ const CreateSignal: React.FC = () => {
     return () => { cancelled = true; };
   }, [view, wagmiAddress]);
 
+  useEffect(() => {
+    if (view !== 'identity_review') return;
+    const acc = wagmiAddress ?? null;
+    if (!acc) {
+      setIdentityReviewApproved(null);
+      return;
+    }
+    let cancelled = false;
+    checkProxyApproval(acc).then((v) => {
+      if (!cancelled) setIdentityReviewApproved(v);
+    });
+    return () => { cancelled = true; };
+  }, [view, wagmiAddress]);
+
   const handleSubmitIdentityFromReview = async () => {
     playClick();
     const isAccount = identitySchemaType === 'Account';
@@ -310,22 +385,24 @@ const CreateSignal: React.FC = () => {
     }
     if (!isAccount && !nodeAlias.trim()) return;
     try {
-      await ensureWallet();
+      const account = await ensureWallet();
       setCreatingAtom(true);
+      const approved = await checkProxyApproval(account);
+      if (!approved) await grantProxyApproval(account);
       const deposit = atomDeposit || '0.1';
-      const thing: Record<string, unknown> = isAccount
+      const metadata = isAccount
         ? { type: 'Account', address: accountAddress.trim(), chain: accountChain }
         : {
             name: nodeAlias.trim(),
             description: descriptionPayload.trim() || undefined,
+            type: identitySchemaType,
             ...(imageUrl.trim() && { image: imageUrl.trim() }),
-            ...(identityUrl.trim() && { url: identityUrl.trim() }),
+            ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
           };
-      const result = await createThingAtom(thing, deposit);
+      const { termId } = await createIdentityAtom(metadata, deposit, account);
       setImageFile(null);
-      const termId = (result as any).state?.termId ?? (result as any).termId ?? null;
       if (termId) setLastTermId(termId as Hex);
-      setSuccessModal({ termId: termId as Hex | null, type: 'atom' });
+      setSuccessModal({ termId: termId ?? null, type: 'atom' });
       toast.success('ATOM_ESTABLISHED');
       setView('root');
     } catch (err: any) {
@@ -339,6 +416,11 @@ const CreateSignal: React.FC = () => {
     playClick();
     if (!subjectId || !predicateId || !objectId) return;
     const depositAmount = synapseDeposit || '0.1';
+    const minDep = parseFloat(minClaimDeposit || '0.1');
+    if (parseFloat(depositAmount) < minDep) {
+      toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}. You entered ${depositAmount}.`);
+      return;
+    }
     try {
       const account = await ensureWallet();
       setCreatingSynapse(true);
@@ -346,25 +428,7 @@ const CreateSignal: React.FC = () => {
       if (!approved) {
         await grantProxyApproval(account);
       }
-      try {
-        await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
-      } catch (feeProxyErr: any) {
-        // Try SDK path on any FeeProxy failure (revert, custom error, etc.)
-        const toHex32 = (id: string): Hex =>
-          pad((id.startsWith('0x') ? id : `0x${id}`) as Hex, { size: 32 });
-        try {
-          await createSingleTriple(
-            toHex32(subjectId),
-            toHex32(predicateId),
-            toHex32(objectId),
-            depositAmount,
-          );
-        } catch (sdkErr: any) {
-          const fallbackMsg = sdkErr?.message || sdkErr?.toString?.() || '';
-          if (fallbackMsg) console.warn('Triple creation SDK fallback failed:', fallbackMsg);
-          throw new Error('Triple creation failed. Check: all 3 atoms exist on-chain and enough TRUST.');
-        }
-      }
+      await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
       setSuccessModal({ termId: null, type: 'synapse' });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
@@ -653,14 +717,29 @@ const CreateSignal: React.FC = () => {
                   </div>
                   <div className="text-[10px] text-slate-400 mt-1 inline-flex items-baseline gap-1">Initial deposit: {atomDeposit || '0'} <CurrencySymbol size="sm" /></div>
                 </div>
+                {atomFee != null && parseFloat(atomFee) > 0 && (
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-slate-400">Protocol fee (5%)</span>
+                    <span className="text-intuition-primary font-mono inline-flex items-baseline gap-1">{atomFee} <CurrencySymbol size="md" className="text-intuition-primary/90" /></span>
+                  </div>
+                )}
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-400">Total cost</span>
-                  <span className="text-white font-mono inline-flex items-baseline gap-1">{atomDeposit || '0'} <CurrencySymbol size="md" className="text-white/90" /></span>
+                  <span className="text-white font-mono inline-flex items-baseline gap-1">{totalAtomCost ?? (atomDeposit || '0')} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-400">Available balance</span>
                   <span className="text-white font-mono inline-flex items-baseline gap-1">{walletBalance || '—'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
+                {identityReviewApproved === false && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/40 rounded">
+                    <Info size={14} className="text-amber-400 shrink-0" />
+                    <p className="text-[10px] text-amber-200">Approve the IntuRank protocol to charge the 5% fee. You will be prompted to sign an approval.</p>
+                    <button type="button" onClick={async () => { const acc = await ensureWallet(); setEnablingProtocol(true); await grantProxyApproval(acc); setIdentityReviewApproved(true); setEnablingProtocol(false); }} disabled={enablingProtocol} className="ml-auto py-2 px-4 bg-amber-500 text-black font-black text-[9px] uppercase tracking-widest rounded">
+                      {enablingProtocol ? 'Approving…' : 'Approve'}
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-start gap-2 p-3 bg-white/5 border border-white/10">
                   <Info size={14} className="text-intuition-primary shrink-0 mt-0.5" />
                   <p className="text-[10px] text-slate-400">You will be prompted to approve the transaction in your wallet.</p>
@@ -855,47 +934,47 @@ const CreateSignal: React.FC = () => {
                 </button>
                 <span className="text-[9px] text-[#a855f7] uppercase tracking-[0.4em] font-black">CREATE CLAIM</span>
               </div>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-3">Create claim</h1>
-              <p className="text-[11px] font-black text-slate-400 text-center mb-8 max-w-lg mx-auto leading-relaxed">
+              <h1 className="text-2xl md:text-3xl font-bold text-white text-center mb-3">Create claim</h1>
+              <p className="text-base text-slate-200 text-center mb-8 max-w-lg mx-auto leading-relaxed font-medium">
                 Claim anything about anything. Claims in Intuition (also called triples) are structured as a semantic triple — like a sentence. For example:{' '}
                 <span className="text-intuition-primary font-bold">[Alice]</span>{' '}
-                <span className="text-white/90 font-bold">[is]</span>{' '}
+                <span className="text-white font-bold">[is]</span>{' '}
                 <span className="text-intuition-primary font-bold">[trustworthy]</span>.
               </p>
               <div className="w-full max-w-2xl mx-auto space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {(['subject', 'predicate', 'object'] as const).map((role) => (
-                    <div key={role} className="border-2 border-dashed border-intuition-primary/30 p-6 flex flex-col items-center justify-center min-h-[120px] relative bg-white/[0.02] hover:border-intuition-primary/50 transition-colors">
-                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">{role === 'subject' ? 'Subject' : role === 'predicate' ? 'Predicate' : 'Object'}</div>
+                    <div key={role} className="rounded-2xl border-2 border-dashed border-intuition-primary/30 p-6 flex flex-col items-center justify-center min-h-[120px] relative bg-white/[0.03] hover:border-intuition-primary/50 hover:bg-white/[0.05] transition-all">
+                      <div className="text-sm font-bold text-white uppercase tracking-wide mb-3">{role === 'subject' ? 'Subject' : role === 'predicate' ? 'Predicate' : 'Object'}</div>
                       {role === 'subject' && subjectId ? (
                         <div className="text-center">
-                          <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full" title={subjectId}>{subjectLabel || subjectId.slice(0, 12)}…</div>
-                          <button type="button" onClick={() => { setSubjectId(''); setSubjectLabel(''); }} className="text-slate-500 text-[8px] mt-1">clear</button>
+                          <div className="text-white font-semibold text-sm truncate max-w-full" title={subjectId}>{subjectLabel || subjectId.slice(0, 12)}…</div>
+                          <button type="button" onClick={() => { setSubjectId(''); setSubjectLabel(''); }} className="text-slate-300 text-xs font-medium mt-2 hover:text-white underline underline-offset-2">Clear</button>
                         </div>
                       ) : null}
                       {role === 'predicate' && predicateId ? (
                         <div className="text-center">
-                          <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full">{predicateLabel || predicateId.slice(0, 12)}…</div>
-                          <button type="button" onClick={() => { setPredicateId(''); setPredicateLabel(''); }} className="text-slate-500 text-[8px] mt-1">clear</button>
+                          <div className="text-white font-semibold text-sm truncate max-w-full">{predicateLabel || predicateId.slice(0, 12)}…</div>
+                          <button type="button" onClick={() => { setPredicateId(''); setPredicateLabel(''); }} className="text-slate-300 text-xs font-medium mt-2 hover:text-white underline underline-offset-2">Clear</button>
                         </div>
                       ) : null}
                       {role === 'object' && objectId ? (
                         <div className="text-center">
-                          <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full">{objectLabel || objectId.slice(0, 12)}…</div>
-                          <button type="button" onClick={() => { setObjectId(''); setObjectLabel(''); }} className="text-slate-500 text-[8px] mt-1">clear</button>
+                          <div className="text-white font-semibold text-sm truncate max-w-full">{objectLabel || objectId.slice(0, 12)}…</div>
+                          <button type="button" onClick={() => { setObjectId(''); setObjectLabel(''); }} className="text-slate-300 text-xs font-medium mt-2 hover:text-white underline underline-offset-2">Clear</button>
                         </div>
                       ) : null}
                       {((role === 'subject' && !subjectId) || (role === 'predicate' && !predicateId) || (role === 'object' && !objectId)) && (
-                        <button type="button" onClick={() => setNodeSearchOpen(role)} className="flex flex-col items-center gap-2 text-slate-400 hover:text-intuition-primary transition-colors group/btn">
-                          <Search size={24} className="group-hover/btn:text-glow-blue" />
-                          <span className="text-[9px] font-black uppercase text-intuition-primary/90 group-hover/btn:text-intuition-primary">Connect node</span>
+                        <button type="button" onClick={() => setNodeSearchOpen(role)} className="flex flex-col items-center gap-2 text-white hover:text-intuition-primary transition-colors group/btn">
+                          <Search size={28} className="text-intuition-primary" />
+                          <span className="text-sm font-bold uppercase">Connect node</span>
                         </button>
                       )}
                     </div>
                   ))}
                 </div>
                 {nodeSearchOpen && (
-                  <div className="border-2 border-intuition-primary/20 bg-black/40 p-4 space-y-3">
+                  <div className="rounded-2xl border-2 border-intuition-primary/20 bg-black/60 p-5 space-y-4">
                     <div className="flex gap-2">
                       <input
                         ref={nodeSearchInputRef}
@@ -903,7 +982,7 @@ const CreateSignal: React.FC = () => {
                         onChange={(e) => { setNodeSearchQuery(e.target.value); setNodeSearchError(null); }}
                         onKeyDown={(e) => e.key === 'Enter' && runNodeSearch()}
                         placeholder="Search by label or term id..."
-                        className="flex-1 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono focus:border-intuition-primary outline-none placeholder-slate-600"
+                        className="flex-1 rounded-xl bg-black/80 border-2 border-white/15 py-2.5 px-4 text-sm text-white font-medium focus:border-intuition-primary focus:ring-2 focus:ring-intuition-primary/30 outline-none placeholder-slate-500"
                         autoComplete="off"
                         aria-label="Search atoms by label or term id"
                       />
@@ -913,12 +992,26 @@ const CreateSignal: React.FC = () => {
                       <button type="button" onClick={() => { setNodeSearchOpen(null); setNodeSearchResults([]); setNodeSearchError(null); }} className="px-4 py-2 border border-white/20 text-slate-500 text-[10px]">Cancel</button>
                     </div>
                     {nodeSearchError && <p className="text-[10px] text-red-400">{nodeSearchError}</p>}
-                    <div className="max-h-40 overflow-auto space-y-1">
+                    <div className="max-h-64 overflow-auto space-y-2">
                       {nodeSearching && <p className="text-[10px] text-slate-500 py-2">Searching the network…</p>}
                       {!nodeSearching && nodeSearchResults.map((a: any) => (
-                        <button key={a.id} type="button" onClick={() => pickNode(nodeSearchOpen!, a.id, a.label)} className="w-full text-left py-2 px-3 bg-white/5 hover:bg-white/10 text-[10px] font-mono flex justify-between">
-                          <span className="truncate">{a.label || a.id}</span>
-                          <span className="text-slate-500 truncate ml-2 max-w-[80px]">{String(a.id).slice(0, 10)}…</span>
+                        <button key={a.id} type="button" onClick={() => pickNode(nodeSearchOpen!, a.id, a.label)} className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 hover:border-intuition-primary/40 flex items-center gap-3 transition-all">
+                          <div className="shrink-0 w-10 h-10 rounded-xl bg-white/10 overflow-hidden flex items-center justify-center">
+                            {a.image ? (
+                              <img src={a.image} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-lg font-black text-intuition-primary/60">{String(a.label || '?')[0]}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm text-white truncate">{a.label || a.id}</div>
+                            <div className="text-xs text-slate-400 font-mono truncate">{String(a.id).slice(0, 14)}…</div>
+                            {a.description && <div className="text-[11px] text-slate-500 truncate mt-0.5">{a.description}</div>}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-xs font-semibold text-intuition-primary">{formatMarketValue(a.marketCap || '0')} {CURRENCY_SYMBOL}</div>
+                            {a.positionCount != null && a.positionCount > 0 && <div className="text-[10px] text-slate-500">{a.positionCount} positions</div>}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -945,13 +1038,14 @@ const CreateSignal: React.FC = () => {
                     </div>
                   </div>
                 )}
-                <div className="flex flex-wrap items-center justify-between sm:justify-start gap-4 pt-2 border-t border-white/10">
+                  <div className="flex flex-wrap items-center justify-between sm:justify-start gap-4 pt-4 border-t border-white/10">
                   <div className="flex items-baseline gap-2">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] shrink-0">Initial deposit</label>
-                    <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-24 bg-black border-2 border-white/15 py-2.5 px-3 text-sm text-white font-mono outline-none focus:border-intuition-primary" />
+                    <label className="text-sm font-bold text-white shrink-0">Initial deposit</label>
+                    <input type="number" min={minClaimDeposit} step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} placeholder={minClaimDeposit} className="w-24 rounded-xl bg-black/80 border-2 border-white/15 py-2.5 px-3 text-sm text-white font-medium outline-none focus:border-intuition-primary" />
                     <span className="ml-1"><CurrencySymbol size="md" className="text-intuition-primary/90" /></span>
+                    <span className="text-xs text-slate-500">(min {minClaimDeposit})</span>
                   </div>
-                  <button type="button" onClick={() => { playClick(); setView('claim_review'); }} disabled={!subjectId || !predicateId || !objectId} className="py-3 px-8 bg-[#a855f7] border-2 border-[#a855f7] text-white font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white hover:text-[#a855f7] hover:shadow-[0_0_32px_rgba(168,85,247,0.5)] transition-all shadow-[0_0_20px_rgba(168,85,247,0.25)]">
+                  <button type="button" onClick={() => { playClick(); setView('claim_review'); }} disabled={!subjectId || !predicateId || !objectId} className="py-3 px-8 rounded-xl bg-[#a855f7] border-2 border-[#a855f7] text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white hover:text-[#a855f7] transition-all">
                     Review
                   </button>
                 </div>
@@ -966,21 +1060,27 @@ const CreateSignal: React.FC = () => {
             <div className="w-full max-w-2xl mx-auto animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               <div className="flex items-center justify-between w-full mb-8">
-                <button type="button" onClick={() => { playClick(); setView('claim'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-600 text-slate-300 hover:border-[#a855f7] hover:text-[#a855f7] font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
+                <button type="button" onClick={() => { playClick(); setView('claim'); }} onMouseEnter={playHover} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-slate-600 text-slate-300 hover:border-[#a855f7] hover:text-[#a855f7] font-semibold text-sm transition-all duration-200 z-10">
                   <ArrowLeft size={14} /> Back
                 </button>
                 <span className="text-[9px] text-[#a855f7] uppercase tracking-[0.4em] font-black">CREATE CLAIM</span>
               </div>
               <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Review & confirm</h1>
               <div className="w-full max-w-md mx-auto space-y-5 text-left">
-                <div className="border-2 border-[#a855f7]/50 p-4 bg-[#050505] shadow-[0_0_24px_rgba(168,85,247,0.2)]">
-                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Claim (triple)</div>
+                <div className="rounded-2xl border-2 border-[#a855f7]/50 p-5 bg-[#050505] shadow-[0_0_24px_rgba(168,85,247,0.2)]">
+                  <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide mb-2">Claim (triple)</div>
                   <div className="text-white font-mono text-[10px]">[{subjectLabel || subjectId?.slice(0, 10)}…] [{predicateLabel || predicateId?.slice(0, 10)}…] [{objectLabel || objectId?.slice(0, 10)}…]</div>
                   <div className="text-[10px] text-slate-400 mt-1 inline-flex items-baseline gap-1">Initial deposit: {synapseDeposit || '0'} <CurrencySymbol size="sm" /></div>
                 </div>
+                {tripleFee != null && (
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-slate-400">Proxy fee</span>
+                    <span className="text-[#a855f7] font-mono inline-flex items-baseline gap-1">{tripleFee} <CurrencySymbol size="md" className="text-[#a855f7]/90" /></span>
+                  </div>
+                )}
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-400">Total cost</span>
-                  <span className="text-white font-mono inline-flex items-baseline gap-1">{synapseDeposit || '0'} <CurrencySymbol size="md" className="text-white/90" /></span>
+                  <span className="text-white font-mono inline-flex items-baseline gap-1">{totalClaimCost ?? (synapseDeposit || '0')} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
                 <div className="flex justify-between text-[10px]">
                   <span className="text-slate-400">Available balance</span>
@@ -988,7 +1088,7 @@ const CreateSignal: React.FC = () => {
                 </div>
                 <div className="flex items-start gap-2 p-3 bg-white/5 border-2 border-white/10">
                   <Info size={14} className="text-[#a855f7] shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-slate-400">You will be prompted to approve the transaction in your wallet.</p>
+                  <p className="text-[10px] text-slate-400">You will be prompted to approve the transaction in your wallet. The total includes the proxy fee (creation cost).</p>
                 </div>
                 {claimReviewApproved === false && (
                   <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded shadow-neon-gold">
@@ -1020,11 +1120,16 @@ const CreateSignal: React.FC = () => {
                 {claimReviewApproved === true && (
                   <p className="text-[10px] text-amber-400 font-black uppercase tracking-widest text-glow-gold">Protocol enabled. You can submit.</p>
                 )}
+                {parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.1') && (
+                  <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded">
+                    <p className="text-[10px] text-amber-200">Deposit below minimum. Increase to at least {minClaimDeposit} {CURRENCY_SYMBOL} to create the claim.</p>
+                  </div>
+                )}
                 <div className="flex gap-4">
-                  <button type="button" onClick={() => setView('claim')} className="flex-1 py-3 border border-intuition-primary/50 text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant hover:shadow-neon-blue transition-all">
+                  <button type="button" onClick={() => setView('claim')} className="flex-1 py-3 rounded-xl border-2 border-intuition-primary/50 text-intuition-primary font-semibold text-sm hover:bg-intuition-primary/10 transition-all">
                     Back
                   </button>
-                  <button type="button" onClick={handleSubmitClaimFromReview} disabled={creatingSynapse} className="flex-1 py-3 bg-[#a855f7] border-2 border-[#a855f7] text-white font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:bg-white hover:text-[#a855f7] hover:shadow-[0_0_32px_rgba(168,85,247,0.5)] transition-all shadow-[0_0_20px_rgba(168,85,247,0.25)]">
+                  <button type="button" onClick={handleSubmitClaimFromReview} disabled={creatingSynapse || parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.1')} className="flex-1 py-3 rounded-xl bg-[#a855f7] border-2 border-[#a855f7] text-white font-bold text-sm disabled:opacity-60 hover:bg-white hover:text-[#a855f7] transition-all">
                     {creatingSynapse ? <><Loader2 size={14} className="animate-spin inline mr-2" /> Submitting…</> : 'Submit transactions'}
                   </button>
                 </div>
@@ -1046,30 +1151,30 @@ const CreateSignal: React.FC = () => {
               <div className="w-full max-w-2xl space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {(['subject', 'predicate', 'object'] as const).map((role) => (
-                    <div key={role} className="border-2 border-dashed border-white/20 p-6 flex flex-col items-center justify-center min-h-[120px] relative">
-                      <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">{role === 'subject' ? 'SUBJECT_NODE' : role === 'predicate' ? 'PREDICATE_NODE' : 'OBJECT_NODE'}</div>
+                    <div key={role} className="rounded-2xl border-2 border-dashed border-white/30 p-6 flex flex-col items-center justify-center min-h-[120px] relative bg-white/[0.03]">
+                      <div className="text-sm font-bold text-white uppercase tracking-wide mb-3">{role === 'subject' ? 'Subject' : role === 'predicate' ? 'Predicate' : 'Object'}</div>
                       {role === 'subject' && subjectId ? (
                         <div className="text-center">
-                          <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full" title={subjectId}>{subjectLabel || subjectId.slice(0, 12)}...</div>
-                          <button type="button" onClick={() => { setSubjectId(''); setSubjectLabel(''); }} className="text-slate-500 text-[8px] mt-1">clear</button>
+                          <div className="text-white font-semibold text-sm truncate max-w-full" title={subjectId}>{subjectLabel || subjectId.slice(0, 12)}...</div>
+                          <button type="button" onClick={() => { setSubjectId(''); setSubjectLabel(''); }} className="text-slate-300 text-xs font-medium mt-2 hover:text-white underline underline-offset-2">Clear</button>
                         </div>
                       ) : null}
                       {role === 'predicate' && predicateId ? (
                         <div className="text-center">
-                          <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full">{predicateLabel || predicateId.slice(0, 12)}...</div>
-                          <button type="button" onClick={() => { setPredicateId(''); setPredicateLabel(''); }} className="text-slate-500 text-[8px] mt-1">clear</button>
+                          <div className="text-white font-semibold text-sm truncate max-w-full">{predicateLabel || predicateId.slice(0, 12)}...</div>
+                          <button type="button" onClick={() => { setPredicateId(''); setPredicateLabel(''); }} className="text-slate-300 text-xs font-medium mt-2 hover:text-white underline underline-offset-2">Clear</button>
                         </div>
                       ) : null}
                       {role === 'object' && objectId ? (
                         <div className="text-center">
-                          <div className="text-intuition-primary font-mono text-[10px] truncate max-w-full">{objectLabel || objectId.slice(0, 12)}...</div>
-                          <button type="button" onClick={() => { setObjectId(''); setObjectLabel(''); }} className="text-slate-500 text-[8px] mt-1">clear</button>
+                          <div className="text-white font-semibold text-sm truncate max-w-full">{objectLabel || objectId.slice(0, 12)}...</div>
+                          <button type="button" onClick={() => { setObjectId(''); setObjectLabel(''); }} className="text-slate-300 text-xs font-medium mt-2 hover:text-white underline underline-offset-2">Clear</button>
                         </div>
                       ) : null}
                       {((role === 'subject' && !subjectId) || (role === 'predicate' && !predicateId) || (role === 'object' && !objectId)) && (
-                        <button onClick={() => setNodeSearchOpen(role)} className="flex flex-col items-center gap-2 text-slate-500 hover:text-intuition-primary transition-colors">
-                          <Search size={24} />
-                          <span className="text-[9px] font-black uppercase">CONNECT_NODE</span>
+                        <button onClick={() => setNodeSearchOpen(role)} className="flex flex-col items-center gap-2 text-white hover:text-intuition-primary transition-colors">
+                          <Search size={28} className="text-intuition-primary" />
+                          <span className="text-sm font-bold uppercase">Connect node</span>
                         </button>
                       )}
                     </div>
@@ -1094,12 +1199,26 @@ const CreateSignal: React.FC = () => {
                       <button type="button" onClick={() => { setNodeSearchOpen(null); setNodeSearchResults([]); setNodeSearchError(null); }} className="px-4 py-2 border border-white/20 text-slate-500 text-[10px]">Cancel</button>
                     </div>
                     {nodeSearchError && <p className="text-[10px] text-red-400">{nodeSearchError}</p>}
-                    <div className="max-h-40 overflow-auto space-y-1">
+                    <div className="max-h-64 overflow-auto space-y-2">
                       {nodeSearching && <p className="text-[10px] text-slate-500 py-2">Searching the network…</p>}
                       {!nodeSearching && nodeSearchResults.map((a: any) => (
-                        <button key={a.id} type="button" onClick={() => pickNode(nodeSearchOpen!, a.id, a.label)} className="w-full text-left py-2 px-3 bg-white/5 hover:bg-white/10 text-[10px] font-mono flex justify-between">
-                          <span className="truncate">{a.label || a.id}</span>
-                          <span className="text-slate-500 truncate ml-2 max-w-[80px]">{String(a.id).slice(0, 10)}…</span>
+                        <button key={a.id} type="button" onClick={() => pickNode(nodeSearchOpen!, a.id, a.label)} className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 hover:border-intuition-primary/40 flex items-center gap-3 transition-all">
+                          <div className="shrink-0 w-10 h-10 rounded-xl bg-white/10 overflow-hidden flex items-center justify-center">
+                            {a.image ? (
+                              <img src={a.image} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-lg font-black text-intuition-primary/60">{String(a.label || '?')[0]}</span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm text-white truncate">{a.label || a.id}</div>
+                            <div className="text-xs text-slate-400 font-mono truncate">{String(a.id).slice(0, 14)}…</div>
+                            {a.description && <div className="text-[11px] text-slate-500 truncate mt-0.5">{a.description}</div>}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-xs font-semibold text-intuition-primary">{formatMarketValue(a.marketCap || '0')} {CURRENCY_SYMBOL}</div>
+                            {a.positionCount != null && a.positionCount > 0 && <div className="text-[10px] text-slate-500">{a.positionCount} positions</div>}
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -1131,8 +1250,8 @@ const CreateSignal: React.FC = () => {
                     <label className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 block">INITIAL_LIQUIDITY_INGRESS</label>
                     <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
                   </div>
-                  <div className="text-[10px] text-slate-500 inline-flex items-baseline gap-1">MIN_DEPOSIT: 0.1 <CurrencySymbol size="sm" /></div>
-                  <button onClick={handleEstablishSynapse} disabled={creatingSynapse || !subjectId || !predicateId || !objectId} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
+                  <div className="text-[10px] text-slate-500 inline-flex items-baseline gap-1">MIN_DEPOSIT: {minClaimDeposit} <CurrencySymbol size="sm" /></div>
+                  <button onClick={handleEstablishSynapse} disabled={creatingSynapse || !subjectId || !predicateId || !objectId || parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.1')} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
                     {creatingSynapse ? <Loader2 size={14} className="animate-spin inline mr-2" /> : null} ESTABLISH_SYNAPSE_LINK
                   </button>
                 </div>

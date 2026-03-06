@@ -1,15 +1,27 @@
-/** Set to true to show only the maintenance page. Toggle back to false when ready to go live. */
-export const MAINTENANCE_MODE = true;
+/** Set VITE_MAINTENANCE_MODE=true in .env.local / .env.production (or GitHub repo Variables) to show only the maintenance page. */
+export const MAINTENANCE_MODE =
+  String(import.meta.env.VITE_MAINTENANCE_MODE ?? '').toLowerCase() === 'true';
+
+/** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
+export const getGeminiApiKey = (): string => {
+  const raw = String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim();
+  if (!raw) return '';
+  const keys = raw.split(',').map(k => k.trim()).filter(Boolean);
+  if (keys.length === 0) return '';
+  return keys[Math.floor(Math.random() * keys.length)];
+};
 
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";
 /**
  * Core Intuition Graph endpoint.
- * Historically we called the Graph directly from the browser using this URL.
- * Keep it explicit so behavior is stable across environments.
+ * In dev, use /v1/graphql so Vite proxies to mainnet (avoids CORS).
+ * In production, use full URL or VITE_GRAPHQL_URL from env.
  */
-export const GRAPHQL_URL = "https://mainnet.intuition.sh/v1/graphql";
+export const GRAPHQL_URL =
+  import.meta.env.VITE_GRAPHQL_URL ||
+  (import.meta.env.DEV ? "/v1/graphql" : "https://mainnet.intuition.sh/v1/graphql");
 export const EXPLORER_URL = "https://explorer.intuition.systems";
 export const CURRENCY_SYMBOL = "₸";
 
@@ -125,7 +137,12 @@ export const FEE_PROXY_ABI = [
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
-  }
+  },
+  // Custom errors for createTriples revert decoding (0xd335ef46 and related)
+  { "type": "error", "name": "InsufficientDepositAmountToCoverFees", "inputs": [] },
+  { "type": "error", "name": "AtomDoesNotExist", "inputs": [{ "name": "atomId", "type": "bytes32" }] },
+  { "type": "error", "name": "TripleExists", "inputs": [{ "name": "s", "type": "bytes32" }, { "name": "p", "type": "bytes32" }, { "name": "o", "type": "bytes32" }] },
+  { "type": "error", "name": "MinimumDeposit", "inputs": [] }
 ] as const;
 
 export const MULTI_VAULT_ABI = [

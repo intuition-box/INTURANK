@@ -17,6 +17,7 @@ interface TransactionModalProps {
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, title, message, hash, logs = [], onClose }) => {
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const scrollYRef = useRef(0);
 
   useEffect(() => {
     const el = logContainerRef.current;
@@ -24,6 +25,32 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
       el.scrollTop = el.scrollHeight;
     }
   }, [logs]);
+
+  useEffect(() => {
+    if (isOpen) {
+      scrollYRef.current = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollYRef.current}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+    } else {
+      const y = scrollYRef.current;
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      window.scrollTo(0, y);
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -36,14 +63,15 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
   const shadowColor = isSuccess ? 'rgba(0,255,157,0.2)' : isError ? 'rgba(255,0,85,0.3)' : 'rgba(0,243,255,0.2)';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-backdrop-fade-fluid font-mono">
-      <div
-        className="relative w-full max-w-lg bg-[#020308] border shadow-[0_0_80px_rgba(0,0,0,1)] rounded-3xl overflow-hidden animate-modal-pop-fluid transition-all duration-500"
-        style={{
-          borderColor: themeColor,
-          boxShadow: `0 0 50px ${shadowColor}`,
-        }}
-      >
+    <div className="fixed inset-0 z-[100] overflow-y-auto overflow-x-hidden">
+      <div className="min-h-screen flex items-center justify-center p-4 py-8 bg-black/90 backdrop-blur-md animate-backdrop-fade-fluid font-mono">
+        <div
+          className="relative w-full max-w-lg max-h-[calc(100vh-2rem)] flex flex-col bg-[#020308] border shadow-[0_0_80px_rgba(0,0,0,1)] rounded-3xl overflow-hidden animate-modal-pop-fluid transition-all duration-500"
+          style={{
+            borderColor: themeColor,
+            boxShadow: `0 0 50px ${shadowColor}`,
+          }}
+        >
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none" />
         
         {!isProcessing && (
@@ -56,7 +84,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
           </button>
         )}
 
-        <div className="p-8 flex flex-col items-center relative z-10">
+        <div className="p-6 sm:p-8 flex flex-col items-center relative z-10 overflow-y-auto min-h-0 flex-1">
           <div className="mb-6 relative">
             {isProcessing && (
               <div className="relative flex items-center justify-center animate-tx-modal-item-in" style={{ animationDelay: '0.15s' }}>
@@ -96,7 +124,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
           {/* VERBOSE HANDSHAKE LOG */}
           <div
             ref={logContainerRef}
-            className="w-full bg-black/60 border border-white/5 p-4 mb-6 min-h-[140px] max-h-[140px] overflow-y-auto custom-scrollbar rounded-2xl flex flex-col animate-tx-modal-item-in"
+            className="w-full bg-black/60 border border-white/5 p-4 mb-4 min-h-[100px] max-h-[120px] sm:min-h-[120px] sm:max-h-[140px] overflow-y-auto custom-scrollbar rounded-2xl flex flex-col animate-tx-modal-item-in shrink-0"
             style={{ animationDelay: '0.34s' }}
           >
             <div className="flex items-center gap-2 mb-3 border-b border-white/5 pb-2">
@@ -153,7 +181,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
           )}
         </div>
         
-        <div className={`h-1.5 w-full transition-colors duration-500 ${isProcessing ? 'bg-intuition-primary animate-pulse shadow-[0_0_10px_#00f3ff]' : isSuccess ? 'bg-intuition-success shadow-[0_0_10px_#00ff9d]' : 'bg-intuition-danger shadow-[0_0_10px_#ff0055]'}`} />
+        <div className={`h-1.5 w-full shrink-0 transition-colors duration-500 ${isProcessing ? 'bg-intuition-primary animate-pulse shadow-[0_0_10px_#00f3ff]' : isSuccess ? 'bg-intuition-success shadow-[0_0_10px_#00ff9d]' : 'bg-intuition-danger shadow-[0_0_10px_#ff0055]'}`} />
+        </div>
       </div>
     </div>
   );

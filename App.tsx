@@ -105,7 +105,10 @@ const App: React.FC = () => {
           <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} /> 
           
           <Route path="/stats" element={<Stats />} />
-          <Route path="/markets" element={<Markets />} />
+          <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
+          <Route path="/markets/atoms" element={<Markets />} />
+          <Route path="/markets/triples" element={<Markets />} />
+          <Route path="/markets/lists" element={<Markets />} />
           <Route path="/markets/:id" element={<MarketDetail />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/health" element={<KPIDashboard />} />

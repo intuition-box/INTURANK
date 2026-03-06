@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { Account, Triple, Transaction } from '../types';
 import { formatEther } from 'viem';
 import { formatDisplayedShares } from '../services/analytics';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
 
 const MODEL_NAME = 'gemini-3-flash-preview';
 
@@ -18,9 +18,9 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
             
             setLoading(true);
             try {
-                const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey();
                 if (!apiKey) {
-                    setBrief('ERROR: Set VITE_GEMINI_API_KEY in .env.local for AI briefing.');
+                    setBrief('AI briefing unavailable. Set VITE_GEMINI_API_KEY in your environment.');
                     setLoading(false);
                     return;
                 }

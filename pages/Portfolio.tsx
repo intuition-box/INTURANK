@@ -1,22 +1,38 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useAccount } from 'wagmi';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartTooltip, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
+
+const EquityChartTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const p = payload[0];
+  const ts = p.payload?.timestamp;
+  const val = p.value;
+  const date = ts ? new Date(ts) : new Date();
+  return (
+    <div className="bg-black/95 border border-intuition-primary/60 px-3 py-2.5 rounded-lg shadow-[0_0_24px_rgba(0,243,255,0.25)] backdrop-blur-sm font-mono">
+      <div className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">{date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })}</div>
+      <div className="text-sm font-black text-intuition-primary tracking-tight">
+        Equity : {Number(val).toFixed(4)}
+      </div>
+    </div>
+  );
+};
 import { formatEther, getAddress } from 'viem';
-import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, getQuoteRedeem, getLocalTransactions } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds, getAccountPnlCurrent, getCurveLabel } from '../services/graphql';
-import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers, LogOut } from 'lucide-react';
+import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalancesBatch, getLocalTransactions } from '../services/web3';
+import { getUserPositions, getPortfolioPositionsWithValue, getUserHistory, getVaultsByIds, getAccountPnlCurrent, getCurveLabel, getMyCreated } from '../services/graphql';
+import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers, LogOut, Sparkles, ChevronDown } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
-import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue, safeParseUnits } from '../services/analytics';
+import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue, safeParseUnits, normalizeTermId, calculateAgentPrice } from '../services/analytics';
 import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID, DISTRUST_ATOM_ID } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { Link } from 'react-router-dom';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
-const StatCard: React.FC<{ label: string; value: string; unit: string | React.ReactNode; icon: any; trendColor?: string }> = ({ label, value, unit, icon: Icon, trendColor }) => (
+const StatCard: React.FC<{ label: string; value: string; unit: string | React.ReactNode; icon: any; trendColor?: string; isLoading?: boolean }> = ({ label, value, unit, icon: Icon, trendColor, isLoading }) => (
   <div className="relative group overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900/90 via-black to-black border border-slate-800/80 p-4 sm:p-5 md:p-6 xl:p-6 shadow-[0_18px_45px_rgba(0,0,0,0.7)] hover:border-intuition-primary/40 transition-all flex flex-col justify-between min-h-[116px] sm:min-h-[128px] xl:min-h-[140px] 2xl:min-h-[152px] min-w-0">
     <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_top_left,rgba(0,243,255,0.18),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(236,72,153,0.18),transparent_55%)]" />
     <div className="absolute top-4 right-4 xl:top-5 xl:right-5 text-slate-700 group-hover:text-slate-300 transition-colors z-10 shrink-0">
@@ -28,8 +44,17 @@ const StatCard: React.FC<{ label: string; value: string; unit: string | React.Re
         <span className="text-[10px] xl:text-xs 2xl:text-sm font-black text-slate-500 uppercase tracking-[0.2em] truncate block min-w-0">{label}</span>
       </div>
       <div className={`text-2xl sm:text-3xl md:text-4xl xl:text-4xl 2xl:text-5xl font-black font-display tracking-tight group-hover:text-intuition-primary transition-colors leading-none flex items-baseline gap-1 min-w-0 overflow-hidden ${trendColor || 'text-white'}`}>
-        {typeof unit === 'string' ? <span className="text-2xl sm:text-3xl md:text-4xl xl:text-4xl 2xl:text-5xl font-bold text-intuition-primary/90 mr-1 sm:mr-2 align-baseline shrink-0">{unit}</span> : unit}
-        <span className="tabular-nums truncate block min-w-0" title={value}>{value}</span>
+        {isLoading ? (
+          <div className="flex items-center gap-2">
+            <div className="h-8 sm:h-9 md:h-10 w-24 sm:w-28 bg-slate-800/80 rounded-lg animate-pulse" />
+            <Loader2 className="w-5 h-5 text-intuition-primary/60 animate-spin shrink-0" />
+          </div>
+        ) : (
+          <>
+            {typeof unit === 'string' ? <span className="text-2xl sm:text-3xl md:text-4xl xl:text-4xl 2xl:text-5xl font-bold text-intuition-primary/90 mr-1 sm:mr-2 align-baseline shrink-0">{unit}</span> : unit}
+            <span className="tabular-nums truncate block min-w-0" title={value}>{value}</span>
+          </>
+        )}
       </div>
     </div>
   </div>
@@ -44,20 +69,51 @@ const Portfolio: React.FC = () => {
   const [balance, setBalance] = useState('0.00');
   const [portfolioValue, setPortfolioValue] = useState('0.00');
   const [netPnL, setNetPnL] = useState(0);
+  const [balanceLoaded, setBalanceLoaded] = useState(false);
+  const [equityLoaded, setEquityLoaded] = useState(false);
+  const [pnlLoaded, setPnLLoaded] = useState(false);
   const [sentimentBias, setSentimentBias] = useState({ trust: 50, distrust: 50 }); 
   const [exposureData, setExposureData] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
-  const [sortBy, setSortBy] = useState<'value_desc' | 'value_asc' | 'oldest' | 'newest'>('value_desc');
+  const [sortBy, setSortBy] = useState<'value_desc' | 'value_asc' | 'magnitude_desc' | 'magnitude_asc' | 'oldest' | 'newest'>('value_desc');
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+  const [myCreated, setMyCreated] = useState<{ identities: any[]; claims: any[] }>({ identities: [], claims: [] });
+  const [myCreatedTab, setMyCreatedTab] = useState<'identities' | 'claims'>('identities');
+  const [myCreatedLoading, setMyCreatedLoading] = useState(false);
+  const [holdingsPage, setHoldingsPage] = useState(1);
   const isRefreshingRef = useRef(false);
+
+  const HOLDINGS_PER_PAGE = 10;
 
   const sortedPositions = useMemo(() => {
     const list = [...positions];
-    if (sortBy === 'value_desc') return list.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-    if (sortBy === 'value_asc') return list.sort((a, b) => (a.value ?? 0) - (b.value ?? 0));
-    if (sortBy === 'oldest') return list.sort((a, b) => (a.firstDepositTimestamp ?? 0) - (b.firstDepositTimestamp ?? 0));
-    if (sortBy === 'newest') return list.sort((a, b) => (b.firstDepositTimestamp ?? 0) - (a.firstDepositTimestamp ?? 0));
+    const num = (v: any) => (typeof v === 'number' && !Number.isNaN(v) ? v : 0);
+    const ts = (v: any) => (typeof v === 'number' && !Number.isNaN(v) && v > 0 ? v : 0);
+    const cmp = (a: any, b: any, primary: number) => (primary !== 0 ? primary : (a.id || '').localeCompare(b.id || ''));
+    if (sortBy === 'value_desc') return list.sort((a, b) => cmp(a, b, num(b.value) - num(a.value)));
+    if (sortBy === 'value_asc') return list.sort((a, b) => cmp(a, b, num(a.value) - num(b.value)));
+    if (sortBy === 'magnitude_desc') return list.sort((a, b) => cmp(a, b, num(b.shares) - num(a.shares)));
+    if (sortBy === 'magnitude_asc') return list.sort((a, b) => cmp(a, b, num(a.shares) - num(b.shares)));
+    if (sortBy === 'oldest' || sortBy === 'newest') {
+      return list.sort((a, b) => {
+        const ta = ts(a.firstDepositTimestamp);
+        const tb = ts(b.firstDepositTimestamp);
+        if (ta === 0 && tb === 0) return cmp(a, b, 0);
+        if (ta === 0) return 1;
+        if (tb === 0) return -1;
+        return sortBy === 'oldest' ? cmp(a, b, ta - tb) : cmp(a, b, tb - ta);
+      });
+    }
     return list;
   }, [positions, sortBy]);
+
+  const paginatedPositions = useMemo(() => {
+    const start = (holdingsPage - 1) * HOLDINGS_PER_PAGE;
+    return sortedPositions.slice(start, start + HOLDINGS_PER_PAGE);
+  }, [sortedPositions, holdingsPage]);
+
+  const totalHoldingsPages = Math.max(1, Math.ceil(sortedPositions.length / HOLDINGS_PER_PAGE));
 
   const fetchUserData = useCallback(async (address: string) => {
     if (isRefreshingRef.current) return;
@@ -65,15 +121,41 @@ const Portfolio: React.FC = () => {
     setLoading(true);
     
     try {
-      // 1. Fetch multi-source telemetry
-      const [bal, chainHistory, graphPositionsRaw, pnlSnapshot] = await Promise.all([
+      setBalanceLoaded(false);
+      setEquityLoaded(false);
+      setPnLLoaded(false);
+
+      // 1. Fetch multi-source telemetry (positions_with_value for server-sorted ledger when available)
+      const [bal, chainHistory, positionsWithValue, graphPositionsRaw, pnlSnapshot] = await Promise.all([
           getWalletBalance(address),
           getUserHistory(address),
+          getPortfolioPositionsWithValue(address).catch(() => []),
           getUserPositions(address).catch(() => []),
           getAccountPnlCurrent(address)
       ]);
 
       setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+      setBalanceLoaded(true);
+
+      let equitySetFromPnl = false;
+      let pnlSetFromPnl = false;
+      // Set equity and PnL from getAccountPnlCurrent immediately (don't wait for slow position loop)
+      if (pnlSnapshot?.equity_value) {
+        try {
+          const eq = Number(formatEther(BigInt(pnlSnapshot.equity_value)));
+          setPortfolioValue(eq.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+          setEquityLoaded(true);
+          equitySetFromPnl = true;
+        } catch { /* fallback to aggregated later */ }
+      }
+      if (pnlSnapshot?.total_pnl != null) {
+        try {
+          const totalPnl = Number(formatEther(BigInt(pnlSnapshot.total_pnl)));
+          setNetPnL(totalPnl);
+          setPnLLoaded(true);
+          pnlSetFromPnl = true;
+        } catch { /* fallback to aggregated later */ }
+      }
 
       // 2. Transmission history
       // - Prefer on-network history from Graph
@@ -92,7 +174,7 @@ const Portfolio: React.FC = () => {
       setHistory(displayHistory);
 
       const historyVaultIds = networkHistory.map(tx => tx.vaultId?.toLowerCase()).filter(Boolean);
-      const graphVaultIds = graphPositionsRaw.map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean);
+      const graphVaultIds = (positionsWithValue.length > 0 ? positionsWithValue : graphPositionsRaw).map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean);
       const candidateVaultIds = Array.from(new Set([...graphVaultIds, ...historyVaultIds])) as string[];
       
       const metadata = await getVaultsByIds(candidateVaultIds).catch(() => []);
@@ -101,8 +183,45 @@ const Portfolio: React.FC = () => {
       const activePositions: any[] = [];
       let aggregatedValue = 0;
       let aggregatedPnL = 0;
+      const DUST = 1e-8;
 
-      const DUST = 1e-8; // treat below this as zero (sold / dust) — strict so closed positions never show
+      // Use positions_with_value when available (server-sorted by theoretical_value desc, no per-position RPC calls)
+      if (positionsWithValue.length > 0) {
+        for (const p of positionsWithValue) {
+          try {
+            const rawId = p.vault?.term_id;
+            if (!rawId || typeof rawId !== 'string') continue;
+            const id = rawId.toLowerCase();
+            const meta = metadata.find((m: any) => m.id.toLowerCase() === id);
+            const rawCurve = p.vault?.curve_id ?? meta?.curveId;
+            const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
+            const sharesNum = safeParseUnits(p.shares);
+            if (!Number.isFinite(sharesNum) || sharesNum <= DUST) continue;
+            const value = p.theoretical_value != null ? Number(formatEther(BigInt(p.theoretical_value))) : 0;
+            let label = meta?.label || `Node_${id.slice(0, 8)}`;
+            let image = meta?.image;
+            let type = meta?.type || 'ATOM';
+            const triple = p.vault?.term?.triple;
+            const isCounter = triple?.counter_term_id?.toLowerCase() === id;
+            const pointsToDistrust = triple?.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
+            if (isCounter || pointsToDistrust) {
+              const subjectLabel = triple?.subject?.label || triple?.subject?.id?.slice(0, 8) || 'NODE';
+              label = `OPPOSING_${subjectLabel}`.toUpperCase();
+              image = triple?.subject?.image;
+              type = 'CLAIM';
+            }
+            const pnlPercent = p.pnl_pct != null ? Number(p.pnl_pct) : 0;
+            const profit = p.pnl != null ? Number(formatEther(BigInt(p.pnl))) : 0;
+            const depositsForVault = displayHistory.filter((t: Transaction) => normalizeTermId(t.vaultId) === normalizeTermId(id) && t.type === 'DEPOSIT' && (curveId == null || t.curveId == null || t.curveId === curveId));
+            const firstDepositTimestamp = depositsForVault.length ? Math.min(...depositsForVault.map((t: Transaction) => t.timestamp)) : Date.now();
+            aggregatedValue += value;
+            aggregatedPnL += profit;
+            const duplicate = activePositions.some((x: any) => x.id === id && (x.curveId ?? 1) === (curveId ?? 1));
+            if (!duplicate) activePositions.push({ id, curveId, shares: sharesNum, value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
+          } catch (e) { continue; }
+        }
+      } else {
+      // Fallback: positions table with batched on-chain verification (1–2 multicall RPCs instead of 2N)
       const graphWithShares = graphPositionsRaw.filter((p: any) => {
         const s = p.shares;
         if (s === undefined || s === null) return false;
@@ -110,29 +229,42 @@ const Portfolio: React.FC = () => {
         return n > DUST;
       });
 
-      // Active holdings = only what the user is currently holding (on-chain verified)
+      const batchItems = graphWithShares
+        .map((p: any) => {
+          const rawId = p.vault?.term_id;
+          if (!rawId || typeof rawId !== 'string') return null;
+          const id = rawId.toLowerCase();
+          const rawCurve = p.vault?.curve_id ?? metadata.find((m: any) => m.id.toLowerCase() === id)?.curveId;
+          const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
+          return { termId: id, curveId };
+        })
+        .filter(Boolean) as { termId: string; curveId: number }[];
+
+      const sharesMap = batchItems.length > 0 ? await getShareBalancesBatch(address, batchItems) : new Map<string, string>();
+
       for (const p of graphWithShares) {
           try {
               const rawId = p.vault?.term_id;
               if (!rawId || typeof rawId !== 'string') continue;
               const id = rawId.toLowerCase();
-              const meta = metadata.find(m => m.id.toLowerCase() === id);
-              const rawCurve = p.vault.curve_id ?? meta?.curveId;
+              const meta = metadata.find((m: any) => m.id.toLowerCase() === id);
+              const rawCurve = p.vault?.curve_id ?? meta?.curveId;
               const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
 
-              const sharesRaw = await getShareBalance(address, id, curveId);
+              const sharesRaw = sharesMap.get(`${id}:${curveId}`) ?? '0';
               const sharesNum = typeof sharesRaw === 'string' ? parseFloat(sharesRaw) : Number(sharesRaw);
               const hasBalance = Number.isFinite(sharesNum) && sharesNum > DUST;
               if (!hasBalance) continue;
 
-              const valueStr = await getQuoteRedeem(String(sharesRaw), id, address, curveId);
-              const value = parseFloat(valueStr);
+              const vault = p.vault;
+              const price = vault ? calculateAgentPrice(vault.total_assets || '0', vault.total_shares || '1', vault.current_share_price) : 0.1;
+              const value = sharesNum * price;
+              const spotPrice = price;
 
               let label = meta?.label || `Node_${id.slice(0, 8)}`;
               let image = meta?.image;
               let type = meta?.type || 'ATOM';
 
-              // Triple/Opposition Mapping
               const triple = p.vault?.term?.triple;
               const isCounter = triple?.counter_term_id?.toLowerCase() === id.toLowerCase();
               const pointsToDistrust = triple?.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
@@ -144,64 +276,80 @@ const Portfolio: React.FC = () => {
                   type = 'CLAIM';
               }
 
-              const { pnlPercent, profit } = calculatePositionPnL(sharesNum, value, networkHistory, id, curveId);
-              const depositsForVault = networkHistory.filter((t: Transaction) => t.vaultId?.toLowerCase() === id && t.type === 'DEPOSIT' && (curveId == null || t.curveId == null || t.curveId === curveId));
+              const { pnlPercent, profit } = calculatePositionPnL(sharesNum, spotPrice, networkHistory, id, curveId);
+              const depositsForVault = displayHistory.filter((t: Transaction) => normalizeTermId(t.vaultId) === normalizeTermId(id) && t.type === 'DEPOSIT' && (curveId == null || t.curveId == null || t.curveId === curveId));
               const firstDepositTimestamp = depositsForVault.length ? Math.min(...depositsForVault.map((t: Transaction) => t.timestamp)) : Date.now();
 
               aggregatedValue += value;
               aggregatedPnL += profit;
 
               const duplicate = activePositions.some((x: any) => x.id === id && (x.curveId ?? 1) === (curveId ?? 1));
-              if (!duplicate) activePositions.push({ id, curveId, shares: sharesNum, value: value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
+              if (!duplicate) activePositions.push({ id, curveId, shares: sharesNum, value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
           } catch (e) { continue; }
+      }
       }
 
       setPositions(activePositions);
       setExposureData(calculateCategoryExposure(activePositions));
 
-      if (pnlSnapshot && pnlSnapshot.equity_value) {
-        try {
-          const eq = Number(formatEther(BigInt(pnlSnapshot.equity_value)));
-          setPortfolioValue(eq.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
-        } catch {
+      // Only set equity/PNL from aggregated if not already set from pnlSnapshot
+      if (!equitySetFromPnl) {
+        if (pnlSnapshot?.equity_value) {
+          try {
+            const eq = Number(formatEther(BigInt(pnlSnapshot.equity_value)));
+            setPortfolioValue(eq.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+          } catch {
+            setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+          }
+        } else {
           setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
         }
-      } else {
-        setPortfolioValue(aggregatedValue.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+        setEquityLoaded(true);
       }
-
-      if (pnlSnapshot && pnlSnapshot.total_pnl) {
-        try {
-          const totalPnl = Number(formatEther(BigInt(pnlSnapshot.total_pnl)));
-          setNetPnL(totalPnl);
-        } catch {
+      if (!pnlSetFromPnl) {
+        if (pnlSnapshot?.total_pnl != null) {
+          try {
+            const totalPnl = Number(formatEther(BigInt(pnlSnapshot.total_pnl)));
+            setNetPnL(totalPnl);
+          } catch {
+            setNetPnL(aggregatedPnL);
+          }
+        } else {
           setNetPnL(aggregatedPnL);
         }
-      } else {
-        setNetPnL(aggregatedPnL);
+        setPnLLoaded(true);
       }
       setSentimentBias(calculateSentimentBias(displayHistory));
 
-      // 4. Build Equity Volume Temporal chart (use same history as Transmission for consistency)
+      // 4. Build Equity Volume Temporal chart (only Deposited/Redeemed change equity)
+      const depositRedeemHistory = displayHistory.filter(tx => tx.type === 'DEPOSIT' || tx.type === 'REDEEM');
       const points: { timestamp: number; val: number }[] = [{ timestamp: Date.now(), val: aggregatedValue }];
       let runner = aggregatedValue;
-      const historyForChart = displayHistory.slice(0, 100);
+      const historyForChart = depositRedeemHistory.slice(0, 100);
       for (let i = 0; i < historyForChart.length; i++) {
           const tx = historyForChart[i];
           const val = safeParseUnits(tx.assets);
           if (tx.type === 'DEPOSIT') runner -= val;
           else runner += val;
-          points.push({ timestamp: tx.timestamp, val: runner });
+          points.push({ timestamp: tx.timestamp, val: Math.max(0, runner) });
       }
       const sorted = points.reverse();
-      // Ensure at least 2 points so the area/line renders (not just a dot)
+      // Ensure at least 2 points with visible spread so the chart renders
       if (sorted.length === 1) {
+          const v = sorted[0].val;
           sorted.unshift({
-              timestamp: sorted[0].timestamp - 24 * 60 * 60 * 1000,
-              val: Math.max(0, sorted[0].val - 0.01),
+              timestamp: sorted[0].timestamp - 30 * 24 * 60 * 60 * 1000,
+              val: Math.max(0, v * 0.1),
           });
       }
-      setChartData(sorted);
+      // Ensure domain has range (flat line with 0 spread can cause empty render)
+      const vals = sorted.map(p => p.val);
+      const minVal = Math.min(...vals);
+      const maxVal = Math.max(...vals);
+      if (minVal === maxVal && maxVal > 0) {
+          sorted.unshift({ ...sorted[0], timestamp: sorted[0].timestamp - 7 * 24 * 60 * 60 * 1000, val: maxVal * 0.5 });
+      }
+      setChartData(sorted.sort((a, b) => a.timestamp - b.timestamp));
 
     } catch (e) {
       console.error("PORTFOLIO_SYNC_FAILURE", e);
@@ -219,8 +367,15 @@ const Portfolio: React.FC = () => {
     } else {
       setAccount(null);
       setLoading(false);
+      setBalanceLoaded(false);
+      setEquityLoaded(false);
+      setPnLLoaded(false);
     }
   }, [wagmiAddress]); // eslint-disable-line react-hooks/exhaustive-deps -- fetchUserData is stable enough
+
+  useEffect(() => {
+    setHoldingsPage(1);
+  }, [positions.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -233,6 +388,46 @@ const Portfolio: React.FC = () => {
       window.removeEventListener('local-tx-updated', handleUpdate);
     };
   }, [account]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!account) {
+      setMyCreated({ identities: [], claims: [] });
+      return;
+    }
+    let mounted = true;
+    setMyCreatedLoading(true);
+    getMyCreated(account)
+      .then((data) => { if (mounted) setMyCreated(data); })
+      .catch(() => { if (mounted) setMyCreated({ identities: [], claims: [] }); })
+      .finally(() => { if (mounted) setMyCreatedLoading(false); });
+    return () => { mounted = false; };
+  }, [account]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const getSortLabel = (opt: typeof sortBy) => {
+    const labels: Record<typeof sortBy, string> = {
+      value_desc: 'Value: Largest → Lowest',
+      value_asc: 'Value: Lowest → Largest',
+      magnitude_desc: 'Magnitude: Largest → Lowest',
+      magnitude_asc: 'Magnitude: Lowest → Largest',
+      newest: 'Newest first',
+      oldest: 'Oldest first',
+    };
+    return labels[opt];
+  };
+
+  const toggleSort = (opt: typeof sortBy) => {
+    setSortBy(opt);
+    setSortOpen(false);
+    playClick();
+  };
 
   if (!account) return (
     <div className="min-h-[90vh] flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-mono px-4">
@@ -265,9 +460,9 @@ const Portfolio: React.FC = () => {
     <div className="w-full min-w-0 max-w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 pt-8 sm:pt-10 pb-16 sm:pb-20 font-mono overflow-x-hidden">
       <div className="w-full max-w-full mx-auto mb-8 sm:mb-10 rounded-[2rem] sm:rounded-[2.5rem] bg-gradient-to-br from-slate-950 via-[#020818] to-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-slate-900/60 px-4 sm:px-6 md:px-8 xl:px-10 py-6 sm:py-8 md:py-10 min-w-0">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6 xl:gap-8">
-        <StatCard label="Wallet Balance" value={balance} unit={<CurrencySymbol size="2xl" leading />} icon={Wallet} />
-        <StatCard label="Total Equity" value={portfolioValue} unit={<CurrencySymbol size="2xl" leading />} icon={Coins} />
-        <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit={<CurrencySymbol size="2xl" leading />} icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} />
+        <StatCard label="Wallet Balance" value={balance} unit={<CurrencySymbol size="2xl" leading />} icon={Wallet} isLoading={loading && !balanceLoaded} />
+        <StatCard label="Total Equity" value={portfolioValue} unit={<CurrencySymbol size="2xl" leading />} icon={Coins} isLoading={loading && !equityLoaded} />
+        <StatCard label="Net PnL" value={`${netPnL > 0 ? '+' : ''}${netPnL.toFixed(4)}`} unit={<CurrencySymbol size="2xl" leading />} icon={TrendingUp} trendColor={netPnL >= 0 ? 'text-intuition-success' : 'text-intuition-danger'} isLoading={loading && !pnlLoaded} />
         <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900/90 via-black to-black border border-slate-800/80 p-4 sm:p-5 md:p-6 flex flex-col justify-between min-h-[116px] sm:min-h-[128px] xl:min-h-[140px] group hover:border-intuition-primary/40 transition-all min-w-0">
           <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.16),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(248,113,113,0.18),transparent_55%)]" />
           <div className="flex items-center justify-between relative z-10 min-w-0 gap-2">
@@ -300,31 +495,58 @@ const Portfolio: React.FC = () => {
       </div>
 
       <div className="w-full max-w-full mx-auto grid grid-cols-1 gap-6 sm:gap-8 lg:gap-10 min-w-0">
-        {/* Row 1: Ledger beside Equity Vol + Asset Exposure */}
+        {/* Row 1: Ledger + Transmission History (left) beside Equity Vol + Asset Exposure (right) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-10 min-w-0">
+        {/* Left column: Active Holdings + Transmission History stacked */}
+        <div className="lg:col-span-7 xl:col-span-8 w-full min-w-0 space-y-6 sm:space-y-8 flex flex-col">
         {/* Active Holdings Ledger */}
-        <div className="lg:col-span-7 xl:col-span-8 w-full min-w-0 overflow-hidden">
+        <div className="w-full min-w-0 overflow-hidden">
           <div className="bg-black border border-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden">
-            <div className="px-4 sm:px-5 md:px-6 xl:px-8 py-4 sm:py-5 md:py-6 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                <Zap className="w-5 h-5 sm:w-6 sm:h-6 xl:w-7 xl:h-7 text-intuition-primary animate-pulse shrink-0" />
-                <h3 className="text-xs sm:text-sm md:text-base xl:text-lg font-black text-white font-display uppercase tracking-widest break-words min-w-0">Active_Holdings_Ledger</h3>
+            <div className="px-4 sm:px-5 md:px-6 xl:px-8 py-4 sm:py-5 md:py-6 border-b border-slate-900 bg-white/[0.03] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0 shrink">
+                <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-intuition-primary/10 border border-intuition-primary/20 shrink-0">
+                  <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-intuition-primary" strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-white font-display uppercase tracking-[0.2em] whitespace-nowrap overflow-hidden text-ellipsis">Active Holdings Ledger</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-medium tracking-wider mt-0.5 hidden sm:block">Verified on Intuition Mainnet</p>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                <span className="text-xs font-black text-slate-600 uppercase tracking-widest mr-2">Sort:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => { playClick(); setSortBy(e.target.value as any); }}
-                  onMouseEnter={playHover}
-                  className="bg-black border border-slate-700 text-slate-300 font-mono text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-full focus:border-intuition-primary outline-none"
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2" ref={sortRef}>
+                  <span className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider shrink-0">Sort</span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => { setSortOpen(!sortOpen); playClick(); }}
+                      onMouseEnter={playHover}
+                      className="flex items-center justify-between gap-3 bg-slate-900/80 border border-slate-700/80 text-slate-200 font-mono text-[11px] sm:text-xs font-semibold uppercase tracking-wider pl-3 pr-8 py-2 rounded-lg hover:border-slate-600 focus:border-intuition-primary/50 focus:ring-1 focus:ring-intuition-primary/30 outline-none cursor-pointer transition-colors min-w-[180px] sm:min-w-[200px] text-left"
+                    >
+                      <span className="truncate">{getSortLabel(sortBy)}</span>
+                      <ChevronDown className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${sortOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {sortOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1 py-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-[100] max-h-[280px] overflow-y-auto">
+                        {(['value_desc', 'value_asc', 'magnitude_desc', 'magnitude_asc', 'newest', 'oldest'] as const).map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => toggleSort(opt)}
+                            onMouseEnter={playHover}
+                            className={`w-full px-4 py-2.5 text-left text-[11px] font-mono font-semibold uppercase tracking-wider transition-colors ${sortBy === opt ? 'bg-intuition-primary/20 text-intuition-primary' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                          >
+                            {getSortLabel(opt)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => account && fetchUserData(account)}
+                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-slate-700/80 bg-slate-900/50 text-slate-400 hover:text-white hover:border-slate-600 hover:bg-slate-800/50 transition-all shrink-0"
+                  title="Refresh"
                 >
-                  <option value="value_desc">Largest → Lowest</option>
-                  <option value="value_asc">Lowest → Largest</option>
-                  <option value="newest">Newest first</option>
-                  <option value="oldest">Oldest first</option>
-                </select>
-                <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest hidden sm:inline">Verified_On_Intuition_Mainnet</span>
-                <button onClick={() => account && fetchUserData(account)} className="text-slate-500 hover:text-white transition-colors p-1">
                   <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -352,7 +574,7 @@ const Portfolio: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {sortedPositions.length > 0 ? sortedPositions.map((pos) => {
+                  {sortedPositions.length > 0 ? paginatedPositions.map((pos) => {
                     const isOpposition = pos.atom.label.includes('OPPOSING');
                     return (
                       <tr key={`${pos.id}-${pos.curveId ?? 1}`} className="hover:bg-white/5 transition-all group">
@@ -415,7 +637,69 @@ const Portfolio: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            {sortedPositions.length > HOLDINGS_PER_PAGE && (
+              <div className="px-4 sm:px-5 md:px-6 xl:px-8 py-4 border-t border-slate-900 flex flex-wrap items-center justify-between gap-4">
+                <div className="text-[10px] sm:text-xs font-mono text-slate-500 uppercase tracking-widest">
+                  Page {holdingsPage} of {totalHoldingsPages} · {sortedPositions.length} total
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setHoldingsPage((p) => Math.max(1, p - 1)); playClick(); }}
+                    disabled={holdingsPage <= 1}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 border border-slate-700 text-slate-400 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-lg hover:bg-slate-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-all"
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setHoldingsPage((p) => Math.min(totalHoldingsPages, p + 1)); playClick(); }}
+                    disabled={holdingsPage >= totalHoldingsPages}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 border border-slate-700 text-slate-400 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-lg hover:bg-slate-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-all"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+        </div>
+
+        {/* Transmission History (directly under Active Holdings) */}
+        <div className="w-full min-w-0 space-y-3 sm:space-y-4">
+          <h3 className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-[0.35em] mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-intuition-secondary shrink-0" /> Transmission_History
+          </h3>
+          <div className="space-y-2 sm:space-y-3 max-h-[360px] sm:max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+            {history.map((tx, idx) => (
+              <div key={tx.id + idx} className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-4 sm:p-5 bg-white/5 border border-white/5 rounded-xl sm:rounded-2xl group hover:border-white/10 transition-all min-w-0">
+                <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                  <div className={`w-1 sm:w-1.5 h-8 sm:h-10 shrink-0 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'} rounded-full`}></div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[10px] sm:text-xs font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
+                      <span className="text-white font-black text-xs sm:text-sm uppercase truncate max-w-[140px] sm:max-w-none" title={tx.assetLabel}>{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
+                    </div>
+                    <div className="text-[10px] sm:text-xs text-slate-600 font-mono mt-0.5 truncate">TX: {tx.id.slice(0, 20)}...</div>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-white font-black text-sm sm:text-base">{(() => {
+                    try {
+                      return safeParseUnits(tx.assets).toFixed(4);
+                    } catch { return '0.0000'; }
+                  })()} <CurrencySymbol size="md" /></div>
+                  <div className="text-[10px] sm:text-xs text-slate-600 font-mono uppercase mt-0.5">{new Date(tx.timestamp).toLocaleString()}</div>
+                </div>
+              </div>
+            ))}
+            {history.length === 0 && (
+              <div className="text-center py-20 text-slate-600 uppercase font-black tracking-widest text-xs sm:text-sm">
+                AWAITING_INGRESS_SIGNALS...
+              </div>
+            )}
+          </div>
+        </div>
         </div>
 
         {/* Sidebar: Equity Vol + Asset Exposure (beside ledger) */}
@@ -440,39 +724,58 @@ const Portfolio: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 w-full min-h-[200px] sm:min-h-[240px] xl:min-h-[260px] relative z-10 py-1 sm:py-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 8, right: 48, left: 8, bottom: 8 }}>
+                <div className="w-full h-[260px] min-h-[220px] relative z-10 rounded-xl overflow-hidden bg-black/60 border border-slate-800/80" style={{ boxShadow: 'inset 0 0 80px rgba(0,243,255,0.04), 0 0 40px rgba(0,0,0,0.4)' }}>
+                    <ResponsiveContainer width="100%" height={260} debounce={50}>
+                        <ComposedChart
+                            data={(() => {
+                                const raw = chartData.length >= 2 ? chartData : [
+                                    { timestamp: Date.now() - 86400000, val: 0 },
+                                    { timestamp: Date.now(), val: parseFloat(String(portfolioValue).replace(/,/g, '')) || 0 }
+                                ];
+                                return raw.map(p => ({ ...p, val: Number(p.val) }));
+                            })()}
+                            margin={{ top: 12, right: 52, left: 12, bottom: 12 }}
+                        >
                             <defs>
-                                <linearGradient id="temporalGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.05}/>
-                                    <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
+                                <linearGradient id="equity-temporal-grad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#00f3ff" stopOpacity={0.5}/>
+                                    <stop offset="40%" stopColor="#00f3ff" stopOpacity={0.12}/>
+                                    <stop offset="100%" stopColor="#00f3ff" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 6" stroke="#ffffff08" vertical={true} horizontal={true} />
+                            <CartesianGrid strokeDasharray="2 4" stroke="rgba(0,243,255,0.06)" vertical={false} horizontal={true} />
                             <XAxis dataKey="timestamp" hide />
                             <YAxis 
                                 orientation="right" 
-                                stroke="#475569" 
-                                width={44}
-                                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
+                                stroke="transparent" 
+                                width={48}
+                                tick={{ fill: 'rgba(0,243,255,0.7)', fontSize: 11, fontFamily: 'ui-monospace, monospace', fontWeight: 600 }}
                                 tickLine={false} 
                                 axisLine={false} 
-                                domain={['auto', 'auto']}
-                                tickFormatter={(v) => Number(v).toFixed(0)}
+                                domain={[0, 'dataMax + 1']}
+                                tickFormatter={(v) => Number(v).toFixed(1)}
                             />
-                            <RechartTooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
+                            <RechartTooltip content={<EquityChartTooltip />} cursor={{ stroke: 'rgba(0,243,255,0.6)', strokeWidth: 1 }} />
                             <Area 
-                                type="stepAfter" 
+                                type="monotone" 
                                 dataKey="val" 
-                                stroke="#00f3ff" 
-                                strokeWidth={2} 
-                                fill="url(#temporalGrad)" 
+                                fill="url(#equity-temporal-grad)" 
+                                stroke="none"
                                 isAnimationActive={true} 
                                 animationDuration={1000}
-                                activeDot={{ r: 4, fill: '#00f3ff', strokeWidth: 0 }}
+                                baseValue={0}
                             />
-                        </AreaChart>
+                            <Line 
+                                type="monotone" 
+                                dataKey="val" 
+                                stroke="#00f3ff" 
+                                strokeWidth={2.5}
+                                dot={false}
+                                activeDot={{ r: 6, fill: '#00f3ff', stroke: 'rgba(0,243,255,0.5)', strokeWidth: 2 }}
+                                isAnimationActive={true}
+                                animationDuration={1000}
+                            />
+                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
 
@@ -535,43 +838,98 @@ const Portfolio: React.FC = () => {
                     </div>
                 </div>
             </div>
-        </div>
-        </div>
 
-        {/* Row 2: Transmission History (full width) */}
-        <div className="w-full min-w-0 space-y-3 sm:space-y-4">
-          <h3 className="text-xs sm:text-sm md:text-base font-black text-white uppercase tracking-[0.35em] mb-4 sm:mb-6 flex items-center gap-2 sm:gap-3">
-            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-intuition-secondary shrink-0" /> Transmission_History
-          </h3>
-          <div className="space-y-2 sm:space-y-3 max-h-[360px] sm:max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-            {history.map((tx, idx) => (
-              <div key={tx.id + idx} className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 p-4 sm:p-5 bg-white/5 border border-white/5 rounded-xl sm:rounded-2xl group hover:border-white/10 transition-all min-w-0">
-                <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
-                  <div className={`w-1 sm:w-1.5 h-8 sm:h-10 shrink-0 ${tx.type === 'DEPOSIT' ? 'bg-intuition-success shadow-glow-success' : 'bg-intuition-danger shadow-glow-red'} rounded-full`}></div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] sm:text-xs font-black uppercase ${tx.type === 'DEPOSIT' ? 'text-intuition-success' : 'text-intuition-danger'}`}>{tx.type === 'DEPOSIT' ? 'ACQUIRE' : 'LIQUIDATE'}</span>
-                      <span className="text-white font-black text-xs sm:text-sm uppercase truncate max-w-[140px] sm:max-w-none" title={tx.assetLabel}>{tx.assetLabel || 'UNIDENTIFIED_NODE'}</span>
-                    </div>
-                    <div className="text-[10px] sm:text-xs text-slate-600 font-mono mt-0.5 truncate">TX: {tx.id.slice(0, 20)}...</div>
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-white font-black text-sm sm:text-base">{(() => {
-                    try {
-                      return safeParseUnits(tx.assets).toFixed(4);
-                    } catch { return '0.0000'; }
-                  })()} <CurrencySymbol size="md" /></div>
-                  <div className="text-[10px] sm:text-xs text-slate-600 font-mono uppercase mt-0.5">{new Date(tx.timestamp).toLocaleString()}</div>
+            {/* My Created: identities and claims created by the user (sidebar) */}
+            <div className="bg-black border border-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl flex flex-col relative overflow-hidden group hover:border-intuition-primary/20 transition-all shadow-2xl min-h-0">
+              <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4">
+                <h4 className="text-[10px] sm:text-xs font-black text-white uppercase tracking-[0.35em] flex items-center gap-2 shrink-0">
+                  <Sparkles className="w-4 h-4 text-intuition-primary" /> My_Created
+                </h4>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => { playClick(); setMyCreatedTab('identities'); }}
+                    onMouseEnter={playHover}
+                    className={`px-3 py-1.5 rounded-full font-black text-[10px] uppercase tracking-wider transition-all ${myCreatedTab === 'identities' ? 'bg-intuition-primary text-black' : 'bg-white/5 border border-white/10 text-slate-500 hover:text-white hover:border-intuition-primary/40'}`}
+                  >
+                    Identities
+                  </button>
+                  <button
+                    onClick={() => { playClick(); setMyCreatedTab('claims'); }}
+                    onMouseEnter={playHover}
+                    className={`px-3 py-1.5 rounded-full font-black text-[10px] uppercase tracking-wider transition-all ${myCreatedTab === 'claims' ? 'bg-intuition-primary text-black' : 'bg-white/5 border border-white/10 text-slate-500 hover:text-white hover:border-intuition-primary/40'}`}
+                  >
+                    Claims
+                  </button>
                 </div>
               </div>
-            ))}
-            {history.length === 0 && (
-              <div className="text-center py-20 text-slate-600 uppercase font-black tracking-widest text-xs sm:text-sm">
-                AWAITING_INGRESS_SIGNALS...
-              </div>
-            )}
-          </div>
+              {myCreatedLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 flex-1 min-h-[180px]">
+                  <Loader2 size={22} className="animate-spin text-intuition-primary" />
+                  <span className="text-slate-500 font-black uppercase tracking-widest text-[10px]">SYNC...</span>
+                </div>
+              ) : (
+                <div className="space-y-2 overflow-y-auto max-h-[240px] sm:max-h-[280px] custom-scrollbar pr-1 flex-1 min-h-0">
+                  {myCreatedTab === 'identities' ? (
+                    myCreated.identities.length > 0 ? (
+                      myCreated.identities.map((item) => (
+                        <Link
+                          key={item.id}
+                          to={`/markets/${item.id}`}
+                          onClick={() => playClick()}
+                          onMouseEnter={playHover}
+                          className="flex items-center justify-between gap-2 p-3 bg-white/5 border border-white/5 rounded-xl hover:border-intuition-primary/40 transition-all group"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-8 h-8 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center overflow-hidden shrink-0 group-hover:border-intuition-primary transition-all">
+                              {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : <User className="w-4 h-4 text-slate-700" />}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-black text-white text-xs truncate group-hover:text-intuition-primary transition-colors">{item.label}</div>
+                              <div className="text-[9px] text-slate-600 font-bold uppercase">{item.type}</div>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-intuition-primary font-black text-xs">{item.marketCap?.toFixed(2) ?? '0.00'} <CurrencySymbol size="sm" /></div>
+                            <div className="text-[9px] text-slate-600 font-bold">{item.positionCount ?? 0} pos</div>
+                          </div>
+                        </Link>
+                      ))
+                    ) : (
+                      <div className="text-center py-12 text-slate-600 uppercase font-black tracking-widest text-[10px]">NO_IDENTITIES_YET</div>
+                    )
+                  ) : (
+                    myCreated.claims.length > 0 ? (
+                      myCreated.claims.map((item) => (
+                        <Link
+                          key={item.id}
+                          to={`/markets/${item.id}`}
+                          onClick={() => playClick()}
+                          onMouseEnter={playHover}
+                          className="flex items-center justify-between gap-2 p-3 bg-white/5 border border-white/5 rounded-xl hover:border-intuition-primary/40 transition-all group"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-8 h-8 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center overflow-hidden shrink-0 group-hover:border-intuition-primary transition-all">
+                              {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : <Globe className="w-4 h-4 text-slate-700" />}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-black text-white text-xs truncate group-hover:text-intuition-primary transition-colors">{item.label}</div>
+                              <div className="text-[9px] text-slate-600 font-bold uppercase">CLAIM</div>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-intuition-primary font-black text-xs">{item.marketCap?.toFixed(2) ?? '0.00'} <CurrencySymbol size="sm" /></div>
+                            <div className="text-[9px] text-slate-600 font-bold">{item.positionCount ?? 0} pos</div>
+                          </div>
+                        </Link>
+                      ))
+                    ) : (
+                      <div className="text-center py-12 text-slate-600 uppercase font-black tracking-widest text-[10px]">NO_CLAIMS_YET</div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+        </div>
         </div>
       </div>
     </div>

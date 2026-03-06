@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAccount } from 'wagmi';
-import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog } from 'lucide-react';
+import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog, List } from 'lucide-react';
 import { formatEther } from 'viem';
 import { getAllAgents, searchGlobalAgents, searchClaims, getLists, getTopClaims } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
@@ -14,11 +14,18 @@ import { CURRENCY_SYMBOL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
+type ClaimSortOption = 'TOTAL_MCAP_DESC' | 'TOTAL_MCAP_ASC' | 'SUPPORT_MCAP_DESC' | 'SUPPORT_MCAP_ASC' | 'OPPOSE_MCAP_DESC' | 'OPPOSE_MCAP_ASC' | 'SUPPORTERS_DESC' | 'SUPPORTERS_ASC' | 'OPPOSERS_DESC' | 'OPPOSERS_ASC' | 'POSITIONS_DESC' | 'POSITIONS_ASC';
+type ListSortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'POSITIONS_DESC' | 'POSITIONS_ASC' | 'ENTRIES_DESC' | 'ENTRIES_ASC' | 'AZ' | 'ZA';
 type ViewMode = 'GRID' | 'HEATMAP';
+type ListViewMode = 'GRID' | 'LIST';
 type MarketSegment = 'NODES' | 'SYNAPSES' | 'VECTORS';
+
+const SEGMENT_FROM_PATH: Record<string, MarketSegment> = { atoms: 'NODES', triples: 'SYNAPSES', lists: 'VECTORS' };
+const PATH_FROM_SEGMENT: Record<MarketSegment, string> = { NODES: 'atoms', SYNAPSES: 'triples', VECTORS: 'lists' };
 
 const Markets: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { address: wagmiAddress } = useAccount();
   const [agents, setAgents] = useState<Account[]>([]);
   const [lists, setLists] = useState<any[]>([]); 
@@ -33,11 +40,17 @@ const Markets: React.FC = () => {
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [watchlistIds, setWatchlistIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
-  const [activeSegment, setActiveSegment] = useState<MarketSegment>('NODES');
+  const pathSegment = location.pathname.split('/').pop() || 'atoms';
+  const activeSegment = SEGMENT_FROM_PATH[pathSegment] ?? 'NODES';
   const [account, setAccount] = useState<string | null>(null);
   
   const [sortOption, setSortOption] = useState<SortOption>('MCAP_DESC');
+  const [claimSortOption, setClaimSortOption] = useState<ClaimSortOption>('SUPPORT_MCAP_DESC');
+  const [listSortOption, setListSortOption] = useState<ListSortOption>('MCAP_DESC');
+  const [listViewMode, setListViewMode] = useState<ListViewMode>('GRID');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isClaimSortOpen, setIsClaimSortOpen] = useState(false);
+  const [isListSortOpen, setIsListSortOpen] = useState(false);
   
   // Pagination State
   const [offset, setOffset] = useState(0);
@@ -45,6 +58,8 @@ const Markets: React.FC = () => {
   const PAGE_SIZE = 40;
 
   const sortRef = useRef<HTMLDivElement>(null);
+  const claimSortRef = useRef<HTMLDivElement>(null);
+  const listSortRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<any>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -55,6 +70,16 @@ const Markets: React.FC = () => {
     }, 400); 
     return () => clearTimeout(debounceRef.current);
   }, [searchTerm]);
+
+  const getListOrderBy = useCallback((opt: ListSortOption) => {
+    if (opt === 'MCAP_DESC') return [{ total_market_cap: 'desc' as const }];
+    if (opt === 'MCAP_ASC') return [{ total_market_cap: 'asc' as const }];
+    if (opt === 'POSITIONS_DESC') return [{ total_position_count: 'desc' as const }];
+    if (opt === 'POSITIONS_ASC') return [{ total_position_count: 'asc' as const }];
+    if (opt === 'ENTRIES_DESC') return [{ triple_count: 'desc' as const }];
+    if (opt === 'ENTRIES_ASC') return [{ triple_count: 'asc' as const }];
+    return [{ total_market_cap: 'desc' as const }];
+  }, []);
 
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
@@ -70,7 +95,8 @@ const Markets: React.FC = () => {
             setClaims(res.items);
             setHasMore(res.hasMore);
         } else if (activeSegment === 'VECTORS') {
-            const res = await getLists(PAGE_SIZE, 0);
+            const orderBy = ['AZ', 'ZA'].includes(listSortOption) ? undefined : getListOrderBy(listSortOption);
+            const res = await getLists(PAGE_SIZE, 0, orderBy);
             setLists(res.items);
             setHasMore(res.hasMore);
         }
@@ -79,7 +105,7 @@ const Markets: React.FC = () => {
     } finally {
         setLoading(false);
     }
-  }, [activeSegment]);
+  }, [activeSegment, listSortOption, getListOrderBy]);
 
   const fetchMoreData = useCallback(async () => {
       if (loadingMore || !hasMore || loading || debouncedTerm.trim().length > 0) return;
@@ -93,8 +119,9 @@ const Markets: React.FC = () => {
           } else if (activeSegment === 'SYNAPSES') {
               res = await getTopClaims(PAGE_SIZE, nextOffset);
               setClaims(prev => [...prev, ...res.items]);
-          } else if (activeSegment === 'VECTORS') {
-              res = await getLists(PAGE_SIZE, nextOffset);
+          } else           if (activeSegment === 'VECTORS') {
+              const orderBy = ['AZ', 'ZA'].includes(listSortOption) ? undefined : getListOrderBy(listSortOption);
+              res = await getLists(PAGE_SIZE, nextOffset, orderBy);
               setLists(prev => [...prev, ...res.items]);
           }
           
@@ -105,11 +132,11 @@ const Markets: React.FC = () => {
       } finally {
           setLoadingMore(false);
       }
-  }, [activeSegment, offset, hasMore, loading, loadingMore, debouncedTerm]);
+  }, [activeSegment, offset, hasMore, loading, loadingMore, debouncedTerm, listSortOption, getListOrderBy]);
 
   useEffect(() => {
       fetchInitialData();
-  }, [fetchInitialData, sortOption]);
+  }, [fetchInitialData, sortOption, listSortOption]);
 
   // Sync account from wagmi so watchlist/UI react when user connects
   useEffect(() => {
@@ -128,9 +155,9 @@ const Markets: React.FC = () => {
     window.addEventListener('watchlist-updated', handleWatchUpdate);
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
-        setIsSortOpen(false);
-      }
+      if (sortRef.current && !sortRef.current.contains(event.target as Node)) setIsSortOpen(false);
+      if (claimSortRef.current && !claimSortRef.current.contains(event.target as Node)) setIsClaimSortOpen(false);
+      if (listSortRef.current && !listSortRef.current.contains(event.target as Node)) setIsListSortOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -232,8 +259,51 @@ const Markets: React.FC = () => {
             return false;
         });
     }
+
+    if (activeSegment === 'VECTORS') {
+        const mcap = (l: any) => Number(l.totalMarketCap) || 0;
+        const pos = (l: any) => Number(l.totalPositionCount) || 0;
+        const entries = (l: any) => Number(l.totalItems) || 0;
+        const label = (l: any) => (l.label || '').toLowerCase();
+        return candidates.sort((a, b) => {
+            switch (listSortOption) {
+                case 'MCAP_DESC': return mcap(b) - mcap(a);
+                case 'MCAP_ASC': return mcap(a) - mcap(b);
+                case 'POSITIONS_DESC': return pos(b) - pos(a);
+                case 'POSITIONS_ASC': return pos(a) - pos(b);
+                case 'ENTRIES_DESC': return entries(b) - entries(a);
+                case 'ENTRIES_ASC': return entries(a) - entries(b);
+                case 'AZ': return label(a).localeCompare(label(b));
+                case 'ZA': return label(b).localeCompare(label(a));
+                default: return mcap(b) - mcap(a);
+            }
+        });
+    }
+
+    if (activeSegment === 'SYNAPSES') {
+        const totalMcap = (c: any) => (c.value ?? 0) + (c.opposeValue ?? 0);
+        const pos = (c: any) => (c.holders ?? 0) + (c.opposeHolders ?? 0);
+        return candidates.sort((a, b) => {
+            switch (claimSortOption) {
+                case 'TOTAL_MCAP_DESC': return totalMcap(b) - totalMcap(a);
+                case 'TOTAL_MCAP_ASC': return totalMcap(a) - totalMcap(b);
+                case 'SUPPORT_MCAP_DESC': return (b.value ?? 0) - (a.value ?? 0);
+                case 'SUPPORT_MCAP_ASC': return (a.value ?? 0) - (b.value ?? 0);
+                case 'OPPOSE_MCAP_DESC': return (b.opposeValue ?? 0) - (a.opposeValue ?? 0);
+                case 'OPPOSE_MCAP_ASC': return (a.opposeValue ?? 0) - (b.opposeValue ?? 0);
+                case 'SUPPORTERS_DESC': return (b.holders ?? 0) - (a.holders ?? 0);
+                case 'SUPPORTERS_ASC': return (a.holders ?? 0) - (b.holders ?? 0);
+                case 'OPPOSERS_DESC': return (b.opposeHolders ?? 0) - (a.opposeHolders ?? 0);
+                case 'OPPOSERS_ASC': return (a.opposeHolders ?? 0) - (b.opposeHolders ?? 0);
+                case 'POSITIONS_DESC': return pos(b) - pos(a);
+                case 'POSITIONS_ASC': return pos(a) - pos(b);
+                default: return totalMcap(b) - totalMcap(a);
+            }
+        });
+    }
+
     return candidates;
-  }, [agents, lists, claims, debouncedTerm, serverResults, claimSearchResults, sortOption, showWatchlistOnly, watchlistIds, activeSegment]);
+  }, [agents, lists, claims, debouncedTerm, serverResults, claimSearchResults, sortOption, claimSortOption, listSortOption, showWatchlistOnly, watchlistIds, activeSegment]);
 
   const toggleSort = (option: SortOption) => { setSortOption(option); setIsSortOpen(false); playClick(); };
   
@@ -255,6 +325,42 @@ const Markets: React.FC = () => {
           case 'TRUST_ASC': return 'TRUST (LOW)';
       }
   };
+
+  const getClaimSortLabel = (opt: ClaimSortOption) => {
+      const labels: Record<ClaimSortOption, string> = {
+          TOTAL_MCAP_DESC: 'Highest Total Market Cap',
+          TOTAL_MCAP_ASC: 'Lowest Total Market Cap',
+          SUPPORT_MCAP_DESC: 'Highest Support Market Cap',
+          SUPPORT_MCAP_ASC: 'Lowest Support Market Cap',
+          OPPOSE_MCAP_DESC: 'Highest Oppose Market Cap',
+          OPPOSE_MCAP_ASC: 'Lowest Oppose Market Cap',
+          SUPPORTERS_DESC: 'Most Supporters',
+          SUPPORTERS_ASC: 'Fewest Supporters',
+          OPPOSERS_DESC: 'Most Opposers',
+          OPPOSERS_ASC: 'Fewest Opposers',
+          POSITIONS_DESC: 'Most Positions',
+          POSITIONS_ASC: 'Fewest Positions',
+      };
+      return labels[opt];
+  };
+
+  const toggleClaimSort = (option: ClaimSortOption) => { setClaimSortOption(option); setIsClaimSortOpen(false); playClick(); };
+
+  const getListSortLabel = (opt: ListSortOption) => {
+    const labels: Record<ListSortOption, string> = {
+      MCAP_DESC: 'Highest Market Cap',
+      MCAP_ASC: 'Lowest Market Cap',
+      POSITIONS_DESC: 'Most Positions',
+      POSITIONS_ASC: 'Fewest Positions',
+      ENTRIES_DESC: 'Most Entries',
+      ENTRIES_ASC: 'Fewest Entries',
+      AZ: 'A-Z (Alphabetical ascending)',
+      ZA: 'Z-A (Alphabetical descending)',
+    };
+    return labels[opt];
+  };
+
+  const toggleListSort = (opt: ListSortOption) => { setListSortOption(opt); setIsListSortOpen(false); playClick(); };
 
   return (
     <div className="w-full min-w-0 overflow-x-hidden px-4 sm:px-6 lg:px-8 pt-12 pb-32">
@@ -292,7 +398,7 @@ const Markets: React.FC = () => {
                 return (
                     <button 
                         key={seg}
-                        onClick={() => { setActiveSegment(seg); playClick(); }}
+                        onClick={() => { navigate(`/markets/${PATH_FROM_SEGMENT[seg]}`); playClick(); }}
                         onMouseEnter={playHover}
                         className={`px-8 py-3 flex items-center gap-3 font-mono text-[11px] font-black uppercase transition-all clip-path-slant ${isActive ? 'text-black bg-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white'}`}
                     >
@@ -305,20 +411,39 @@ const Markets: React.FC = () => {
       </div>
 
       <div className={`flex flex-col lg:flex-row gap-4 sm:gap-6 items-stretch lg:items-center w-full min-w-0 mb-10 relative ${isSortOpen ? 'z-[60]' : 'z-40'}`}>
-            {activeSegment === 'NODES' && (
+            {(activeSegment === 'NODES' || activeSegment === 'VECTORS') && (
                 <div className="flex gap-2 p-1.5 bg-black/60 border border-slate-800 rounded-2xl">
-                    <button 
-                        onClick={() => { playClick(); setViewMode('GRID'); }}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${viewMode === 'GRID' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
-                    >
-                        <LayoutGrid size={14} /> GRID
-                    </button>
-                    <button 
-                        onClick={() => { playClick(); setViewMode('HEATMAP'); }}
-                        className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${viewMode === 'HEATMAP' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
-                    >
-                        <Grid size={14} /> HEATMAP
-                    </button>
+                    {activeSegment === 'NODES' ? (
+                        <>
+                            <button 
+                                onClick={() => { playClick(); setViewMode('GRID'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${viewMode === 'GRID' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <LayoutGrid size={14} /> GRID
+                            </button>
+                            <button 
+                                onClick={() => { playClick(); setViewMode('HEATMAP'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${viewMode === 'HEATMAP' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <Grid size={14} /> HEATMAP
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button 
+                                onClick={() => { playClick(); setListViewMode('GRID'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${listViewMode === 'GRID' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <LayoutGrid size={14} /> GRID
+                            </button>
+                            <button 
+                                onClick={() => { playClick(); setListViewMode('LIST'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${listViewMode === 'LIST' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <List size={14} /> LIST
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -339,7 +464,7 @@ const Markets: React.FC = () => {
               </div>
               <input 
                   type="text" 
-                  placeholder={`Search ${activeSegment === 'NODES' ? 'atoms' : activeSegment === 'SYNAPSES' ? 'claims' : 'lists'}...`} 
+                  placeholder={activeSegment === 'SYNAPSES' ? 'Search claims by subject, predicate, or object' : `Search ${activeSegment === 'NODES' ? 'atoms' : 'lists'}...`} 
                   className="w-full bg-black rounded-none py-4 pl-12 pr-12 text-white font-mono text-xs focus:outline-none transition-all placeholder-slate-800 uppercase tracking-widest clip-path-slant"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -381,6 +506,73 @@ const Markets: React.FC = () => {
                     )}
                 </div>
             )}
+
+            {activeSegment === 'VECTORS' && (
+                <div className="relative" ref={listSortRef}>
+                    <div className={`p-[2px] clip-path-slant transition-colors ${isListSortOpen ? 'bg-intuition-primary' : 'bg-slate-900 hover:bg-intuition-primary/50'}`}>
+                        <button 
+                            onClick={() => { setIsListSortOpen(!isListSortOpen); playClick(); }}
+                            className={`flex items-center justify-between gap-4 sm:gap-6 min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 min-w-[180px] sm:min-w-[220px] bg-black text-[9px] sm:text-[10px] font-black font-mono text-intuition-primary clip-path-slant transition-all`}
+                        >
+                            <div className="flex items-center gap-3"><Filter size={14} />{getListSortLabel(listSortOption)}</div>
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isListSortOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+                    {isListSortOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-full max-h-[360px] overflow-y-auto bg-intuition-primary p-[1px] shadow-[0_0_50px_rgba(0,0,0,1)] z-[100] clip-path-slant">
+                            <div className="bg-[#0a0a0a] p-1 clip-path-slant">
+                                {(['MCAP_DESC', 'MCAP_ASC', 'POSITIONS_DESC', 'POSITIONS_ASC', 'ENTRIES_DESC', 'ENTRIES_ASC', 'AZ', 'ZA'] as ListSortOption[]).map((opt) => (
+                                    <button 
+                                        key={opt}
+                                        onClick={() => toggleListSort(opt)} 
+                                        className={`w-full min-h-[40px] flex items-center justify-between px-4 py-2.5 text-[9px] font-black font-mono hover:bg-intuition-primary hover:text-black transition-all uppercase tracking-widest ${listSortOption === opt ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}
+                                    >
+                                        <span>{getListSortLabel(opt)}</span>
+                                        {listSortOption === opt && <ShieldCheck size={12} className="text-intuition-primary" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeSegment === 'SYNAPSES' && (
+                <div className="relative" ref={claimSortRef}>
+                    <div className={`p-[2px] clip-path-slant transition-colors ${isClaimSortOpen ? 'bg-intuition-primary' : 'bg-slate-900 hover:bg-intuition-primary/50'}`}>
+                        <button 
+                            onClick={() => { setIsClaimSortOpen(!isClaimSortOpen); playClick(); }}
+                            className={`flex items-center justify-between gap-4 sm:gap-6 min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 min-w-[180px] sm:min-w-[260px] bg-black text-[9px] sm:text-[10px] font-black font-mono text-intuition-primary clip-path-slant transition-all`}
+                        >
+                            <div className="flex items-center gap-3"><Filter size={14} />{getClaimSortLabel(claimSortOption)}</div>
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isClaimSortOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+                    {isClaimSortOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-full max-h-[400px] overflow-y-auto bg-intuition-primary p-[1px] shadow-[0_0_50px_rgba(0,0,0,1)] z-[100] clip-path-slant">
+                            <div className="bg-[#0a0a0a] p-1 clip-path-slant">
+                                {([
+                                    'TOTAL_MCAP_DESC', 'TOTAL_MCAP_ASC',
+                                    'SUPPORT_MCAP_DESC', 'SUPPORT_MCAP_ASC',
+                                    'OPPOSE_MCAP_DESC', 'OPPOSE_MCAP_ASC',
+                                    'SUPPORTERS_DESC', 'SUPPORTERS_ASC',
+                                    'OPPOSERS_DESC', 'OPPOSERS_ASC',
+                                    'POSITIONS_DESC', 'POSITIONS_ASC',
+                                ] as ClaimSortOption[]).map((opt) => (
+                                    <button 
+                                        key={opt}
+                                        onClick={() => toggleClaimSort(opt)} 
+                                        className={`w-full min-h-[40px] flex items-center justify-between px-4 py-2.5 text-[9px] font-black font-mono hover:bg-intuition-primary hover:text-black transition-all uppercase tracking-widest ${claimSortOption === opt ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}
+                                    >
+                                        <span>{getClaimSortLabel(opt)}</span>
+                                        {claimSortOption === opt && <ShieldCheck size={12} className="text-intuition-primary" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
       </div>
 
       {loading && offset === 0 ? (
@@ -397,6 +589,52 @@ const Markets: React.FC = () => {
             <p className="text-slate-700 text-lg font-black font-mono uppercase tracking-[0.4em]">{showWatchlistOnly ? 'SECTOR_WATCHLIST_EMPTY' : 'NULL_DATA_RECOVERED'}</p>
         </div>
       ) : activeSegment === 'VECTORS' ? (
+          listViewMode === 'LIST' ? (
+            <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono border-collapse min-w-[600px]">
+                  <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                    <tr>
+                      <th className="px-6 py-5">LIST</th>
+                      <th className="px-6 py-5">ENTRIES</th>
+                      <th className="px-6 py-5">POSITIONS</th>
+                      <th className="px-6 py-5 text-right">MARKET_CAP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredItems.map((list) => (
+                      <tr 
+                        key={list.id} 
+                        onClick={() => { playClick(); navigate(`/markets/${list.id}`); }}
+                        className="hover:bg-white/5 transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
+                      >
+                        <td className="px-6 py-2">
+                          <div className="flex items-center gap-3 py-4">
+                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border border-slate-800 rounded-xl">
+                              {list.image ? <img src={list.image} className="w-full h-full object-cover" alt="" /> : <Component size={18} className="text-slate-600" />}
+                            </div>
+                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[200px]">{list.label || 'Untitled list'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-2">
+                          <div className="flex items-center gap-2">
+                            <Database size={14} className="text-intuition-primary opacity-50" />
+                            <span className="text-sm font-black text-intuition-primary">{formatLargeNumber(list.totalItems || 0)}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-2">
+                          <span className="text-sm font-black text-slate-400">{formatLargeNumber(list.totalPositionCount || 0)}</span>
+                        </td>
+                        <td className="px-6 py-2 text-right">
+                          <span className="text-sm font-black text-white">{formatMarketValue(list.totalMarketCap || 0)} <CurrencySymbol size="sm" className="text-slate-600" /></span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 relative z-10 min-w-0">
               {filteredItems.map((list) => (
                   <Link 
@@ -464,6 +702,7 @@ const Markets: React.FC = () => {
                   </Link>
               ))}
           </div>
+          )
       ) : activeSegment === 'SYNAPSES' ? (
           <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
               <div className="overflow-x-auto">

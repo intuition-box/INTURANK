@@ -1,7 +1,7 @@
 
 import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
 import { Transaction, Claim, Triple } from '../types';
-import { hexToString, formatEther, parseEther } from 'viem';
+import { hexToString, formatEther, parseEther, getAddress, isAddress } from 'viem';
 
 // Request guard to prevent parallel overlapping global claims fetches
 let isGlobalClaimsFetching = false;
@@ -30,7 +30,10 @@ export const prepareQueryIds = (id: string) => {
     const base = id.trim();
     const variants = new Set<string>([base, base.toLowerCase()]);
     if (base.startsWith('0x')) {
-        if (base.length === 42) {
+        if (base.length === 42 && isAddress(base)) {
+            try {
+                variants.add(getAddress(base));
+            } catch { /* use base as-is */ }
             const padded = '0x' + '0'.repeat(24) + base.slice(2);
             variants.add(padded);
             variants.add(padded.toLowerCase());
@@ -39,6 +42,9 @@ export const prepareQueryIds = (id: string) => {
             const unpadded = '0x' + base.slice(26);
             variants.add(unpadded);
             variants.add(unpadded.toLowerCase());
+            if (isAddress(unpadded)) {
+                try { variants.add(getAddress(unpadded)); } catch { /* ok */ }
+            }
         }
     }
     return Array.from(variants);
@@ -247,13 +253,15 @@ export const getVaultsForTerm = async (termId: string): Promise<VaultByCurve[]> 
 };
 
 export const getUserHistory = async (userAddress: string): Promise<Transaction[]> => {
-  const q = `query ($userAddress: String!) {
+  const ids = prepareQueryIds(userAddress);
+  if (!ids.length) return [];
+  const q = `query ($ids: [String!]!) {
       events(limit: 500, order_by: {created_at: desc}, where: {
           _and: [{type: {_neq: "FeesTransfered"}}, {_not: {_and: [{type: {_eq: "Deposited"}}, {deposit: {assets_after_fees: {_eq: 0}}}]}}, 
-          {_or: [{_and: [{type: {_eq: "AtomCreated"}}, {atom: {creator: {id: {_eq: $userAddress}}}}]}, 
-          {_and: [{type: {_eq: "TripleCreated"}}, {triple: {creator: {id: {_eq: $userAddress}}}}]}, 
-          {_and: [{type: {_eq: "Deposited"}}, {deposit: {sender: {id: {_eq: $userAddress}}}}]}, 
-          {_and: [{type: {_eq: "Redeemed"}}, {redemption: {sender: {id: {_eq: $userAddress}}}}]}]}]
+          {_or: [{_and: [{type: {_eq: "AtomCreated"}}, {atom: {creator: {id: {_in: $ids}}}}]}, 
+          {_and: [{type: {_eq: "TripleCreated"}}, {triple: {creator: {id: {_in: $ids}}}}]}, 
+          {_and: [{type: {_eq: "Deposited"}}, {deposit: {_or: [{sender_id: {_in: $ids}}, {receiver_id: {_in: $ids}}]}}]}, 
+          {_and: [{type: {_eq: "Redeemed"}}, {redemption: {_or: [{sender_id: {_in: $ids}}, {receiver_id: {_in: $ids}}]}}]}]}]
       }) {
         id created_at type transaction_hash atom { term_id label data type }
         triple { term_id subject { label term_id data } predicate { label term_id } object { label term_id data } creator { id label image } }
@@ -261,7 +269,7 @@ export const getUserHistory = async (userAddress: string): Promise<Transaction[]
       }
   }`;
   try {
-    const data = await fetchGraphQL(q, { userAddress: userAddress.toLowerCase() });
+    const data = await fetchGraphQL(q, { ids });
     const events = data?.events ?? [];
     return events.map((ev: any) => {
         let label = 'Unknown Node', vaultId = '0x', shares = '0', assets = '0', type: 'DEPOSIT' | 'REDEEM' = 'DEPOSIT', curveId: number | undefined;
@@ -371,7 +379,7 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
 export const getUserPositions = async (address: string) => {
   const ids = [address, address.toLowerCase()];
   const q = `query ($ids: [String!]!) {
-      positions(where: { account: { id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 1000) { 
+      positions(where: { account: { id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 5000, order_by: { shares: desc }) { 
         id shares account { id label image } 
         vault { term_id curve_id total_assets total_shares current_share_price term { atom { term_id label data image type creator { id label image } } triple { term_id subject { label term_id data type image } predicate { label } object { label term_id data type image } counter_term_id creator { id label image } } } } 
       }
@@ -380,6 +388,44 @@ export const getUserPositions = async (address: string) => {
     const data = await fetchGraphQL(q, { ids });
     return data?.positions ?? [];
   } catch (e) { return []; }
+};
+
+/** Fetches user positions with theoretical_value, sorted by value desc server-side. Returns [] if schema does not support positions_with_value. */
+export const getPortfolioPositionsWithValue = async (address: string): Promise<any[]> => {
+  const addr = address.toLowerCase();
+  const addrVariants = [addr];
+  try {
+    const checksummed = (await import('viem')).getAddress(address);
+    if (checksummed !== addr) addrVariants.push(checksummed);
+  } catch { /* ignore */ }
+  const q = `query GetPortfolioPositionsWithValue($where: positions_with_value_bool_exp!, $orderBy: [positions_with_value_order_by!], $limit: Int!) {
+    positions_with_value(where: $where, order_by: $orderBy, limit: $limit) {
+      id shares theoretical_value pnl pnl_pct
+      account_id
+      vault { term_id curve_id total_assets total_shares current_share_price term { atom { term_id label data image type } triple { term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } counter_term_id } } }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, {
+      where: { shares: { _gt: '0' }, account_id: { _in: addrVariants } },
+      orderBy: [{ theoretical_value: 'desc' }],
+      limit: 5000,
+    });
+    const rows = res?.positions_with_value ?? [];
+    if (rows.length > 0) return rows;
+    // Fallback: try account relation if account_id returned nothing
+    const qAlt = `query GetPortfolioPositionsWithValueAlt($ids: [String!]!, $orderBy: [positions_with_value_order_by!], $limit: Int!) {
+      positions_with_value(where: { shares: { _gt: "0" }, account: { id: { _in: $ids } } }, order_by: $orderBy, limit: $limit) {
+        id shares theoretical_value pnl pnl_pct
+        account_id
+        vault { term_id curve_id total_assets total_shares current_share_price term { atom { term_id label data image type } triple { term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } counter_term_id } } }
+      }
+    }`;
+    const resAlt = await fetchGraphQL(qAlt, { ids: addrVariants, orderBy: [{ theoretical_value: 'desc' }], limit: 5000 });
+    return resAlt?.positions_with_value ?? [];
+  } catch (e) {
+    return [];
+  }
 };
 
 /** User's total transaction count from the Intuition graph (same semantics as getUserHistory: Deposited, Redeemed, AtomCreated, TripleCreated). */
@@ -443,6 +489,107 @@ export const getUserActivityStats = async (address: string) => {
     return { txCount, holdingsCount };
   } catch (e) {
     return { txCount: 0, holdingsCount: 0 };
+  }
+};
+
+/** Identities and claims created by the user (My Created section). Uses events (AtomCreated/TripleCreated) which reliably filter by creator. */
+export const getMyCreated = async (address: string): Promise<{ identities: any[]; claims: any[] }> => {
+  const addr = address.toLowerCase();
+  const addrVariants = [addr];
+  try {
+    const checksummed = (await import('viem')).getAddress(address);
+    if (checksummed !== addr) addrVariants.push(checksummed);
+  } catch { /* use lowercase only if invalid */ }
+  const q = `query GetMyCreatedEvents($addrVariants: [String!]!) {
+    events(
+      where: {
+        _or: [
+          { _and: [{ type: { _eq: "AtomCreated" } }, { atom: { creator: { id: { _in: $addrVariants } } } }] },
+          { _and: [{ type: { _eq: "TripleCreated" } }, { triple: { creator: { id: { _in: $addrVariants } } } }] }
+        ]
+      },
+      limit: 200,
+      order_by: { created_at: desc }
+    ) {
+      type
+      atom { term_id label data image type }
+      triple { term_id counter_term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { addrVariants });
+    const events = res?.events ?? [];
+
+    const identities: any[] = [];
+    const claims: any[] = [];
+    const seenAtomIds = new Set<string>();
+    const seenTripleIds = new Set<string>();
+
+    for (const ev of events) {
+      if (ev.type === 'AtomCreated' && ev.atom?.term_id) {
+        const id = normalize(ev.atom.term_id);
+        if (!seenAtomIds.has(id)) {
+          seenAtomIds.add(id);
+          identities.push(ev.atom);
+        }
+      } else if (ev.type === 'TripleCreated' && ev.triple?.term_id) {
+        const id = normalize(ev.triple.term_id);
+        if (!seenTripleIds.has(id)) {
+          seenTripleIds.add(id);
+          claims.push(ev.triple);
+        }
+      }
+    }
+
+    const allTermIds = [...identities.map((a: any) => a.term_id), ...claims.map((t: any) => t.term_id)].filter(Boolean);
+    const ids = Array.from(new Set(allTermIds)).flatMap((id: string) => prepareQueryIds(id)).slice(0, 300);
+
+    let vaults: any[] = [];
+    if (ids.length > 0) {
+      const vq = `query GetMyCreatedVaults($ids: [String!]!) {
+        vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
+      }`;
+      const vRes = await fetchGraphQL(vq, { ids });
+      vaults = aggregateVaultData(vRes?.vaults ?? []);
+    }
+
+    const vaultByTerm = new Map<string, any>();
+    vaults.forEach((v: any) => vaultByTerm.set(normalize(v.term_id), v));
+
+    const identityItems = identities.map((a: any) => {
+      const meta = resolveMetadata(a);
+      const v = vaultByTerm.get(normalize(a.term_id));
+      const mcap = v ? (v.computed_mcap ?? parseFloat(formatEther(BigInt(v.total_assets || '0')))) : 0;
+      return {
+        id: a.term_id,
+        label: meta.label,
+        type: (a.type || 'ATOM').toUpperCase(),
+        image: a.image || meta.image,
+        marketCap: mcap,
+        positionCount: v?.position_count ?? 0,
+      };
+    }).sort((a: any, b: any) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
+
+    const claimItems = claims.map((t: any) => {
+      const sMeta = resolveMetadata(t.subject);
+      const oMeta = resolveMetadata(t.object);
+      const label = `${sMeta.label} ${t.predicate?.label || 'LINK'} ${oMeta.label}`;
+      const v = vaultByTerm.get(normalize(t.term_id));
+      const mcap = v ? (v.computed_mcap ?? parseFloat(formatEther(BigInt(v.total_assets || '0')))) : 0;
+      return {
+        id: t.term_id,
+        counterTermId: t.counter_term_id,
+        label,
+        type: 'CLAIM',
+        image: t.subject?.image || t.object?.image,
+        marketCap: mcap,
+        positionCount: v?.position_count ?? 0,
+      };
+    }).sort((a: any, b: any) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
+
+    return { identities: identityItems, claims: claimItems };
+  } catch (e) {
+    return { identities: [], claims: [] };
   }
 };
 
@@ -728,75 +875,104 @@ export const getTopPositions = async (limit: number = 2500) => {
 };
 
 export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
-  const fetchLimit = Math.max(limit * 10, 1000);
-  const q = `query GetTopClaims($limit: Int!, $offset: Int!) {
-      vaults(where: { term: { triple: { term_id: { _is_null: false } } } }, limit: $limit, offset: $offset, order_by: { total_assets: desc }) {
-        term_id total_assets total_shares current_share_price curve_id position_count
-        term { triple { counter_term_id subject { label term_id data image type } predicate { label term_id } object { label term_id data image type } } }
-      }
+  const fetchLimit = Math.max(limit * 2, 80);
+  const q = `query GetExploreTriples($limit: Int!, $offset: Int!, $orderBy: [triple_term_order_by!]) {
+    triple_terms(limit: $limit, offset: $offset, order_by: $orderBy) {
+      term_id counter_term_id supporter_count opposer_count total_assets total_market_cap total_position_count
+      term { triple { term_id counter_term_id subject { term_id label image data type } predicate { term_id label } object { term_id label image data type } } }
+      counter_term { total_market_cap total_assets }
+    }
   }`;
   try {
-    const [res, res2] = await Promise.all([
-      fetchGraphQL(q, { limit: fetchLimit, offset: 0 }),
-      fetchGraphQL(q, { limit: 500, offset: fetchLimit }),
-    ]);
-    const vaults = [...(res?.vaults || []), ...(res2?.vaults || [])];
-    const supportIdsForQuery = Array.from(new Set(vaults.flatMap((v: any) => prepareQueryIds(v.term_id)))).slice(0, 800);
-    let supportVaults = vaults;
-    if (supportIdsForQuery.length > 0) {
-      const fullQ = `query GetSupportVaultsFull($ids: [String!]!) {
-        vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
-      }`;
-      const fullRes = await fetchGraphQL(fullQ, { ids: supportIdsForQuery });
-      const allSupportVaults = fullRes?.vaults || [];
-      supportVaults = allSupportVaults.length > 0 ? allSupportVaults : vaults;
-    }
-    const supportAggregated = aggregateVaultData(supportVaults);
-    supportAggregated.sort((a: any, b: any) => {
-      const aVal = (a.computed_mcap ?? 0) > 0 ? a.computed_mcap : parseFloat(formatEther(BigInt(a.total_assets)));
-      const bVal = (b.computed_mcap ?? 0) > 0 ? b.computed_mcap : parseFloat(formatEther(BigInt(b.total_assets)));
-      return bVal - aVal;
+    const res = await fetchGraphQL(q, {
+      limit: fetchLimit,
+      offset,
+      orderBy: [{ total_market_cap: 'desc' }],
     });
-    const paginated = supportAggregated.slice(offset, offset + limit);
-    const counterTermIds = paginated
-      .map((v: any) => {
-        const v0 = vaults.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
-        return v0?.term?.triple?.counter_term_id;
-      })
-      .filter((id: string | null | undefined) => id && id.trim() !== '');
+    const rows = res?.triple_terms || [];
+    if (rows.length === 0) return { items: [], hasMore: false };
+
+    const paginated = rows.slice(0, limit);
+    const items = paginated.map((r: any) => {
+      const t = r.term?.triple;
+      if (!t) return null;
+      const supportVal = parseFloat(formatEther(BigInt(r.total_market_cap || r.total_assets || '0')));
+      const opposeVal = r.counter_term
+        ? parseFloat(formatEther(BigInt(r.counter_term.total_market_cap || r.counter_term.total_assets || '0')))
+        : 0;
+      return {
+        id: r.term_id,
+        subject: { ...t.subject, label: resolveMetadata(t.subject).label },
+        predicate: t.predicate?.label || 'LINK',
+        object: { ...t.object, label: resolveMetadata(t.object).label },
+        value: supportVal,
+        holders: parseInt(r.supporter_count || '0', 10),
+        opposeValue: opposeVal,
+        opposeHolders: parseInt(r.opposer_count || '0', 10),
+      };
+    }).filter(Boolean);
+    return { items, hasMore: rows.length > limit };
+  } catch (e) {
+    console.warn('getTopClaims triple_terms error, falling back to legacy', e);
+    return getTopClaimsLegacy(limit, offset);
+  }
+};
+
+const getTopClaimsLegacy = async (limit: number = 40, offset: number = 0) => {
+  const triplesLimit = 2000;
+  const triplesQ = `query GetClaimTriples($limit: Int!) {
+    triples(limit: $limit, order_by: { block_number: desc }) {
+      term_id counter_term_id subject { label term_id data image type } predicate { label term_id } object { label term_id data image type }
+    }
+  }`;
+  try {
+    const triplesRes = await fetchGraphQL(triplesQ, { limit: triplesLimit });
+    const triples = triplesRes?.triples || [];
+    if (triples.length === 0) return { items: [], hasMore: false };
+
+    const termIds = Array.from(new Set(triples.map((t: any) => t.term_id).filter(Boolean)));
+    const uniqueIds = Array.from(new Set(termIds.flatMap((id: string) => prepareQueryIds(id))));
+
+    const fullQ = `query GetSupportVaultsFull($ids: [String!]!) {
+      vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
+    }`;
+    const BATCH = 500;
+    const batches: string[][] = [];
+    for (let i = 0; i < uniqueIds.length; i += BATCH) batches.push(uniqueIds.slice(i, i + BATCH));
+    const batchResults = await Promise.all(batches.map(ids => fetchGraphQL(fullQ, { ids })));
+    const allSupportVaults = batchResults.flatMap(r => r?.vaults || []);
+
+    const supportAggregated = aggregateVaultData(allSupportVaults);
+    const vaultByTerm = new Map<string, any>();
+    supportAggregated.forEach((v: any) => vaultByTerm.set(normalize(v.term_id), v));
+
+    const triplesWithVaults = triples
+      .filter((t: any) => vaultByTerm.has(normalize(t.term_id)))
+      .map((t: any) => ({ triple: t, vault: vaultByTerm.get(normalize(t.term_id)) }))
+      .sort((a: any, b: any) => {
+        const aVal = (a.vault.computed_mcap ?? 0) > 0 ? a.vault.computed_mcap : parseFloat(formatEther(BigInt(a.vault.total_assets)));
+        const bVal = (b.vault.computed_mcap ?? 0) > 0 ? b.vault.computed_mcap : parseFloat(formatEther(BigInt(b.vault.total_assets)));
+        return bVal - aVal;
+      });
+
+    const paginated = triplesWithVaults.slice(offset, offset + limit);
+    const counterTermIds = paginated.map((p: any) => p.triple?.counter_term_id).filter((id: string | null | undefined) => id && id.trim() !== '');
     const idsForQuery = Array.from(new Set(counterTermIds.flatMap((id: string) => prepareQueryIds(id)))).slice(0, 400);
     let opposeMap: Record<string, { total_assets: string; computed_mcap: number; position_count: number }> = {};
     if (idsForQuery.length > 0) {
-      const counterQ = `query GetOpposeVaults($ids: [String!]!) {
-        vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
-      }`;
-      const counterRes = await fetchGraphQL(counterQ, { ids: idsForQuery });
-      const counterVaults = counterRes?.vaults || [];
-      const opposeAggregated = aggregateVaultData(counterVaults);
-      opposeAggregated.forEach((v: any) => {
-        const id = normalize(v.term_id);
-        opposeMap[id] = { total_assets: v.total_assets.toString(), computed_mcap: v.computed_mcap ?? 0, position_count: v.position_count || 0 };
+      const counterRes = await fetchGraphQL(`query GetOpposeVaults($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count } }`, { ids: idsForQuery });
+      aggregateVaultData(counterRes?.vaults || []).forEach((v: any) => {
+        opposeMap[normalize(v.term_id)] = { total_assets: v.total_assets.toString(), computed_mcap: v.computed_mcap ?? 0, position_count: v.position_count || 0 };
       });
     }
-    const allTermIdsForHolders = [
-      ...paginated.map((v: any) => v.term_id),
-      ...counterTermIds
-    ];
-    const holderIdsForQuery = Array.from(new Set(allTermIdsForHolders.flatMap((id: string) => prepareQueryIds(id)))).slice(0, 400);
+    const holderIdsForQuery = Array.from(new Set([...paginated.map((p: any) => p.triple?.term_id), ...counterTermIds].filter(Boolean).flatMap((id: string) => prepareQueryIds(id)))).slice(0, 400);
     let supportHolderMap: Record<string, number> = {};
     let opposeHolderMap: Record<string, number> = {};
     if (holderIdsForQuery.length > 0) {
-      const posQ = `query GetPositionsForHolders($ids: [String!]!) {
-        positions(where: { vault: { term_id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 15000) {
-          account_id
-          account { id }
-          vault { term_id }
-        }
-      }`;
-      const posRes = await fetchGraphQL(posQ, { ids: holderIdsForQuery });
+      const posRes = await fetchGraphQL(`query GetPositionsForHolders($ids: [String!]!) { positions(where: { vault: { term_id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 15000) { account_id account { id } vault { term_id } } }`, { ids: holderIdsForQuery });
       const positions = posRes?.positions || [];
-      const supportTermIdSet = new Set(paginated.map((v: any) => normalize(v.term_id)));
-      const opposeTermIdSet = new Set(counterTermIds.filter(Boolean).map((id: string) => normalize(id)));
+      const supportTermIdSet = new Set(paginated.map((p: any) => normalize(p.triple?.term_id)));
+      const opposeTermIdSet = new Set(counterTermIds.map((id: string) => normalize(id)));
       const byTerm = new Map<string, Set<string>>();
       positions.forEach((p: any) => {
         const tid = normalize(p.vault?.term_id);
@@ -811,26 +987,25 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
         if (opposeTermIdSet.has(tid)) opposeHolderMap[tid] = count;
       });
     }
-    const items = paginated.map((v: any) => {
-        const v0 = vaults.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
-        const t = v0?.term?.triple;
-        if (!t) return null;
-        const counterId = t?.counter_term_id ? normalize(t.counter_term_id) : null;
-        const oppose = counterId ? opposeMap[counterId] : null;
-        const supportHolders = supportHolderMap[normalize(v.term_id)] ?? v.position_count ?? 0;
-        const opposeHolders = counterId ? (opposeHolderMap[counterId] ?? oppose?.position_count ?? 0) : 0;
-        return {
-            id: v.term_id,
-            subject: { ...t.subject, label: resolveMetadata(t.subject).label },
-            predicate: t.predicate?.label || 'LINK',
-            object: { ...t.object, label: resolveMetadata(t.object).label },
-            value: (v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets))),
-            holders: supportHolders,
-            opposeValue: oppose ? (oppose.computed_mcap ?? 0) > 0 ? oppose.computed_mcap : parseFloat(formatEther(BigInt(oppose.total_assets))) : 0,
-            opposeHolders
-        };
+    const items = paginated.map((p: any) => {
+      const t = p.triple;
+      const v = p.vault;
+      if (!t || !v) return null;
+      const counterId = t?.counter_term_id ? normalize(t.counter_term_id) : null;
+      const oppose = counterId ? opposeMap[counterId] : null;
+      const tid = normalize(t.term_id);
+      return {
+        id: t.term_id,
+        subject: { ...t.subject, label: resolveMetadata(t.subject).label },
+        predicate: t.predicate?.label || 'LINK',
+        object: { ...t.object, label: resolveMetadata(t.object).label },
+        value: (v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets))),
+        holders: supportHolderMap[tid] ?? v.position_count ?? 0,
+        opposeValue: oppose ? (oppose.computed_mcap ?? 0) > 0 ? oppose.computed_mcap : parseFloat(formatEther(BigInt(oppose.total_assets))) : 0,
+        opposeHolders: counterId ? (opposeHolderMap[counterId] ?? oppose?.position_count ?? 0) : 0,
+      };
     }).filter(Boolean);
-    return { items, hasMore: supportAggregated.length > offset + limit };
+    return { items, hasMore: triplesWithVaults.length > offset + limit };
   } catch (e) { return { items: [], hasMore: false }; }
 };
 
@@ -891,7 +1066,7 @@ export const searchClaims = async (term: string): Promise<any[]> => {
   }
 };
 
-export const searchGlobalAgents = async (term: string): Promise<{ id: string; label: string; image?: string; type?: string }[]> => {
+export const searchGlobalAgents = async (term: string): Promise<{ id: string; label: string; image?: string; type?: string; description?: string; marketCap?: string; positionCount?: number }[]> => {
   const t = term.trim();
   if (!t) return [];
   const pattern = `%${t}%`;
@@ -904,12 +1079,39 @@ export const searchGlobalAgents = async (term: string): Promise<{ id: string; la
     const res = await fetchGraphQL(q, { term: pattern });
     const atoms = res?.atoms ?? res?.data?.atoms ?? [];
     if (!Array.isArray(atoms)) return [];
-    return atoms.map((a: any) => ({
-      id: a.term_id,
-      label: resolveMetadata(a).label,
-      image: a.image,
-      type: a.type
-    }));
+    const termIds = atoms.map((a: any) => a.term_id);
+    if (termIds.length === 0) return [];
+    const vq = `query SearchAgentsVaults($ids: [String!]!) {
+      vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
+    }`;
+    const vRes = await fetchGraphQL(vq, { ids: termIds });
+    const aggregated = aggregateVaultData(vRes?.vaults || []);
+    const vaultByTerm = new Map<string, any>();
+    aggregated.forEach((v: any) => vaultByTerm.set(normalize(v.term_id), v));
+    const items = atoms.map((a: any) => {
+      const meta = resolveMetadata(a);
+      const v = vaultByTerm.get(normalize(a.term_id));
+      const mcap = v ? (v.computed_mcap ?? parseFloat(formatEther(BigInt(v.total_assets || '0')))) : 0;
+      const totalAssets = v ? BigInt(v.total_assets || '0') : 0n;
+      return {
+        id: a.term_id,
+        label: meta.label,
+        image: a.image || meta.image,
+        type: a.type || 'ATOM',
+        description: meta.description,
+        marketCap: v ? formatEther(BigInt(v.total_assets || '0')) : '0',
+        positionCount: v?.position_count ?? 0,
+        _sortMcap: mcap,
+        _sortAssets: totalAssets,
+      };
+    });
+    items.sort((a, b) => {
+      const ma = a._sortMcap ?? 0;
+      const mb = b._sortMcap ?? 0;
+      if (mb !== ma) return mb - ma;
+      return Number((b._sortAssets ?? 0n) - (a._sortAssets ?? 0n));
+    });
+    return items.map(({ _sortMcap, _sortAssets, ...rest }) => rest);
   } catch (e) {
     console.warn('searchGlobalAgents error', e);
     return [];
@@ -933,22 +1135,74 @@ export const searchAccountsByLabel = async (term: string) => {
   }
 };
 
-export const getLists = async (limit: number = 40, offset: number = 0) => {
-  const q = `query GetLists($limit: Int!, $offset: Int!) {
-      triples(where: { predicate_id: { _eq: "${LIST_PREDICATE_ID}" } }, limit: $limit, offset: $offset) {
-        term_id subject { label term_id data image }
+export const getLists = async (limit: number = 40, offset: number = 0, orderBy?: { total_market_cap?: 'asc' | 'desc'; triple_count?: 'asc' | 'desc'; total_position_count?: 'asc' | 'desc' }[]) => {
+  const orderByArg = orderBy || [{ total_market_cap: 'desc' as const }];
+  const q = `query GetLists($limit: Int, $offset: Int, $where: predicate_objects_bool_exp = {}, $orderBy: [predicate_objects_order_by!] = {}) {
+    predicate_objects(
+      limit: $limit
+      offset: $offset
+      where: $where
+      order_by: $orderBy
+    ) {
+      predicate { term_id label image }
+      object { term_id label image }
+      triples(limit: 8) {
+        subject { term_id label image }
       }
+      triple_count
+      total_market_cap
+      total_position_count
+    }
   }`;
   try {
-    const res = await fetchGraphQL(q, { limit, offset });
-    const items = (res?.triples || []).map((t: any) => ({
-        id: t.term_id,
-        label: t.subject.label,
-        image: t.subject.image,
-        totalItems: 0 
-    }));
+    const where = { predicate_id: { _eq: LIST_PREDICATE_ID } };
+    const res = await fetchGraphQL(q, { limit, offset, where, orderBy: orderByArg });
+    const rows = res?.predicate_objects || [];
+    const items = rows.map((po: any) => {
+      const obj = po.object || {};
+      const img = obj.image || obj.cached_image?.url;
+      const subjects = (po.triples || []).map((t: any) => ({
+        label: t.subject?.label,
+        image: t.subject?.image || t.subject?.cached_image?.url,
+      }));
+      return {
+        id: obj.term_id,
+        label: obj.label || po.predicate?.label || 'Untitled list',
+        image: img || po.predicate?.image,
+        totalItems: po.triple_count ?? subjects.length,
+        items: subjects,
+        totalMarketCap: po.total_market_cap,
+        totalPositionCount: po.total_position_count,
+      };
+    });
     return { items, hasMore: items.length === limit };
-  } catch (e) { return { items: [], hasMore: false }; }
+  } catch (e) {
+    console.warn("[getLists] predicate_objects failed, falling back to triples", e);
+    const fallback = `query GetListsFallback($limit: Int!, $offset: Int!) {
+      triples(where: { predicate_id: { _eq: "${LIST_PREDICATE_ID}" } }, limit: $limit, offset: $offset) {
+        term_id object { term_id label image } subject { label image }
+      }
+    }`;
+    try {
+      const res = await fetchGraphQL(fallback, { limit, offset });
+      const seen = new Map<string, any>();
+      (res?.triples || []).forEach((t: any) => {
+        const obj = t.object;
+        if (!obj?.term_id) return;
+        const key = obj.term_id.toLowerCase();
+        if (!seen.has(key)) {
+          seen.set(key, { id: obj.term_id, label: obj.label, image: obj.image, totalItems: 0, items: [] });
+        }
+        const rec = seen.get(key);
+        rec.totalItems += 1;
+        if (rec.items.length < 8) rec.items.push({ label: t.subject?.label, image: t.subject?.image });
+      });
+      const items = Array.from(seen.values());
+      return { items, hasMore: items.length === limit };
+    } catch (e2) {
+      return { items: [], hasMore: false };
+    }
+  }
 };
 
 export const getMarketActivity = async (termId: string): Promise<Transaction[]> => {
@@ -1103,15 +1357,15 @@ export const getActivityOnMyMarkets = async (
 };
 
 /**
- * Activity (deposits/redemptions) by a list of sender identities — for "follow" feed and email alerts.
- * Returns same shape as getActivityOnMyMarkets so UI/email can reuse.
+ * Activity (deposits/redemptions) by a list of account identities — for "follow" feed and email alerts.
+ * Matches both sender AND receiver: when users trade through the proxy, deposit.sender=proxy but deposit.receiver=user.
  */
 export const getActivityBySenderIds = async (
   senderIds: string[],
   limit: number = 40
 ): Promise<PositionActivityNotification[]> => {
   if (!senderIds?.length) return [];
-  const ids = Array.from(new Set(senderIds.map((s) => normalize(s)).filter(Boolean)));
+  const ids = Array.from(new Set(senderIds.flatMap((s) => prepareQueryIds(s)).filter(Boolean)));
   if (!ids.length) return [];
   const q = `query GetActivityBySenders($ids: [String!]!, $limit: Int!) {
     events(
@@ -1119,8 +1373,8 @@ export const getActivityBySenderIds = async (
         _and: [
           { type: { _in: ["Deposited", "Redeemed"] } },
           { _or: [
-            { deposit: { sender: { id: { _in: $ids } } } },
-            { redemption: { sender: { id: { _in: $ids } } } }
+            { deposit: { _or: [{ sender_id: { _in: $ids } }, { receiver_id: { _in: $ids } }] } },
+            { redemption: { _or: [{ sender_id: { _in: $ids } }, { receiver_id: { _in: $ids } }] } }
           ] }
         ]
       },
@@ -1130,8 +1384,8 @@ export const getActivityBySenderIds = async (
       id created_at type transaction_hash
       atom { term_id label data image type }
       triple { term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } }
-      deposit { shares assets_after_fees sender { id label image } vault { term_id curve_id } }
-      redemption { shares assets sender { id label image } vault { term_id curve_id } }
+      deposit { shares assets_after_fees sender { id label image } receiver { id label image } vault { term_id curve_id } }
+      redemption { shares assets sender { id label image } receiver { id label image } vault { term_id curve_id } }
     }
   }`;
   try {
@@ -1144,10 +1398,25 @@ export const getActivityBySenderIds = async (
       seenEventIds.add(eid);
       return true;
     });
+      const idsSet = new Set(ids.map((i) => i.toLowerCase()));
     const out: PositionActivityNotification[] = [];
     for (const ev of events) {
-      const sender = ev.deposit?.sender || ev.redemption?.sender;
-      if (!sender) continue;
+      const deposit = ev.deposit;
+      const redemption = ev.redemption;
+      const sender = deposit?.sender || redemption?.sender;
+      const receiver = deposit?.receiver || redemption?.receiver;
+      const senderIdNorm = sender ? normalize(sender.id) : '';
+      const receiverIdNorm = receiver ? normalize(receiver.id) : '';
+      const isSenderProxy = senderIdNorm === normalize(FEE_PROXY_ADDRESS) || senderIdNorm === normalize(MULTI_VAULT_ADDRESS);
+      const isSenderInFollowList = idsSet.has(senderIdNorm);
+      const isReceiverInFollowList = receiverIdNorm && idsSet.has(receiverIdNorm);
+      const accountToShow =
+        isReceiverInFollowList && isSenderProxy ? receiver
+        : isSenderInFollowList && !isSenderProxy ? sender
+        : isReceiverInFollowList ? receiver
+        : isSenderInFollowList ? sender
+        : null;
+      if (!accountToShow) continue;
       let label = 'Unknown';
       const vaultId = ev.atom?.term_id || ev.triple?.term_id || '';
       if (ev.atom) {
@@ -1158,13 +1427,13 @@ export const getActivityBySenderIds = async (
         const oMeta = resolveMetadata(ev.triple.object);
         label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
       }
-      const senderIdNorm = normalize(sender.id);
-      const isProxy = senderIdNorm === normalize(FEE_PROXY_ADDRESS) || senderIdNorm === normalize(MULTI_VAULT_ADDRESS);
-      const senderLabel = (sender.label && sender.label !== '0x' && !sender.label.startsWith('0x00'))
-        ? sender.label
+      const accountIdNorm = normalize(accountToShow.id);
+      const isProxy = accountIdNorm === normalize(FEE_PROXY_ADDRESS) || accountIdNorm === normalize(MULTI_VAULT_ADDRESS);
+      const senderLabel = (accountToShow.label && accountToShow.label !== '0x' && !accountToShow.label.startsWith('0x00'))
+        ? accountToShow.label
         : isProxy
           ? 'IntuRank routing contract'
-          : `${sender.id.slice(0, 6)}...${sender.id.slice(-4)}`;
+          : `${accountToShow.id.slice(0, 6)}...${accountToShow.id.slice(-4)}`;
       const vault = ev.deposit?.vault || ev.redemption?.vault;
       const curveId = vault?.curve_id != null ? (typeof vault.curve_id === 'string' ? parseInt(vault.curve_id, 10) : vault.curve_id) : undefined;
       const notificationId = ev.id ? `${ev.id}` : (ev.transaction_hash || `ev-${vaultId}-${ev.created_at}`);
@@ -1172,7 +1441,7 @@ export const getActivityBySenderIds = async (
         id: notificationId,
         type: ev.type === 'Redeemed' ? 'liquidated' : 'acquired',
         senderLabel,
-        senderId: sender.id,
+        senderId: accountToShow.id,
         marketLabel: label,
         vaultId,
         timestamp: new Date(ev.created_at).getTime(),
@@ -1202,6 +1471,7 @@ export const getHoldersForVault = async (termId: string) => {
   } catch (e) { return { holders: [], totalCount: 0 }; }
 };
 
+/** Lists containing this term (when term is object) OR identities in this list (when term is list object). Returns entries with subject id for linking to identity markets. */
 export const getAtomInclusionLists = async (termId: string) => {
   const ids = prepareQueryIds(termId);
   const q = `query GetAtomInclusionLists($ids: [String!]!) {
@@ -1212,11 +1482,42 @@ export const getAtomInclusionLists = async (termId: string) => {
   try {
     const data = await fetchGraphQL(q, { ids });
     return (data?.triples || []).map((t: any) => ({
-        id: t.term_id,
-        label: t.subject.label,
-        image: t.subject.image
+        id: t.subject?.term_id || t.term_id,
+        tripleId: t.term_id,
+        label: t.subject?.label,
+        image: t.subject?.image,
     }));
   } catch (e) { return []; }
+};
+
+/** List entries enriched with vault data (support/oppose). */
+export const getAtomInclusionListsWithVaults = async (termId: string) => {
+  const entries = await getAtomInclusionLists(termId);
+  if (entries.length === 0) return [];
+  const entryIds = Array.from(new Set(entries.map((e) => e.id).filter(Boolean)));
+  const idsForQuery = entryIds.flatMap((id) => prepareQueryIds(id)).slice(0, 500);
+  const vaultQ = `query GetListEntryVaults($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
+  try {
+    const vaultRes = await fetchGraphQL(vaultQ, { ids: idsForQuery });
+    const vaults = vaultRes?.vaults || [];
+    const agg = aggregateVaultData(vaults);
+    const vaultByTerm = new Map<string, any>();
+    agg.forEach((v: any) => vaultByTerm.set(normalize(v.term_id), v));
+    return entries.map((e) => {
+      const v = vaultByTerm.get(normalize(e.id));
+      const supportAssets = v?.total_assets ?? '0';
+      const supportCount = v?.position_count ?? 0;
+      return {
+        ...e,
+        supportTotalAssets: supportAssets,
+        supportPositionCount: supportCount,
+        opposeTotalAssets: '0',
+        opposePositionCount: 0,
+      };
+    });
+  } catch (e) {
+    return entries;
+  }
 };
 
 export const getIdentitiesEngaged = async (termId: string) => {

@@ -2,8 +2,8 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
-import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionLists, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
+import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
+import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { formatEther, parseEther } from 'viem';
@@ -282,6 +282,7 @@ const AgentShareModal: React.FC<{
 
 const MarketDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { address: wagmiAddress } = useAccount();
   const [agent, setAgent] = useState<Account | null>(null);
   const [oppositionAgent, setOppositionAgent] = useState<any | null>(null);
@@ -291,6 +292,8 @@ const MarketDetail: React.FC = () => {
   const [totalHoldersCount, setTotalHoldersCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
   const [lists, setLists] = useState<any[]>([]);
+  const [listEntriesSearch, setListEntriesSearch] = useState('');
+  const [listSort, setListSort] = useState<'label-asc' | 'label-desc'>('label-asc');
   const [engagedIdentities, setEngagedIdentities] = useState<any[]>([]);
   const [followingPositions, setFollowingPositions] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -331,6 +334,17 @@ const MarketDetail: React.FC = () => {
     return agent.type === 'CLAIM' || agent.type === 'LIST';
   }, [agent]);
 
+  const filteredListEntries = useMemo(() => {
+    const term = listEntriesSearch.trim().toLowerCase();
+    let out = term ? lists.filter((e) => (e.label || '').toLowerCase().includes(term) || (e.id || '').toLowerCase().includes(term)) : [...lists];
+    out = [...out].sort((a, b) => {
+      const la = (a.label || '').toLowerCase();
+      const lb = (b.label || '').toLowerCase();
+      return listSort === 'label-asc' ? la.localeCompare(lb) : lb.localeCompare(la);
+    });
+    return out;
+  }, [lists, listEntriesSearch, listSort]);
+
   const fetchData = async () => {
         if (!id) return;
         setLoading(true);
@@ -348,7 +362,7 @@ const MarketDetail: React.FC = () => {
                 getAgentTriples(id),
                 getMarketActivity(id),
                 getHoldersForVault(id),
-                getAtomInclusionLists(id),
+                getAtomInclusionListsWithVaults(id),
                 getIdentitiesEngaged(id),
                 getIncomingTriplesForStats(id),
                 getVaultsForTerm(id)
@@ -417,7 +431,8 @@ const MarketDetail: React.FC = () => {
     if (sharesNum > 0.0001) {
         const redeemableQuote = await getQuoteRedeem(sharesRaw, currentVaultId, acc, curveId);
         const redeemableNum = parseFloat(redeemableQuote);
-        const { pnlPercent, avgEntryPrice } = calculatePositionPnL(sharesNum, redeemableNum, activity, currentVaultId);
+        const spotPrice = redeemableNum / sharesNum;
+        const { pnlPercent, avgEntryPrice } = calculatePositionPnL(sharesNum, spotPrice, activity, currentVaultId, curveId);
         
         setUserPosition({
             shares: sharesNum.toFixed(4),
@@ -1403,8 +1418,95 @@ const MarketDetail: React.FC = () => {
                 )}
                 {activeTab === 'LISTS' && (
                     <div className="animate-in fade-in duration-700">
-                        <div className="flex items-center justify-between mb-12"><h4 className="text-[11px] font-black uppercase tracking-[0.6em] flex items-center gap-4" style={{ color: theme.color }}><ListIcon size={16} className="animate-pulse" /> SEMANTIC_INCLUSION_VECTORS</h4><span className="text-[8px] font-mono text-slate-600 uppercase">Buffer: {lists.length} Linked Clusters</span></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">{lists.length > 0 ? lists.map((list, i) => (<Link key={i} to={`/markets/${list.id}`} className="group relative flex flex-col p-10 bg-white/[0.02] border-2 border-slate-800 hover:border-white transition-all shadow-[0_0_40px_rgba(0,243,255,0.5)] overflow-hidden min-h-[340px] text-center backdrop-blur-xl rounded-2xl" onClick={playClick} onMouseEnter={playHover}><div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] opacity-10 pointer-events-none"></div><div className="flex flex-col items-center justify-center flex-1 relative z-10"><div className="relative mb-10 group-hover:scale-110 transition-transform duration-700"><div className="absolute -inset-6 border-2 border-dashed border-white/10 rounded-full animate-spin-slow opacity-40 group-hover:opacity-100 transition-all"></div><div className="w-24 h-24 bg-black border-2 border-slate-700 flex items-center justify-center overflow-hidden transition-all group-hover:border-white shadow-2xl relative rounded-2xl group-hover:shadow-glow-white">{list.image ? <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" /> : <Boxes size={32} className="text-slate-600 group-hover:text-white" />}</div></div><div className="relative z-10"><div className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-[0.4em] mb-4 group-hover:text-white transition-colors">SUB_SECTOR_VECTOR</div><div className="text-3xl font-black font-display text-white uppercase group-hover:text-glow-blue transition-all tracking-tighter leading-none mb-6 drop-shadow-md">{list.label}</div><div className="inline-flex items-center gap-3 px-4 py-1.5 bg-white/5 border border-white/5 rounded-2xl text-[9px] font-black text-slate-400 group-hover:text-white transition-all"><Database size={12} className="text-slate-600 group-hover:text-white" />CONSTITUENTS: {list.totalItems || 0}</div></div></div><div className="absolute bottom-6 right-6 text-slate-800 group-hover:text-white group-hover:translate-x-1 transition-all"><ArrowRight size={24} /></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 rounded-2xl">NULL_VECTORS_DETECTED</div>)}</div>
+                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-4 flex items-center gap-4"><ListIcon size={16}/> List Entries</h4>
+                        <p className="text-[9px] text-slate-600 uppercase font-black tracking-widest mb-8">{agent?.type === 'LIST' ? 'Identities tagged with this list.' : 'Lists containing this identity.'}</p>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+                            <div className="flex items-center gap-3 flex-1 max-w-md">
+                                <div className="relative flex-1">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search list entries"
+                                        value={listEntriesSearch}
+                                        onChange={(e) => setListEntriesSearch(e.target.value)}
+                                        className="w-full pl-9 pr-4 py-2.5 bg-white/[0.02] border-2 border-slate-800 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:border-white/40 focus:outline-none transition-all"
+                                    />
+                                </div>
+                                <div className="relative shrink-0">
+                                    <select
+                                        value={listSort}
+                                        onChange={(e) => setListSort(e.target.value as 'label-asc' | 'label-desc')}
+                                        className="appearance-none pl-4 pr-10 py-2.5 bg-white/[0.02] border-2 border-slate-800 rounded-xl text-sm font-mono text-white focus:border-white/40 focus:outline-none transition-all cursor-pointer"
+                                    >
+                                        <option value="label-asc" className="bg-black text-white">A-Z</option>
+                                        <option value="label-desc" className="bg-black text-white">Z-A</option>
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                                </div>
+                            </div>
+                            <span className="text-[9px] font-mono text-slate-600 uppercase font-black">List Entries {filteredListEntries.length}</span>
+                        </div>
+                        <div className="overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 rounded-2xl shadow-2xl backdrop-blur-sm">
+                            <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[500px]">
+                                <thead className="bg-black border-b border-slate-800 text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
+                                    <tr>
+                                        <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 w-12">#</th>
+                                        <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">Entry</th>
+                                        <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">Support</th>
+                                        <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">Oppose</th>
+                                        <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {filteredListEntries.length > 0 ? filteredListEntries.map((entry, i) => {
+                                        const supportVal = entry.supportTotalAssets ? parseFloat(formatEther(BigInt(entry.supportTotalAssets))) : 0;
+                                        const opposeVal = entry.opposeTotalAssets ? parseFloat(formatEther(BigInt(entry.opposeTotalAssets))) : 0;
+                                        const entryUrl = `/markets/${entry.id}`;
+                                        return (
+                                        <tr
+                                            key={entry.tripleId ?? entry.id ?? i}
+                                            onClick={() => { navigate(entryUrl); playClick(); }}
+                                            className="hover:bg-white/5 transition-all group cursor-pointer"
+                                        >
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-500 font-black">{i + 1}</td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
+                                                <Link to={entryUrl} onClick={(e) => e.stopPropagation()} className="flex items-center gap-4 group/entry">
+                                                    <div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center rounded-2xl overflow-hidden group-hover/entry:border-white/40 transition-colors shrink-0">
+                                                        {entry.image ? <img src={entry.image} alt="" className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm font-black text-white group-hover/entry:text-glow-white transition-colors uppercase truncate max-w-[200px] font-display tracking-tight">{entry.label || entry.id || 'Unknown'}</div>
+                                                        <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">{agent?.type === 'LIST' ? `has tag ${agent?.label || 'List'}` : 'contains this identity'}</div>
+                                                    </div>
+                                                </Link>
+                                            </td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-white font-black">{formatLargeNumber(entry.supportPositionCount ?? 0)}</span>
+                                                    <span className="text-[8px] text-intuition-success uppercase font-black tracking-widest">{formatMarketValue(supportVal)} TRUST</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-white font-black">{formatLargeNumber(entry.opposePositionCount ?? 0)}</span>
+                                                    <span className="text-[8px] text-intuition-danger uppercase font-black tracking-widest">{formatMarketValue(opposeVal)} TRUST</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right" onClick={(e) => e.stopPropagation()}>
+                                                <Link to={entryUrl} onClick={playClick} className="inline-flex items-center gap-2 px-3 py-1.5 bg-intuition-primary/20 border border-intuition-primary/40 hover:bg-intuition-primary/30 hover:border-intuition-primary transition-all rounded-xl text-[9px] font-black uppercase tracking-widest text-intuition-primary">
+                                                    Support
+                                                </Link>
+                                                <Link to={entryUrl} onClick={playClick} className="inline-flex items-center gap-2 px-3 py-1.5 ml-2 bg-intuition-danger/20 border border-intuition-danger/40 hover:bg-intuition-danger/30 hover:border-intuition-danger transition-all rounded-xl text-[9px] font-black uppercase tracking-widest text-intuition-danger">
+                                                    Oppose
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    );}) : (
+                                        <tr><td colSpan={5} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_ENTRIES_DETECTED</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>)}
                 {activeTab === 'ACTIVITY' && (
                     <div className="animate-in fade-in duration-700 overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 rounded-2xl shadow-2xl backdrop-blur-sm">
