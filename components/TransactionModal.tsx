@@ -17,6 +17,7 @@ interface TransactionModalProps {
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, title, message, hash, logs = [], onClose }) => {
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const scrollYRef = useRef(0);
 
   useEffect(() => {
     const el = logContainerRef.current;
@@ -24,6 +25,32 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
       el.scrollTop = el.scrollHeight;
     }
   }, [logs]);
+
+  useEffect(() => {
+    if (isOpen) {
+      scrollYRef.current = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollYRef.current}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+    } else {
+      const y = scrollYRef.current;
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      window.scrollTo(0, y);
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -56,7 +83,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
           </button>
         )}
 
-        <div className="p-8 flex flex-col items-center relative z-10">
+        <div className="p-6 sm:p-8 flex flex-col items-center relative z-10 overflow-y-auto min-h-0 flex-1">
           <div className="mb-6 relative">
             {isProcessing && (
               <div className="relative flex items-center justify-center animate-tx-modal-item-in" style={{ animationDelay: '0.15s' }}>

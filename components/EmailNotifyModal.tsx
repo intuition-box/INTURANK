@@ -3,6 +3,7 @@ import { useAccount } from 'wagmi';
 import { X, Mail, User, Loader2, CheckCircle } from 'lucide-react';
 import { getConnectedAccount, connectWallet } from '../services/web3';
 import { setEmailSubscription, getEmailSubscription, sendWelcomeEmail, type EmailAlertFrequency } from '../services/emailNotifications';
+import { getFollowedIdentities } from '../services/follows';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { playClick, playHover } from '../services/audio';
 import { toast } from './Toast';
@@ -85,8 +86,13 @@ const EmailNotifyModal: React.FC = () => {
     }
     setLoading(true);
     try {
-      // Subscription is stored by wallet address so alerts are tied to the connected wallet
-      setEmailSubscription(wallet, trimmedEmail, nickname.trim() || undefined, alertFrequency);
+      // Subscription is stored by wallet address so alerts are tied to the connected wallet. Include follows so worker can email when people you follow trade.
+      const follows = getFollowedIdentities(wallet).map((f) => ({
+        identityId: f.identityId,
+        label: f.label,
+        emailAlerts: f.emailAlerts ?? true,
+      }));
+      setEmailSubscription(wallet, trimmedEmail, nickname.trim() || undefined, alertFrequency, follows);
       await sendWelcomeEmail(trimmedEmail, nickname.trim() || undefined);
       setShowSuccess(true);
       if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);

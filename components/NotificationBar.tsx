@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Bell, TrendingDown, TrendingUp, ExternalLink, Loader2, Mail, CheckCheck, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatEther } from 'viem';
-import { getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getCurveLabel, type PositionActivityNotification } from '../services/graphql';
+import { getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getCurveLabel, prepareQueryIds, type PositionActivityNotification } from '../services/graphql';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import { requestEmailNotification, requestFollowedActivityEmail } from '../services/emailNotifications';
 import { getFollowedIdentities } from '../services/follows';
+import { resolveENS, toAddress } from '../services/web3';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { EXPLORER_URL } from '../constants';
 import { CurrencySymbol } from './CurrencySymbol';
@@ -138,9 +139,22 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         const allFollows = getFollowedIdentities(walletAddress);
         let followActivity: PositionActivityNotification[] = [];
         if (allFollows.length > 0) {
-          const senderIds = allFollows.map((f) => f.identityId);
-          followActivity = await getActivityBySenderIds(senderIds, 30);
-          const bySender = new Map(allFollows.map((f) => [f.identityId.toLowerCase(), f]));
+          const resolved = await Promise.all(
+            allFollows.map(async (f) => {
+              const addr = toAddress(f.identityId) || (await resolveENS(f.identityId).then((r) => toAddress(r) || r)) || null;
+              return { follow: f, addr };
+            })
+          );
+          const validResolved = resolved.filter((r) => r.addr && !!toAddress(r.addr));
+          const senderIds = validResolved.map((r) => r.addr);
+          if (senderIds.length > 0) {
+            followActivity = await getActivityBySenderIds(senderIds, 30);
+          }
+          const bySender = new Map<string, (typeof allFollows)[0]>();
+          validResolved.forEach((r) => {
+            const variants = prepareQueryIds(r.addr);
+            variants.forEach((v) => bySender.set(v.toLowerCase(), r.follow));
+          });
           followActivity.forEach((n) => {
             const follow = bySender.get((n.senderId || '').toLowerCase());
             if (follow?.emailAlerts) {
@@ -224,7 +238,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
             ? 'border-intuition-primary bg-intuition-primary/10 text-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.2)]'
             : 'border-slate-800 text-slate-400 hover:border-intuition-primary/50 hover:text-intuition-primary'
         }`}
-        aria-label="Activity and notifications"
+        aria-label="Activity on your holdings and people you follow"
       >
         <Bell size={18} />
         {unreadCount > 0 && (
@@ -241,7 +255,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
               Activity
             </h3>
             <p className="text-[10px] font-bold font-mono text-slate-300 mt-1">
-              Your claims and people you follow
+              Activity feed (loads on page load). Not real-time push — enable email alerts for notifications when you&apos;re away.
             </p>
             {items.length > 0 && (
               <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
@@ -395,6 +409,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                 onClick={() => { playClick(); openEmailNotify(); }}
                 onMouseEnter={playHover}
                 className="flex-1 flex items-center justify-center gap-2 min-h-[44px] py-3 text-[10px] font-black font-mono text-slate-200 hover:text-intuition-primary uppercase tracking-widest rounded-xl border-2 border-slate-600 hover:border-intuition-primary/60 transition-all duration-300"
+                title="Email alerts when you're away"
               >
                 <Mail size={14} /> Get email alerts
               </button>

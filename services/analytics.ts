@@ -127,15 +127,24 @@ export const formatDisplayedShares = (val: string | bigint | number): string => 
     return safeParseUnits(val.toString()).toFixed(6);
 };
 
+/** Normalize term ID for comparison (handles 42-char vs 66-char padded formats). */
+export const normalizeTermId = (id: string | undefined | null): string => {
+    if (!id || typeof id !== 'string') return '';
+    const s = id.toLowerCase().trim();
+    if (s.startsWith('0x') && s.length === 66 && s.startsWith('0x000000000000000000000000')) return '0x' + s.slice(26);
+    if (s.startsWith('0x') && s.length === 42) return s;
+    return s;
+};
+
 /**
  * Calculates accurate PnL. 
  * Unrealized PnL should use Spot Price (valuation) to avoid spread red ink on new positions.
  * When curveId is provided, only deposits/redemptions for that curve are used (linear vs exponential).
  */
 export const calculatePositionPnL = (sharesHeld: number, valuationPrice: number, unifiedHistory: Transaction[], vaultId: string, curveId?: number) => {
-    const normalizedId = vaultId.toLowerCase();
+    const normalizedId = normalizeTermId(vaultId);
     const filteredHistory = unifiedHistory.filter(tx => {
-        if (tx.vaultId?.toLowerCase() !== normalizedId) return false;
+        if (normalizeTermId(tx.vaultId) !== normalizedId) return false;
         if (curveId != null && tx.curveId != null && tx.curveId !== curveId) return false;
         return true;
     });

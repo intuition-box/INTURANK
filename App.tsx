@@ -1,11 +1,16 @@
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { MAINTENANCE_MODE } from './constants';
+import Maintenance from './pages/Maintenance';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import type { Theme } from '@rainbow-me/rainbowkit';
 import '@rainbow-me/rainbowkit/styles.css';
 import { wagmiConfig } from './wagmi-config';
+import { muiTheme } from './theme/muiTheme';
 
 // IntuRank palette
 const INTURANK = {
@@ -71,17 +76,23 @@ import EmailNotifyModal from './components/EmailNotifyModal';
 const queryClient = new QueryClient();
 
 const App: React.FC = () => {
+  if (MAINTENANCE_MODE) {
+    return <Maintenance />;
+  }
+
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          theme={rainbowKitTheme}
-          modalSize="compact"
-          coolMode
-        >
-          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <EmailNotifyProvider>
-              <Layout>
+        <ThemeProvider theme={muiTheme}>
+          <CssBaseline />
+          <RainbowKitProvider
+            theme={rainbowKitTheme}
+            modalSize="compact"
+            coolMode
+          >
+            <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <EmailNotifyProvider>
+                <Layout>
           <ToastContainer />
           <Routes>
           <Route path="/" element={<Home />} />
@@ -94,7 +105,10 @@ const App: React.FC = () => {
           <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} /> 
           
           <Route path="/stats" element={<Stats />} />
-          <Route path="/markets" element={<Markets />} />
+          <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
+          <Route path="/markets/atoms" element={<Markets />} />
+          <Route path="/markets/triples" element={<Markets />} />
+          <Route path="/markets/lists" element={<Markets />} />
           <Route path="/markets/:id" element={<MarketDetail />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/health" element={<KPIDashboard />} />
@@ -106,11 +120,12 @@ const App: React.FC = () => {
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
           </Routes>
-        </Layout>
-        <EmailNotifyModal />
-      </EmailNotifyProvider>
-    </Router>
-        </RainbowKitProvider>
+                </Layout>
+                <EmailNotifyModal />
+              </EmailNotifyProvider>
+            </Router>
+          </RainbowKitProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );

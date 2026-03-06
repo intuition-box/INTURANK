@@ -85,9 +85,10 @@ app.post('/api/email-subscribe', async (req, res) => {
       nickname: nickname?.trim() || undefined,
       alertFrequency: alertFrequency === 'daily' ? 'daily' : 'per_tx',
       subscribedAt: Date.now(),
+      follows: req.body?.follows && Array.isArray(req.body.follows) ? req.body.follows : (subs[idx]?.follows || []),
     };
     if (idx >= 0) subs[idx] = { ...subs[idx], ...next };
-    else subs.push(next);
+    else subs.push({ ...next, follows: next.follows || [] });
     await saveSubscriptions(subs);
     res.json({ ok: true });
   } catch (e) {
@@ -108,6 +109,26 @@ app.post('/api/email-unsubscribe', async (req, res) => {
   } catch (e) {
     console.error('[email-api] unsubscribe error', e);
     res.status(500).json({ error: 'Failed to update subscriptions' });
+  }
+});
+
+// Sync follows so the email worker can send alerts when people you follow trade
+app.post('/api/sync-follows', async (req, res) => {
+  const { wallet, follows } = req.body || {};
+  if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
+  const normalizedWallet = String(wallet).toLowerCase();
+  const list = Array.isArray(follows) ? follows : [];
+  try {
+    const subs = await loadSubscriptions();
+    const idx = subs.findIndex((s) => s.wallet.toLowerCase() === normalizedWallet);
+    if (idx >= 0) {
+      subs[idx] = { ...subs[idx], follows: list };
+      await saveSubscriptions(subs);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[email-api] sync-follows error', e);
+    res.status(500).json({ error: 'Failed to sync follows' });
   }
 });
 

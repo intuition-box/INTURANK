@@ -1,14 +1,37 @@
+export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
+
+/** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
+export const getGeminiApiKey = (): string => {
+  const raw = String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim();
+  if (!raw) return '';
+  const keys = raw.split(',').map(k => k.trim()).filter(Boolean);
+  if (keys.length === 0) return '';
+  return keys[Math.floor(Math.random() * keys.length)];
+};
+
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";
 /**
  * Core Intuition Graph endpoint.
- * Historically we called the Graph directly from the browser using this URL.
- * Keep it explicit so behavior is stable across environments.
+ * In dev, use /v1/graphql so Vite proxies to mainnet (avoids CORS).
+ * In production, use full URL or VITE_GRAPHQL_URL from env.
  */
-export const GRAPHQL_URL = "https://mainnet.intuition.sh/v1/graphql";
+export const GRAPHQL_URL =
+  import.meta.env.VITE_GRAPHQL_URL ||
+  (import.meta.env.DEV ? "/v1/graphql" : "https://mainnet.intuition.sh/v1/graphql");
 export const EXPLORER_URL = "https://explorer.intuition.systems";
 export const CURRENCY_SYMBOL = "₸";
+
+/** Season 2 / current epoch for period-based PnL leaderboard (get_pnl_leaderboard_period) */
+export const SEASON_2_EPOCH_ID = 8;
+
+/** Human-readable date range for Epoch 8 (Season 2 current period) — matches Intuition portal */
+export const SEASON_2_EPOCH_8_DATE_RANGE = 'Feb 24, 4:00 PM – Mar 10, 4:00 PM';
+
+/** ISO date strings for Epoch 8 — required by get_pnl_leaderboard_period (p_start_date, p_end_date) */
+export const SEASON_2_EPOCH_8_START = '2026-02-24T16:00:00Z';
+export const SEASON_2_EPOCH_8_END = '2026-03-10T16:00:00Z';
 
 export const MULTI_VAULT_ADDRESS = "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e";
 export const FEE_PROXY_ADDRESS = "0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93";
@@ -112,7 +135,12 @@ export const FEE_PROXY_ABI = [
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
-  }
+  },
+  // Custom errors for createTriples revert decoding (0xd335ef46 and related)
+  { "type": "error", "name": "InsufficientDepositAmountToCoverFees", "inputs": [] },
+  { "type": "error", "name": "AtomDoesNotExist", "inputs": [{ "name": "atomId", "type": "bytes32" }] },
+  { "type": "error", "name": "TripleExists", "inputs": [{ "name": "s", "type": "bytes32" }, { "name": "p", "type": "bytes32" }, { "name": "o", "type": "bytes32" }] },
+  { "type": "error", "name": "MinimumDeposit", "inputs": [] }
 ] as const;
 
 export const MULTI_VAULT_ABI = [

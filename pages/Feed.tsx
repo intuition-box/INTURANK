@@ -8,9 +8,10 @@ import { playClick, playHover } from '../services/audio';
 import { GoogleGenAI } from "@google/genai";
 import { formatEther } from 'viem';
 import { getFollowedIdentities } from '../services/follows';
+import { resolveENS, toAddress } from '../services/web3';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
-import { EXPLORER_URL } from '../constants';
+import { EXPLORER_URL, getGeminiApiKey } from '../constants';
 import { Transaction } from '../types';
 import { getLocalTransactions } from '../services/web3';
 
@@ -42,20 +43,22 @@ const Feed: React.FC = () => {
     const syncIntervalRef = useRef<any>(null);
 
     const generateAresPulse = async (currentEvents: any[]) => {
-        if (currentEvents.length < 5 || isAresLoading) return;
+        if (isAresLoading) return;
         setIsAresLoading(true);
         try {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            const apiKey = getGeminiApiKey();
             if (!apiKey) {
                 setAresPulse("NEURAL_UPLINK_FRAGMENTED_STANDBY");
                 setIsAresLoading(false);
                 return;
             }
-            const ai = new GoogleGenAI({ apiKey });
-            const summary = currentEvents.slice(0, 15).map(e => 
-                `${e.sender?.label || 'Node'} ${e.type} ${e.assets ? formatEther(BigInt(e.assets)) : ''} on ${e.target?.label}`
-            ).join('; ');
+            const summary = currentEvents.length > 0
+                ? currentEvents.slice(0, 15).map(e =>
+                    `${e.sender?.label || 'Node'} ${e.type} ${e.assets ? formatEther(BigInt(e.assets)) : ''} on ${e.target?.label}`
+                ).join('; ')
+                : 'No recent activity detected.';
 
+            const ai = new GoogleGenAI({ apiKey });
             const prompt = `
                 Analyze these recent semantic graph activities: [${summary}]
                 Role: Tactical Graph Architect.
@@ -76,8 +79,13 @@ const Feed: React.FC = () => {
         }
     };
 
+    const handleForceRecon = async () => {
+        playClick();
+        await fetchActivity(true, true);
+    };
+
     const fetchActivity = useCallback(async (isInitial = false, reset = false) => {
-        if (isSyncing || (loadingMore && !reset)) return;
+        if (!reset && (isSyncing || loadingMore)) return;
         
         if (reset) {
             setLoading(true);
@@ -166,13 +174,19 @@ const Feed: React.FC = () => {
 
     const holdingsItems = personalItems.filter((n) => n.source !== 'follow');
     const followItems = personalItems.filter((n) => n.source === 'follow');
+    const followsCount = walletAddress ? getFollowedIdentities(walletAddress).length : 0;
 
     // Personalized notifications: activity on holdings + followed accounts
-    useEffect(() => {
-        const fetchPersonal = async () => {
+    const fetchPersonal = useCallback(async () => {
             if (!walletAddress) {
                 setPersonalItems([]);
                 return;
+            }
+            // Show local tx immediately so Your Actions never disappears during refresh
+            const local = getLocalTransactions(walletAddress) || [];
+            if (local.length > 0) {
+                const sorted = [...local].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setOwnHistory(sorted.slice(0, 60));
             }
             setPersonalLoading(true);
             setOwnLoading(true);
@@ -181,37 +195,44 @@ const Feed: React.FC = () => {
                     getUserPositions(walletAddress),
                     getUserHistory(walletAddress).catch(() => []),
                 ]);
-                const vaultIds = (positions || [])
-                    .map((p: any) => p.vault?.term_id)
-                    .filter(Boolean);
-                const holdings = await getActivityOnMyMarkets(walletAddress, vaultIds, 40);
-
+                const vaultIds = (positions || []).map((p: any) => p.vault?.term_id).filter(Boolean);
                 const follows = getFollowedIdentities(walletAddress);
-                let followActivity: PositionActivityNotification[] = [];
-                if (follows.length > 0) {
-                    const senderIds = follows.map((f) => f.identityId);
-                    followActivity = await getActivityBySenderIds(senderIds, 30);
-                }
+
+                // Run holdings and follow activity in parallel for faster refresh
+                const [holdings, followActivity] = await Promise.all([
+                    getActivityOnMyMarkets(walletAddress, vaultIds, 40),
+                    (async () => {
+                        if (follows.length === 0) return [];
+                        const senderIds = await Promise.all(
+                            follows.map(async (f) => {
+                                const addr = toAddress(f.identityId);
+                                if (addr) return addr;
+                                const resolved = await resolveENS(f.identityId);
+                                return resolved ? (toAddress(resolved) || resolved) : null;
+                            })
+                        );
+                        const validIds = senderIds.filter((id): id is string => !!id && !!toAddress(id));
+                        return validIds.length > 0 ? getActivityBySenderIds(validIds, 30) : [];
+                    })(),
+                ]);
 
                 const seen = new Set<string>();
                 const merged: PersonalItem[] = [];
-                for (const n of holdings) {
-                    if (!seen.has(n.id)) {
-                        seen.add(n.id);
-                        merged.push({ ...n, source: 'holdings' });
-                    }
-                }
                 for (const n of followActivity) {
                     if (!seen.has(n.id)) {
                         seen.add(n.id);
                         merged.push({ ...n, source: 'follow' });
                     }
                 }
+                for (const n of holdings) {
+                    if (!seen.has(n.id)) {
+                        seen.add(n.id);
+                        merged.push({ ...n, source: 'holdings' });
+                    }
+                }
                 merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 setPersonalItems(merged);
 
-                // Own history: merge graph history with local txs so buys/sells always show up
-                const local = getLocalTransactions(walletAddress) || [];
                 const combinedHistory: Transaction[] = [...local, ...(historyFromGraph || [])];
                 const historyMap = new Map<string, Transaction>();
                 combinedHistory.forEach((tx) => {
@@ -221,17 +242,18 @@ const Feed: React.FC = () => {
                 const mergedHistory = Array.from(historyMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 setOwnHistory(mergedHistory.slice(0, 60));
             } catch (e) {
-                setPersonalItems([]);
-                setOwnHistory([]);
+                console.warn('[Feed] fetchPersonal error:', e);
             } finally {
                 setPersonalLoading(false);
                 setOwnLoading(false);
             }
-        };
+        }, [walletAddress]);
+
+    useEffect(() => {
         fetchPersonal();
         const t = setInterval(fetchPersonal, 60_000);
         return () => clearInterval(t);
-    }, [walletAddress]);
+    }, [fetchPersonal]);
 
     return (
         <div className="w-full max-w-[1600px] mx-auto px-6 py-12 pb-40 font-mono relative z-10">
@@ -291,12 +313,12 @@ const Feed: React.FC = () => {
                         </p>
                     </div>
                     <button 
-                        onClick={() => generateAresPulse(events)}
-                        disabled={isAresLoading}
+                        onClick={handleForceRecon}
+                        disabled={loading}
                         onMouseEnter={playHover}
-                        className="px-8 py-3 rounded-xl bg-white/5 border-2 border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all duration-300 text-[9px] font-black uppercase tracking-widest"
+                        className="px-8 py-3 rounded-xl bg-white/5 border-2 border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all duration-300 text-[9px] font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {isAresLoading ? 'SYNTHESIZING...' : 'FORCE_RECON'}
+                        {loading ? 'REFRESHING...' : 'FORCE_RECON'}
                     </button>
                 </div>
             </div>
@@ -309,11 +331,14 @@ const Feed: React.FC = () => {
                         <div className="px-5 py-4 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
                             <div>
                                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 flex items-center gap-2">
-                                    <Zap size={12} className="text-intuition-secondary" /> Personalized notifications
+                                    <Zap size={12} className="text-intuition-secondary" /> Activity feed
                                 </div>
                                 <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-[0.25em]">
                                     YOUR GRAPH SIGNALS
                                 </h2>
+                                <p className="text-[9px] font-mono text-slate-500 mt-1 uppercase tracking-wider">
+                                    Loads on page load · Enable email alerts for notifications when away
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -409,6 +434,24 @@ const Feed: React.FC = () => {
                             <span className="text-[10px] font-mono text-amber-300 uppercase tracking-[0.25em] flex items-center gap-1">
                                 <UserPlus size={10} /> People you follow
                             </span>
+                            {walletAddress && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest tabular-nums" title="Accounts you follow">
+                                        Following: {followsCount}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => { playClick(); fetchPersonal(); }}
+                                        onMouseEnter={playHover}
+                                        disabled={personalLoading}
+                                        className="p-1.5 rounded-lg border border-slate-600 text-slate-400 hover:text-amber-400 hover:border-amber-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        title="Refresh follow activity"
+                                        aria-label="Refresh"
+                                    >
+                                        <RefreshCw size={12} className={personalLoading ? 'animate-spin' : ''} />
+                                    </button>
+                                </div>
+                            )}
                         </div>
                         <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
                             {!walletAddress && (
@@ -422,8 +465,17 @@ const Feed: React.FC = () => {
                                 </div>
                             )}
                             {walletAddress && !personalLoading && followItems.length === 0 && (
-                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
-                                    No recent trades from people you follow.
+                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center space-y-2">
+                                    {followsCount === 0 ? (
+                                        <>
+                                            <p>Follow accounts from their profiles to see their trades here.</p>
+                                            <Link to="/markets" onClick={playClick} className="inline-flex items-center gap-1 text-intuition-primary hover:text-intuition-secondary transition-colors mt-2">
+                                                Browse markets <Activity size={10} />
+                                            </Link>
+                                        </>
+                                    ) : (
+                                        <p>No recent trades from people you follow.</p>
+                                    )}
                                 </div>
                             )}
                             {walletAddress && followItems.slice(0, 15).map((n) => {
@@ -514,7 +566,7 @@ const Feed: React.FC = () => {
                                     No recent buys, sells, or creations.
                                 </div>
                             )}
-                            {walletAddress && !ownLoading && ownHistory.slice(0, 20).map((tx) => {
+                            {walletAddress && ownHistory.slice(0, 20).map((tx) => {
                                 const assetsNum = tx.assets ? parseFloat(formatEther(BigInt(tx.assets))) : 0;
                                 const isRedeem = tx.type === 'REDEEM';
                                 return (

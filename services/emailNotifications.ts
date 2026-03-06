@@ -64,7 +64,8 @@ export function setEmailSubscription(
   walletAddress: string,
   email: string,
   nickname?: string,
-  alertFrequency?: EmailAlertFrequency
+  alertFrequency?: EmailAlertFrequency,
+  follows?: Array<{ identityId: string; label?: string; emailAlerts: boolean }>
 ): void {
   const key = normalizeWallet(walletAddress);
   const subs = loadSubscriptions();
@@ -78,9 +79,10 @@ export function setEmailSubscription(
   };
   saveSubscriptions(subs);
 
+  const followList = Array.isArray(follows) ? follows : [];
   // Also persist subscription on the backend so the email worker can send alerts when the app is closed
   try {
-    fetch('/api/email-subscribe', {
+    fetch(getEmailSubscribeUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -88,6 +90,7 @@ export function setEmailSubscription(
         email: trimmedEmail,
         nickname: nickname?.trim() || undefined,
         alertFrequency: alertFrequency ?? existing?.alertFrequency ?? 'per_tx',
+        follows: followList,
       }),
     }).catch(() => {});
   } catch {
@@ -113,7 +116,7 @@ export function removeEmailSubscription(walletAddress: string): void {
   saveSubscriptions(subs);
 
   try {
-    fetch('/api/email-unsubscribe', {
+    fetch(getEmailUnsubscribeUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet: walletAddress }),
@@ -401,8 +404,45 @@ export async function maybeSendDailyDigest(walletAddress: string): Promise<void>
 
 const EMAIL_API_BASE = import.meta.env.VITE_EMAIL_API_URL || '';
 
+function getEmailApiBase(): string {
+  return EMAIL_API_BASE ? EMAIL_API_BASE.replace(/\/$/, '') : '';
+}
+
 function getEmailApiUrl(): string {
-  return EMAIL_API_BASE ? `${EMAIL_API_BASE.replace(/\/$/, '')}/api/send-email` : '/api/send-email';
+  const base = getEmailApiBase();
+  return base ? `${base}/api/send-email` : '/api/send-email';
+}
+
+function getEmailSubscribeUrl(): string {
+  const base = getEmailApiBase();
+  return base ? `${base}/api/email-subscribe` : '/api/email-subscribe';
+}
+
+function getEmailUnsubscribeUrl(): string {
+  const base = getEmailApiBase();
+  return base ? `${base}/api/email-unsubscribe` : '/api/email-unsubscribe';
+}
+
+function getEmailSyncFollowsUrl(): string {
+  const base = getEmailApiBase();
+  return base ? `${base}/api/sync-follows` : '/api/sync-follows';
+}
+
+/** Sync follows to the server so the email worker can send alerts when people you follow trade. Call when user has email subscription. */
+export function syncFollowsToServer(
+  walletAddress: string,
+  follows: Array<{ identityId: string; label?: string; emailAlerts: boolean }>
+): void {
+  if (!walletAddress) return;
+  try {
+    fetch(getEmailSyncFollowsUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: walletAddress, follows }),
+    }).catch(() => {});
+  } catch {
+    // best-effort
+  }
 }
 
 /** Optional: set from app to surface email delivery failures (e.g. toast). */
