@@ -1,5 +1,4 @@
-/** Set to true to show only the maintenance page. Toggle back to false when ready to go live. */
-export const MAINTENANCE_MODE = true;
+export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
 
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
