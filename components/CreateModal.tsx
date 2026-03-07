@@ -255,7 +255,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
       const metadata = { name: identityForm.name, description: identityForm.description, image: identityForm.image, type: identityForm.type, links: identityForm.links.filter(l => l.url) };
       await new Promise(r => setTimeout(r, 1000));
       setTxStatus('SIGNING');
-      const hash = await createIdentityAtom(metadata, identityForm.deposit, wallet);
+      const { hash } = await createIdentityAtom(metadata, identityForm.deposit, wallet);
       setTxHash(hash);
       setTxStatus('BROADCASTING');
       await publicClient.waitForTransactionReceipt({ hash });

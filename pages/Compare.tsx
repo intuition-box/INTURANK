@@ -7,7 +7,7 @@ import { formatEther } from 'viem';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { playClick, playHover } from '../services/audio';
 import { Link } from 'react-router-dom';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { GoogleGenAI } from "@google/genai";
 
@@ -35,9 +35,9 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     const generateAnalysis = async () => {
         setLoading(true);
         try {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            const apiKey = getGeminiApiKey();
             if (!apiKey) {
-                setAnalysis('AI summary is disabled. Add VITE_GEMINI_API_KEY to .env.local to enable it.');
+                setAnalysis('AI summary is disabled. Set VITE_GEMINI_API_KEY in your environment to enable it.');
                 setLoading(false);
                 return;
             }

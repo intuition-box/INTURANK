@@ -1,8 +1,8 @@
 
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, encodePacked, decodeEventLog } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, isAddress, type Hex, stringToHex, toHex, keccak256, encodePacked, decodeEventLog } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
-import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL } from '../constants';
+import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL, CURVE_OFFSET } from '../constants';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import EthereumProvider from '@walletconnect/ethereum-provider';
@@ -74,6 +74,28 @@ const getBrowserProvider = (preference: InjectedPreference = 'default') => {
 
 export const getProvider = () => {
   return activeProvider || getBrowserProvider('default');
+};
+
+/** Send native TRUST to an address. Uses same provider as rest of app so wallet prompts. */
+export const sendNativeTransfer = async (
+  fromAccount: string,
+  to: `0x${string}`,
+  valueWei: bigint
+): Promise<string> => {
+  const provider = getProvider();
+  if (!provider) throw new Error('Wallet not connected');
+  const account = getAddress(fromAccount);
+  const walletClient = createWalletClient({
+    chain: intuitionChain,
+    transport: custom(provider),
+    account: account as `0x${string}`,
+  });
+  const hash = await walletClient.sendTransaction({
+    to,
+    value: valueWei,
+    account: account as `0x${string}`,
+  });
+  return hash;
 };
 
 /**
@@ -173,8 +195,8 @@ export const connectWallet = async (
       });
 
       await provider.connect();
-      const accounts = await provider.request({ method: 'eth_accounts' });
-      if (!accounts || accounts.length === 0) return null;
+      const accounts = (await provider.request({ method: 'eth_accounts' })) as string[] | undefined;
+      if (!Array.isArray(accounts) || accounts.length === 0) return null;
       const address = getAddress(accounts[0]);
 
       activeProvider = provider;
@@ -232,6 +254,41 @@ export const getShareBalance = async (account: string, termId: string, curveId: 
     } as any);
     return formatEther(shares as bigint);
   } catch { return "0"; }
+};
+
+/** Batch getShareBalance via multicall — reduces N RPC calls to 1. Returns map of "termId:curveId" -> shares string. */
+const MULTICALL_BATCH_SIZE = 80;
+export const getShareBalancesBatch = async (
+  account: string,
+  items: { termId: string; curveId: number }[]
+): Promise<Map<string, string>> => {
+  const result = new Map<string, string>();
+  if (!items.length) return result;
+  const checksumAccount = getAddress(account);
+  for (let i = 0; i < items.length; i += MULTICALL_BATCH_SIZE) {
+    const batch = items.slice(i, i + MULTICALL_BATCH_SIZE);
+    const contracts = batch.map(({ termId, curveId }) => {
+      const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
+      const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+      return {
+        address: MULTI_VAULT_ADDRESS as `0x${string}`,
+        abi: MULTI_VAULT_ABI,
+        functionName: 'getShares' as const,
+        args: [checksumAccount, termIdBytes32, BigInt(curveId)] as const,
+      };
+    });
+    try {
+      const results = await publicClient.multicall({ contracts, allowFailure: true });
+      batch.forEach(({ termId, curveId }, idx) => {
+        const key = `${termId.toLowerCase()}:${curveId}`;
+        const r = results[idx];
+        result.set(key, r?.status === 'success' && r.result != null ? formatEther(r.result as bigint) : '0');
+      });
+    } catch {
+      batch.forEach(({ termId, curveId }) => result.set(`${termId.toLowerCase()}:${curveId}`, '0'));
+    }
+  }
+  return result;
 };
 
 export const getQuoteRedeem = async (sharesAmount: string, termId: string, account: string, curveId: number = OFFSET_PROGRESSIVE_CURVE_ID): Promise<string> => {
@@ -380,8 +437,6 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
 
 export const checkProxyApproval = async (walletAddress: string): Promise<boolean> => {
     const addr = getAddress(walletAddress);
-    const cacheKey = `inturank_approved_${addr.toLowerCase()}`;
-    if (localStorage.getItem(cacheKey) === 'true') return true;
     try {
         const approved = await publicClient.readContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
@@ -389,9 +444,7 @@ export const checkProxyApproval = async (walletAddress: string): Promise<boolean
             functionName: 'isApproved',
             args: [addr, getAddress(FEE_PROXY_ADDRESS), 1]
         } as any);
-        const isOk = Boolean(approved);
-        if (isOk) localStorage.setItem(cacheKey, 'true');
-        return isOk;
+        return Boolean(approved);
     } catch (e) { return false; }
 };
 
@@ -409,7 +462,6 @@ export const grantProxyApproval = async (walletAddress: string): Promise<void> =
         } as any);
         const hash = await walletClient.writeContract(request);
         await publicClient.waitForTransactionReceipt({ hash });
-        localStorage.setItem(`inturank_approved_${checksumAccount.toLowerCase()}`, 'true');
         toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
     } catch (e: any) { throw e; }
 };
@@ -457,8 +509,11 @@ export const parseProtocolError = (error: any) => {
     if (msg.includes("User rejected")) return "USER_REJECTED_HANDSHAKE";
     // Already a clear triple failure message (e.g. from FeeProxy + SDK fallback)
     if (msg.includes("Triple creation failed")) return msg.slice(0, 140) + (msg.length > 140 ? "…" : "");
-    // FeeProxy createTriples revert (custom error / undecodable)
-    if (msg.includes("createTriples") || msg.includes("0xd335ef46") || (msg.includes("reverted") && msg.toLowerCase().includes("triple"))) {
+    // FeeProxy createTriples revert 0xd335ef46 (custom error - often atom not found or triple exists)
+    if (msg.includes("0xd335ef46")) {
+        return "Triple creation reverted. Verify: (1) all 3 atoms exist on-chain, (2) this triple doesn't already exist, (3) you have enough TRUST for deposit + fee.";
+    }
+    if (msg.includes("createTriples") || (msg.includes("reverted") && msg.toLowerCase().includes("triple"))) {
         return "Triple creation failed. Check: all 3 atoms exist on-chain, enough TRUST, and Enable Protocol.";
     }
     if (msg.includes("reverted") || msg.includes("ContractFunctionRevertedError")) {
@@ -473,9 +528,18 @@ export const publishOpinion = async (text: string, agentId: string, side: string
     } catch (e) { return undefined; }
 };
 
-export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string, onProgress?: (log: string) => void) => {
+/** Build atom data bytes for FeeProxy. Uses formats the protocol accepts: Account = address hex; Thing/Person/Organization = plain text name (avoids getAtomCost revert on JSON). */
+const buildAtomDataHex = (metadata: any): `0x${string}` => {
+    if (metadata?.type === 'Account' && metadata?.address && isAddress(metadata.address)) {
+        return toHex(getAddress(metadata.address));
+    }
+    const name = (metadata?.name && typeof metadata.name === 'string') ? metadata.name.trim() : 'Atom';
+    return toHex(name || 'Atom');
+};
+
+export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string, onProgress?: (log: string) => void): Promise<{ hash: `0x${string}`; termId?: `0x${string}` }> => {
     const checksumReceiver = getAddress(receiver);
-    const dataHex = stringToHex(JSON.stringify(metadata));
+    const dataHex = buildAtomDataHex(metadata);
     const depositBigInt = parseEther(depositAmount);
     const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
     const provider = getProvider();
@@ -490,7 +554,7 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
         } as any) as bigint;
         
         onProgress?.("Awaiting Identity Signature...");
-        const { request } = await publicClient.simulateContract({
+        const { request, result } = await publicClient.simulateContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
             functionName: 'createAtoms',
@@ -499,28 +563,38 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
             value: totalCost, 
         } as any);
         
+        const atomIds = result as `0x${string}`[] | undefined;
+        const termId = atomIds && atomIds.length > 0 ? atomIds[0] : undefined;
         const hash = await walletClient.writeContract(request);
         onProgress?.(`Broadcasting Identity... Hash: ${hash.slice(0,10)}...`);
         window.dispatchEvent(new Event('local-tx-updated'));
-        return hash;
+        return { hash, termId };
     } catch (error: any) { throw error; }
 };
 
-export const getAtomCreationCost = async (metadata: any, depositAmount: string) => {
-    const dataHex = stringToHex(JSON.stringify(metadata));
+export const getAtomCreationCost = async (metadata: any, depositAmount: string): Promise<bigint> => {
+    const dataHex = buildAtomDataHex(metadata);
     const depositBigInt = parseEther(depositAmount);
     const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
-    return await publicClient.readContract({
-        address: FEE_PROXY_ADDRESS as `0x${string}`,
-        abi: FEE_PROXY_ABI,
-        functionName: 'getAtomCost',
-        args: [dataHex, depositBigInt, curveIdBigInt]
-    } as any) as bigint;
+    try {
+        return await publicClient.readContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'getAtomCost',
+            args: [dataHex, depositBigInt, curveIdBigInt]
+        } as any) as bigint;
+    } catch {
+        const { multiVaultGetAtomCost } = await import('@0xintuition/protocol');
+        const baseCost = await multiVaultGetAtomCost({ address: MULTI_VAULT_ADDRESS as `0x${string}`, publicClient });
+        const rawTotal = baseCost + depositBigInt;
+        const feeEstimate = (rawTotal * 5n) / 100n;
+        return rawTotal + feeEstimate;
+    }
 };
 
 export const estimateAtomGas = async (account: string, metadata: any, depositAmount: string) => {
     const checksumAccount = getAddress(account);
-    const dataHex = stringToHex(JSON.stringify(metadata));
+    const dataHex = buildAtomDataHex(metadata);
     const depositBigInt = parseEther(depositAmount);
     const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
     try {
@@ -538,12 +612,64 @@ export const estimateAtomGas = async (account: string, metadata: any, depositAmo
     } catch (error) { return parseEther('0.0008'); }
 };
 
+/**
+ * Returns the minimum deposit (assets) required for claim/triple creation.
+ * Uses CURVE_OFFSET (0.1 T) as the protocol minimum for the bonding curve.
+ */
+export const getMinClaimDeposit = async (): Promise<string> => {
+    return formatEther(CURVE_OFFSET);
+};
+
+/**
+ * Returns the protocol fee (triple cost) for creating a claim.
+ */
+export const getTripleCost = async (): Promise<string> => {
+    try {
+        const tripleCost = await publicClient.readContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'getTripleCost',
+        } as any) as bigint;
+        return formatEther(tripleCost);
+    } catch {
+        return formatEther(parseEther('0.101'));
+    }
+};
+
+/**
+ * Returns the total cost (deposit + triple fee) for creating a claim.
+ */
+export const getTotalTripleCreationCost = async (depositAmount: string): Promise<string> => {
+    const assets = parseEther(depositAmount || '0');
+    try {
+        const tripleCost = await publicClient.readContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'getTripleCost',
+        } as any) as bigint;
+        let totalCost = await publicClient.readContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'getTotalCreationCost',
+            args: [1n, assets, tripleCost],
+        } as any) as bigint;
+        totalCost = (totalCost * 101n) / 100n; // 1% buffer for rounding
+        return formatEther(totalCost);
+    } catch {
+        const tripleCost = parseEther('0.101');
+        return formatEther(assets + tripleCost);
+    }
+};
+
 export const createSemanticTriple = async (subjectId: string, predicateId: string, objectId: string, depositAmount: string, receiver: string, onProgress?: (log: string) => void) => {
+    const assets = parseEther(depositAmount);
+    if (assets < CURVE_OFFSET) {
+        throw new Error(`Minimum deposit is ${formatEther(CURVE_OFFSET)} TRUST. You provided ${depositAmount}.`);
+    }
     const checksumReceiver = getAddress(receiver);
     const sId = pad((subjectId.startsWith('0x') ? subjectId : `0x${subjectId}`) as Hex, { size: 32 });
     const pId = pad((predicateId.startsWith('0x') ? predicateId : `0x${predicateId}`) as Hex, { size: 32 });
     const oId = pad((objectId.startsWith('0x') ? objectId : `0x${objectId}`) as Hex, { size: 32 });
-    const assets = parseEther(depositAmount);
     const provider = getProvider();
     const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
     try {
@@ -565,8 +691,10 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
                 functionName: 'getTotalCreationCost',
                 args: [1n, assets, tripleCost]
             } as any) as bigint;
+            // Add 1% buffer to avoid 0xd335ef46 (often insufficient value) from rounding/fee drift
+            totalCost = (totalCost * 101n) / 100n;
         } catch (e) {
-            totalCost = assets + tripleCost;
+            totalCost = (assets + tripleCost) * 101n / 100n;
         }
 
         onProgress?.("Awaiting Synapse Signature...");
@@ -583,12 +711,35 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
         onProgress?.(`Broadcasting Triple... Hash: ${hash.slice(0,10)}...`);
         window.dispatchEvent(new Event('local-tx-updated'));
         return hash;
-    } catch (error: any) { throw error; }
+    } catch (error: any) {
+        console.error('createSemanticTriple failed:', error?.message || error);
+        throw error;
+    }
 };
 
 export const switchNetworkManual = async () => switchNetwork();
 export const getClientChainId = async () => CHAIN_ID;
 export const fetchAtomNameFromChain = async (id: string) => null;
+
+/**
+ * Normalizes an address-like id to a 42-char checksummed address.
+ * Handles both 42-char addresses and 66-char padded format (0x0000...0000 + addr).
+ * Returns null when the id is not a valid address.
+ */
+export const toAddress = (id: string | null | undefined): string | null => {
+  if (!id || typeof id !== 'string') return null;
+  const t = id.trim();
+  if (t.length === 42 && t.startsWith('0x') && isAddress(t)) {
+    try { return getAddress(t); } catch { return null; }
+  }
+  if (t.length === 66 && t.startsWith('0x000000000000000000000000')) {
+    const unpadded = '0x' + t.slice(26);
+    if (isAddress(unpadded)) {
+      try { return getAddress(unpadded); } catch { return null; }
+    }
+  }
+  return null;
+};
 
 /**
  * Resolves an ENS name to an Ethereum address using Mainnet.
