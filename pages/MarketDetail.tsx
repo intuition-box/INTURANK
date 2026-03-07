@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
-import { getAgentById, getAgentTriples, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
+import { getAgentById, getAgentTriples, getAgentTriplesWithVaults, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { formatEther, parseEther } from 'viem';
@@ -12,7 +12,7 @@ import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
-import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
+import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, safeWeiToEther, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
 import { LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
 import { sendTransactionReceiptEmail } from '../services/emailNotifications';
 import { CurrencySymbol } from '../components/CurrencySymbol';
@@ -152,11 +152,11 @@ const AgentShareModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/98 backdrop-blur-xl animate-in fade-in duration-500" onClick={onClose}>
-            <div className="w-full max-w-4xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-16 sm:pt-24 overflow-y-auto bg-black/98 backdrop-blur-xl animate-in fade-in duration-500" onClick={onClose}>
+            <div className="w-full max-w-xl sm:max-w-2xl translate-y-0" onClick={e => e.stopPropagation()}>
                 <div 
                     ref={cardRef} 
-                    className="relative bg-[#020308] border-2 py-10 px-12 rounded-3xl shadow-[0_0_150px_rgba(0,0,0,1)] overflow-hidden group/modal transition-all duration-1000"
+                    className="relative bg-[#020308] border-2 py-6 px-5 sm:px-8 rounded-[1.5rem] sm:rounded-[2rem] shadow-[0_0_150px_rgba(0,0,0,1)] overflow-hidden group/modal transition-all duration-1000"
                     style={{ 
                         borderColor: `${theme.color}aa`,
                         boxShadow: `0 0 100px ${theme.bgGlow}`
@@ -170,110 +170,110 @@ const AgentShareModal: React.FC<{
                     
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
 
-                    <div className="flex justify-between items-center mb-8 relative z-10 gap-10">
+                    <div className="flex justify-between items-center mb-5 relative z-10 gap-6">
                         <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 text-[10px] font-black font-mono uppercase tracking-[0.5em] mb-3 transition-colors duration-1000" style={{ color: theme.color }}>
+                            <div className="flex items-center gap-2 text-[10px] font-black font-mono uppercase tracking-[0.4em] mb-2 transition-colors duration-1000" style={{ color: theme.color }}>
                                 <Activity size={14} className="animate-pulse" /> Activity
                             </div>
                             <h2 
-                                className="text-4xl md:text-5xl lg:text-6xl font-black font-display text-white tracking-tighter uppercase leading-tight break-all transition-all duration-1000"
+                                className="text-2xl sm:text-3xl md:text-4xl font-black font-display text-white tracking-tighter uppercase leading-tight break-all transition-all duration-1000"
                                 style={{ textShadow: `0 0 30px ${theme.color}66` }}
                             >
                                 {agent.label}
                             </h2>
                         </div>
                         <div 
-                            className="w-24 h-24 bg-black border-2 flex items-center justify-center rounded-3xl shrink-0 group-hover/modal:border-white transition-all duration-1000 overflow-hidden shadow-2xl"
+                            className="w-14 h-14 sm:w-16 sm:h-16 bg-black border-2 flex items-center justify-center rounded-xl shrink-0 group-hover/modal:border-white transition-all duration-1000 overflow-hidden shadow-2xl"
                             style={{ borderColor: `${theme.color}66`, boxShadow: `0 0 30px ${theme.bgGlow}` }}
                         >
                             {agent.image ? (
                               <img src={agent.image} className="w-full h-full object-cover" crossOrigin="anonymous" alt="" />
                             ) : (
-                              <Logo className="w-14 h-14 transition-colors duration-1000" style={{ filter: `drop-shadow(0 0 8px ${theme.color})` }} />
+                              <Logo className="w-8 h-8 sm:w-10 sm:h-10 transition-colors duration-1000" style={{ filter: `drop-shadow(0 0 8px ${theme.color})` }} />
                             )}
                         </div>
                     </div>
 
-                    <div className="mb-8 relative z-10">
-                        <div className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-widest mb-4">SEMANTIC_TAGS:</div>
-                        <div className="flex flex-wrap gap-2.5">
+                    <div className="mb-5 relative z-10">
+                        <div className="text-[10px] font-black font-mono text-slate-300 uppercase tracking-widest mb-3">SEMANTIC_TAGS:</div>
+                        <div className="flex flex-wrap gap-2">
                             {tags.slice(0, 7).map((tag, i) => (
                                 <span 
                                     key={i} 
-                                    className="px-4 py-1.5 bg-white/5 border border-white/10 text-[9px] font-black text-white uppercase tracking-wider rounded-full hover:border-white transition-colors cursor-default"
+                                    className="px-3 py-1.5 bg-white/5 border border-white/20 text-[10px] font-black text-white uppercase tracking-wider rounded-full hover:border-white/40 transition-all cursor-default"
                                     style={{ borderColor: i === 0 ? `${theme.color}66` : '' }}
                                 >
                                     {tag.label}
                                 </span>
                             ))}
-                            {tags.length > 7 && <span className="px-4 py-1.5 bg-white/5 border border-white/10 text-[9px] font-black text-white uppercase tracking-wider rounded-full">+{tags.length - 7} more</span>}
+                            {tags.length > 7 && <span className="px-3 py-1.5 bg-white/5 border border-white/20 text-[10px] font-black text-white uppercase tracking-wider rounded-full">+{tags.length - 7} more</span>}
                         </div>
                     </div>
 
-                    <div className="mb-8 relative z-10">
-                        <div className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-widest mb-4">DESCRIPTION_PAYLOAD:</div>
-                        <div className="p-6 bg-black border border-white/5 rounded-2xl relative group/desc">
+                    <div className="mb-5 relative z-10">
+                        <div className="text-[10px] font-black font-mono text-slate-300 uppercase tracking-widest mb-3">DESCRIPTION_PAYLOAD:</div>
+                        <div className="p-4 bg-black/60 border border-white/10 rounded-xl relative group/desc">
                             <div 
                                 className="absolute left-0 top-0 bottom-0 w-1 transition-colors duration-1000"
                                 style={{ backgroundColor: `${theme.color}88` }}
                             ></div>
-                            <p className="text-sm font-mono text-slate-300 leading-relaxed uppercase tracking-tight line-clamp-3 group-hover:text-white transition-colors">
+                            <p className="text-sm font-mono text-slate-200 leading-relaxed uppercase tracking-tight line-clamp-2 group-hover:text-white transition-colors">
                                 {agent.description || "Establishing logical connectivity within the Intuition Trust Graph. Node identity verified and synchronized for global capital signaling."}
                             </p>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8 relative z-10">
-                        <div className="bg-black/60 border border-white/10 p-5 rounded-2xl group/stat hover:border-white/30 transition-all">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-white transition-colors">Mkt_Cap</div>
-                            <div className="text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(mktCap)}</div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 relative z-10">
+                        <div className="bg-black/60 border border-white/15 p-3 sm:p-4 rounded-xl group/stat hover:border-white/30 transition-all">
+                            <div className="text-[9px] text-slate-300 uppercase font-black tracking-widest mb-1 group-hover:stat:text-white transition-colors">Mkt_Cap</div>
+                            <div className="text-xl sm:text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(mktCap)}</div>
                         </div>
-                        <div className="bg-black/60 border border-white/10 p-5 rounded-2xl group/stat hover:border-white/30 transition-all">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-white transition-colors">Spot_Price</div>
-                            <div className="text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(price)}</div>
+                        <div className="bg-black/60 border border-white/15 p-3 sm:p-4 rounded-xl group/stat hover:border-white/30 transition-all">
+                            <div className="text-[9px] text-slate-300 uppercase font-black tracking-widest mb-1 group-hover:stat:text-white transition-colors">Spot_Price</div>
+                            <div className="text-xl sm:text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatMarketValue(price)}</div>
                         </div>
-                        <div className="bg-black border border-white/10 p-5 rounded-2xl group/stat transition-all" style={{ borderColor: `${theme.color}55` }}>
+                        <div className="bg-black/60 border p-3 sm:p-4 rounded-xl group/stat transition-all" style={{ borderColor: `${theme.color}55` }}>
                             <div 
-                                className="text-[8px] uppercase font-black tracking-widest mb-2 transition-colors duration-1000"
+                                className="text-[9px] uppercase font-black tracking-widest mb-1 transition-colors duration-1000"
                                 style={{ color: theme.color }}
                             >Conviction</div>
                             <div 
-                                className="text-2xl font-black font-display tracking-tight leading-none transition-all duration-1000"
+                                className="text-xl sm:text-2xl font-black font-display tracking-tight leading-none transition-all duration-1000"
                                 style={{ color: theme.color, textShadow: `0 0 15px ${theme.color}88` }}
                             >{strength.toFixed(1)}%</div>
                         </div>
-                        <div className="bg-black/60 border border-white/10 p-5 rounded-2xl group/stat hover:border-white/30 transition-all">
-                            <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest mb-2 group-hover:stat:text-white transition-colors">Holders</div>
-                            <div className="text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatLargeNumber(holders)}</div>
+                        <div className="bg-black/60 border border-white/15 p-3 sm:p-4 rounded-xl group/stat hover:border-white/30 transition-all">
+                            <div className="text-[9px] text-slate-300 uppercase font-black tracking-widest mb-1 group-hover:stat:text-white transition-colors">Holders</div>
+                            <div className="text-xl sm:text-2xl font-black text-white font-display tracking-tight leading-none group-hover:stat:text-glow-white">{formatLargeNumber(holders)}</div>
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-8 border-t border-white/10 opacity-60 relative z-10 font-mono">
-                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.6em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.5.0</div>
-                        <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{new Date().toLocaleDateString()} // NEURAL_SYNC_S04</div>
+                    <div className="flex items-center justify-between pt-5 border-t border-white/10 opacity-80 relative z-10 font-mono">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.5.0</div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString()} // NEURAL_SYNC_S04</div>
                     </div>
                 </div>
 
-                <div className="mt-10 flex flex-col md:flex-row gap-4">
-                    <button onClick={handleShareX} className="flex-1 py-5 bg-white/5 border border-white/10 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.4em] rounded-full transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl">
-                        <Twitter size={16} /> Share_on_X
+                <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                    <button onClick={handleShareX} className="flex-1 py-3.5 bg-white/5 border border-white/20 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.3em] rounded-full transition-all flex items-center justify-center gap-2 active:scale-95 shadow-2xl">
+                        <Twitter size={14} /> Share_on_X
                     </button>
-                    <button onClick={handleCopyLink} className="flex-1 py-5 bg-white/5 border border-white/10 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.4em] rounded-full transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl">
-                        <Copy size={16} /> Copy_Uplink
+                    <button onClick={handleCopyLink} className="flex-1 py-3.5 bg-white/5 border border-white/20 text-white hover:bg-white hover:text-black font-black uppercase text-[10px] tracking-[0.3em] rounded-full transition-all flex items-center justify-center gap-2 active:scale-95 shadow-2xl">
+                        <Copy size={14} /> Copy_Uplink
                     </button>
                     <button 
                         onClick={handleDownload} 
                         disabled={isDownloading} 
-                        className="flex-1 py-5 text-black font-black uppercase text-[10px] tracking-[0.4em] rounded-full transition-all flex items-center justify-center gap-3 hover:bg-white active:scale-95 duration-700 shadow-2xl"
+                        className="flex-1 py-3.5 text-black font-black uppercase text-[10px] tracking-[0.3em] rounded-full transition-all flex items-center justify-center gap-2 hover:bg-white active:scale-95 duration-700 shadow-2xl"
                         style={{ backgroundColor: theme.color, boxShadow: `0 0 50px ${theme.glow}` }}
                     >
-                        {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} 
+                        {isDownloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} 
                         Download_Frame
                     </button>
                 </div>
                 
-                <div className="mt-8 text-center">
-                    <button onClick={onClose} className="text-[9px] font-black font-mono text-slate-700 hover:text-white uppercase tracking-[1em] transition-colors">TERMINATE_SESSION</button>
+                <div className="mt-5 text-center">
+                    <button onClick={onClose} className="text-[10px] font-black font-mono text-slate-500 hover:text-white uppercase tracking-[0.8em] transition-colors">TERMINATE_SESSION</button>
                 </div>
             </div>
         </div>
@@ -287,11 +287,25 @@ const MarketDetail: React.FC = () => {
   const [agent, setAgent] = useState<Account | null>(null);
   const [oppositionAgent, setOppositionAgent] = useState<any | null>(null);
   const [triples, setTriples] = useState<Triple[]>([]);
+  const [claimsWithVaults, setClaimsWithVaults] = useState<Array<{
+    id: string;
+    counterTermId?: string;
+    subject: { term_id: string; label: string; image?: string };
+    predicate: { label: string };
+    object: { term_id: string; label: string; image?: string };
+    creator?: { id: string; label?: string; image?: string };
+    transaction_hash?: string;
+    supportTotalAssets: string;
+    supportPositionCount: number;
+    opposeTotalAssets: string;
+    opposePositionCount: number;
+  }>>([]);
   const [activityLog, setActivityLog] = useState<Transaction[]>([]);
   const [holders, setHolders] = useState<any[]>([]);
   const [totalHoldersCount, setTotalHoldersCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
   const [lists, setLists] = useState<any[]>([]);
+  const [showingListsContaining, setShowingListsContaining] = useState(true);
   const [listEntriesSearch, setListEntriesSearch] = useState('');
   const [listSort, setListSort] = useState<'label-asc' | 'label-desc'>('label-asc');
   const [engagedIdentities, setEngagedIdentities] = useState<any[]>([]);
@@ -356,13 +370,15 @@ const MarketDetail: React.FC = () => {
                 checkProxyApproval(acc).then(setIsApproved);
             }
 
-            const [agentData, oppoData, triplesData, activityData, holderResult, listData, engagedData, incomingResult, vaults] = await Promise.all([
-                getAgentById(id),
+            const agentData = await getAgentById(id);
+            const [oppoData, triplesData, claimsWithVaultsData, activityData, holderResult, listDataForAtom, listDataForList, engagedData, incomingResult, vaults] = await Promise.all([
                 getOppositionTriple(id),
                 getAgentTriples(id),
+                getAgentTriplesWithVaults(id),
                 getMarketActivity(id),
                 getHoldersForVault(id),
-                getAtomInclusionListsWithVaults(id),
+                getAtomInclusionListsWithVaults(id, 'ATOM'),
+                getAtomInclusionListsWithVaults(id, 'LIST'),
                 getIdentitiesEngaged(id),
                 getIncomingTriplesForStats(id),
                 getVaultsForTerm(id)
@@ -371,6 +387,7 @@ const MarketDetail: React.FC = () => {
             setAgent(agentData);
             setOppositionAgent(oppoData);
             setTriples(triplesData || []);
+            setClaimsWithVaults(claimsWithVaultsData || []);
             
             let mergedActivity = activityData || [];
             if (acc) {
@@ -384,7 +401,9 @@ const MarketDetail: React.FC = () => {
 
             setHolders(holderResult.holders || []);
             setTotalHoldersCount(holderResult.totalCount);
-            setLists(listData || []);
+            const useListsContaining = (listDataForAtom?.length ?? 0) > 0;
+            setShowingListsContaining(useListsContaining);
+            setLists((useListsContaining ? listDataForAtom : listDataForList) || []);
             setEngagedIdentities(engagedData || []);
             setFollowersCount(incomingResult.totalCount);
             setVaultsByCurve(vaults || []);
@@ -825,8 +844,8 @@ const MarketDetail: React.FC = () => {
         <AgentShareModal isOpen={isShareModalOpen} onClose={() => setIsShareModalOpen(false)} agent={agent} mktCap={mktCapVal} price={currentSpotPrice} holders={totalHoldersCount} tags={tags} />
         
         {showShareCard && cardStats && (
-          <div className="fixed inset-0 bg-black/98 z-[300] flex items-center justify-center p-4 backdrop-blur-3xl animate-in zoom-in duration-300" onClick={() => setShowShareCard(false)}>
-            <div className="relative w-full max-lg" onClick={e => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-black/98 z-[300] flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4 overflow-y-auto backdrop-blur-3xl animate-in zoom-in duration-300" onClick={() => setShowShareCard(false)}>
+            <div className="relative w-full max-w-lg my-auto sm:my-0" onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowShareCard(false)} className="absolute -top-16 right-0 text-slate-500 hover:text-white transition-colors p-2 group"><X size={32} className="group-hover:rotate-90 transition-transform" /></button>
               <ShareCard 
                 username={wallet || '0xUser'} 
@@ -1400,36 +1419,79 @@ const MarketDetail: React.FC = () => {
                 )}
                 {activeTab === 'CLAIMS' && (
                     <div className="animate-in fade-in duration-700">
-                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-10 flex items-center gap-4"><MessageSquare size={16}/> Semantic Claim Ledger</h4>
-                        <div className="space-y-4">{triples.length > 0 ? triples.map((t, i) => (<div key={i} className="p-6 bg-white/[0.01] border-2 border-slate-900 hover:border-white/30 transition-all rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 group backdrop-blur-sm shadow-xl"><div className="flex items-center gap-6 flex-1 min-w-0"><div className="flex items-center flex-col"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center rounded-2xl mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.subject?.image ? <img src={t.subject.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.subject?.label}</span></div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="px-4 py-1.5 bg-black border text-white font-black text-[9px] uppercase tracking-widest rounded-2xl group-hover:shadow-glow-white transition-all" style={{ borderColor: `${theme.color}44`, color: theme.color }}>{t.predicate?.label}</div><ArrowUpRight size={14} className="text-slate-800 group-hover:text-white transition-colors animate-pulse" /><div className="flex flex-col items-center"><div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center rounded-2xl mb-2 overflow-hidden group-hover:border-white/40 transition-colors">{t.object?.image ? <img src={t.object.image} className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}</div><span className="text-[8px] text-slate-500 uppercase font-black truncate max-w-[80px] group-hover:text-white transition-colors">{t.object?.label}</span></div></div><div className="flex flex-col items-end gap-2 shrink-0">
-                                {t.creator && (
-                                    <Link to={`/profile/${t.creator.id}`} onClick={playClick} className="flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 hover:border-intuition-primary transition-all rounded-2xl group/creator">
-                                        <div className="w-4 h-4 bg-black border border-white/10 rounded-full overflow-hidden shrink-0 shadow-sm"><img src={t.creator.image || `https://effigy.im/a/${t.creator.id}.png`} className="w-full h-full object-cover" /></div>
-                                        <span className="text-[8px] font-black text-slate-400 group-hover/creator:text-white uppercase tracking-widest">{t.creator.label || t.creator.id.slice(0, 10)}</span>
-                                        <UserCircle size={10} className="text-slate-600 group-hover/creator:text-intuition-primary" />
-                                    </Link>
-                                )}
-                                <div className="text-right">
-                                    <div className="text-[8px] text-slate-600 uppercase font-black mb-1">Packet_Origin</div>
-                                    <div className="text-[10px] text-white font-mono group-hover:text-glow-white transition-all">{t.transaction_hash?.slice(0, 14)}...</div>
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="w-8 h-8 rounded-lg bg-[#2D3A4B] flex items-center justify-center text-white font-black text-[10px] shrink-0">P</div>
+                            <h4 className="text-base font-black text-white uppercase tracking-[0.4em]">Semantic Claim Ledger</h4>
+                        </div>
+                        <p className="text-[11px] text-slate-400 uppercase font-black tracking-widest mb-4">Claims involving this identity. Support or oppose each semantic relationship.</p>
+                        <div className="overflow-x-auto bg-black border border-slate-800 rounded-xl">
+                            <div className="divide-y divide-slate-800/60">
+                            {claimsWithVaults.length > 0 ? claimsWithVaults.map((c) => {
+                                const supportVal = safeWeiToEther(c.supportTotalAssets);
+                                const opposeVal = safeWeiToEther(c.opposeTotalAssets);
+                                const claimUrl = `/markets/${c.id}`;
+                                const predicateLabel = (c.predicate?.label || 'LINK').replace(/_/g, ' ').toLowerCase();
+                                return (
+                                <div
+                                    key={c.id}
+                                    onClick={() => { navigate(claimUrl); playClick(); }}
+                                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 px-4 py-3 bg-black hover:bg-white/[0.02] transition-all group cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                                        <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                                            {c.subject?.image ? <img src={c.subject.image} alt="" className="w-full h-full object-cover" /> : <User size={16} className="text-slate-500" />}
+                                        </div>
+                                        <span className="text-sm font-bold text-white truncate">{c.subject?.label || 'Unknown'}</span>
+                                        <span className="text-slate-500 text-xs shrink-0">{predicateLabel}</span>
+                                        <span className="px-2.5 py-0.5 rounded-md bg-[#2D3A4B] text-white text-xs font-medium shrink-0">
+                                            {c.object?.label || 'Unknown'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-4 sm:gap-6 shrink-0 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex items-center gap-1.5">
+                                            <Users size={14} className="text-[#3498DB] shrink-0" />
+                                            <span className="text-[12px] font-bold text-[#3498DB]">{formatLargeNumber(c.supportPositionCount)}</span>
+                                            <span className="text-[12px] font-bold text-[#3498DB]">{formatMarketValue(supportVal)} TRUST</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <Users size={14} className="text-[#F39C12] shrink-0" />
+                                            <span className="text-[12px] font-bold text-[#F39C12]">{formatLargeNumber(c.opposePositionCount)}</span>
+                                            <span className="text-[12px] font-bold text-[#F39C12]">{formatMarketValue(opposeVal)} TRUST</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Link to={claimUrl} onClick={playClick} className="px-4 py-2 bg-[#3498DB] text-white text-xs font-bold rounded-lg hover:bg-[#2980B9] transition-colors">
+                                                Support
+                                            </Link>
+                                            <Link to={claimUrl} onClick={playClick} className="px-4 py-2 bg-[#F39C12] text-white text-xs font-bold rounded-lg hover:bg-[#E67E22] transition-colors">
+                                                Oppose
+                                            </Link>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div></div>)) : (<div className="py-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px] border border-dashed border-slate-900">NULL_CLAIMS_RECORDED</div>)}</div>
+                                );
+                            }) : (
+                                <div className="py-16 text-center text-slate-500 uppercase font-black tracking-widest text-xs">
+                                    NULL_CLAIMS_RECORDED
+                                </div>
+                            )}
+                            </div>
+                        </div>
                     </div>
                 )}
                 {activeTab === 'LISTS' && (
                     <div className="animate-in fade-in duration-700">
-                        <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.6em] mb-4 flex items-center gap-4"><ListIcon size={16}/> List Entries</h4>
-                        <p className="text-[9px] text-slate-600 uppercase font-black tracking-widest mb-8">{agent?.type === 'LIST' ? 'Identities tagged with this list.' : 'Lists containing this identity.'}</p>
+                        <h4 className="text-sm font-black text-slate-200 uppercase tracking-[0.5em] mb-4 flex items-center gap-4"><ListIcon size={16}/> List Entries</h4>
+                        <p className="text-[11px] text-slate-400 uppercase font-black tracking-widest mb-8">{showingListsContaining ? 'Lists containing this identity.' : 'Identities tagged with this list.'}</p>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
                             <div className="flex items-center gap-3 flex-1 max-w-md">
                                 <div className="relative flex-1">
-                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                     <input
                                         type="text"
                                         placeholder="Search list entries"
                                         value={listEntriesSearch}
                                         onChange={(e) => setListEntriesSearch(e.target.value)}
-                                        className="w-full pl-9 pr-4 py-2.5 bg-white/[0.02] border-2 border-slate-800 rounded-xl text-sm font-mono text-white placeholder:text-slate-600 focus:border-white/40 focus:outline-none transition-all"
+                                        className="w-full pl-9 pr-4 py-2.5 bg-white/[0.02] border-2 border-slate-800 rounded-xl text-sm font-mono text-white placeholder:text-slate-500 focus:border-white/40 focus:outline-none transition-all"
                                     />
                                 </div>
                                 <div className="relative shrink-0">
@@ -1441,14 +1503,14 @@ const MarketDetail: React.FC = () => {
                                         <option value="label-asc" className="bg-black text-white">A-Z</option>
                                         <option value="label-desc" className="bg-black text-white">Z-A</option>
                                     </select>
-                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                 </div>
                             </div>
-                            <span className="text-[9px] font-mono text-slate-600 uppercase font-black">List Entries {filteredListEntries.length}</span>
+                            <span className="text-[11px] font-mono text-slate-400 uppercase font-black">List Entries: {filteredListEntries.length}</span>
                         </div>
                         <div className="overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 rounded-2xl shadow-2xl backdrop-blur-sm">
-                            <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[500px]">
-                                <thead className="bg-black border-b border-slate-800 text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
+                            <table className="w-full text-left font-mono text-[11px] sm:text-xs min-w-[500px]">
+                                <thead className="bg-black border-b border-slate-800 text-slate-300 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
                                     <tr>
                                         <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 w-12">#</th>
                                         <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">Entry</th>
@@ -1459,8 +1521,8 @@ const MarketDetail: React.FC = () => {
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
                                     {filteredListEntries.length > 0 ? filteredListEntries.map((entry, i) => {
-                                        const supportVal = entry.supportTotalAssets ? parseFloat(formatEther(BigInt(entry.supportTotalAssets))) : 0;
-                                        const opposeVal = entry.opposeTotalAssets ? parseFloat(formatEther(BigInt(entry.opposeTotalAssets))) : 0;
+                                        const supportVal = safeWeiToEther(entry.supportTotalAssets);
+                                        const opposeVal = safeWeiToEther(entry.opposeTotalAssets);
                                         const entryUrl = `/markets/${entry.id}`;
                                         return (
                                         <tr
@@ -1468,41 +1530,41 @@ const MarketDetail: React.FC = () => {
                                             onClick={() => { navigate(entryUrl); playClick(); }}
                                             className="hover:bg-white/5 transition-all group cursor-pointer"
                                         >
-                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-500 font-black">{i + 1}</td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-400 font-black">{i + 1}</td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
                                                 <Link to={entryUrl} onClick={(e) => e.stopPropagation()} className="flex items-center gap-4 group/entry">
                                                     <div className="w-10 h-10 bg-slate-900 border border-slate-800 flex items-center justify-center rounded-2xl overflow-hidden group-hover/entry:border-white/40 transition-colors shrink-0">
-                                                        {entry.image ? <img src={entry.image} alt="" className="w-full h-full object-cover" /> : <User size={18} className="text-slate-600" />}
+                                                        {entry.image ? <img src={entry.image} alt="" className="w-full h-full object-cover" /> : <User size={18} className="text-slate-400" />}
                                                     </div>
                                                     <div>
                                                         <div className="text-sm font-black text-white group-hover/entry:text-glow-white transition-colors uppercase truncate max-w-[200px] font-display tracking-tight">{entry.label || entry.id || 'Unknown'}</div>
-                                                        <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">{agent?.type === 'LIST' ? `has tag ${agent?.label || 'List'}` : 'contains this identity'}</div>
+                                                        <div className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{showingListsContaining ? 'contains this identity' : `has tag ${agent?.label || 'List'}`}</div>
                                                     </div>
                                                 </Link>
                                             </td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">
                                                 <div className="flex flex-col items-end">
-                                                    <span className="text-white font-black">{formatLargeNumber(entry.supportPositionCount ?? 0)}</span>
-                                                    <span className="text-[8px] text-intuition-success uppercase font-black tracking-widest">{formatMarketValue(supportVal)} TRUST</span>
+                                                    <span className="text-white font-black text-sm">{formatLargeNumber(entry.supportPositionCount ?? 0)}</span>
+                                                    <span className="text-[11px] text-intuition-success uppercase font-black tracking-widest">{formatMarketValue(supportVal)} TRUST</span>
                                                 </div>
                                             </td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">
                                                 <div className="flex flex-col items-end">
-                                                    <span className="text-white font-black">{formatLargeNumber(entry.opposePositionCount ?? 0)}</span>
-                                                    <span className="text-[8px] text-intuition-danger uppercase font-black tracking-widest">{formatMarketValue(opposeVal)} TRUST</span>
+                                                    <span className="text-white font-black text-sm">{formatLargeNumber(entry.opposePositionCount ?? 0)}</span>
+                                                    <span className="text-[11px] text-intuition-danger uppercase font-black tracking-widest">{formatMarketValue(opposeVal)} TRUST</span>
                                                 </div>
                                             </td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right" onClick={(e) => e.stopPropagation()}>
-                                                <Link to={entryUrl} onClick={playClick} className="inline-flex items-center gap-2 px-3 py-1.5 bg-intuition-primary/20 border border-intuition-primary/40 hover:bg-intuition-primary/30 hover:border-intuition-primary transition-all rounded-xl text-[9px] font-black uppercase tracking-widest text-intuition-primary">
+                                                <Link to={entryUrl} onClick={playClick} className="inline-flex items-center gap-2 px-3 py-1.5 bg-intuition-primary/20 border border-intuition-primary/40 hover:bg-intuition-primary/30 hover:border-intuition-primary transition-all rounded-xl text-[10px] font-black uppercase tracking-widest text-intuition-primary">
                                                     Support
                                                 </Link>
-                                                <Link to={entryUrl} onClick={playClick} className="inline-flex items-center gap-2 px-3 py-1.5 ml-2 bg-intuition-danger/20 border border-intuition-danger/40 hover:bg-intuition-danger/30 hover:border-intuition-danger transition-all rounded-xl text-[9px] font-black uppercase tracking-widest text-intuition-danger">
+                                                <Link to={entryUrl} onClick={playClick} className="inline-flex items-center gap-2 px-3 py-1.5 ml-2 bg-intuition-danger/20 border border-intuition-danger/40 hover:bg-intuition-danger/30 hover:border-intuition-danger transition-all rounded-xl text-[10px] font-black uppercase tracking-widest text-intuition-danger">
                                                     Oppose
                                                 </Link>
                                             </td>
                                         </tr>
                                     );}) : (
-                                        <tr><td colSpan={5} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_ENTRIES_DETECTED</td></tr>
+                                        <tr><td colSpan={5} className="p-20 text-center text-slate-500 uppercase font-black tracking-widest text-xs">NULL_ENTRIES_DETECTED</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -1523,7 +1585,7 @@ const MarketDetail: React.FC = () => {
                             <tbody className="divide-y divide-white/5">
                                 {activityLog.length > 0 ? activityLog.map((tx, i) => (
                                     <tr key={i} className="hover:bg-white/5 transition-all group">
-                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 font-mono text-slate-400 group-hover:text-white group-hover:text-glow-white transition-colors uppercase tracking-tighter">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 font-mono text-slate-300 group-hover:text-white group-hover:text-glow-white transition-colors uppercase tracking-tighter">
                                             {tx.id.slice(0, 24)}...
                                         </td>
                                         <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
@@ -1535,7 +1597,7 @@ const MarketDetail: React.FC = () => {
                                         <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-black text-white text-base sm:text-lg group-hover:text-glow-white transition-all">
                                             {formatDisplayedShares(tx.shares)}
                                         </td>
-                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-mono text-slate-500 uppercase tracking-tighter whitespace-nowrap">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-mono text-slate-400 uppercase tracking-tighter whitespace-nowrap">
                                             {new Date(tx.timestamp).toLocaleString()}
                                         </td>
                                         <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">

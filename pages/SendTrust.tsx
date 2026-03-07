@@ -142,7 +142,7 @@ const SendTrust: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center px-4 py-12 bg-[#0a0a0a]">
+    <div className="min-h-[70vh] flex flex-col items-center justify-center px-4 sm:px-6 py-16 sm:py-20 bg-[#0a0a0a]">
       {/* Success popup */}
       {confirmedTxHash && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -210,16 +210,19 @@ const SendTrust: React.FC = () => {
       )}
 
       <div className="w-full max-w-lg relative">
-        <Link
-          to="/"
-          onMouseEnter={playHover}
-          onClick={playClick}
-          className="inline-flex items-center gap-2 text-slate-500 hover:text-[#F0C14B] font-mono text-[10px] font-bold uppercase tracking-[0.2em] mb-8 transition-colors"
-        >
-          <ArrowLeft size={12} /> Back
-        </Link>
+        {/* Nav */}
+        <div className="mb-10">
+          <Link
+            to="/"
+            onMouseEnter={playHover}
+            onClick={playClick}
+            className="inline-flex items-center gap-2 text-slate-500 hover:text-[#F0C14B] font-mono text-[10px] font-bold uppercase tracking-[0.2em] transition-colors"
+          >
+            <ArrowLeft size={12} /> Back
+          </Link>
+        </div>
 
-        {/* Section label — like "EMAIL ALERTS" in reference */}
+        {/* Section label */}
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded border border-[#F0C14B]/50 bg-[#F0C14B]/5 mb-6">
           <Send className="w-4 h-4 text-[#F0C14B]" strokeWidth={2.2} />
           <span className="text-[#F0C14B] font-mono font-black text-[10px] uppercase tracking-[0.2em]">
@@ -227,24 +230,25 @@ const SendTrust: React.FC = () => {
           </span>
         </div>
 
-        {/* Bold block heading — like "GET NOTIFIED... VIA EMAIL" */}
-        <h1 className="text-xl sm:text-2xl font-black font-mono text-[#F0C14B] uppercase leading-tight mb-2 drop-shadow-[0_0_20px_rgba(240,193,75,0.25)]">
-          Send TRUST to any address
-        </h1>
-        <p className="text-[#F0C14B]/90 font-mono text-sm sm:text-base uppercase tracking-wide mb-6">
-          via native transfer
-        </p>
+        {/* Title block */}
+        <div className="mb-10">
+          <h1 className="text-xl sm:text-2xl font-black font-mono text-[#F0C14B] uppercase leading-tight mb-2 drop-shadow-[0_0_20px_rgba(240,193,75,0.25)]">
+            Send TRUST to any address
+          </h1>
+          <p className="text-[#F0C14B]/90 font-mono text-sm sm:text-base uppercase tracking-wide mb-4">
+            via native transfer
+          </p>
+          <p className="text-white/90 text-sm font-mono leading-relaxed max-w-md">
+            Enter a wallet address or ENS name and amount. Your wallet will prompt you to sign. Connect your wallet first if you haven’t.
+          </p>
+        </div>
 
-        {/* Body text — white, like reference */}
-        <p className="text-white/90 text-sm font-mono leading-relaxed mb-8 max-w-md">
-          Enter a wallet address or ENS name and amount. Your wallet will prompt you to sign. Connect your wallet first if you haven’t.
-        </p>
-
-        <div className="rounded-xl border border-[#F0C14B]/25 bg-[#0c0c0c] p-6 sm:p-8">
+        {/* Form card */}
+        <div className="rounded-xl border border-[#F0C14B]/25 bg-[#0c0c0c] p-6 sm:p-10">
           {!isConnected ? (
-            <div className="text-center py-4">
-              <User className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400 font-mono text-sm mb-6">
+            <div className="text-center py-8">
+              <User className="w-14 h-14 text-slate-600 mx-auto mb-6" />
+              <p className="text-slate-400 font-mono text-sm mb-8">
                 Connect your wallet to send TRUST
               </p>
               <Link
@@ -256,16 +260,16 @@ const SendTrust: React.FC = () => {
               </Link>
             </div>
           ) : wrongNetwork ? (
-            <div className="text-center py-4">
-              <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+            <div className="text-center py-8">
+              <AlertTriangle className="w-14 h-14 text-red-400 mx-auto mb-6" />
               <p className="text-slate-300 font-mono text-sm">
                 Switch to Intuition Mainnet to send TRUST
               </p>
             </div>
           ) : (
-            <>
-              <div className="mb-5">
-                <label className="block text-[10px] font-black font-mono text-[#F0C14B]/90 uppercase tracking-[0.2em] mb-2">
+            <div className="space-y-8">
+              <div>
+                <label className="block text-[10px] font-black font-mono text-[#F0C14B]/90 uppercase tracking-[0.2em] mb-3">
                   Recipient (address or ENS)
                 </label>
                 <input
@@ -273,46 +277,45 @@ const SendTrust: React.FC = () => {
                   value={recipientInput}
                   onChange={(e) => setRecipientInput(e.target.value)}
                   placeholder="0x... or name.eth"
-                  className="w-full px-4 py-3.5 rounded-lg bg-[#080808] border border-[#F0C14B]/30 text-white font-mono text-sm placeholder:text-slate-600 focus:border-[#F0C14B]/60 focus:outline-none transition-colors"
+                  className="w-full px-4 py-4 rounded-lg bg-[#080808] border border-[#F0C14B]/30 text-white font-mono text-sm placeholder:text-slate-600 focus:border-[#F0C14B]/60 focus:outline-none transition-colors"
                 />
                 {resolveError && (
-                  <p className="mt-1.5 text-xs text-red-400 font-mono">{resolveError}</p>
+                  <p className="mt-2 text-xs text-red-400 font-mono">{resolveError}</p>
                 )}
                 {resolvedAddress && !resolveError && (
-                  <p className="mt-1.5 text-xs text-emerald-400 font-mono truncate">
+                  <p className="mt-2 text-xs text-emerald-400 font-mono truncate">
                     ✓ {resolvedAddress}
                   </p>
                 )}
               </div>
 
-              <div className="mb-5">
-                <label className="block text-[10px] font-black font-mono text-[#F0C14B]/90 uppercase tracking-[0.2em] mb-2">
+              <div>
+                <label className="block text-[10px] font-black font-mono text-[#F0C14B]/90 uppercase tracking-[0.2em] mb-3">
                   Amount (TRUST)
                 </label>
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <input
                     type="text"
                     value={amountInput}
                     onChange={(e) => setAmountInput(e.target.value)}
                     placeholder="0.00"
-                    className="flex-1 px-4 py-3.5 rounded-lg bg-[#080808] border border-[#F0C14B]/30 text-white font-mono text-sm placeholder:text-slate-600 focus:border-[#F0C14B]/60 focus:outline-none transition-colors"
+                    className="flex-1 px-4 py-4 rounded-lg bg-[#080808] border border-[#F0C14B]/30 text-white font-mono text-sm placeholder:text-slate-600 focus:border-[#F0C14B]/60 focus:outline-none transition-colors"
                   />
                   <button
                     type="button"
                     onClick={setMaxAmount}
                     onMouseEnter={playHover}
-                    className="px-4 py-3.5 rounded-lg border border-[#F0C14B]/50 text-[#F0C14B] font-mono text-[10px] font-black uppercase hover:bg-[#F0C14B]/10 transition-colors"
+                    className="px-5 py-4 rounded-lg border border-[#F0C14B]/50 text-[#F0C14B] font-mono text-[10px] font-black uppercase hover:bg-[#F0C14B]/10 transition-colors shrink-0"
                   >
                     Max
                   </button>
                 </div>
-                <p className="mt-1.5 text-xs text-slate-500 font-mono flex items-center gap-1.5">
-                  <Coins size={12} className="text-[#F0C14B]/80" /> Balance: {balanceFormatted} TRUST
+                <p className="mt-3 text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                  <Coins size={12} className="text-[#F0C14B]/80 shrink-0" /> Balance: {balanceFormatted} TRUST
                   <span className="text-[#8B5CF6]/80">· Live</span>
                 </p>
               </div>
 
-              {/* Large golden button — like "GET EMAIL ALERTS" */}
               <button
                 type="button"
                 disabled={!canSend}
@@ -330,12 +333,11 @@ const SendTrust: React.FC = () => {
                   </>
                 )}
               </button>
-            </>
+            </div>
           )}
         </div>
 
-        {/* Subtle purple accent line */}
-        <div className="mt-6 h-px w-32 bg-gradient-to-r from-[#8B5CF6]/50 to-transparent" />
+        <div className="mt-12 h-px w-32 bg-gradient-to-r from-[#8B5CF6]/50 to-transparent" />
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { ArrowRight, Shield, Activity, ChevronDown, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2 } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronDown, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap } from 'lucide-react';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { formatEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
@@ -12,6 +12,7 @@ import { getAllAgents, getHomeAtomSections, getNetworkStats, getPnlLeaderboard, 
 import { CURRENCY_SYMBOL, SEASON_2_EPOCH_ID, SEASON_2_EPOCH_8_DATE_RANGE, SEASON_2_EPOCH_8_START, SEASON_2_EPOCH_8_END } from '../constants';
 import { toast } from '../components/Toast';
 import { getConnectedAccount, depositToVault, toggleWatchlist, isInWatchlist, getWalletBalance } from '../services/web3';
+import Logo from '../components/Logo';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import MuiBox from '@mui/material/Box';
@@ -215,22 +216,25 @@ const SwipeToBuy: React.FC<SwipeToBuyProps> = ({ onConfirm }) => {
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className="relative w-full h-10 rounded-full bg-black/60 border border-intuition-primary/30 overflow-hidden select-none group touch-none"
+      className="relative w-full h-12 rounded-full swipe-to-buy-track border-2 border-intuition-primary/40 overflow-hidden select-none group touch-none"
       style={{ cursor: isSwiping ? 'grabbing' : 'grab' }}
     >
+      {/* Progress fill */}
       <div
-        className="absolute inset-0 bg-intuition-primary/10 transition-opacity duration-200"
-        style={{ opacity: progress > 0 ? 1 : 0.5 }}
+        className="absolute inset-0 bg-gradient-to-r from-intuition-primary/20 to-intuition-primary/5 transition-opacity duration-200"
+        style={{ opacity: progress > 0 ? 1 : 0.4, width: `${progress * 100}%` }}
       />
+      {/* Label */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-        <span className="text-[10px] font-mono text-slate-400 group-hover:text-intuition-primary transition-colors uppercase tracking-wider">
-          {progress > 0.65 ? 'Release to confirm' : 'Swipe to buy'}
+        <span className="text-[11px] font-black font-display text-slate-400 group-hover:text-intuition-primary/90 transition-colors uppercase tracking-[0.2em]">
+          {progress > 0.65 ? '◆ RELEASE TO CONFIRM ◆' : '→ SWIPE TO BUY →'}
         </span>
       </div>
+      {/* Thumb */}
       <div
-        className="absolute top-1 bottom-1 w-8 rounded-full bg-intuition-primary text-black shadow-[0_0_12px_rgba(0,243,255,0.5)] flex items-center justify-center font-black text-sm will-change-transform"
+        className="absolute top-1 bottom-1 w-9 rounded-full swipe-to-buy-thumb bg-intuition-primary text-black flex items-center justify-center font-black text-base will-change-transform"
         style={{
-          left: `calc(0.25rem + ${progress} * (100% - 2.5rem))`,
+          left: `calc(0.25rem + ${progress} * (100% - 2.75rem))`,
           transition: isSwiping ? 'none' : 'left 0.15s ease-out',
         }}
       >
@@ -315,6 +319,17 @@ const SwipeTradeCard: React.FC<SwipeCardProps> = ({ agent, onSwipeBuy }) => {
 const SWIPE_THRESHOLD = 44;
 const SWIPE_VERTICAL_THRESHOLD = 32;
 
+const formatTimeAgo = (ts: number): string => {
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return `${sec} second${sec === 1 ? '' : 's'} ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const d = Math.floor(hr / 24);
+  return `${d} day${d === 1 ? '' : 's'} ago`;
+};
+
 interface StackedAtomCardProps {
   agent: any;
   dragX: number;
@@ -324,9 +339,18 @@ interface StackedAtomCardProps {
   isInWatchlist: boolean;
   isBackCard?: boolean;
   showRoi?: boolean;
+  showCreatedAgo?: boolean;
 }
 
-const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, onSwipeRight, onSwipeLeft, isInWatchlist, isBackCard, showRoi }) => {
+const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, onSwipeRight, onSwipeLeft, isInWatchlist, isBackCard, showRoi, showCreatedAgo }) => {
+  const [timeAgo, setTimeAgo] = useState('');
+  useEffect(() => {
+    if (!showCreatedAgo || !agent?.createdAt) return;
+    const tick = () => setTimeAgo(formatTimeAgo(agent.createdAt));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [showCreatedAgo, agent?.createdAt]);
   const price = parseFloat(formatEther(BigInt(agent.currentSharePrice || '0')) || '0').toFixed(4);
   const marketCapRaw = agent.marketCap ? parseFloat(agent.marketCap) : 0;
   const formatCompact = (value: number) => {
@@ -338,91 +362,107 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
   };
   const marketCapDisplay = formatCompact(marketCapRaw);
 
-  // Unified card size — compact, scales down on narrow screens
-  const cardClass = 'relative w-full max-w-[280px] min-h-[200px] sm:min-h-[220px] rounded-xl overflow-hidden select-none touch-none flex-shrink-0';
+  // Classic Pokémon card: fixed size — all cards same height regardless of image
+  const cardClass = 'relative w-full max-w-[280px] h-[420px] rounded-[12px] overflow-hidden select-none touch-none flex-shrink-0 flex flex-col';
+  const isFront = !isBackCard;
 
   const cardInner = (
-    <div
-      className={cardClass}
-      style={isBackCard ? {
-        boxShadow: '0 0 0 1px rgba(0,243,255,0.2), 0 6px 20px rgba(0,0,0,0.5)',
-        background: 'linear-gradient(160deg, #060a12 0%, #050814 100%)',
-        border: '1px solid rgba(0,243,255,0.3)',
-      } : {
-        boxShadow: '0 0 0 1px rgba(0,243,255,0.4), 0 0 24px rgba(0,243,255,0.25), 0 0 48px rgba(0,243,255,0.12), 0 18px 48px rgba(0,0,0,0.85)',
-        background:
-          'radial-gradient(circle at top left, rgba(0,243,255,0.26), transparent 55%), radial-gradient(circle at bottom right, rgba(255,30,109,0.22), transparent 60%), linear-gradient(160deg, #050814 0%, #02040a 60%, #050814 100%)',
-        border: '2px solid rgba(0,243,255,0.5)',
-      }}
-    >
-      {/* Horizontal swipe hints — only on front card when dragging */}
-      {!isBackCard && (
-      <div className="absolute left-4 right-4 top-14 flex items-center justify-between pointer-events-none z-10">
+    <div className={`${cardClass} atom-card ${isFront ? 'atom-card-front' : ''}`}>
+      {isFront && <div className="atom-card-glitter rounded-[12px]" />}
+      {/* Swipe hints — only on front when dragging */}
+      {isFront && (
+      <div className="absolute left-2 right-2 top-20 flex items-center justify-between pointer-events-none z-10">
         <div
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-150 ${
-            dragX < -30 ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all duration-150 ${
+            dragX < -30 ? 'opacity-100' : 'opacity-0'
           }`}
-          style={{ background: 'rgba(255,30,109,0.2)', color: '#ff6b9d' }}
+          style={{ background: 'rgba(220,38,38,0.9)', color: '#fff', border: '2px solid #991b1b' }}
         >
-          <Heart size={16} strokeWidth={2} />
-          <span className="text-[11px] font-semibold uppercase tracking-wide">Watchlist</span>
+          <Heart size={12} className="fill-white" />
+          <span className="text-[9px] font-bold uppercase">Watchlist</span>
         </div>
         <div
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-150 ${
-            dragX > 30 ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all duration-150 ${
+            dragX > 30 ? 'opacity-100' : 'opacity-0'
           }`}
-          style={{ background: 'rgba(0,243,255,0.2)', color: '#22d3ee' }}
+          style={{ background: 'rgba(34,197,94,0.9)', color: '#fff', border: '2px solid #15803d' }}
         >
-          <span className="text-[11px] font-semibold uppercase tracking-wide">Infuse trust</span>
-          <ShoppingCart size={16} strokeWidth={2} />
+          <span className="text-[9px] font-bold uppercase">Infuse</span>
+          <ShoppingCart size={12} />
         </div>
       </div>
       )}
 
-      <div className="relative p-4 sm:p-5 min-h-[160px]">
-        {/* Top: Atom label + clear watchlist badge (no overlap with value) */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.3em]">Atom</span>
-          {isInWatchlist && !isBackCard && (
-            <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-rose-500/20 text-rose-300 text-[9px] font-mono font-semibold uppercase tracking-wider">
-              <Heart size={12} className="flex-shrink-0" />
-              In watchlist
+      {/* HEADER — Pokémon-style name bar with type badge + HP */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-amber-500/40 bg-gradient-to-r from-[#0f1623] via-[#0a0f1a] to-[#0f1623] flex-shrink-0 relative">
+        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-[#00f3ff] via-[#00f3ff]/70 to-[#ff1e6d]/70 rounded-r shadow-[0_0_8px_rgba(0,243,255,0.3)]" />
+        <div className="flex items-center gap-1.5 pl-2">
+          <span className="text-[8px] font-black uppercase tracking-wider text-amber-200 px-2 py-0.5 rounded-md bg-amber-500/30 border border-amber-500/60 shadow-sm">
+            {(agent.type || 'ATOM').slice(0, 5)}
+          </span>
+          {isFront && (
+            <span className="text-[7px] font-black uppercase tracking-widest text-amber-400/90 px-1.5 py-0.5 rounded border border-amber-500/50 bg-gradient-to-r from-amber-500/20 to-transparent shadow-[0_0_8px_rgba(250,204,21,0.2)]">
+              EX
             </span>
           )}
+          {isInWatchlist && isFront && <Heart size={10} className="text-rose-500 fill-rose-500" />}
         </div>
+        <h3 className="flex-1 text-center text-sm font-black text-amber-100 truncate mx-2 font-display drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]">
+          {agent.label || 'Unnamed'}
+        </h3>
+        <div className="flex items-center gap-1">
+          <span className="w-5 h-5 rounded-full bg-red-500 border-2 border-red-700 flex items-center justify-center flex-shrink-0 shadow-[0_0_8px_rgba(220,38,38,0.5)]">
+            <span className="text-[8px] font-black text-white">HP</span>
+          </span>
+          <span className="text-base font-black text-red-400 tabular-nums">{marketCapDisplay}</span>
+          <span className="text-[8px] font-bold text-amber-400 uppercase">{CURRENCY_SYMBOL}</span>
+        </div>
+      </div>
 
-        {/* Main: avatar + name + metrics — bold, neon layout */}
-        <div className="flex items-start gap-3 mb-4">
-          <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 ring-1 ring-white/10 bg-slate-800/90 flex items-center justify-center">
-            {agent.image ? (
-              <img src={agent.image} alt={agent.label} className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-base font-semibold text-slate-500">{agent.label?.slice(0, 2) ?? '—'}</span>
-            )}
-          </div>
-          <div className="min-w-0 flex-1 pt-0.5">
-            <h3 className="text-base font-black font-display text-white leading-snug break-words line-clamp-2 uppercase tracking-tight text-glow-white">
-              {agent.label || 'Unnamed'}
-            </h3>
-          </div>
+      {/* ARTWORK — holographic foil area + rainbow strip at bottom (Pokémon-style) */}
+      <div className={`relative flex flex-col items-center p-4 pt-3 pb-2 h-[160px] flex-shrink-0 ${agent.image ? 'atom-card-artwork-image' : 'atom-card-artwork'}`}>
+        <div className="relative w-full h-[118px] rounded-lg overflow-hidden flex items-center justify-center">
+          {agent.image ? (
+            <img src={agent.image} alt={agent.label} className="w-full h-full object-cover object-center" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1520] to-[#0a0f1a] rounded-lg border border-amber-500/20">
+              <span className="text-4xl font-black text-amber-400/80">{agent.label?.slice(0, 2) ?? '—'}</span>
+            </div>
+          )}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-lg bg-[#050916] border-2 border-intuition-primary/40 px-3 py-2 shadow-[0_0_12px_rgba(0,243,255,0.1)]">
-            <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-0.5">Total Mkt Cap</p>
-            <p className="text-[13px] font-black font-mono text-intuition-primary tabular-nums text-glow-blue">
-              {marketCapDisplay} {CURRENCY_SYMBOL}
-            </p>
-          </div>
-          <div className="rounded-lg bg-[#050916] border-2 border-emerald-400/40 px-3 py-2 shadow-[0_0_12px_rgba(34,197,94,0.08)]">
-            <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-0.5">Price / Unit</p>
-            <p className="text-[13px] font-black font-mono text-emerald-300 tabular-nums text-glow-success">
-              {price} {CURRENCY_SYMBOL}
-            </p>
+        {/* Holographic rainbow strip — like premium Pokémon foil cards */}
+        <div
+          className="w-full h-2.5 rounded-b-lg mt-1.5 opacity-90 shrink-0"
+          style={{
+            background: 'linear-gradient(90deg, #ff1e6d, #facc15, #00f3ff, #a855f7, #ff1e6d)',
+            backgroundSize: '200% 100%',
+            animation: 'holo-rainbow 4s ease-in-out infinite',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), 0 0 8px rgba(250,204,21,0.1)',
+          }}
+        />
+      </div>
+
+      {/* ATTACKS — energy symbols + attack names */}
+      <div className="px-3 py-2 space-y-2 bg-gradient-to-b from-[#0a0f1a] to-[#06090f] flex-shrink-0">
+        <div className="atom-card-attack flex items-center gap-2 px-3 py-2">
+          <span className="w-7 h-7 rounded-full energy-fire flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-black text-white">$</span>
+          </span>
+          <span className="text-[10px] font-black text-amber-200/90 uppercase flex-1">Market Cap</span>
+          <span className="text-sm font-black text-red-400 tabular-nums">{marketCapDisplay} {CURRENCY_SYMBOL}</span>
+        </div>
+        <div className="atom-card-attack flex items-center gap-2 px-3 py-2">
+          <span className="w-7 h-7 rounded-full energy-electric flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-black text-amber-950">P</span>
+          </span>
+          <span className="text-[10px] font-black text-amber-200/90 uppercase flex-1">Spot Price</span>
+          <div className="text-right">
+            <span className="text-sm font-black text-amber-100 tabular-nums">{price} {CURRENCY_SYMBOL}</span>
             {showRoi && (
-              <p className="text-[11px] font-mono text-emerald-400 mt-0.5">
+              <p className="text-[9px] font-bold text-emerald-600 mt-0.5">
                 {(() => {
                   const p = parseFloat(price || '0');
-                  if (!Number.isFinite(p)) return 'ROI 0%';
+                  if (!Number.isFinite(p)) return '';
                   const raw = (p - 1) * 100;
                   const clamped = Math.max(-99.9, Math.min(999.9, raw));
                   const sign = clamped > 0 ? '+' : '';
@@ -432,6 +472,22 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
             )}
           </div>
         </div>
+
+        {/* MINTED — always reserve space so all cards same height (IntuRank blue when active) */}
+        <div className={`px-3 py-2 h-[44px] flex flex-col justify-center rounded-lg ${showCreatedAgo ? 'atom-card-ex-rule' : 'bg-transparent border border-transparent'}`}>
+          {showCreatedAgo && (
+            <>
+              <p className="text-[9px] font-black text-[#38bdf8] uppercase mb-0.5">◆ Minted ◆</p>
+              <p className="text-[11px] font-bold text-slate-300 tabular-nums">{timeAgo || '—'}</p>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* INTURANK branding — logo + text, soft glow */}
+      <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+        <Logo className="w-5 h-5 object-contain" />
+        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#facc15]" style={{ textShadow: '0 0 8px rgba(250,204,21,0.3)' }}>INTURANK</span>
       </div>
     </div>
   );
@@ -456,9 +512,12 @@ interface AtomSectionCarouselProps {
   onSwipeLeft: (agent: any) => void;
   isInWatchlist: (id: string) => boolean;
   showRoi?: boolean;
+  showCreatedAgo?: boolean;
+  /** BUY cyan #00f3ff | WATCHLIST magenta #ff1e6d | BROWSE yellow #facc15 */
+  sectionColor?: string;
 }
 
-const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtitle, agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi }) => {
+const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtitle, agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi, showCreatedAgo, sectionColor = '#00f3ff' }) => {
   const [index, setIndex] = useState(0);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -550,17 +609,46 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
     setDragY(0);
   };
 
-  if (total === 0) return null;
+  if (total === 0) {
+    return (
+      <MuiBox sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+        <div className="w-full text-center mb-2">
+          <h3 className="text-xs sm:text-sm font-black font-display text-white tracking-[0.2em] mb-1 uppercase">{title}</h3>
+          <div
+            className="h-0.5 w-12 mx-auto rounded-full"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${sectionColor}, transparent)`,
+              boxShadow: `0 0 8px ${sectionColor}50`,
+            }}
+          />
+        </div>
+        <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-4">{subtitle}</p>
+        <div className="w-full max-w-[280px] min-h-[320px] flex flex-col items-center justify-center">
+          <div
+            className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
+            style={{ borderColor: `${sectionColor}40`, borderTopColor: sectionColor }}
+          />
+          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mt-3">Loading atoms…</p>
+        </div>
+      </MuiBox>
+    );
+  }
 
   const isDragging = dragStart != null;
 
   return (
     <MuiBox sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
       <div className="w-full text-center mb-2">
-        <h3 className="text-sm sm:text-base font-bold font-display text-white tracking-wider mb-1 uppercase">{title}</h3>
-        <div className="h-0.5 w-8 mx-auto rounded-full bg-intuition-primary/60 shadow-[0_0_8px_rgba(0,243,255,0.5)]" />
+        <h3 className="text-xs sm:text-sm font-black font-display text-white tracking-[0.2em] mb-1 uppercase drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">{title}</h3>
+        <div
+          className="h-0.5 w-12 mx-auto rounded-full"
+          style={{
+            background: `linear-gradient(90deg, transparent, ${sectionColor}, transparent)`,
+            boxShadow: `0 0 8px ${sectionColor}50`,
+          }}
+        />
       </div>
-      <p className="text-[10px] font-mono text-slate-500 tracking-[0.15em] uppercase mb-2">{subtitle}</p>
+      <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-3">{subtitle}</p>
 
       <MuiBox
         onMouseDown={handleStart}
@@ -571,7 +659,9 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
         sx={{
           position: 'relative',
           width: '100%',
-          minHeight: 320,
+          minHeight: 520,
+          pt: 3,
+          pb: 3,
           overflow: 'visible',
           display: 'flex',
           flexDirection: 'column',
@@ -583,16 +673,16 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
           touchAction: 'none',
         }}
       >
-        {/* Above: previous card peeks from top (subtle) */}
+        {/* Above: previous card peeks from top — more visible */}
         {prevAgent && (
-          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ top: 8, transform: 'translateX(-50%) scale(0.85)' }}>
-            <StackedAtomCard agent={prevAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && prevAgent ? isInWatchlist(prevAgent.id) : false} isBackCard showRoi={showRoi} />
+          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ top: 0, transform: 'translateX(-50%) translateY(-8px) scale(0.82)' }}>
+            <StackedAtomCard agent={prevAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && prevAgent ? isInWatchlist(prevAgent.id) : false} isBackCard showRoi={showRoi} showCreatedAgo={showCreatedAgo} />
           </div>
         )}
-        {/* Below: next card peeks from bottom (subtle) */}
+        {/* Below: next card peeks from bottom — more visible */}
         {nextAgent && (
-          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ bottom: 8, transform: 'translateX(-50%) scale(0.85)' }}>
-            <StackedAtomCard agent={nextAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && nextAgent ? isInWatchlist(nextAgent.id) : false} isBackCard showRoi={showRoi} />
+          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ bottom: 0, transform: 'translateX(-50%) translateY(8px) scale(0.82)' }}>
+            <StackedAtomCard agent={nextAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && nextAgent ? isInWatchlist(nextAgent.id) : false} isBackCard showRoi={showRoi} showCreatedAgo={showCreatedAgo} />
           </div>
         )}
         {/* Current: centered */}
@@ -611,11 +701,17 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
             onSwipeRight={() => currentAgent && onSwipeRight(currentAgent)}
             onSwipeLeft={() => currentAgent && onSwipeLeft(currentAgent)}
             isInWatchlist={walletAddress && currentAgent ? isInWatchlist(currentAgent.id) : false}
+            showRoi={showRoi}
+            showCreatedAgo={showCreatedAgo}
           />
         </div>
       </MuiBox>
 
-      <p className="text-[10px] font-mono text-slate-500 mt-1 tabular-nums tracking-wider"><span className="text-intuition-primary/80">{index + 1}</span><span className="text-slate-600"> / </span>{total}</p>
+      <p className="text-[10px] font-mono mt-2 tabular-nums tracking-[0.25em] px-3 py-1.5 rounded-lg bg-black/50 border border-white/10" style={{ boxShadow: `0 0 8px ${sectionColor}20` }}>
+        <span className="font-semibold" style={{ color: sectionColor, textShadow: `0 0 4px ${sectionColor}40` }}>{String(index + 1).padStart(2, '0')}</span>
+        <span className="text-slate-500 mx-1">/</span>
+        <span className="text-slate-400">{String(total).padStart(2, '0')}</span>
+      </p>
     </MuiBox>
   );
 };
@@ -685,6 +781,7 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
       }}
       slotProps={{ backdrop: { sx: { bgcolor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' } } }}
       PaperProps={{
+        className: 'execution-deck',
         sx: {
           width: { xs: 320, sm: 360 },
           maxWidth: '92vw',
@@ -698,7 +795,8 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
           overflow: 'hidden',
           bgcolor: '#020308',
           borderLeft: '2px solid rgba(0,243,255,0.5)',
-          boxShadow: '0 0 40px rgba(0,243,255,0.15), 0 0 80px rgba(0,0,0,0.9)',
+          boxShadow: '0 0 24px rgba(0,243,255,0.12), 0 0 80px rgba(0,0,0,0.9)',
+          animation: 'execution-pulse 3s ease-in-out infinite',
         },
       }}
     >
@@ -711,37 +809,44 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            background: 'linear-gradient(90deg, rgba(0,243,255,0.06) 0%, transparent 100%)',
           }}
         >
-          <Typography
-            sx={{
-              fontFamily: "'Orbitron', sans-serif",
-              fontWeight: 900,
-              letterSpacing: '0.25em',
-              textTransform: 'uppercase',
-              fontSize: 11,
-              color: '#00f3ff',
-              textShadow: '0 0 8px rgba(0,243,255,0.5)',
-            }}
-          >
-            Buy
-          </Typography>
-          <IconButton onClick={() => { playClick(); onClose(); }} aria-label="Close" size="small" sx={{ color: 'rgba(148,163,184,0.9)' }}>
+          <MuiBox>
+            <Typography
+              sx={{
+                fontFamily: "'Orbitron', sans-serif",
+                fontWeight: 900,
+                letterSpacing: '0.25em',
+                textTransform: 'uppercase',
+                fontSize: 12,
+                color: '#00f3ff',
+                textShadow: '0 0 8px rgba(0,243,255,0.4)',
+              }}
+            >
+              Buy
+            </Typography>
+            <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 9, color: 'rgba(0,243,255,0.6)', letterSpacing: '0.2em', mt: 0.25 }}>
+              EXECUTION_DECK
+            </Typography>
+          </MuiBox>
+          <IconButton onClick={() => { playClick(); onClose(); }} aria-label="Close" size="small" sx={{ color: 'rgba(148,163,184,0.9)', '&:hover': { color: '#00f3ff', bgcolor: 'rgba(0,243,255,0.1)' } }}>
             <Typography component="span" sx={{ fontSize: '1.1rem', lineHeight: 1 }}>&times;</Typography>
           </IconButton>
         </MuiBox>
         {agent && (
           <MuiBox sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-            <MuiBox sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <MuiBox sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 1.5, borderRadius: 2, bgcolor: 'rgba(5,8,20,0.6)', border: '1px solid rgba(0,243,255,0.2)' }}>
               <MuiBox
+                className="execution-deck-asset-icon"
                 sx={{
-                  width: 44,
-                  height: 44,
+                  width: 48,
+                  height: 48,
                   borderRadius: 2,
                   bgcolor: '#050814',
                   overflow: 'hidden',
                   flexShrink: 0,
-                  border: '1px solid rgba(0,243,255,0.3)',
+                  border: '1px solid rgba(0,243,255,0.4)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -750,18 +855,23 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
                 {agent.image ? (
                   <img src={agent.image} alt={agent.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <Typography sx={{ color: '#00f3ff', fontWeight: 700, fontSize: 14 }}>
+                  <Typography sx={{ color: '#00f3ff', fontWeight: 700, fontSize: 16 }}>
                     {agent.label?.slice(0, 2)}
                   </Typography>
                 )}
               </MuiBox>
-              <MuiBox sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: 13, color: '#fff', noWrap: true }}>
+              <MuiBox sx={{ minWidth: 0, flex: 1 }}>
+                <Typography sx={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: 14, color: '#fff', noWrap: true }}>
                   {agent.label}
                 </Typography>
-                <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 12, color: '#00f3ff', mt: 0.5 }}>
-                  {price} {CURRENCY_SYMBOL}
-                </Typography>
+                <MuiBox sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                  <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 10, color: 'rgba(148,163,184,0.8)', letterSpacing: '0.1em' }}>
+                    SPOT
+                  </Typography>
+                  <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 13, color: '#00f3ff', fontWeight: 700 }}>
+                    {price} {CURRENCY_SYMBOL}
+                  </Typography>
+                </MuiBox>
                 {walletAddress && (
                   <Typography sx={{ fontFamily: "'Fira Code', monospace", fontSize: 11, color: 'rgba(0,255,157,0.9)', mt: 0.5 }}>
                     Balance: {parseFloat(walletBalance).toFixed(4)} {CURRENCY_SYMBOL}
@@ -769,7 +879,7 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
                 )}
               </MuiBox>
             </MuiBox>
-            <MuiBox>
+            <MuiBox sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(5,8,20,0.4)', border: '1px solid rgba(0,243,255,0.15)' }}>
               <Typography
                 sx={{ mb: 1, fontFamily: "'Fira Code', monospace", fontSize: 10, color: 'rgba(148,163,184,0.9)', letterSpacing: '0.2em', textTransform: 'uppercase' }}
               >
@@ -790,8 +900,8 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
                       bgcolor: '#050814',
                       fontSize: 14,
                       '& fieldset': { borderColor: 'rgba(0,243,255,0.3)' },
-                      '&:hover fieldset': { borderColor: 'rgba(0,243,255,0.5)' },
-                      '&.Mui-focused fieldset': { borderColor: 'rgba(0,243,255,0.8)', boxShadow: '0 0 12px rgba(0,243,255,0.2)' },
+                      '&:hover fieldset': { borderColor: 'rgba(0,243,255,0.5)', boxShadow: '0 0 8px rgba(0,243,255,0.1)' },
+                      '&.Mui-focused fieldset': { borderColor: 'rgba(0,243,255,0.8)', borderWidth: 2, boxShadow: '0 0 16px rgba(0,243,255,0.2)' },
                     },
                   }}
                 />
@@ -802,7 +912,7 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
                     borderRadius: 2,
                     px: 1.5,
                     border: '1px solid rgba(0,243,255,0.4)',
-                    '&:hover': { bgcolor: 'rgba(0,243,255,0.1)', borderColor: 'rgba(0,243,255,0.6)' },
+                    '&:hover': { bgcolor: 'rgba(0,243,255,0.15)', borderColor: 'rgba(0,243,255,0.7)', boxShadow: '0 0 12px rgba(0,243,255,0.2)' },
                   }}
                   aria-label="Max amount"
                 >
@@ -816,6 +926,9 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
               </Typography>
             </MuiBox>
             <MuiBox sx={{ pt: 2 }}>
+              <Typography sx={{ mb: 1.5, fontFamily: "'Fira Code', monospace", fontSize: 9, color: 'rgba(0,243,255,0.6)', letterSpacing: '0.25em', textTransform: 'uppercase' }}>
+                DEPLOY
+              </Typography>
               <SwipeToBuy onConfirm={handleConfirm} />
               {loading && (
                 <Typography sx={{ mt: 1.5, fontSize: 11, color: 'rgba(148,163,184,0.7)', textAlign: 'center', fontFamily: "'Fira Code', monospace" }}>
@@ -885,6 +998,17 @@ const Home: React.FC = () => {
       }
     };
     initData();
+  }, []);
+
+  // Live polling for NEWLY CREATED — refresh every 5s. Uses events when available; fallback to atoms by recency when events empty
+  useEffect(() => {
+    const poll = async () => {
+      const sections = await getHomeAtomSections(20).catch(() => ({ roiDaily: [], byMarketcap: [], newlyCreated: [] }));
+      setAtomSections(prev => ({ ...prev, newlyCreated: sections.newlyCreated }));
+    };
+    poll(); // run immediately
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -1008,45 +1132,63 @@ const Home: React.FC = () => {
         document.body
       )}
 
-      {/* 1. TRENDING ATOMS — first */}
-      <section id="trending-atoms" className="relative overflow-x-hidden overflow-y-visible min-w-0 py-10 sm:py-16 border-b border-white/5 bg-[#04060a] scroll-mt-6" style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(0,243,255,0.08),_transparent_50%)] pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_80%_50%,rgba(168,85,247,0.04),_transparent_60%)] pointer-events-none" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.3)_100%)] pointer-events-none" />
+      {/* 1. TRENDING ATOMS — gamified arena */}
+      <section id="trending-atoms" className="relative overflow-x-hidden overflow-y-visible min-w-0 py-12 sm:py-20 border-b border-white/5 scroll-mt-6" style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}>
+        {/* Arena background: grid + gradients */}
+        <div className="absolute inset-0 bg-[#030508]" />
+        <div className="absolute inset-0 opacity-[0.4]" style={{ backgroundImage: 'linear-gradient(rgba(0,243,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,243,255,0.03) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_140%_100%_at_50%_-30%,rgba(0,243,255,0.12),_transparent_55%)] pointer-events-none animate-arena-pulse" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_80%_60%,rgba(255,30,109,0.08),_transparent_60%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_50%_at_20%_80%,rgba(250,204,21,0.05),_transparent_60%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.5)_100%)] pointer-events-none" />
         <div className="relative mx-auto z-10 min-w-0 w-full" style={{ maxWidth: 1280 }}>
           <Reveal delay={80}>
-            <div className="text-center mb-8">
-              {/* Stacked title */}
-              <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black font-display tracking-tighter uppercase leading-[0.88] mb-2">
-                <span className="block text-white text-glow-white">TRENDING</span>
-                <span className="block text-intuition-secondary text-glow-red mt-0.5">ATOMS</span>
-              </h2>
-              <p className="text-sm sm:text-base max-w-xl mx-auto leading-relaxed mb-6 font-display text-[13px] sm:text-[15px] tracking-wide">
-                <span className="font-black text-intuition-primary text-glow-blue">Welcome to IntuRank</span>
-                <span className="text-slate-300"> — the gamified arena of trading atoms. </span>
-                <span className="text-white font-semibold">Stake. Swipe. Climb.</span>
-                <span className="text-slate-400"> Dominate the Intuition ecosystem.</span>
+            <div className="text-center mb-10">
+              {/* Arcade-style tagline */}
+              <p className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.4em] text-intuition-primary/90 mb-3 animate-neon-flicker">
+                ◆ PICK YOUR NEXT PLAY ◆
               </p>
-              <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-                <div className="group flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-br from-intuition-primary/20 to-intuition-primary/5 border-2 border-intuition-primary/50 shadow-[0_0_20px_rgba(0,243,255,0.15)] hover:border-intuition-primary hover:shadow-[0_0_30px_rgba(0,243,255,0.4),0_0_0_1px_rgba(0,243,255,0.5)] hover:-translate-y-0.5 transition-all duration-300">
-                  <ArrowRight size={16} className="text-intuition-primary group-hover:scale-110 transition-transform" />
-                  <span className="text-[12px] font-black font-display uppercase tracking-wider text-intuition-primary text-glow-blue">Right → Buy</span>
+              <h2 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-display tracking-tighter uppercase leading-[0.9] mb-3">
+                <span className="block text-white text-glow-white drop-shadow-[0_0_16px_rgba(255,255,255,0.2)]">TRENDING</span>
+                <span className="block text-intuition-secondary text-glow-red mt-1 drop-shadow-[0_0_20px_rgba(255,30,109,0.25)]">ATOMS</span>
+              </h2>
+              <p className="text-sm sm:text-base max-w-2xl mx-auto leading-relaxed mb-8 font-display text-[13px] sm:text-[15px] tracking-wide">
+                <span className="text-slate-400">The arena is open. </span>
+                <span className="font-black text-intuition-primary text-glow-blue">Stake. Swipe. Climb.</span>
+                <span className="text-white font-semibold"> Dominate.</span>
+              </p>
+              {/* Arcade control hints — soft glow, easy on the eyes */}
+              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+                <div className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-[#00f3ff] shadow-[0_0_16px_rgba(0,243,255,0.25)] hover:shadow-[0_0_24px_rgba(0,243,255,0.35)] transition-all duration-300">
+                  <ArrowRight size={18} className="text-[#00f3ff]" />
+                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-[#00f3ff]">→ BUY</span>
                 </div>
-                <div className="group flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-br from-intuition-secondary/20 to-intuition-secondary/5 border-2 border-intuition-secondary/50 shadow-[0_0_20px_rgba(255,30,109,0.1)] hover:border-intuition-secondary hover:shadow-[0_0_30px_rgba(255,30,109,0.35),0_0_0_1px_rgba(255,30,109,0.5)] hover:-translate-y-0.5 transition-all duration-300">
-                  <Activity size={16} className="text-intuition-secondary group-hover:scale-110 transition-transform" />
-                  <span className="text-[12px] font-black font-display uppercase tracking-wider text-intuition-secondary text-glow-red">Left → Watchlist</span>
+                <div className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-[#ff1e6d] shadow-[0_0_16px_rgba(255,30,109,0.25)] hover:shadow-[0_0_24px_rgba(255,30,109,0.35)] transition-all duration-300">
+                  <Heart size={18} className="text-[#ff1e6d]" />
+                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-[#ff1e6d]">← WATCHLIST</span>
                 </div>
-                <div className="group flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-gradient-to-br from-amber-400/15 to-amber-400/5 border-2 border-amber-400/40 shadow-[0_0_15px_rgba(250,204,21,0.08)] hover:border-amber-400 hover:shadow-[0_0_25px_rgba(250,204,21,0.25),0_0_0_1px_rgba(250,204,21,0.4)] hover:-translate-y-0.5 transition-all duration-300">
-                  <ChevronsUpDown size={16} className="text-amber-400 group-hover:scale-110 transition-transform" />
-                  <span className="text-[12px] font-black font-display uppercase tracking-wider text-amber-400 text-glow-gold">Up & down → Browse</span>
+                <div className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-[#facc15] shadow-[0_0_16px_rgba(250,204,21,0.25)] hover:shadow-[0_0_24px_rgba(250,204,21,0.35)] transition-all duration-300">
+                  <ChevronsUpDown size={18} className="text-[#facc15]" />
+                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-[#facc15]">⇅ BROWSE</span>
                 </div>
               </div>
             </div>
           </Reveal>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 md:gap-8 min-w-0">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6 md:gap-8 min-w-0">
             <Reveal delay={150}>
-              <div className="rounded-xl p-4 sm:p-5 flex flex-col items-center border-2 border-intuition-primary/40 bg-[#050814] min-w-0 w-full max-w-full shadow-[0_0_0_1px_rgba(0,243,255,0.3),0_0_20px_rgba(0,243,255,0.1),0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-500 hover:border-intuition-primary/60 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.4),0_0_30px_rgba(0,243,255,0.15),0_12px_32px_rgba(0,0,0,0.5)]">
+              <div className="group relative rounded-2xl p-4 sm:p-5 flex flex-col items-center min-w-0 w-full max-w-full overflow-visible transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(255,30,109,0.08) 0%, rgba(5,8,20,0.98) 50%, rgba(0,243,255,0.03) 100%)',
+                  border: '2px solid rgba(255,30,109,0.6)',
+                  boxShadow: '0 0 24px rgba(255,30,109,0.15), 0 20px 50px rgba(0,0,0,0.5)',
+                }}
+              >
+                <div className="absolute inset-0 animate-slot-shimmer pointer-events-none" />
+                <div className="absolute top-3 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#ff1e6d]/20 border border-[#ff1e6d]/70 shadow-[0_0_12px_rgba(255,30,109,0.2)] animate-badge-bounce">
+                  <Flame size={14} className="text-[#ff1e6d]" />
+                  <span className="text-[10px] font-black font-display uppercase tracking-wider text-[#ff1e6d]">HOT</span>
+                </div>
                 <AtomSectionCarousel
                   title="Top by ROI (daily)"
                   subtitle="Updates daily · most activity"
@@ -1060,11 +1202,23 @@ const Home: React.FC = () => {
                   }}
                   isInWatchlist={(id) => (walletAddress ? isInWatchlist(id, walletAddress) : false)}
                   showRoi
+                  sectionColor="#ff1e6d"
                 />
               </div>
             </Reveal>
             <Reveal delay={280}>
-              <div className="rounded-xl p-4 sm:p-5 flex flex-col items-center border-2 border-intuition-primary/40 bg-[#050814] min-w-0 w-full max-w-full shadow-[0_0_0_1px_rgba(0,243,255,0.3),0_0_20px_rgba(0,243,255,0.1),0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-500 hover:border-intuition-primary/60 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.4),0_0_30px_rgba(0,243,255,0.15),0_12px_32px_rgba(0,0,0,0.5)]">
+              <div className="group relative rounded-2xl p-4 sm:p-5 flex flex-col items-center min-w-0 w-full max-w-full overflow-visible transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(0,243,255,0.08) 0%, rgba(5,8,20,0.98) 50%, rgba(168,85,247,0.03) 100%)',
+                  border: '2px solid rgba(0,243,255,0.6)',
+                  boxShadow: '0 0 24px rgba(0,243,255,0.15), 0 20px 50px rgba(0,0,0,0.5)',
+                }}
+              >
+                <div className="absolute inset-0 animate-slot-shimmer pointer-events-none" />
+                <div className="absolute top-3 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#00f3ff]/20 border border-[#00f3ff]/70 shadow-[0_0_12px_rgba(0,243,255,0.2)] animate-badge-bounce" style={{ animationDelay: '0.3s' }}>
+                  <Zap size={14} className="text-[#00f3ff]" />
+                  <span className="text-[10px] font-black font-display uppercase tracking-wider text-[#00f3ff]">MOON</span>
+                </div>
                 <AtomSectionCarousel
                   title="Top by market cap"
                   subtitle="Largest reputation markets"
@@ -1077,11 +1231,23 @@ const Home: React.FC = () => {
                     toast.success(added ? 'Added to watchlist' : 'Removed from watchlist');
                   }}
                   isInWatchlist={(id) => (walletAddress ? isInWatchlist(id, walletAddress) : false)}
+                  sectionColor="#00f3ff"
                 />
               </div>
             </Reveal>
             <Reveal delay={410}>
-              <div className="rounded-xl p-4 sm:p-5 flex flex-col items-center border-2 border-intuition-primary/40 bg-[#050814] min-w-0 w-full max-w-full shadow-[0_0_0_1px_rgba(0,243,255,0.3),0_0_20px_rgba(0,243,255,0.1),0_12px_32px_rgba(0,0,0,0.5)] transition-all duration-500 hover:border-intuition-primary/60 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.4),0_0_30px_rgba(0,243,255,0.15),0_12px_32px_rgba(0,0,0,0.5)]">
+              <div className="group relative rounded-2xl p-4 sm:p-5 flex flex-col items-center min-w-0 w-full max-w-full overflow-visible transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
+                style={{
+                  background: 'linear-gradient(145deg, rgba(250,204,21,0.06) 0%, rgba(5,8,20,0.98) 50%, rgba(34,197,94,0.03) 100%)',
+                  border: '2px solid rgba(250,204,21,0.6)',
+                  boxShadow: '0 0 24px rgba(250,204,21,0.15), 0 20px 50px rgba(0,0,0,0.5)',
+                }}
+              >
+                <div className="absolute inset-0 animate-slot-shimmer pointer-events-none" />
+                <div className="absolute top-3 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#facc15]/20 border border-[#facc15]/70 shadow-[0_0_12px_rgba(250,204,21,0.2)] animate-badge-bounce" style={{ animationDelay: '0.6s' }}>
+                  <Sparkles size={14} className="text-[#facc15]" />
+                  <span className="text-[10px] font-black font-display uppercase tracking-wider text-[#facc15]">NEW</span>
+                </div>
                 <AtomSectionCarousel
                   title="Newly created"
                   subtitle="Fresh atoms as they appear"
@@ -1094,6 +1260,8 @@ const Home: React.FC = () => {
                     toast.success(added ? 'Added to watchlist' : 'Removed from watchlist');
                   }}
                   isInWatchlist={(id) => (walletAddress ? isInWatchlist(id, walletAddress) : false)}
+                  showCreatedAgo
+                  sectionColor="#facc15"
                 />
               </div>
             </Reveal>

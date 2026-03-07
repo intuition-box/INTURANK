@@ -56,6 +56,7 @@ const Markets: React.FC = () => {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 40;
+  const CLAIMS_PAGE_SIZE = 80; // Fetch more claims — triple_terms is efficient
 
   const sortRef = useRef<HTMLDivElement>(null);
   const claimSortRef = useRef<HTMLDivElement>(null);
@@ -91,7 +92,7 @@ const Markets: React.FC = () => {
             setAgents(res.items);
             setHasMore(res.hasMore);
         } else if (activeSegment === 'SYNAPSES') {
-            const res = await getTopClaims(PAGE_SIZE, 0);
+            const res = await getTopClaims(CLAIMS_PAGE_SIZE, 0);
             setClaims(res.items);
             setHasMore(res.hasMore);
         } else if (activeSegment === 'VECTORS') {
@@ -110,16 +111,17 @@ const Markets: React.FC = () => {
   const fetchMoreData = useCallback(async () => {
       if (loadingMore || !hasMore || loading || debouncedTerm.trim().length > 0) return;
       setLoadingMore(true);
-      const nextOffset = offset + PAGE_SIZE;
+      const pageSize = activeSegment === 'SYNAPSES' ? CLAIMS_PAGE_SIZE : PAGE_SIZE;
+      const nextOffset = offset + pageSize;
       try {
           let res: { items: any[], hasMore: boolean } = { items: [], hasMore: false };
           if (activeSegment === 'NODES') {
               res = await getAllAgents(PAGE_SIZE, nextOffset);
               setAgents(prev => [...prev, ...res.items]);
           } else if (activeSegment === 'SYNAPSES') {
-              res = await getTopClaims(PAGE_SIZE, nextOffset);
+              res = await getTopClaims(CLAIMS_PAGE_SIZE, nextOffset);
               setClaims(prev => [...prev, ...res.items]);
-          } else           if (activeSegment === 'VECTORS') {
+          } else if (activeSegment === 'VECTORS') {
               const orderBy = ['AZ', 'ZA'].includes(listSortOption) ? undefined : getListOrderBy(listSortOption);
               res = await getLists(PAGE_SIZE, nextOffset, orderBy);
               setLists(prev => [...prev, ...res.items]);
@@ -706,69 +708,62 @@ const Markets: React.FC = () => {
       ) : activeSegment === 'SYNAPSES' ? (
           <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
               <div className="overflow-x-auto">
-                <table className="w-full text-left font-mono border-collapse min-w-[1000px]">
-                    <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                <table className="w-full text-left font-mono border-collapse min-w-[900px] table-fixed">
+                    <colgroup>
+                      <col className="w-[45%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[19%]" />
+                    </colgroup>
+                    <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-900">
                         <tr>
-                            <th className="px-8 py-6">CLAIM_IDENTITY</th>
-                            <th className="px-8 py-6">SUPPORT</th>
-                            <th className="px-8 py-6">OPPOSE</th>
-                            <th className="px-8 py-6 text-right">HANDSHAKE</th>
+                            <th className="px-4 py-3">CLAIM</th>
+                            <th className="px-4 py-3">SUPPORT</th>
+                            <th className="px-4 py-3">OPPOSE</th>
+                            <th className="px-4 py-3 text-right">HANDSHAKE</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-slate-800/60">
                         {filteredItems.map((claim) => (
                             <tr 
                               key={claim.id} 
                               onClick={() => { playClick(); navigate(`/markets/${claim.id}`); }}
-                              className="hover:bg-white/5 transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
+                              className="hover:bg-white/[0.02] transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
                             >
-                                <td className="px-8 py-8">
-                                    <div className="flex flex-col md:flex-row items-center gap-3">
-                                        <div className="flex items-center gap-3 bg-white/5 pr-4 border border-white/5 clip-path-slant">
-                                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border-r border-white/5">
-                                                {claim.subject.image ? <img src={claim.subject.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
-                                            </div>
-                                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[120px]">{claim.subject.label}</span>
+                                <td className="px-4 py-3 align-middle">
+                                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                        <div className="w-9 h-9 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                                            {claim.subject?.image ? <img src={claim.subject.image} className="w-full h-full object-cover" alt="" /> : <User size={16} className="text-slate-700" />}
                                         </div>
-                                        
-                                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest px-2">{claim.predicate}</span>
-                                        
-                                        <div className="flex items-center gap-3 bg-white/5 pr-4 border border-white/5 clip-path-slant">
-                                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border-r border-white/5">
-                                                {claim.object.image ? <img src={claim.object.image} className="w-full h-full object-cover" /> : <div className="text-[10px] font-black text-slate-700">{claim.object.label?.[0]}</div>}
-                                            </div>
-                                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[120px]">{claim.object.label}</span>
-                                        </div>
+                                        <span className="font-bold text-white text-sm truncate" title={claim.subject?.label || ''}>{claim.subject?.label || '—'}</span>
+                                        <span className="text-slate-500 text-xs shrink-0">{(claim.predicate || 'LINK').replace(/_/g, ' ').toLowerCase()}</span>
+                                        <span className="px-2.5 py-0.5 rounded-md bg-[#2D3A4B] text-white text-xs font-medium shrink-0 truncate max-w-[120px]" title={claim.object?.label || ''}>{claim.object?.label || '—'}</span>
                                     </div>
                                 </td>
                                 
-                                <td className="px-8 py-8">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <Users size={14} className="text-intuition-primary opacity-50" />
-                                            <span className="text-sm font-black text-intuition-primary">{formatLargeNumber(claim.holders)}</span>
-                                        </div>
-                                        <div className="text-lg font-black text-white inline-flex items-baseline gap-1">{formatMarketValue(claim.value)} <CurrencySymbol size="md" className="text-slate-600" /></div>
+                                <td className="px-4 py-3 align-middle">
+                                    <div className="flex items-center gap-1.5">
+                                        <Users size={14} className="text-[#3498DB] shrink-0" />
+                                        <span className="text-[12px] font-bold text-[#3498DB]">{formatLargeNumber(claim.holders)}</span>
+                                        <span className="text-[12px] font-bold text-[#3498DB]">{formatMarketValue(claim.value)} TRUST</span>
                                     </div>
                                 </td>
                                 
-                                <td className="px-8 py-8">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <Users size={14} className="text-intuition-danger opacity-50" />
-                                            <span className="text-sm font-black text-intuition-danger">{formatLargeNumber(claim.opposeHolders || 0)}</span>
-                                        </div>
-                                        <div className="text-lg font-black text-white inline-flex items-baseline gap-1">{formatMarketValue(claim.opposeValue || 0)} <CurrencySymbol size="md" className="text-slate-600" /></div>
+                                <td className="px-4 py-3 align-middle">
+                                    <div className="flex items-center gap-1.5">
+                                        <Users size={14} className="text-[#F39C12] shrink-0" />
+                                        <span className="text-[12px] font-bold text-[#F39C12]">{formatLargeNumber(claim.opposeHolders || 0)}</span>
+                                        <span className="text-[12px] font-bold text-[#F39C12]">{formatMarketValue(claim.opposeValue || 0)} TRUST</span>
                                     </div>
                                 </td>
 
-                                <td className="px-8 py-8 text-right">
+                                <td className="px-4 py-3 text-right align-middle">
                                     <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-6 py-2.5 bg-intuition-primary text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white transition-all shadow-glow-blue">
-                                            SUPPORT
+                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-4 py-2 bg-[#3498DB] text-white text-xs font-bold rounded-lg hover:bg-[#2980B9] transition-colors">
+                                            Support
                                         </Link>
-                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-6 py-2.5 bg-intuition-danger text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black transition-all shadow-glow-red">
-                                            OPPOSE
+                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-4 py-2 bg-[#F39C12] text-white text-xs font-bold rounded-lg hover:bg-[#E67E22] transition-colors">
+                                            Oppose
                                         </Link>
                                     </div>
                                 </td>

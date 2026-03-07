@@ -343,6 +343,271 @@
       .animate-email-success-in {
         animation: email-success-in var(--anim-duration-normal) var(--anim-ease-out) both;
       }
+
+      /* Gamified arena: pulse, bounce, shimmer */
+      @keyframes arena-pulse {
+        0%, 100% { opacity: 0.6; filter: brightness(1); }
+        50% { opacity: 1; filter: brightness(1.15); }
+      }
+      @keyframes badge-bounce {
+        0%, 100% { transform: scale(1) translateY(0); }
+        50% { transform: scale(1.05) translateY(-2px); }
+      }
+      @keyframes slot-shimmer {
+        0% { background-position: -100% 0; }
+        100% { background-position: 200% 0; }
+      }
+      @keyframes neon-flicker {
+        0%, 90%, 100% { opacity: 1; }
+        92% { opacity: 0.85; }
+        96% { opacity: 1; }
+      }
+      .animate-arena-pulse {
+        animation: arena-pulse 3s ease-in-out infinite;
+      }
+      .animate-badge-bounce {
+        animation: badge-bounce 2s ease-in-out infinite;
+      }
+      .animate-slot-shimmer {
+        background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%);
+        background-size: 200% 100%;
+        animation: slot-shimmer 4s linear infinite;
+      }
+      .animate-neon-flicker {
+        animation: neon-flicker 4s ease-in-out infinite;
+      }
+
+      /* IntuRank card — premium holographic/foil gamification (Pokémon-style) */
+      @keyframes holo-rainbow {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+      }
+      @keyframes holo-shimmer {
+        0% { background-position: 0% 0%; }
+        100% { background-position: 200% 200%; }
+      }
+      @keyframes holo-sparkle {
+        0%, 100% { opacity: 0.4; transform: scale(1); }
+        50% { opacity: 0.8; transform: scale(1.1); }
+      }
+      @keyframes card-glow-pulse {
+        0%, 100% { box-shadow: 0 0 0 2px #0a0f1a, 0 0 0 4px #facc15, 0 0 20px rgba(250,204,21,0.25), 0 0 36px rgba(250,204,21,0.1), 0 0 48px rgba(0,243,255,0.06), 0 12px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08); }
+        50% { box-shadow: 0 0 0 2px #0a0f1a, 0 0 0 4px #fde047, 0 0 24px rgba(250,204,21,0.3), 0 0 40px rgba(250,204,21,0.12), 0 0 56px rgba(0,243,255,0.08), 0 12px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); }
+      }
+      .atom-card {
+        background: linear-gradient(180deg, #0d1525 0%, #0a0f1a 50%, #06090f 100%);
+        border: 2px solid #1a2332;
+        box-shadow:
+          0 0 0 1px #000,
+          0 0 20px rgba(0,243,255,0.06),
+          0 8px 28px rgba(0,0,0,0.6),
+          inset 0 1px 0 rgba(255,255,255,0.04);
+        position: relative;
+      }
+      .atom-card::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent 0px,
+          transparent 1px,
+          rgba(255,255,255,0.015) 1px,
+          rgba(255,255,255,0.015) 2px
+        );
+        pointer-events: none;
+        border-radius: inherit;
+      }
+      .atom-card-front {
+        border-color: rgba(250,204,21,0.7);
+        box-shadow:
+          0 0 0 2px #0a0f1a,
+          0 0 0 4px rgba(250,204,21,0.5),
+          0 0 20px rgba(250,204,21,0.2),
+          0 0 36px rgba(250,204,21,0.08),
+          0 0 48px rgba(0,243,255,0.05),
+          0 12px 36px rgba(0,0,0,0.5),
+          inset 0 1px 0 rgba(255,255,255,0.06);
+        animation: card-glow-pulse 4s ease-in-out infinite;
+      }
+      /* Holographic foil border — rainbow accent (like premium Pokémon cards) */
+      .atom-card-front::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 2px;
+        background: linear-gradient(135deg, #ff1e6d, #facc15, #00f3ff, #a855f7, #ff1e6d);
+        background-size: 300% 300%;
+        animation: holo-rainbow 6s ease-in-out infinite;
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        pointer-events: none;
+        z-index: 1;
+      }
+      /* Artwork area — when IMAGE exists: subtle holographic overlay, images show clearly */
+      .atom-card-artwork-image {
+        background: transparent;
+        position: relative;
+        border-top: 1px solid rgba(229,179,24,0.2);
+        border-bottom: 1px solid rgba(0,0,0,0.3);
+        overflow: hidden;
+      }
+      .atom-card-artwork-image::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          135deg,
+          rgba(255,30,109,0.08) 0%,
+          transparent 25%,
+          rgba(0,243,255,0.06) 50%,
+          transparent 75%,
+          rgba(250,204,21,0.08) 100%
+        );
+        background-size: 200% 200%;
+        animation: holo-shimmer 8s ease-in-out infinite;
+        pointer-events: none;
+        mix-blend-mode: overlay;
+      }
+      /* Artwork area — when NO image: iridescent placeholder */
+      .atom-card-artwork {
+        background: linear-gradient(
+          135deg,
+          #1a1520 0%,
+          #2d2438 20%,
+          #1e1a28 40%,
+          #252035 60%,
+          #1a1520 80%,
+          #2d2438 100%
+        );
+        background-size: 400% 400%;
+        animation: holo-rainbow 10s ease-in-out infinite;
+        position: relative;
+        border-top: 1px solid rgba(229,179,24,0.25);
+        border-bottom: 1px solid rgba(0,0,0,0.5);
+        overflow: hidden;
+      }
+      .atom-card-artwork::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 80% 60% at 50% 30%,
+          rgba(250,204,21,0.2) 0%,
+          rgba(0,243,255,0.1) 40%,
+          rgba(255,30,109,0.08) 70%,
+          transparent 100%
+        );
+        pointer-events: none;
+      }
+      .atom-card-artwork::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          135deg,
+          rgba(255,255,255,0.06) 0%,
+          transparent 30%,
+          rgba(0,243,255,0.04) 60%,
+          transparent 100%
+        );
+        background-size: 200% 200%;
+        animation: holo-shimmer 8s ease-in-out infinite;
+        pointer-events: none;
+        mix-blend-mode: overlay;
+      }
+      .atom-card-artwork-inner {
+        background: radial-gradient(
+          ellipse 100% 100% at 50% 20%,
+          rgba(255,255,255,0.08) 0%,
+          rgba(250,204,21,0.08) 25%,
+          transparent 60%
+        );
+        box-shadow: inset 0 0 60px rgba(0,0,0,0.4), inset 0 0 20px rgba(250,204,21,0.12);
+      }
+      .atom-card-attack {
+        background: linear-gradient(180deg, #141c2b 0%, #0f1623 100%);
+        border: 1px solid rgba(250,204,21,0.4);
+        border-radius: 8px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 16px rgba(250,204,21,0.1);
+      }
+      .atom-card-ex-rule {
+        background: linear-gradient(180deg, #0f1a2a 0%, #0a1220 100%);
+        border: 1px solid rgba(14,165,233,0.45);
+        border-radius: 8px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 0 16px rgba(14,165,233,0.12);
+      }
+      .energy-fire {
+        background: radial-gradient(circle at 30% 30%, #fef3c7, #dc2626);
+        border: 2px solid #b91c1c;
+        box-shadow: 0 0 8px rgba(220,38,38,0.3), 0 0 16px rgba(220,38,38,0.1);
+      }
+      .energy-electric {
+        background: radial-gradient(circle at 30% 30%, #fef9c3, #eab308);
+        border: 2px solid #ca8a04;
+        box-shadow: 0 0 8px rgba(234,179,8,0.3), 0 0 16px rgba(234,179,8,0.1);
+      }
+      /* Subtle glitter/sparkle — easy on the eyes */
+      .atom-card-glitter {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          radial-gradient(circle at 15% 25%, rgba(250,204,21,0.2) 1px, transparent 1px),
+          radial-gradient(circle at 85% 75%, rgba(0,243,255,0.15) 1px, transparent 1px),
+          radial-gradient(circle at 50% 50%, rgba(255,255,255,0.12) 1px, transparent 1px);
+        background-size: 32px 32px, 48px 48px, 24px 24px;
+        opacity: 0.5;
+        mix-blend-mode: overlay;
+      }
+
+      /* Execution deck — gamified buy panel */
+      @keyframes execution-pulse {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(0,243,255,0.4), 0 0 24px rgba(0,243,255,0.12), inset 0 0 60px rgba(0,243,255,0.02); }
+        50% { box-shadow: 0 0 0 1px rgba(0,243,255,0.6), 0 0 32px rgba(0,243,255,0.18), inset 0 0 60px rgba(0,243,255,0.03); }
+      }
+      @keyframes swipe-ready {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+      }
+      .execution-deck {
+        position: relative;
+        overflow: hidden;
+      }
+      .execution-deck::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(0,243,255,0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0,243,255,0.03) 1px, transparent 1px);
+        background-size: 12px 12px;
+        pointer-events: none;
+      }
+      .execution-deck-asset-icon {
+        position: relative;
+        box-shadow: 0 0 16px rgba(0,243,255,0.2), inset 0 0 12px rgba(0,243,255,0.05);
+      }
+      .execution-deck-asset-icon::after {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: inherit;
+        border: 1px solid rgba(0,243,255,0.2);
+        pointer-events: none;
+      }
+      .swipe-to-buy-track {
+        position: relative;
+        background: linear-gradient(90deg, rgba(0,243,255,0.05) 0%, transparent 50%);
+        box-shadow: inset 0 0 20px rgba(0,0,0,0.4), 0 0 16px rgba(0,243,255,0.1);
+      }
+      .swipe-to-buy-thumb {
+        box-shadow: 0 0 16px rgba(0,243,255,0.5), 0 0 32px rgba(0,243,255,0.2);
+      }
+
       @media (prefers-reduced-motion: reduce) {
         .animate-email-modal-in, .animate-email-success-in,
         .animate-modal-pop-fluid, .animate-backdrop-fade-fluid, .animate-toast-slide-fluid,
@@ -399,7 +664,9 @@
         }
         .animate-marquee, .animate-pulse-fast, .animate-spin-slow,
         .animate-spin-reverse-slow, .animate-spin-fast, .animate-spin-reverse-fast,
-        .animate-scanline, .animate-glitch {
+        .animate-scanline, .animate-glitch,
+        .animate-arena-pulse, .animate-badge-bounce, .animate-slot-shimmer, .animate-neon-flicker,
+        .atom-card-artwork, .atom-card-artwork-image, .atom-card-front {
           animation: none !important;
         }
       }
@@ -481,9 +748,11 @@
 
       .shadow-glow-blue { box-shadow: 0 0 15px rgba(0, 243, 255, 0.2); }
       .shadow-glow-red { box-shadow: 0 0 15px rgba(255, 30, 109, 0.2); }
+      .shadow-glow-success { box-shadow: 0 0 15px rgba(0, 255, 157, 0.35); }
       .shadow-glow-gold { box-shadow: 0 0 15px rgba(250, 204, 21, 0.2); }
       .shadow-glow-purple { box-shadow: 0 0 15px rgba(168, 85, 247, 0.2); }
       .shadow-neon-blue { box-shadow: 0 0 20px rgba(0, 243, 255, 0.4), 0 0 40px rgba(0, 243, 255, 0.15); }
+      .shadow-neon-success { box-shadow: 0 0 20px rgba(0, 255, 157, 0.5), 0 0 40px rgba(0, 255, 157, 0.2); }
       .shadow-neon-purple { box-shadow: 0 0 20px rgba(168, 85, 247, 0.4), 0 0 40px rgba(168, 85, 247, 0.15); }
       .shadow-neon-gold { box-shadow: 0 0 20px rgba(250, 204, 21, 0.35), 0 0 40px rgba(250, 204, 21, 0.1); }
       .shadow-neon-red { box-shadow: 0 0 20px rgba(255, 30, 109, 0.35), 0 0 40px rgba(255, 30, 109, 0.1); }
