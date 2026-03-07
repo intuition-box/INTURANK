@@ -36,3 +36,7 @@ dist-ssr
 
 # Docs (local notes, not for repo)
 docs/
+
+# Server runtime data (user subs/follows, per-deploy)
+server/email-subs.json
+server/follows.json

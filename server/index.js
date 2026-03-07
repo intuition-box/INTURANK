@@ -31,6 +31,25 @@ const ENSEND_SEND_URL = 'https://api.ensend.co/send';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SUBS_PATH = path.join(__dirname, 'email-subs.json');
+const FOLLOWS_PATH = path.join(__dirname, 'follows.json');
+
+async function loadFollowsStore() {
+  try {
+    const raw = await fs.readFile(FOLLOWS_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveFollowsStore(store) {
+  try {
+    await fs.writeFile(FOLLOWS_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[email-api] Failed to persist follows', e);
+  }
+}
 
 async function loadSubscriptions() {
   try {
@@ -90,6 +109,9 @@ app.post('/api/email-subscribe', async (req, res) => {
     if (idx >= 0) subs[idx] = { ...subs[idx], ...next };
     else subs.push({ ...next, follows: next.follows || [] });
     await saveSubscriptions(subs);
+    const store = await loadFollowsStore();
+    store[normalizedWallet] = next.follows || [];
+    await saveFollowsStore(store);
     res.json({ ok: true });
   } catch (e) {
     console.error('[email-api] subscribe error', e);
@@ -112,7 +134,28 @@ app.post('/api/email-unsubscribe', async (req, res) => {
   }
 });
 
-// Sync follows so the email worker can send alerts when people you follow trade
+// Get follows for a wallet (so frontend can restore after refresh/new device)
+app.get('/api/follows', async (req, res) => {
+  const wallet = (req.query.wallet || req.query.w || '').toString().trim();
+  if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
+  const normalizedWallet = String(wallet).toLowerCase();
+  try {
+    const store = await loadFollowsStore();
+    let list = Array.isArray(store[normalizedWallet]) ? store[normalizedWallet] : [];
+    if (list.length === 0) {
+      const subs = await loadSubscriptions();
+      const sub = subs.find((s) => s.wallet.toLowerCase() === normalizedWallet);
+      if (sub && Array.isArray(sub.follows)) list = sub.follows;
+    }
+    return res.json({ follows: list });
+  } catch (e) {
+    console.error('[email-api] get follows error', e);
+    return res.status(500).json({ error: 'Failed to load follows' });
+  }
+});
+
+// Sync follows so the email worker can send alerts when people you follow trade.
+// Persists for all wallets so we can restore on frontend after refresh/new device.
 app.post('/api/sync-follows', async (req, res) => {
   const { wallet, follows } = req.body || {};
   if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
@@ -125,6 +168,9 @@ app.post('/api/sync-follows', async (req, res) => {
       subs[idx] = { ...subs[idx], follows: list };
       await saveSubscriptions(subs);
     }
+    const store = await loadFollowsStore();
+    store[normalizedWallet] = list;
+    await saveFollowsStore(store);
     res.json({ ok: true });
   } catch (e) {
     console.error('[email-api] sync-follows error', e);

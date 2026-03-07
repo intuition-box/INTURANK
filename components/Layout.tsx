@@ -10,6 +10,7 @@ import Logo from './Logo';
 import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
+import { restoreFollowsFromServerIfEmpty } from '../services/follows';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -125,6 +126,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // When wallet is set and user has daily digest, send digest if 24h passed and queue has items
   useEffect(() => {
     if (walletAddress) maybeSendDailyDigest(walletAddress).catch(() => {});
+  }, [walletAddress]);
+
+  // Restore follows from backend when local is empty (e.g. after hard refresh or new device)
+  useEffect(() => {
+    if (walletAddress) restoreFollowsFromServerIfEmpty(walletAddress).catch(() => {});
   }, [walletAddress]);
 
   const openModal = () => {

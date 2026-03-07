@@ -1,13 +1,18 @@
 /**
  * Follow identities (by address) and optional email alerts for their buy/activity.
- * Stored per wallet in localStorage.
+ * Stored per wallet in localStorage and synced to backend so we can restore after refresh/new device.
  */
 
 import { toAddress } from './web3';
-import { getEmailSubscription, syncFollowsToServer } from './emailNotifications';
+import { syncFollowsToServer } from './emailNotifications';
 
 const STORAGE_KEY_PREFIX = 'inturank_follows_';
 const MAX_FOLLOWS = 200;
+
+const EMAIL_API_BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_EMAIL_API_URL) || '';
+function getFollowsApiBase(): string {
+  return EMAIL_API_BASE ? String(EMAIL_API_BASE).replace(/\/$/, '') : '';
+}
 
 export interface FollowEntry {
   identityId: string;
@@ -56,6 +61,38 @@ export function getFollowedIdentities(walletAddress: string): FollowEntry[] {
   return loadFollows(walletAddress);
 }
 
+/** Fetch follows from backend (for restore after refresh/new device). */
+export async function fetchFollowsFromServer(walletAddress: string): Promise<FollowEntry[]> {
+  const base = getFollowsApiBase();
+  if (!base) return [];
+  try {
+    const url = `${base}/api/follows?wallet=${encodeURIComponent(walletAddress)}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = Array.isArray(data?.follows) ? data.follows : [];
+    return list.map((f: any) => ({
+      identityId: f.identityId || f.identity_id || '',
+      label: f.label,
+      emailAlerts: f.emailAlerts !== false,
+      followedAt: typeof f.followedAt === 'number' ? f.followedAt : 0,
+    })).filter((e: FollowEntry) => e.identityId);
+  } catch {
+    return [];
+  }
+}
+
+/** If local follows are empty, restore from server. Call when wallet connects (e.g. after hard refresh). */
+export async function restoreFollowsFromServerIfEmpty(walletAddress: string): Promise<boolean> {
+  if (!walletAddress) return false;
+  const local = loadFollows(walletAddress);
+  if (local.length > 0) return false;
+  const fromServer = await fetchFollowsFromServer(walletAddress);
+  if (fromServer.length === 0) return false;
+  saveFollows(walletAddress, fromServer);
+  return true;
+}
+
 /** Follow an identity. emailAlerts: send email when they buy/create. */
 export function addFollow(
   walletAddress: string,
@@ -74,9 +111,8 @@ export function addFollow(
     followedAt: Date.now(),
   });
   saveFollows(walletAddress, list);
-  if (getEmailSubscription(walletAddress)) {
-    syncFollowsToServer(walletAddress, list.map((f) => ({ identityId: f.identityId, label: f.label, emailAlerts: f.emailAlerts ?? true })));
-  }
+  // Always sync to backend so we can restore after refresh/new device; also used by email worker when subscribed
+  syncFollowsToServer(walletAddress, list.map((f) => ({ identityId: f.identityId, label: f.label, emailAlerts: f.emailAlerts ?? true })));
 }
 
 /** Unfollow an identity. */
@@ -85,9 +121,7 @@ export function removeFollow(walletAddress: string, identityId: string): void {
   const id = canonicalId(identityId);
   const list = loadFollows(walletAddress).filter((e) => canonicalId(e.identityId) !== id);
   saveFollows(walletAddress, list);
-  if (getEmailSubscription(walletAddress)) {
-    syncFollowsToServer(walletAddress, list.map((f) => ({ identityId: f.identityId, label: f.label, emailAlerts: f.emailAlerts ?? true })));
-  }
+  syncFollowsToServer(walletAddress, list.map((f) => ({ identityId: f.identityId, label: f.label, emailAlerts: f.emailAlerts ?? true })));
 }
 
 /** Check if the wallet follows this identity. */
@@ -107,7 +141,5 @@ export function setFollowEmailAlerts(walletAddress: string, identityId: string, 
   if (idx === -1) return;
   list[idx] = { ...list[idx], emailAlerts };
   saveFollows(walletAddress, list);
-  if (getEmailSubscription(walletAddress)) {
-    syncFollowsToServer(walletAddress, list.map((f) => ({ identityId: f.identityId, label: f.label, emailAlerts: f.emailAlerts ?? true })));
-  }
+  syncFollowsToServer(walletAddress, list.map((f) => ({ identityId: f.identityId, label: f.label, emailAlerts: f.emailAlerts ?? true })));
 }
