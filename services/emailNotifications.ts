@@ -7,7 +7,7 @@
 import type { PositionActivityNotification } from './graphql';
 import { formatEther } from 'viem';
 import { formatMarketValue, formatDisplayedShares } from './analytics';
-import type { TransactionReceiptData } from './emailTemplates';
+import type { TransactionReceiptData, TransferReceiptData } from './emailTemplates';
 
 const STORAGE_KEY = 'inturank_email_subscriptions';
 const NOTIFIED_IDS_KEY_PREFIX = 'inturank_notified_activity_';
@@ -353,6 +353,25 @@ export async function sendTransactionReceiptEmail(
   const { getTransactionReceiptHtml } = await import('./emailTemplates');
   const html = getTransactionReceiptHtml(receipt);
 
+  await sendEmailWithHtml({ to: sub.email, subject, message: plainMessage, html });
+}
+
+/**
+ * Send transfer receipt email when the user sends native TRUST to another address.
+ * Only sends when user has email connected; per_tx = send now, daily = skip (digest does not include transfer receipts yet).
+ */
+export async function sendTransferReceiptEmail(
+  walletAddress: string,
+  data: TransferReceiptData
+): Promise<void> {
+  const sub = getEmailSubscription(walletAddress);
+  if (!sub?.email) return;
+  if (sub.alertFrequency === 'daily') return;
+
+  const subject = `IntuRank: Transfer confirmed — ${data.amountFormatted} TRUST sent`;
+  const plainMessage = `You sent ${data.amountFormatted} TRUST to ${data.toAddress.slice(0, 10)}…${data.toAddress.slice(-8)}. Tx: ${data.txHash}`;
+  const { getTransferReceiptHtml } = await import('./emailTemplates');
+  const html = getTransferReceiptHtml(data);
   await sendEmailWithHtml({ to: sub.email, subject, message: plainMessage, html });
 }
 

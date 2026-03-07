@@ -76,6 +76,28 @@ export const getProvider = () => {
   return activeProvider || getBrowserProvider('default');
 };
 
+/** Send native TRUST to an address. Uses same provider as rest of app so wallet prompts. */
+export const sendNativeTransfer = async (
+  fromAccount: string,
+  to: `0x${string}`,
+  valueWei: bigint
+): Promise<string> => {
+  const provider = getProvider();
+  if (!provider) throw new Error('Wallet not connected');
+  const account = getAddress(fromAccount);
+  const walletClient = createWalletClient({
+    chain: intuitionChain,
+    transport: custom(provider),
+    account: account as `0x${string}`,
+  });
+  const hash = await walletClient.sendTransaction({
+    to,
+    value: valueWei,
+    account: account as `0x${string}`,
+  });
+  return hash;
+};
+
 /**
  * Deterministically calculates a Triple ID from components.
  */

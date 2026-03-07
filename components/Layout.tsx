@@ -374,10 +374,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <Coins size={18} /> ACQUIRE_₸_TOKEN
                   </a>
 
+                  <Link
+                    to="/send-trust"
+                    onClick={() => {
+                      playClick();
+                      setIsMenuOpen(false);
+                    }}
+                    style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 1) * 45}ms` }}
+                    className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-[#F0C14B] text-[#F0C14B] font-black font-mono text-[10px] tracking-widest rounded-full mt-2 hover:bg-[#F0C14B] hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  >
+                    <Send size={18} /> SEND_TRUST
+                  </Link>
+
                   <button
                     onClick={handleNewSignal}
                     style={{
-                      animationDelay: `${([...mainNavItems, ...intelItems].length + 1) * 45}ms`,
+                      animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms`,
                     }}
                     className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest rounded-full shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                   >
@@ -393,7 +405,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       if (next) playClick();
                     }}
                     style={{
-                      animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms`,
+                      animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms`,
                     }}
                     className="w-full flex items-center justify-between gap-3 px-5 py-4 border-2 border-slate-700 text-slate-300 font-mono font-black text-[10px] tracking-widest rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                   >
@@ -419,10 +431,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   {walletAddress ? (
                     <button
                       onClick={handleDisconnect}
-                      style={{
-                        animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms`,
+style={{
+                        animationDelay: `${([...mainNavItems, ...intelItems].length + 4) * 45}ms`,
                       }}
-                      className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                    className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                     >
                       EXIT_SECURE_SESSION
                     </button>
@@ -434,7 +446,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                         openModal();
                       }}
                       style={{
-                        animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms`,
+                        animationDelay: `${([...mainNavItems, ...intelItems].length + 4) * 45}ms`,
                       }}
                       className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                     >
@@ -536,6 +548,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     >
                       <Coins size={14} /> GET_TRUST
                     </a>
+                    <Link
+                      to="/send-trust"
+                      onClick={() => {
+                        playClick();
+                        setIsWalletDropdownOpen(false);
+                      }}
+                      onMouseEnter={playHover}
+                      className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-[#F0C14B] hover:bg-[#F0C14B]/10 transition-colors uppercase tracking-widest"
+                    >
+                      <Send size={14} /> SEND_TRUST
+                    </Link>
                     <button
                       onClick={handleCopyAddress}
                       onMouseEnter={playHover}
