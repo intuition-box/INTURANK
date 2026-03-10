@@ -57,7 +57,7 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
 
             const response = await ai.models.generateContent({
                 model: MODEL_NAME,
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: prompt,
             });
             setAnalysis(response.text || 'Could not generate summary. Try again.');
         } catch (e) {

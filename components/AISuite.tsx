@@ -6,7 +6,7 @@ import { formatEther } from 'viem';
 import { formatDisplayedShares } from '../services/analytics';
 import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
 
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'] as const;
 
 export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: Transaction[] }> = ({ agent, triples, history }) => {
     const [brief, setBrief] = useState<string>('');
@@ -45,14 +45,31 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
                     Style: Cypherpunk, objective, techno-financial, concise.
                 `;
 
-                const response = await ai.models.generateContent({
-                    model: MODEL_NAME,
-                    contents: [{ parts: [{ text: prompt }] }],
-                });
-                
-                setBrief(response.text || 'Synthesis incomplete. Core data stream fragmented.');
+                let lastError: unknown;
+                let success = false;
+                for (const model of MODELS) {
+                    try {
+                        const response = await ai.models.generateContent({
+                            model,
+                            contents: prompt,
+                        });
+                        const text = response.text ?? (response as any).candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            setBrief(text);
+                            success = true;
+                            break;
+                        }
+                    } catch (e) {
+                        lastError = e;
+                    }
+                }
+                if (!success) {
+                    setBrief('Neural uplink restricted. Satellite hand-off required.');
+                    if (import.meta.env.DEV && lastError) console.warn('[AIBriefing] Gemini:', lastError);
+                }
             } catch (e) {
                 setBrief('Neural uplink restricted. Satellite hand-off required.');
+                if (import.meta.env.DEV) console.warn('[AIBriefing] Gemini:', e);
             } finally {
                 setLoading(false);
             }

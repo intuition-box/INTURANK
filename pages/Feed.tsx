@@ -69,7 +69,7 @@ const Feed: React.FC = () => {
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: prompt,
             });
             setAresPulse(response.text?.trim() || "EQUILIBRIUM_MAINTAINED_IN_SECTOR_04");
         } catch (e) {
