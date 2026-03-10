@@ -9,6 +9,24 @@ import { DISPLAY_DIVISOR } from '../constants';
  */
 
 /**
+ * Safely converts wei (string/number) to ether for display. Handles scientific notation and large values that BigInt cannot parse.
+ */
+export const safeWeiToEther = (val: string | number | undefined | null): number => {
+  if (val == null || val === '') return 0;
+  const s = String(val);
+  if (/[eE]/.test(s) || typeof val === 'number') {
+    const n = typeof val === 'number' ? val : parseFloat(s);
+    return isNaN(n) ? 0 : n / 1e18;
+  }
+  try {
+    return parseFloat(formatEther(BigInt(s)));
+  } catch {
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : n / 1e18;
+  }
+};
+
+/**
  * Robustly parses strings that might be Wei (BigInt) or Ether (Float).
  */
 export const safeParseUnits = (val: string | undefined | null): number => {
@@ -25,8 +43,11 @@ export const safeParseUnits = (val: string | undefined | null): number => {
 
 export const formatMarketValue = (val: number | string): string => {
     const n = typeof val === 'string' ? parseFloat(val) : val;
-    if (isNaN(n) || n === 0) return "0.0000";
-    if (n < 0.0001) return n.toFixed(8);
+    if (isNaN(n) || n === 0 || n < 1e-10) return "0.0000";
+    if (n < 0.0001) {
+        const s = n.toFixed(8);
+        return s.startsWith('.') ? '0' + s : s;
+    }
     if (n < 1) return n.toFixed(4);
     
     return Intl.NumberFormat('en-US', { 
@@ -127,15 +148,24 @@ export const formatDisplayedShares = (val: string | bigint | number): string => 
     return safeParseUnits(val.toString()).toFixed(6);
 };
 
+/** Normalize term ID for comparison (handles 42-char vs 66-char padded formats). */
+export const normalizeTermId = (id: string | undefined | null): string => {
+    if (!id || typeof id !== 'string') return '';
+    const s = id.toLowerCase().trim();
+    if (s.startsWith('0x') && s.length === 66 && s.startsWith('0x000000000000000000000000')) return '0x' + s.slice(26);
+    if (s.startsWith('0x') && s.length === 42) return s;
+    return s;
+};
+
 /**
  * Calculates accurate PnL. 
  * Unrealized PnL should use Spot Price (valuation) to avoid spread red ink on new positions.
  * When curveId is provided, only deposits/redemptions for that curve are used (linear vs exponential).
  */
 export const calculatePositionPnL = (sharesHeld: number, valuationPrice: number, unifiedHistory: Transaction[], vaultId: string, curveId?: number) => {
-    const normalizedId = vaultId.toLowerCase();
+    const normalizedId = normalizeTermId(vaultId);
     const filteredHistory = unifiedHistory.filter(tx => {
-        if (tx.vaultId?.toLowerCase() !== normalizedId) return false;
+        if (normalizeTermId(tx.vaultId) !== normalizedId) return false;
         if (curveId != null && tx.curveId != null && tx.curveId !== curveId) return false;
         return true;
     });

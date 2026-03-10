@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, User, Database, Network, Info, Loader2, Zap, ArrowRight, ShieldCheck, Cpu, Camera, Search, ChevronRight, HelpCircle, UserPlus, CheckCircle2, Globe, Fingerprint, Trash2, Plus, Terminal as TerminalIcon, ExternalLink, RefreshCw, AlertTriangle, Coins } from 'lucide-react';
 import { playClick, playHover, playSuccess } from '../services/audio';
-import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas } from '../services/web3';
+import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas, getMinClaimDeposit, getTotalTripleCreationCost } from '../services/web3';
 import { searchGlobalAgents } from '../services/graphql';
 import { Account } from '../types';
 import { toast } from './Toast';
@@ -120,6 +120,8 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
   const [estCost, setEstCost] = useState<string | null>(null);
   const [estGas, setEstGas] = useState<string | null>(null);
   const [isEstimating, setIsEstimating] = useState(false);
+  const [minClaimDeposit, setMinClaimDeposit] = useState<string>('0.1');
+  const [totalClaimCost, setTotalClaimCost] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -170,6 +172,20 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
         return () => clearTimeout(timer);
     }
   }, [identityForm.name, identityForm.deposit, identityForm.type, view, wallet]);
+
+  useEffect(() => {
+    if (view === 'CLAIM_OVERVIEW') {
+      getMinClaimDeposit().then(setMinClaimDeposit).catch(() => setMinClaimDeposit('0.1'));
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (view === 'CLAIM_OVERVIEW' && tripleForm.deposit && parseFloat(tripleForm.deposit) >= parseFloat(minClaimDeposit)) {
+      getTotalTripleCreationCost(tripleForm.deposit).then(setTotalClaimCost).catch(() => setTotalClaimCost(null));
+    } else {
+      setTotalClaimCost(null);
+    }
+  }, [view, tripleForm.deposit, minClaimDeposit]);
 
   useEffect(() => {
     if (view !== 'SELECTOR') return;
@@ -255,7 +271,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
       const metadata = { name: identityForm.name, description: identityForm.description, image: identityForm.image, type: identityForm.type, links: identityForm.links.filter(l => l.url) };
       await new Promise(r => setTimeout(r, 1000));
       setTxStatus('SIGNING');
-      const hash = await createIdentityAtom(metadata, identityForm.deposit, wallet);
+      const { hash } = await createIdentityAtom(metadata, identityForm.deposit, wallet);
       setTxHash(hash);
       setTxStatus('BROADCASTING');
       await publicClient.waitForTransactionReceipt({ hash });
@@ -271,6 +287,12 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
 
   const handleFinalizeTriple = async () => {
     if (!wallet || !tripleForm.subject || !tripleForm.predicate || !tripleForm.object) return;
+    const depositNum = parseFloat(tripleForm.deposit || '0');
+    const minNum = parseFloat(minClaimDeposit);
+    if (depositNum < minNum) {
+      toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}. You entered ${tripleForm.deposit}.`);
+      return;
+    }
     setTxStatus('CALCULATING');
     setTxError(undefined);
     try {
@@ -367,14 +389,23 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
                 ))}
               </div>
               <div className="max-w-xs mx-auto pt-6">
-                <div className="flex justify-between items-center mb-3 px-1"><span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Initial Deposit</span></div>
+                <div className="flex justify-between items-center mb-3 px-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Initial Deposit</span>
+                  <span className="text-[9px] font-mono text-slate-600">Min: {minClaimDeposit} <CurrencySymbol size="sm" /></span>
+                </div>
                 <div className="relative group">
                   <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-intuition-primary transition-colors"><Zap size={18}/></div>
-                  <input type="number" value={tripleForm.deposit} onChange={(e) => setTripleForm({...tripleForm, deposit: e.target.value})} className="w-full bg-black border border-white/10 rounded-2xl py-5 pl-14 pr-6 text-2xl font-bold text-white outline-none focus:border-intuition-primary transition-all text-right shadow-inner" placeholder="0" />
+                  <input type="number" step="0.01" min={minClaimDeposit} value={tripleForm.deposit} onChange={(e) => setTripleForm({...tripleForm, deposit: e.target.value})} className="w-full bg-black border border-white/10 rounded-2xl py-5 pl-14 pr-6 text-2xl font-bold text-white outline-none focus:border-intuition-primary transition-all text-right shadow-inner" placeholder={minClaimDeposit} />
                 </div>
+                {totalClaimCost && parseFloat(totalClaimCost) > 0 && (
+                  <div className="mt-3 p-3 border border-slate-900 bg-black/40 rounded-xl">
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Total cost (deposit + fees)</span>
+                    <div className="text-lg font-black text-white mt-1">{parseFloat(totalClaimCost).toFixed(4)} <CurrencySymbol size="md" /></div>
+                  </div>
+                )}
               </div>
               <div className="pt-10">
-                <button onClick={handleFinalizeTriple} disabled={loading || !tripleForm.subject || !tripleForm.predicate || !tripleForm.object} className={`w-full py-6 rounded-[24px] text-lg font-black uppercase tracking-widest transition-all ${!tripleForm.subject || !tripleForm.predicate || !tripleForm.object ? 'bg-white/5 text-slate-600 cursor-not-allowed border border-white/5' : 'bg-white text-black hover:scale-[1.01] shadow-[0_20px_50px_rgba(255,255,255,0.1)]'}`}>Establish Synapse</button>
+                <button onClick={handleFinalizeTriple} disabled={loading || !tripleForm.subject || !tripleForm.predicate || !tripleForm.object || parseFloat(tripleForm.deposit || '0') < parseFloat(minClaimDeposit)} className={`w-full py-6 rounded-[24px] text-lg font-black uppercase tracking-widest transition-all ${!tripleForm.subject || !tripleForm.predicate || !tripleForm.object || parseFloat(tripleForm.deposit || '0') < parseFloat(minClaimDeposit) ? 'bg-white/5 text-slate-600 cursor-not-allowed border border-white/5' : 'bg-white text-black hover:scale-[1.01] shadow-[0_20px_50px_rgba(255,255,255,0.1)]'}`}>Establish Synapse</button>
               </div>
             </div>
           )}

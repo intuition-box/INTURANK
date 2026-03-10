@@ -73,7 +73,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
         <div className="w-full max-w-sm mx-auto perspective-1000 group">
           <div 
             ref={cardRef} 
-            className="relative bg-[#020308] border-2 p-8 rounded-none clip-path-slant overflow-hidden transition-all duration-700"
+            className="relative bg-[#020308] border-2 p-8 rounded-[2rem] overflow-hidden transition-all duration-700"
             style={glowStyle}
           >
             {/* Ultra-high fidelity background layers */}
@@ -91,7 +91,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
             <div className="flex justify-between items-start mb-10 relative z-10">
                 <div className="flex items-center gap-4">
                     <div 
-                      className="w-14 h-14 bg-black border-2 flex items-center justify-center transition-all duration-700 clip-path-slant overflow-hidden shadow-2xl"
+                      className="w-14 h-14 bg-black border-2 flex items-center justify-center rounded-[1rem] transition-all duration-700 overflow-hidden shadow-2xl"
                       style={{ borderColor: `${themeColor}88`, boxShadow: `0 0 20px ${themeColor}44` }}
                     >
                         {assetImage ? (
@@ -110,7 +110,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
                 <div className="text-right">
                     <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-widest mb-1">Authenticated_Trader</div>
                     <div 
-                      className="text-white font-bold font-mono text-[10px] bg-black px-3 py-1.5 border clip-path-slant"
+                      className="text-white font-bold font-mono text-[10px] bg-black px-3 py-1.5 border rounded-lg"
                       style={{ borderColor: `${themeColor}44` }}
                     >
                         {username.slice(0, 6)}...{username.slice(-4)}
@@ -120,7 +120,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
 
             {/* Main PnL Section */}
             <div 
-              className="text-center py-8 border-y bg-white/[0.02] backdrop-blur-md mb-8 relative z-10 overflow-hidden"
+              className="text-center py-8 border-y bg-white/[0.02] backdrop-blur-md mb-8 relative z-10 overflow-hidden rounded-2xl"
               style={{ borderColor: `${themeColor}22` }}
             >
                 <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
@@ -137,7 +137,7 @@ const ShareCard: React.FC<ShareCardProps> = ({
                     {isPositive ? '+' : ''}{pnl}%
                 </div>
                 <div 
-                  className={`inline-flex items-center gap-2 mt-4 px-4 py-1.5 text-[9px] font-black uppercase tracking-[0.3em] border clip-path-slant transition-all`}
+                  className={`inline-flex items-center gap-2 mt-4 px-4 py-2 text-[9px] font-black uppercase tracking-[0.3em] border rounded-full transition-all`}
                   style={{ 
                     backgroundColor: side === 'TRUST' ? 'rgba(0,255,157,0.1)' : 'rgba(255,30,109,0.1)',
                     borderColor: side === 'TRUST' ? '#00ff9d44' : '#ff1e6d44',
@@ -193,14 +193,14 @@ const ShareCard: React.FC<ShareCardProps> = ({
         <div className="flex gap-3 w-full max-w-sm relative z-[110]">
             <button 
                 onClick={handleShareToX} 
-                className="flex-1 py-4 bg-white/5 border border-white/10 text-white font-black font-mono text-[9px] tracking-[0.3em] uppercase hover:bg-white hover:text-black transition-all clip-path-slant flex items-center justify-center gap-2.5 active:scale-95 shadow-2xl"
+                className="flex-1 py-4 bg-white/5 border border-white/10 text-white font-black font-mono text-[9px] tracking-[0.3em] uppercase hover:bg-white hover:text-black transition-all rounded-2xl flex items-center justify-center gap-2.5 active:scale-95 shadow-2xl"
             >
                 <Twitter size={14} /> Share_X
             </button>
             <button 
                 onClick={handleSave} 
                 disabled={isCapturing}
-                className="flex-1 py-4 font-black font-mono text-[9px] tracking-[0.3em] uppercase clip-path-slant transition-all flex items-center justify-center gap-2.5 active:scale-95 shadow-2xl duration-700"
+                className="flex-1 py-4 font-black font-mono text-[9px] tracking-[0.3em] uppercase rounded-2xl transition-all flex items-center justify-center gap-2.5 active:scale-95 shadow-2xl duration-700"
                 style={{ 
                   backgroundColor: themeColor, 
                   color: '#000',

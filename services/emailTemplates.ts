@@ -175,6 +175,70 @@ export function getTransactionReceiptHtml(receipt: TransactionReceiptData): stri
 `.replace(/\n\s+/g, '\n').trim();
 }
 
+/** Data for native TRUST transfer receipt email. */
+export interface TransferReceiptData {
+  txHash: string;
+  toAddress: string;
+  amountFormatted: string;
+}
+
+/** Receipt email after user sends native TRUST to another address. */
+export function getTransferReceiptHtml(data: TransferReceiptData): string {
+  const txUrl = `${EXPLORER_URL}/tx/${data.txHash}`;
+  const shortHash = `${data.txHash.slice(0, 10)}…${data.txHash.slice(-8)}`;
+  const toShort = data.toAddress.length >= 42 ? `${data.toAddress.slice(0, 8)}…${data.toAddress.slice(-6)}` : data.toAddress;
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transfer receipt — ${BRAND}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0; padding:0; background-color:#050508; font-family: Orbitron, Arial, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#050508;">
+    <tr>
+      <td align="center" style="padding: 32px 20px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="max-width: 520px; width: 100%; background-color:${BG_CARD}; border: 2px solid ${NEON_GLOW_BORDER};">
+          <tr>
+            <td style="padding: 0 24px 20px 24px; border-bottom: 2px solid ${NEON_GLOW_BORDER};">
+              <img src="${LOGO_URL}" alt="${BRAND}" width="56" height="56" style="display: block; width: 56px; height: 56px; margin: 24px auto 16px auto; object-fit: contain;" />
+              <p style="margin: 0 0 4px 0; font-size: 9px; font-weight: 700; letter-spacing: 0.25em; color: ${NEON_CYAN}; text-transform: uppercase; text-align: center;">${BRAND} · Transfer receipt</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 24px 28px 24px;">
+              <p style="margin: 0 0 6px 0; font-size: 10px; font-weight: 700; letter-spacing: 0.2em; color: ${NEON_CYAN}; text-transform: uppercase;">Transaction confirmed</p>
+              <h1 style="margin: 0 0 20px 0; font-family: Orbitron, Arial, sans-serif; font-size: 20px; font-weight: 900; color: ${NEON_GREEN}; letter-spacing: 0.06em; text-transform: uppercase;">Sent ${escapeHtml(data.amountFormatted)} TRUST</h1>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px; color: ${TEXT}; border: 1px solid ${NEON_GLOW_BORDER};">
+                <tr><td style="padding: 10px 12px; border-bottom: 1px solid ${BORDER}; color: ${TEXT_MUTED};">To</td><td style="padding: 10px 12px; border-bottom: 1px solid ${BORDER}; text-align: right; word-break: break-all; color: ${TEXT};">${escapeHtml(toShort)}</td></tr>
+                <tr><td style="padding: 10px 12px; border-bottom: 1px solid ${BORDER}; color: ${TEXT_MUTED};">Amount</td><td style="padding: 10px 12px; border-bottom: 1px solid ${BORDER}; text-align: right; color: ${NEON_GREEN};">${escapeHtml(data.amountFormatted)} ${CURRENCY}</td></tr>
+                <tr><td style="padding: 10px 12px; color: ${TEXT_MUTED};">Transaction</td><td style="padding: 10px 12px; text-align: right;"><a href="${txUrl}" style="font-size: 11px; color: ${NEON_CYAN}; word-break: break-all; text-decoration: underline;">${shortHash}</a></td></tr>
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top: 24px;">
+                <tr>
+                  <td style="background-color: ${NEON_CYAN}; padding: 14px 28px; border: 1px solid ${NEON_CYAN};">
+                    <a href="${txUrl}" style="font-family: Orbitron, Arial, sans-serif; font-size: 11px; font-weight: 900; letter-spacing: 0.1em; color: #000000; text-decoration: none; text-transform: uppercase;">View on explorer</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 24px; border-top: 1px solid ${NEON_GLOW_BORDER};">
+              <p style="margin: 0; font-size: 10px; color: ${TEXT_MUTED}; letter-spacing: 0.08em;">Semantic markets · Quantify identity · Trust layer</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`.replace(/\n\s+/g, '\n').trim();
+}
+
 /** Formatted activity data for rich notification email. */
 export interface ActivityNotificationFormatted {
   marketLabel: string;

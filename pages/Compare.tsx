@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Activity, Zap, Trophy, Brain, Sword, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3, TrendingUp } from 'lucide-react';
+import { Search, Activity, Zap, Trophy, Brain, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3, TrendingUp, Flame, Swords } from 'lucide-react';
 import { getAllAgents, getRedemptionCountForVault } from '../services/graphql';
 import { Account } from '../types';
 import { calculateTrustScore, calculateVolatility, formatMarketValue } from '../services/analytics';
@@ -7,11 +7,11 @@ import { formatEther } from 'viem';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { playClick, playHover } from '../services/audio';
 import { Link } from 'react-router-dom';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = 'gemini-3-pro-preview';
+const MODEL_NAME = 'gemini-2.5-flash';
 
 // --- TACTICAL CONFLICT SIMULATION COMPONENT (Updated to V3 Inspo) ---
 const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number; rScore: number }> = ({ left, right, lScore, rScore }) => {
@@ -35,9 +35,9 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     const generateAnalysis = async () => {
         setLoading(true);
         try {
-            const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            const apiKey = getGeminiApiKey();
             if (!apiKey) {
-                setAnalysis('AI summary is disabled. Add VITE_GEMINI_API_KEY to .env.local to enable it.');
+                setAnalysis('AI summary is disabled. Set VITE_GEMINI_API_KEY in your environment to enable it.');
                 setLoading(false);
                 return;
             }
@@ -57,7 +57,7 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
 
             const response = await ai.models.generateContent({
                 model: MODEL_NAME,
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: prompt,
             });
             setAnalysis(response.text || 'Could not generate summary. Try again.');
         } catch (e) {
@@ -68,42 +68,42 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     };
 
     return (
-        <div className="bg-gradient-to-br from-[#020308] via-[#040612] to-[#020308] border-2 border-intuition-primary/30 p-4 sm:p-6 md:p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-6 md:mb-8 rounded-sm hover:border-intuition-primary/50 hover:shadow-[0_0_40px_rgba(0,243,255,0.08)] transition-all duration-500">
+        <div className="bg-gradient-to-br from-[#020308] via-[#040612] to-[#020308] border-2 border-amber-500/30 p-4 sm:p-6 md:p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-6 md:mb-8 rounded-sm hover:border-amber-500/50 hover:shadow-[0_0_40px_rgba(250,204,21,0.08)] transition-all duration-500">
             <div className="absolute inset-0 bg-gradient-to-br from-intuition-primary/5 via-transparent to-intuition-secondary/5 pointer-events-none" />
-            <div className="absolute -top-12 -right-12 opacity-[0.12] text-intuition-primary pointer-events-none group-hover:opacity-20 group-hover:scale-110 transition-all duration-700">
-                <Brain size={280} />
+            <div className="absolute -top-12 -right-12 opacity-[0.12] text-amber-400 pointer-events-none group-hover:opacity-20 group-hover:scale-110 transition-all duration-700">
+                <Swords size={280} />
             </div>
-            
+
             <div className="relative z-10">
                 <div className="flex items-center gap-4 mb-8">
-                    <div className="w-10 h-10 bg-black/80 border-2 border-intuition-primary/50 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
+                    <div className="w-10 h-10 bg-black/80 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 clip-path-slant shadow-[0_0_20px_rgba(250,204,21,0.2)]">
                         <Brain size={20} />
                     </div>
-                    <h3 className="text-sm font-bold text-white tracking-wide">Comparison summary</h3>
+                    <h3 className="text-sm font-bold text-white tracking-wide">Battle Summary</h3>
                 </div>
                 
                 {!analysis && !loading ? (
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-8 pl-4 border-l-2 border-intuition-primary/30">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-8 pl-4 border-l-2 border-amber-500/30">
                         <p className="text-slate-300 font-sans text-sm leading-relaxed max-w-2xl">
                             Get a short, plain-language summary of how these two compare — who’s ahead and why.
                         </p>
                         <button 
                             onClick={() => { playClick(); generateAnalysis(); }}
-                            className="px-8 py-3 bg-intuition-primary text-black font-bold text-sm tracking-wide hover:bg-white hover:shadow-glow-blue transition-all shadow-glow-blue whitespace-nowrap active:scale-95"
+                            className="px-8 py-3 bg-amber-500 text-black font-bold text-sm tracking-wide hover:bg-amber-400 hover:shadow-[0_0_24px_rgba(250,204,21,0.4)] transition-all whitespace-nowrap active:scale-95"
                         >
-                            Generate summary
+                            Generate Battle Report
                         </button>
                     </div>
                 ) : loading ? (
-                    <div className="flex items-center gap-3 text-intuition-primary font-sans text-sm animate-pulse font-medium py-4 pl-4 border-l-2 border-intuition-primary/40">
-                        <Loader2 size={16} className="animate-spin" /> Generating summary…
+                    <div className="flex items-center gap-3 text-amber-400 font-sans text-sm animate-pulse font-medium py-4 pl-4 border-l-2 border-amber-500/40">
+                        <Loader2 size={16} className="animate-spin" /> Analyzing combatants…
                     </div>
                 ) : (
-                    <div className="flex gap-6 items-start animate-in fade-in duration-500 pl-4 border-l-2 border-intuition-primary/50">
-                        <Quote size={24} className="text-intuition-primary shrink-0 opacity-60 mt-1 text-glow-blue" />
+                    <div className="flex gap-6 items-start animate-in fade-in duration-500 pl-4 border-l-2 border-amber-500/50">
+                        <Quote size={24} className="text-amber-400 shrink-0 opacity-60 mt-1" />
                         <p className="text-slate-200 font-sans text-sm leading-relaxed">
                             {displayedText}
-                            <span className="inline-block w-2 h-3.5 bg-intuition-primary ml-1 animate-pulse shadow-glow-blue rounded-sm"></span>
+                            <span className="inline-block w-2 h-3.5 bg-amber-400 ml-1 animate-pulse rounded-sm"></span>
                         </p>
                     </div>
                 )}
@@ -112,96 +112,75 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
     );
 };
 
-// --- DYNAMIC COLLISION VISUAL (Updated to Inspo) ---
-const NeuralCollision: React.FC<{ tension: number, arbitrage: number, onSwap: () => void }> = ({ tension, arbitrage, onSwap }) => {
-    return (
-        <div className="flex flex-col items-center justify-between min-w-[140px] relative h-full py-4">
-            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px bg-gradient-to-b from-transparent via-slate-800 to-transparent"></div>
-            
-            <div className="flex flex-col items-center gap-2 z-10">
-                <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em]">Tension_Index</div>
-                <div className={`text-2xl font-black font-mono transition-all duration-700 ${tension > 30 ? 'text-intuition-danger text-glow-red' : 'text-white'}`}>
-                    {tension.toFixed(1)}
-                </div>
-            </div>
+// --- POKÉ BALL ARENA — top (red) vs bottom (blue), TCG battleground style ---
+const PokeBallArena: React.FC<{
+    topAgent: Account | null;
+    bottomAgent: Account | null;
+    topScore: number;
+    bottomScore: number;
+    onSelectTop: () => void;
+    onSelectBottom: () => void;
+    onSwap: () => void;
+}> = ({ topAgent, bottomAgent, topScore, bottomScore, onSelectTop, onSelectBottom, onSwap }) => {
+    const topHp = Math.min(100, Math.max(0, topScore));
+    const bottomHp = Math.min(100, Math.max(0, bottomScore));
+    const topWins = topAgent && bottomAgent && topScore > bottomScore;
+    const bottomWins = topAgent && bottomAgent && bottomScore > topScore;
 
-            <div className="relative group z-20 my-2">
-                <div className={`absolute -inset-4 rounded-full bg-gradient-to-r from-intuition-primary/20 via-intuition-secondary/20 to-intuition-primary/20 blur-xl opacity-30 group-hover:opacity-60 transition-all duration-700 animate-pulse`}></div>
-                <div className={`absolute inset-0 rounded-full border-2 border-dashed ${tension > 30 ? 'border-intuition-danger/40' : 'border-intuition-primary/30'} group-hover:border-intuition-primary/60 transition-all duration-500`}></div>
-                <button 
-                    onClick={() => { playClick(); onSwap(); }}
-                    onMouseEnter={playHover}
-                    className={`relative w-16 h-16 bg-black border-2 rounded-full flex items-center justify-center text-white hover:text-black hover:bg-intuition-primary transition-all duration-500 hover:scale-110 shadow-2xl group-hover:shadow-glow-blue ${tension > 30 ? 'border-intuition-danger shadow-glow-red' : 'border-intuition-primary'}`}
-                >
-                    <span className="font-black font-display text-xl italic tracking-tighter">VS</span>
-                </button>
-            </div>
-
-            <div className="flex flex-col items-center gap-2 z-10">
-                <div className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.4em]">Arbitrage_Delta</div>
-                <div className="text-sm font-black font-mono text-white tracking-tighter">
-                    {arbitrage.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const AgentCard: React.FC<{ 
-    agent: Account | null, 
-    onSelect: () => void, 
-    isWinner?: boolean,
-    isLoser?: boolean,
-    position: 'LEFT' | 'RIGHT'
-}> = ({ agent, onSelect, isWinner, isLoser, position }) => {
-    const score = agent ? calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0') : 0;
-    
-    return (
-        <div 
-            className={`relative flex-1 bg-gradient-to-b from-[#03050c] to-[#020308] border-2 p-4 sm:p-6 md:p-10 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[380px] transition-all duration-500 group cursor-pointer overflow-hidden ${isWinner ? 'border-intuition-success/50 shadow-[0_0_60px_rgba(0,255,157,0.12)] hover:shadow-[0_0_80px_rgba(0,255,157,0.15)]' : isLoser ? 'border-intuition-danger/20 opacity-70 grayscale hover:grayscale-0 hover:opacity-90' : 'border-slate-800 hover:border-intuition-primary/50 hover:shadow-[0_0_30px_rgba(0,243,255,0.06)]'}`}
-            onClick={() => { playClick(); onSelect(); }}
-            onMouseEnter={playHover}
-        >
-            <div className={`absolute top-4 ${position === 'LEFT' ? 'left-4' : 'right-4'} text-[8px] font-black font-mono uppercase tracking-[0.5em] px-2 py-0.5 border ${isWinner ? 'bg-intuition-success/10 text-intuition-success border-intuition-success/20' : 'bg-black text-slate-600 border-slate-900'}`}>
-                {isWinner ? 'DOMINANT' : isLoser ? 'SUBORDINATE' : `NODE_${position}`}
-            </div>
-            
-            {agent ? (
-                <>
-                    <div className="relative mb-8">
-                        <div className={`absolute inset-0 rounded-full blur-[40px] opacity-10 ${isWinner ? 'bg-intuition-success' : 'bg-intuition-primary'}`}></div>
-                        <div className={`relative w-28 h-28 md:w-32 md:h-32 rounded-none border-2 flex items-center justify-center overflow-hidden transition-all duration-700 group-hover:scale-105 shadow-2xl ${isWinner ? 'border-intuition-success shadow-glow-success' : 'border-white/10'}`}>
-                            {agent.image ? <img src={agent.image} className="w-full h-full object-cover" /> : (
-                                <div className="w-full h-full bg-slate-900 flex items-center justify-center text-3xl text-slate-700 font-black">?</div>
+    const TCGCard: React.FC<{ agent: Account | null; hp: number; isWinner: boolean; zone: 'RED' | 'BLUE'; onSelect: () => void }> = ({ agent, hp, isWinner, zone, onSelect }) => {
+        const isRed = zone === 'RED';
+        return (
+            <div onClick={() => { playClick(); onSelect(); }} onMouseEnter={playHover} className={`relative w-full max-w-[280px] mx-auto cursor-pointer group transition-all duration-500 ${agent ? 'hover:scale-[1.02]' : ''}`}>
+                {agent ? (
+                    <div className={`relative rounded-xl overflow-hidden border-2 transition-all ${isWinner ? 'border-emerald-500 shadow-[0_0_30px_rgba(34,197,94,0.3)]' : isRed ? 'border-red-500/60 bg-gradient-to-b from-red-950/40 to-red-950/20 shadow-[0_0_20px_rgba(220,38,38,0.15)]' : 'border-blue-500/60 bg-gradient-to-b from-blue-950/40 to-blue-950/20 shadow-[0_0_20px_rgba(37,99,235,0.15)]'}`}>
+                        <div className={`flex justify-between items-center px-3 py-2 ${isRed ? 'bg-red-600/30' : 'bg-blue-600/30'} border-b border-white/10`}>
+                            <span className="text-sm font-black text-white uppercase truncate max-w-[140px]">{agent.label}</span>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-black text-white/80">HP</span>
+                                <span className={`text-lg font-black tabular-nums ${isWinner ? 'text-emerald-400' : 'text-white'}`}>{hp.toFixed(0)}</span>
+                            </div>
+                        </div>
+                        <div className="relative h-32 sm:h-40 flex items-center justify-center p-4">
+                            <div className={`absolute inset-0 opacity-20 ${isRed ? 'bg-red-500' : 'bg-blue-500'}`} />
+                            {agent.image ? <img src={agent.image} alt={agent.label} className="relative z-10 w-full h-full object-cover rounded-lg" /> : (
+                                <div className="relative z-10 w-20 h-20 rounded-full bg-black/60 flex items-center justify-center text-2xl font-black text-white/60">{agent.label?.slice(0, 2)}</div>
                             )}
                         </div>
-                    </div>
-                    
-                    <h2 className="text-xl md:text-3xl font-black font-display text-white text-center mb-8 uppercase tracking-tighter leading-tight drop-shadow-md">{agent.label}</h2>
-                    
-                    <div className="flex flex-col items-center gap-1 mb-8">
-                        <div className={`text-5xl md:text-6xl font-black font-mono tracking-tighter ${isWinner ? 'text-intuition-success text-glow-success' : 'text-white'}`}>
-                            {score.toFixed(1)}
+                        <div className="px-3 py-2 bg-black/40 flex flex-col gap-2">
+                            <div className="h-2 bg-black/60 rounded-full overflow-hidden border border-white/10">
+                                <div className={`h-full rounded-full transition-all duration-700 ${isWinner ? 'bg-emerald-500' : isRed ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${hp}%` }} />
+                            </div>
+                            <Link to={`/markets/${agent.id}`} onClick={(e) => e.stopPropagation()} className="text-[9px] font-black text-center text-white/80 hover:text-white uppercase tracking-wider transition-colors">
+                                VIEW MARKET
+                            </Link>
                         </div>
-                        <div className="text-[8px] text-slate-600 font-mono font-black uppercase tracking-[0.6em]">Signal_Magnitude</div>
                     </div>
-                    
-                    <Link 
-                        to={`/markets/${agent.id}`} 
-                        onClick={(e) => e.stopPropagation()}
-                        className={`px-8 py-3 border font-display text-[9px] font-black tracking-[0.3em] transition-all ${isWinner ? 'bg-intuition-success text-black border-intuition-success shadow-glow-success' : 'bg-black border-slate-700 text-slate-500 hover:text-white'}`}
-                    >
-                        TERMINAL_ACCESS
-                    </Link>
-                </>
-            ) : (
-                <div className="flex flex-col items-center text-slate-600 group-hover:text-intuition-primary transition-all duration-500">
-                    <div className="w-24 h-24 rounded-none border-2 border-dashed border-slate-800 flex items-center justify-center group-hover:border-intuition-primary group-hover:shadow-glow-blue transition-all duration-500 mb-6 bg-white/[0.02] group-hover:bg-intuition-primary/5">
-                        <Crosshair size={32} className="opacity-30 group-hover:opacity-100 group-hover:text-intuition-primary" />
+                ) : (
+                    <div className={`rounded-xl border-2 border-dashed flex flex-col items-center justify-center h-48 ${isRed ? 'border-red-500/30 bg-red-950/20 hover:border-red-500/60' : 'border-blue-500/30 bg-blue-950/20 hover:border-blue-500/60'} transition-all`}>
+                        <Crosshair size={40} className="opacity-40 mb-2" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">SELECT</span>
                     </div>
-                    <span className="font-display font-black text-xs tracking-[0.5em] uppercase">CONNECT_NODE</span>
-                </div>
-            )}
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="relative w-full max-w-2xl mx-auto rounded-3xl overflow-hidden border-2 border-slate-700/50 shadow-2xl">
+            <div className="relative bg-gradient-to-b from-red-600/30 via-red-900/20 to-red-950/30 pt-8 pb-6 px-6">
+                <div className="absolute top-2 left-4 text-[9px] font-black text-red-400/90 uppercase tracking-wider">Player 1</div>
+                <TCGCard agent={topAgent} hp={topHp} isWinner={!!topWins} zone="RED" onSelect={onSelectTop} />
+            </div>
+            <div className="relative flex items-center justify-center bg-black py-2 border-y-2 border-slate-800">
+                <button onClick={() => { playClick(); onSwap(); }} onMouseEnter={playHover} className="relative z-10 w-14 h-14 rounded-full bg-white border-4 border-black flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:scale-110 transition-all">
+                    <span className="font-black text-black text-lg">VS</span>
+                </button>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-full h-px bg-slate-700 absolute" /></div>
+            </div>
+            <div className="relative bg-gradient-to-b from-blue-950/30 via-blue-900/20 to-blue-600/30 pt-6 pb-8 px-6">
+                <div className="absolute top-2 left-4 text-[9px] font-black text-blue-400/90 uppercase tracking-wider">Player 2</div>
+                <TCGCard agent={bottomAgent} hp={bottomHp} isWinner={!!bottomWins} zone="BLUE" onSelect={onSelectBottom} />
+            </div>
         </div>
     );
 };
@@ -227,28 +206,28 @@ const ComparisonRow: React.FC<{
 
     return (
         <div className="flex items-center justify-between py-4 px-4 sm:px-6 md:px-10 transition-all group relative overflow-hidden min-h-[80px] sm:min-h-[100px] border-b border-white/5">
-            {/* Asymmetrical Background Weight Bars */}
+            {/* Asymmetrical Background Weight Bars — red vs blue (TCG style) */}
             <div className="absolute inset-0 flex pointer-events-none opacity-[0.08] group-hover:opacity-[0.12] transition-opacity">
-                <div className="h-full bg-intuition-primary transition-all duration-1000 ease-out" style={{ width: `${lPct}%` }}></div>
-                <div className="h-full bg-intuition-secondary transition-all duration-1000 ease-out" style={{ width: `${rPct}%` }}></div>
+                <div className="h-full bg-red-500 transition-all duration-1000 ease-out" style={{ width: `${lPct}%` }}></div>
+                <div className="h-full bg-blue-500 transition-all duration-1000 ease-out" style={{ width: `${rPct}%` }}></div>
             </div>
 
             <div className={`relative z-10 w-1/3 text-right pr-12 transition-all duration-500 ${leftWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
-                <div className={`font-mono font-black text-3xl tracking-tighter ${leftWins ? 'text-intuition-primary text-glow-blue' : 'text-white'}`}>
+                <div className={`font-mono font-black text-3xl tracking-tighter ${leftWins ? 'text-red-400' : 'text-white'}`}>
                     {Number(leftVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
                 <span className="inline-flex items-baseline text-slate-300 font-bold uppercase tracking-wider text-[10px] mt-0.5">{typeof unit === 'string' ? unit : unit}</span>
             </div>
             
             <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0">
-                <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-intuition-primary border-intuition-primary/40' : rightWins ? 'text-intuition-secondary border-intuition-secondary/40' : 'text-slate-500'}`}>
+                <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-red-400 border-red-500/40' : rightWins ? 'text-blue-400 border-blue-500/40' : 'text-slate-500'}`}>
                     {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 16 })}
                 </div>
                 <div className="text-[10px] font-bold font-mono text-slate-200 text-center whitespace-nowrap px-1">{label}</div>
             </div>
 
             <div className={`relative z-10 w-1/3 text-left pl-12 transition-all duration-500 ${rightWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
-                <div className={`font-mono font-black text-3xl tracking-tighter ${rightWins ? 'text-intuition-secondary text-glow-red' : 'text-white'}`}>
+                <div className={`font-mono font-black text-3xl tracking-tighter ${rightWins ? 'text-blue-400' : 'text-white'}`}>
                     {Number(rightVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                 </div>
                 <span className="inline-flex items-baseline text-slate-300 font-bold uppercase tracking-wider text-[10px] mt-0.5">{typeof unit === 'string' ? unit : unit}</span>
@@ -341,48 +320,40 @@ const Compare: React.FC = () => {
         <div className="min-h-screen bg-[#020308] pt-12 pb-32 px-4 sm:px-6 max-w-[1500px] mx-auto relative font-mono selection:bg-intuition-primary selection:text-black min-w-0 overflow-x-hidden">
             <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
 
-            <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-800 pb-10 relative z-10">
+                <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-800 pb-10 relative z-10">
                 <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 bg-black/80 border-2 border-intuition-primary/60 flex items-center justify-center text-intuition-primary shadow-glow-blue clip-path-slant">
-                        <BarChart3 size={32} />
+                    <div className="w-16 h-16 bg-black/80 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 clip-path-slant shadow-[0_0_24px_rgba(250,204,21,0.2)]">
+                        <Swords size={32} />
                     </div>
                     <div>
-                        <div className="flex items-center gap-2 text-intuition-primary font-black font-mono text-[9px] tracking-[0.5em] uppercase mb-1">
-                             <Zap size={10} className="animate-pulse" /> Signal_Parity_Module
+                        <div className="flex items-center gap-2 text-amber-400/90 font-black font-mono text-[9px] tracking-[0.5em] uppercase mb-1">
+                             <Flame size={10} className="animate-pulse" /> ATOM_VERSUS
                         </div>
                         <h1 className="text-4xl md:text-6xl font-black font-display tracking-tight uppercase leading-tight mobile-break min-w-0">
-                            <span className="text-white text-glow-white">COMPARISON</span><span className="text-intuition-secondary text-glow-red">_DECK</span>
+                            <span className="text-white text-glow-white">BATTLE</span><span className="text-amber-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.4)]">GROUND</span>
                         </h1>
                     </div>
                 </div>
-                
+
                 <div className="flex flex-wrap gap-4">
-                    <div className="px-6 py-3 bg-black/60 border border-intuition-primary/20 font-mono text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-3">
-                        <Terminal size={14} className="text-intuition-primary" /> TARGET_LOCK: <span className="text-white text-glow-white">{leftAgent && rightAgent ? 'SYNCHRONIZED' : 'AWAITING_UPLINK'}</span>
+                    <div className="px-6 py-3 bg-black/60 border border-amber-500/20 font-mono text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-3">
+                        <Terminal size={14} className="text-amber-400" /> STATUS: <span className="text-white">{leftAgent && rightAgent ? 'COMBAT_READY' : 'AWAITING_CHAMPIONS'}</span>
                     </div>
-                    <div className="px-6 py-3 bg-intuition-secondary text-white font-black font-mono text-[10px] uppercase tracking-widest shadow-glow-red hover:shadow-[0_0_25px_rgba(255,30,109,0.4)] active:scale-95 transition-all">
-                        UPLINK: ACTIVE
+                    <div className="px-6 py-3 bg-amber-500/20 border border-amber-500/50 text-amber-400 font-black font-mono text-[10px] uppercase tracking-widest hover:bg-amber-500/30 active:scale-95 transition-all">
+                        VERSUS ACTIVE
                     </div>
                 </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row gap-6 mb-12 items-stretch z-10">
-                <AgentCard 
-                    position="LEFT"
-                    agent={leftAgent} 
-                    onSelect={() => setIsSelectorOpen('LEFT')} 
-                    isWinner={!!(leftAgent && rightAgent && lScore > rScore)}
-                    isLoser={!!(leftAgent && rightAgent && lScore < rScore)}
-                />
-                
-                <NeuralCollision tension={tensionIndex} arbitrage={arbitrageDelta} onSwap={handleSwap} />
-
-                <AgentCard 
-                    position="RIGHT"
-                    agent={rightAgent} 
-                    onSelect={() => setIsSelectorOpen('RIGHT')} 
-                    isWinner={!!(rightAgent && leftAgent && rScore > lScore)}
-                    isLoser={!!(rightAgent && leftAgent && rScore < lScore)}
+            <div className="mb-12 z-10">
+                <PokeBallArena
+                    topAgent={leftAgent}
+                    bottomAgent={rightAgent}
+                    topScore={lScore}
+                    bottomScore={rScore}
+                    onSelectTop={() => setIsSelectorOpen('LEFT')}
+                    onSelectBottom={() => setIsSelectorOpen('RIGHT')}
+                    onSwap={handleSwap}
                 />
             </div>
 
@@ -391,10 +362,11 @@ const Compare: React.FC = () => {
                     <RivalryAnalysis left={leftAgent} right={rightAgent} lScore={lScore} rScore={rScore} />
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                        {/* Side-by-side comparison — clear labels and visible units */}
-                        <div className="bg-gradient-to-b from-[#04060c] to-[#020308] border border-white/10 shadow-2xl relative overflow-hidden clip-path-slant hover:border-intuition-primary/20 transition-all duration-500">
-                            <div className="bg-gradient-to-r from-intuition-primary/10 via-transparent to-intuition-secondary/10 py-4 border-b border-intuition-primary/20 flex justify-center items-center relative z-20">
-                                <div className="text-sm font-bold text-white uppercase tracking-wider">Comparison</div>
+                        {/* Choose Your Attack — metric cards (Battleground inspo) */}
+                        <div className="bg-gradient-to-b from-[#04060c] to-[#020308] border border-white/10 shadow-2xl relative overflow-hidden clip-path-slant hover:border-amber-500/20 transition-all duration-500">
+                            <div className="bg-gradient-to-r from-intuition-primary/10 via-amber-500/5 to-intuition-secondary/10 py-4 border-b border-amber-500/20 flex justify-center items-center relative z-20">
+                                <Swords size={16} className="text-amber-400 mr-2" />
+                                <div className="text-sm font-bold text-white uppercase tracking-wider">Choose Your Attack</div>
                             </div>
                             
                             <div className="bg-black/40">
@@ -451,11 +423,11 @@ const Compare: React.FC = () => {
                             <div className="flex justify-between items-center mb-10 relative z-10">
                                 <div className="flex gap-8 text-[10px] font-black font-mono">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-3 h-3 bg-intuition-primary shadow-glow-blue clip-path-slant"></div>
+                                        <div className="w-3 h-3 bg-red-500 rounded-sm"></div>
                                         <span className="text-white uppercase tracking-widest">{leftAgent.label}</span>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <div className="w-3 h-3 bg-intuition-secondary shadow-glow-red clip-path-slant"></div>
+                                        <div className="w-3 h-3 bg-blue-500 rounded-sm"></div>
                                         <span className="text-white uppercase tracking-widest">{rightAgent.label}</span>
                                     </div>
                                 </div>
@@ -469,12 +441,12 @@ const Compare: React.FC = () => {
                                     <AreaChart data={chartData}>
                                         <defs>
                                             <linearGradient id="colorL" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.3}/>
-                                                <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
+                                                <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
                                             </linearGradient>
                                             <linearGradient id="colorR" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#ff1e6d" stopOpacity={0.3}/>
-                                                <stop offset="95%" stopColor="#ff1e6d" stopOpacity={0}/>
+                                                <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
                                             </linearGradient>
                                         </defs>
                                         <CartesianGrid strokeDasharray="3 6" stroke="#ffffff08" vertical={false} />
@@ -483,8 +455,8 @@ const Compare: React.FC = () => {
                                         <Tooltip 
                                             contentStyle={{ backgroundColor: 'rgba(0,0,0,0.95)', border: '1px solid #333', fontSize: '10px', fontWeight: 'bold' }}
                                         />
-                                        <Area type="monotone" dataKey="left" stroke="#00f3ff" strokeWidth={4} fillOpacity={1} fill="url(#colorL)" animationDuration={2000} />
-                                        <Area type="monotone" dataKey="right" stroke="#ff1e6d" strokeWidth={4} fillOpacity={1} fill="url(#colorR)" animationDuration={2000} />
+                                        <Area type="monotone" dataKey="left" stroke="#dc2626" strokeWidth={4} fillOpacity={1} fill="url(#colorL)" animationDuration={2000} />
+                                        <Area type="monotone" dataKey="right" stroke="#2563eb" strokeWidth={4} fillOpacity={1} fill="url(#colorR)" animationDuration={2000} />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </div>
@@ -494,42 +466,42 @@ const Compare: React.FC = () => {
                                     MAGNITUDE & ROI TRAJECTORY
                                 </div>
                                 <div className="flex gap-2 h-1.5 w-48 bg-white/10 overflow-hidden rounded-full border border-white/10">
-                                    <div className="h-full bg-intuition-primary animate-buffer-fill shadow-glow-blue rounded-full"></div>
+                                    <div className="h-full bg-gradient-to-r from-red-500 to-blue-500 animate-buffer-fill rounded-full"></div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             ) : (
-                <div className="max-w-3xl mx-auto text-center py-32 border-2 border-dashed border-slate-800 bg-gradient-to-b from-slate-900/40 to-black/40 clip-path-slant relative group transition-all duration-500 hover:border-intuition-primary/40 hover:shadow-[0_0_60px_rgba(0,243,255,0.06)]">
-                    <div className="absolute inset-0 bg-intuition-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    <Crosshair size={64} className="mx-auto text-slate-600 mb-8 opacity-40 group-hover:text-intuition-primary group-hover:opacity-100 transition-all duration-700 animate-spin-slow relative z-10" />
-                    <h3 className="text-2xl font-black font-display text-slate-500 uppercase tracking-[0.5em] mb-4 group-hover:text-intuition-primary group-hover:text-glow-blue transition-all duration-500 relative z-10">AWAITING_CHALLENGERS</h3>
+                <div className="max-w-3xl mx-auto text-center py-32 border-2 border-dashed border-slate-800 bg-gradient-to-b from-slate-900/40 to-black/40 clip-path-slant relative group transition-all duration-500 hover:border-amber-500/40 hover:shadow-[0_0_60px_rgba(250,204,21,0.08)]">
+                    <div className="absolute inset-0 bg-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    <Swords size={64} className="mx-auto text-slate-600 mb-8 opacity-40 group-hover:text-amber-400 group-hover:opacity-100 transition-all duration-700 animate-pulse relative z-10" />
+                    <h3 className="text-2xl font-black font-display text-slate-500 uppercase tracking-[0.5em] mb-4 group-hover:text-amber-400 transition-all duration-500 relative z-10">SELECT YOUR CHAMPIONS</h3>
                     <p className="text-slate-600 font-mono text-[10px] uppercase tracking-[0.4em] px-8 leading-relaxed max-w-lg mx-auto font-black group-hover:text-slate-400 transition-colors relative z-10">
-                        Select two identity nodes to initiate lethal semantic collision analysis and project arbitrage deltas across active corridors.
+                        Pick two atoms to pit against each other. Compare power, volume, and holders in the battleground.
                     </p>
                 </div>
             )}
 
             {isSelectorOpen && (
                 <div className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-4 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setIsSelectorOpen(null)}>
-                    <div className="w-full max-w-2xl bg-gradient-to-b from-[#06080e] to-[#020308] border-2 border-intuition-primary/40 p-10 clip-path-slant relative overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.1)] hover:shadow-[0_0_100px_rgba(0,243,255,0.15)] transition-shadow duration-500" onClick={e => e.stopPropagation()}>
+                    <div className="w-full max-w-2xl bg-gradient-to-b from-[#06080e] to-[#020308] border-2 border-amber-500/40 p-10 clip-path-slant relative overflow-hidden shadow-[0_0_80px_rgba(250,204,21,0.1)] hover:shadow-[0_0_100px_rgba(250,204,21,0.15)] transition-shadow duration-500" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-5 mb-10">
-                             <div className="p-3 bg-intuition-primary/10 border border-intuition-primary/30 text-intuition-primary clip-path-slant shadow-glow-blue">
+                             <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 clip-path-slant shadow-[0_0_20px_rgba(250,204,21,0.2)]">
                                  <Search size={24} />
                              </div>
                              <div>
-                                 <h4 className="text-xl font-black font-display text-white uppercase leading-none mb-1 tracking-widest">Target_Acquisition</h4>
-                                 <div className="text-[9px] font-mono text-intuition-primary/60 tracking-[0.4em] uppercase font-black">Mainnet_Node_Directory</div>
+                                 <h4 className="text-xl font-black font-display text-white uppercase leading-none mb-1 tracking-widest">Select Your Fighter</h4>
+                                 <div className="text-[9px] font-mono text-amber-400/60 tracking-[0.4em] uppercase font-black">Atom_Directory</div>
                              </div>
                         </div>
 
                         <div className="mb-10 group">
                             <input 
                                 type="text" 
-                                placeholder="QUERY_IDENT_HASH..." 
+                                placeholder="SEARCH ATOMS..." 
                                 autoFocus
-                                className="w-full bg-black border-b border-slate-800 p-6 text-white font-mono text-sm focus:border-intuition-primary outline-none transition-all placeholder-slate-800 uppercase tracking-widest font-black"
+                                className="w-full bg-black border-b border-slate-800 p-6 text-white font-mono text-sm focus:border-amber-500 outline-none transition-all placeholder-slate-800 uppercase tracking-widest font-black"
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
@@ -540,19 +512,19 @@ const Compare: React.FC = () => {
                                 <button 
                                     key={a.id}
                                     onClick={() => handleSelect(a)}
-                                    className="w-full flex items-center justify-between p-5 bg-white/5 border border-slate-900 hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all group text-left clip-path-slant"
+                                    className="w-full flex items-center justify-between p-5 bg-white/5 border border-slate-900 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all group text-left clip-path-slant"
                                 >
                                     <div className="flex items-center gap-5">
-                                        <div className="w-12 h-12 bg-black border border-slate-800 flex items-center justify-center overflow-hidden shrink-0 group-hover:border-intuition-primary transition-all shadow-xl">
+                                        <div className="w-12 h-12 bg-black border border-slate-800 flex items-center justify-center overflow-hidden shrink-0 group-hover:border-amber-500/50 transition-all shadow-xl">
                                             {a.image ? <img src={a.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0"/> : <div className="text-xs font-black text-slate-700">{a.label?.[0]}</div>}
                                         </div>
                                         <div>
-                                            <div className="font-black text-sm text-white group-hover:text-intuition-primary transition-colors uppercase leading-none mb-1.5 tracking-tight">{a.label}</div>
+                                            <div className="font-black text-sm text-white group-hover:text-amber-400 transition-colors uppercase leading-none mb-1.5 tracking-tight">{a.label}</div>
                                             <div className="text-[7px] text-slate-600 font-mono tracking-[0.2em] uppercase font-bold">UID: {a.id.slice(0,20)}...</div>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-xl font-black font-mono text-white group-hover:text-intuition-primary leading-none mb-1">{calculateTrustScore(a.totalAssets || '0', a.totalShares || '0').toFixed(1)}</div>
+                                        <div className="text-xl font-black font-mono text-white group-hover:text-amber-400 leading-none mb-1">{calculateTrustScore(a.totalAssets || '0', a.totalShares || '0').toFixed(1)}</div>
                                         <div className="text-[7px] text-slate-700 font-mono uppercase font-black tracking-widest">MAGNITUDE</div>
                                     </div>
                                 </button>
@@ -560,7 +532,7 @@ const Compare: React.FC = () => {
                         </div>
                         
                         <div className="mt-10 pt-8 border-t border-white/5 flex justify-center">
-                            <button onClick={() => setIsSelectorOpen(null)} className="text-[10px] font-black font-mono text-slate-700 hover:text-white uppercase tracking-[0.6em] transition-colors">TERMINATE_SEARCH</button>
+                            <button onClick={() => setIsSelectorOpen(null)} className="text-[10px] font-black font-mono text-slate-700 hover:text-amber-400 uppercase tracking-[0.6em] transition-colors">CANCEL</button>
                         </div>
                     </div>
                 </div>

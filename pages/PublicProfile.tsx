@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS } from '../services/web3';
+import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS, toAddress } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount, getCurveLabel } from '../services/graphql';
 import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail } from 'lucide-react';
 import { formatEther, isAddress } from 'viem';
@@ -317,12 +317,14 @@ const PublicProfile: React.FC = () => {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         playClick();
+                        const addr = toAddress(address || '');
+                        const idToStore = addr || (await resolveENS(address || '').then((r) => toAddress(r) || r)) || address;
                         const label = ensName || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
                         const hasEmail = !!getEmailSubscription(connectedAddress);
-                        addFollow(connectedAddress, address, { label, emailAlerts: hasEmail });
-                        setFollowEntry(isFollowing(connectedAddress, address) ?? null);
+                        addFollow(connectedAddress, idToStore, { label, emailAlerts: hasEmail });
+                        setFollowEntry(isFollowing(connectedAddress, idToStore) ?? null);
                         if (hasEmail) {
                           toast.success('Following — you’ll get alerts when they buy');
                         } else {

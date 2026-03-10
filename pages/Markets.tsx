@@ -1,10 +1,10 @@
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAccount } from 'wagmi';
-import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog } from 'lucide-react';
+import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog, List } from 'lucide-react';
 import { formatEther } from 'viem';
-import { getAllAgents, searchGlobalAgents, getLists, getTopClaims } from '../services/graphql';
+import { getAllAgents, searchGlobalAgents, searchClaims, getLists, getTopClaims } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
 import { Account } from '../types';
 import { getWatchlist, getConnectedAccount } from '../services/web3';
@@ -14,11 +14,18 @@ import { CURRENCY_SYMBOL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
+type ClaimSortOption = 'TOTAL_MCAP_DESC' | 'TOTAL_MCAP_ASC' | 'SUPPORT_MCAP_DESC' | 'SUPPORT_MCAP_ASC' | 'OPPOSE_MCAP_DESC' | 'OPPOSE_MCAP_ASC' | 'SUPPORTERS_DESC' | 'SUPPORTERS_ASC' | 'OPPOSERS_DESC' | 'OPPOSERS_ASC' | 'POSITIONS_DESC' | 'POSITIONS_ASC';
+type ListSortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'POSITIONS_DESC' | 'POSITIONS_ASC' | 'ENTRIES_DESC' | 'ENTRIES_ASC' | 'AZ' | 'ZA';
 type ViewMode = 'GRID' | 'HEATMAP';
+type ListViewMode = 'GRID' | 'LIST';
 type MarketSegment = 'NODES' | 'SYNAPSES' | 'VECTORS';
+
+const SEGMENT_FROM_PATH: Record<string, MarketSegment> = { atoms: 'NODES', triples: 'SYNAPSES', lists: 'VECTORS' };
+const PATH_FROM_SEGMENT: Record<MarketSegment, string> = { NODES: 'atoms', SYNAPSES: 'triples', VECTORS: 'lists' };
 
 const Markets: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { address: wagmiAddress } = useAccount();
   const [agents, setAgents] = useState<Account[]>([]);
   const [lists, setLists] = useState<any[]>([]); 
@@ -28,22 +35,32 @@ const Markets: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
   const [serverResults, setServerResults] = useState<Account[]>([]);
+  const [claimSearchResults, setClaimSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [watchlistIds, setWatchlistIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('GRID');
-  const [activeSegment, setActiveSegment] = useState<MarketSegment>('NODES');
+  const pathSegment = location.pathname.split('/').pop() || 'atoms';
+  const activeSegment = SEGMENT_FROM_PATH[pathSegment] ?? 'NODES';
   const [account, setAccount] = useState<string | null>(null);
   
   const [sortOption, setSortOption] = useState<SortOption>('MCAP_DESC');
+  const [claimSortOption, setClaimSortOption] = useState<ClaimSortOption>('SUPPORT_MCAP_DESC');
+  const [listSortOption, setListSortOption] = useState<ListSortOption>('MCAP_DESC');
+  const [listViewMode, setListViewMode] = useState<ListViewMode>('GRID');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isClaimSortOpen, setIsClaimSortOpen] = useState(false);
+  const [isListSortOpen, setIsListSortOpen] = useState(false);
   
   // Pagination State
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 40;
+  const CLAIMS_PAGE_SIZE = 80; // Fetch more claims — triple_terms is efficient
 
   const sortRef = useRef<HTMLDivElement>(null);
+  const claimSortRef = useRef<HTMLDivElement>(null);
+  const listSortRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<any>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -55,6 +72,16 @@ const Markets: React.FC = () => {
     return () => clearTimeout(debounceRef.current);
   }, [searchTerm]);
 
+  const getListOrderBy = useCallback((opt: ListSortOption) => {
+    if (opt === 'MCAP_DESC') return [{ total_market_cap: 'desc' as const }];
+    if (opt === 'MCAP_ASC') return [{ total_market_cap: 'asc' as const }];
+    if (opt === 'POSITIONS_DESC') return [{ total_position_count: 'desc' as const }];
+    if (opt === 'POSITIONS_ASC') return [{ total_position_count: 'asc' as const }];
+    if (opt === 'ENTRIES_DESC') return [{ triple_count: 'desc' as const }];
+    if (opt === 'ENTRIES_ASC') return [{ triple_count: 'asc' as const }];
+    return [{ total_market_cap: 'desc' as const }];
+  }, []);
+
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
     setOffset(0);
@@ -65,11 +92,12 @@ const Markets: React.FC = () => {
             setAgents(res.items);
             setHasMore(res.hasMore);
         } else if (activeSegment === 'SYNAPSES') {
-            const res = await getTopClaims(PAGE_SIZE, 0);
+            const res = await getTopClaims(CLAIMS_PAGE_SIZE, 0);
             setClaims(res.items);
             setHasMore(res.hasMore);
         } else if (activeSegment === 'VECTORS') {
-            const res = await getLists(PAGE_SIZE, 0);
+            const orderBy = ['AZ', 'ZA'].includes(listSortOption) ? undefined : getListOrderBy(listSortOption);
+            const res = await getLists(PAGE_SIZE, 0, orderBy);
             setLists(res.items);
             setHasMore(res.hasMore);
         }
@@ -78,22 +106,24 @@ const Markets: React.FC = () => {
     } finally {
         setLoading(false);
     }
-  }, [activeSegment]);
+  }, [activeSegment, listSortOption, getListOrderBy]);
 
   const fetchMoreData = useCallback(async () => {
       if (loadingMore || !hasMore || loading || debouncedTerm.trim().length > 0) return;
       setLoadingMore(true);
-      const nextOffset = offset + PAGE_SIZE;
+      const pageSize = activeSegment === 'SYNAPSES' ? CLAIMS_PAGE_SIZE : PAGE_SIZE;
+      const nextOffset = offset + pageSize;
       try {
           let res: { items: any[], hasMore: boolean } = { items: [], hasMore: false };
           if (activeSegment === 'NODES') {
               res = await getAllAgents(PAGE_SIZE, nextOffset);
               setAgents(prev => [...prev, ...res.items]);
           } else if (activeSegment === 'SYNAPSES') {
-              res = await getTopClaims(PAGE_SIZE, nextOffset);
+              res = await getTopClaims(CLAIMS_PAGE_SIZE, nextOffset);
               setClaims(prev => [...prev, ...res.items]);
           } else if (activeSegment === 'VECTORS') {
-              res = await getLists(PAGE_SIZE, nextOffset);
+              const orderBy = ['AZ', 'ZA'].includes(listSortOption) ? undefined : getListOrderBy(listSortOption);
+              res = await getLists(PAGE_SIZE, nextOffset, orderBy);
               setLists(prev => [...prev, ...res.items]);
           }
           
@@ -104,11 +134,11 @@ const Markets: React.FC = () => {
       } finally {
           setLoadingMore(false);
       }
-  }, [activeSegment, offset, hasMore, loading, loadingMore, debouncedTerm]);
+  }, [activeSegment, offset, hasMore, loading, loadingMore, debouncedTerm, listSortOption, getListOrderBy]);
 
   useEffect(() => {
       fetchInitialData();
-  }, [fetchInitialData, sortOption]);
+  }, [fetchInitialData, sortOption, listSortOption]);
 
   // Sync account from wagmi so watchlist/UI react when user connects
   useEffect(() => {
@@ -127,9 +157,9 @@ const Markets: React.FC = () => {
     window.addEventListener('watchlist-updated', handleWatchUpdate);
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (sortRef.current && !sortRef.current.contains(event.target as Node)) {
-        setIsSortOpen(false);
-      }
+      if (sortRef.current && !sortRef.current.contains(event.target as Node)) setIsSortOpen(false);
+      if (claimSortRef.current && !claimSortRef.current.contains(event.target as Node)) setIsClaimSortOpen(false);
+      if (listSortRef.current && !listSortRef.current.contains(event.target as Node)) setIsListSortOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -142,15 +172,25 @@ const Markets: React.FC = () => {
      const term = debouncedTerm.trim();
      if (term.length < 2) {
          setServerResults([]);
+         setClaimSearchResults([]);
          setIsSearching(false);
          return;
      }
      setIsSearching(true);
-     searchGlobalAgents(term)
-        .then(setServerResults)
-        .catch(() => setServerResults([]))
-        .finally(() => setIsSearching(false));
-  }, [debouncedTerm]);
+     if (activeSegment === 'SYNAPSES') {
+         searchClaims(term)
+             .then(setClaimSearchResults)
+             .catch(() => setClaimSearchResults([]))
+             .finally(() => setIsSearching(false));
+         setServerResults([]);
+     } else {
+         searchGlobalAgents(term)
+             .then(setServerResults)
+             .catch(() => setServerResults([]))
+             .finally(() => setIsSearching(false));
+         setClaimSearchResults([]);
+     }
+  }, [debouncedTerm, activeSegment]);
 
   // Infinite Scroll Observer
   useEffect(() => {
@@ -175,7 +215,7 @@ const Markets: React.FC = () => {
     let candidates: any[] = [];
 
     if (activeSegment === 'VECTORS') candidates = lists;
-    else if (activeSegment === 'SYNAPSES') candidates = claims;
+    else if (activeSegment === 'SYNAPSES') candidates = debouncedTerm.trim().length >= 2 && claimSearchResults.length > 0 ? claimSearchResults : claims;
     else {
         const combinedMap = new Map<string, Account>();
         agents.forEach(a => combinedMap.set(a.id.toLowerCase(), a));
@@ -214,15 +254,58 @@ const Markets: React.FC = () => {
         });
     }
 
-    if (term) {
+    if (term && !(activeSegment === 'SYNAPSES' && claimSearchResults.length > 0)) {
         candidates = candidates.filter(item => {
             if (activeSegment === 'VECTORS') return (item.label || '').toLowerCase().includes(term);
             if (activeSegment === 'SYNAPSES') return (item.subject?.label || '').toLowerCase().includes(term) || (item.object?.label || '').toLowerCase().includes(term);
             return false;
         });
     }
+
+    if (activeSegment === 'VECTORS') {
+        const mcap = (l: any) => Number(l.totalMarketCap) || 0;
+        const pos = (l: any) => Number(l.totalPositionCount) || 0;
+        const entries = (l: any) => Number(l.totalItems) || 0;
+        const label = (l: any) => (l.label || '').toLowerCase();
+        return candidates.sort((a, b) => {
+            switch (listSortOption) {
+                case 'MCAP_DESC': return mcap(b) - mcap(a);
+                case 'MCAP_ASC': return mcap(a) - mcap(b);
+                case 'POSITIONS_DESC': return pos(b) - pos(a);
+                case 'POSITIONS_ASC': return pos(a) - pos(b);
+                case 'ENTRIES_DESC': return entries(b) - entries(a);
+                case 'ENTRIES_ASC': return entries(a) - entries(b);
+                case 'AZ': return label(a).localeCompare(label(b));
+                case 'ZA': return label(b).localeCompare(label(a));
+                default: return mcap(b) - mcap(a);
+            }
+        });
+    }
+
+    if (activeSegment === 'SYNAPSES') {
+        const totalMcap = (c: any) => (c.value ?? 0) + (c.opposeValue ?? 0);
+        const pos = (c: any) => (c.holders ?? 0) + (c.opposeHolders ?? 0);
+        return candidates.sort((a, b) => {
+            switch (claimSortOption) {
+                case 'TOTAL_MCAP_DESC': return totalMcap(b) - totalMcap(a);
+                case 'TOTAL_MCAP_ASC': return totalMcap(a) - totalMcap(b);
+                case 'SUPPORT_MCAP_DESC': return (b.value ?? 0) - (a.value ?? 0);
+                case 'SUPPORT_MCAP_ASC': return (a.value ?? 0) - (b.value ?? 0);
+                case 'OPPOSE_MCAP_DESC': return (b.opposeValue ?? 0) - (a.opposeValue ?? 0);
+                case 'OPPOSE_MCAP_ASC': return (a.opposeValue ?? 0) - (b.opposeValue ?? 0);
+                case 'SUPPORTERS_DESC': return (b.holders ?? 0) - (a.holders ?? 0);
+                case 'SUPPORTERS_ASC': return (a.holders ?? 0) - (b.holders ?? 0);
+                case 'OPPOSERS_DESC': return (b.opposeHolders ?? 0) - (a.opposeHolders ?? 0);
+                case 'OPPOSERS_ASC': return (a.opposeHolders ?? 0) - (b.opposeHolders ?? 0);
+                case 'POSITIONS_DESC': return pos(b) - pos(a);
+                case 'POSITIONS_ASC': return pos(a) - pos(b);
+                default: return totalMcap(b) - totalMcap(a);
+            }
+        });
+    }
+
     return candidates;
-  }, [agents, lists, claims, debouncedTerm, serverResults, sortOption, showWatchlistOnly, watchlistIds, activeSegment]);
+  }, [agents, lists, claims, debouncedTerm, serverResults, claimSearchResults, sortOption, claimSortOption, listSortOption, showWatchlistOnly, watchlistIds, activeSegment]);
 
   const toggleSort = (option: SortOption) => { setSortOption(option); setIsSortOpen(false); playClick(); };
   
@@ -244,6 +327,42 @@ const Markets: React.FC = () => {
           case 'TRUST_ASC': return 'TRUST (LOW)';
       }
   };
+
+  const getClaimSortLabel = (opt: ClaimSortOption) => {
+      const labels: Record<ClaimSortOption, string> = {
+          TOTAL_MCAP_DESC: 'Highest Total Market Cap',
+          TOTAL_MCAP_ASC: 'Lowest Total Market Cap',
+          SUPPORT_MCAP_DESC: 'Highest Support Market Cap',
+          SUPPORT_MCAP_ASC: 'Lowest Support Market Cap',
+          OPPOSE_MCAP_DESC: 'Highest Oppose Market Cap',
+          OPPOSE_MCAP_ASC: 'Lowest Oppose Market Cap',
+          SUPPORTERS_DESC: 'Most Supporters',
+          SUPPORTERS_ASC: 'Fewest Supporters',
+          OPPOSERS_DESC: 'Most Opposers',
+          OPPOSERS_ASC: 'Fewest Opposers',
+          POSITIONS_DESC: 'Most Positions',
+          POSITIONS_ASC: 'Fewest Positions',
+      };
+      return labels[opt];
+  };
+
+  const toggleClaimSort = (option: ClaimSortOption) => { setClaimSortOption(option); setIsClaimSortOpen(false); playClick(); };
+
+  const getListSortLabel = (opt: ListSortOption) => {
+    const labels: Record<ListSortOption, string> = {
+      MCAP_DESC: 'Highest Market Cap',
+      MCAP_ASC: 'Lowest Market Cap',
+      POSITIONS_DESC: 'Most Positions',
+      POSITIONS_ASC: 'Fewest Positions',
+      ENTRIES_DESC: 'Most Entries',
+      ENTRIES_ASC: 'Fewest Entries',
+      AZ: 'A-Z (Alphabetical ascending)',
+      ZA: 'Z-A (Alphabetical descending)',
+    };
+    return labels[opt];
+  };
+
+  const toggleListSort = (opt: ListSortOption) => { setListSortOption(opt); setIsListSortOpen(false); playClick(); };
 
   return (
     <div className="w-full min-w-0 overflow-x-hidden px-4 sm:px-6 lg:px-8 pt-12 pb-32">
@@ -281,7 +400,7 @@ const Markets: React.FC = () => {
                 return (
                     <button 
                         key={seg}
-                        onClick={() => { setActiveSegment(seg); playClick(); }}
+                        onClick={() => { navigate(`/markets/${PATH_FROM_SEGMENT[seg]}`); playClick(); }}
                         onMouseEnter={playHover}
                         className={`px-8 py-3 flex items-center gap-3 font-mono text-[11px] font-black uppercase transition-all clip-path-slant ${isActive ? 'text-black bg-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white'}`}
                     >
@@ -293,21 +412,40 @@ const Markets: React.FC = () => {
         </div>
       </div>
 
-      <div className={`flex flex-col lg:flex-row gap-6 items-stretch lg:items-center w-full mb-10 relative ${isSortOpen ? 'z-[60]' : 'z-40'}`}>
-            {activeSegment === 'NODES' && (
-                <div className="flex gap-1 border-2 border-slate-900 p-1 bg-black clip-path-slant">
-                    <button 
-                        onClick={() => { playClick(); setViewMode('GRID'); }}
-                        className={`flex items-center gap-2 px-6 py-3 text-[10px] font-black font-mono transition-all ${viewMode === 'GRID' ? 'bg-intuition-primary text-white shadow-lg' : 'text-slate-600 hover:text-white'}`}
-                    >
-                        <LayoutGrid size={14} /> GRID
-                    </button>
-                    <button 
-                        onClick={() => { playClick(); setViewMode('HEATMAP'); }}
-                        className={`flex items-center gap-2 px-6 py-3 text-[10px] font-black font-mono transition-all ${viewMode === 'HEATMAP' ? 'bg-intuition-primary text-white shadow-lg' : 'text-slate-600 hover:text-white'}`}
-                    >
-                        <Grid size={14} /> HEATMAP
-                    </button>
+      <div className={`flex flex-col lg:flex-row gap-4 sm:gap-6 items-stretch lg:items-center w-full min-w-0 mb-10 relative ${isSortOpen ? 'z-[60]' : 'z-40'}`}>
+            {(activeSegment === 'NODES' || activeSegment === 'VECTORS') && (
+                <div className="flex gap-2 p-1.5 bg-black/60 border border-slate-800 rounded-2xl">
+                    {activeSegment === 'NODES' ? (
+                        <>
+                            <button 
+                                onClick={() => { playClick(); setViewMode('GRID'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${viewMode === 'GRID' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <LayoutGrid size={14} /> GRID
+                            </button>
+                            <button 
+                                onClick={() => { playClick(); setViewMode('HEATMAP'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${viewMode === 'HEATMAP' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <Grid size={14} /> HEATMAP
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button 
+                                onClick={() => { playClick(); setListViewMode('GRID'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${listViewMode === 'GRID' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <LayoutGrid size={14} /> GRID
+                            </button>
+                            <button 
+                                onClick={() => { playClick(); setListViewMode('LIST'); }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black font-mono transition-all duration-300 ${listViewMode === 'LIST' ? 'bg-intuition-primary text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <List size={14} /> LIST
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -322,13 +460,13 @@ const Markets: React.FC = () => {
                 </div>
             )}
 
-            <div className="relative group flex-1 p-[2px] bg-slate-900 clip-path-slant focus-within:bg-intuition-primary/50 transition-colors">
+            <div className="relative group flex-1 min-w-0 p-[2px] bg-slate-900 clip-path-slant focus-within:bg-intuition-primary/50 transition-colors">
               <div className="absolute left-5 top-1/2 -translate-y-1/2 text-intuition-primary z-10">
                   <Search size={18} className="group-focus-within:animate-pulse" />
               </div>
               <input 
                   type="text" 
-                  placeholder={`Search ${activeSegment === 'NODES' ? 'atoms' : activeSegment === 'SYNAPSES' ? 'claims' : 'lists'}...`} 
+                  placeholder={activeSegment === 'SYNAPSES' ? 'Search claims by subject, predicate, or object' : `Search ${activeSegment === 'NODES' ? 'atoms' : 'lists'}...`} 
                   className="w-full bg-black rounded-none py-4 pl-12 pr-12 text-white font-mono text-xs focus:outline-none transition-all placeholder-slate-800 uppercase tracking-widest clip-path-slant"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -370,10 +508,77 @@ const Markets: React.FC = () => {
                     )}
                 </div>
             )}
+
+            {activeSegment === 'VECTORS' && (
+                <div className="relative" ref={listSortRef}>
+                    <div className={`p-[2px] clip-path-slant transition-colors ${isListSortOpen ? 'bg-intuition-primary' : 'bg-slate-900 hover:bg-intuition-primary/50'}`}>
+                        <button 
+                            onClick={() => { setIsListSortOpen(!isListSortOpen); playClick(); }}
+                            className={`flex items-center justify-between gap-4 sm:gap-6 min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 min-w-[180px] sm:min-w-[220px] bg-black text-[9px] sm:text-[10px] font-black font-mono text-intuition-primary clip-path-slant transition-all`}
+                        >
+                            <div className="flex items-center gap-3"><Filter size={14} />{getListSortLabel(listSortOption)}</div>
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isListSortOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+                    {isListSortOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-full max-h-[360px] overflow-y-auto bg-intuition-primary p-[1px] shadow-[0_0_50px_rgba(0,0,0,1)] z-[100] clip-path-slant">
+                            <div className="bg-[#0a0a0a] p-1 clip-path-slant">
+                                {(['MCAP_DESC', 'MCAP_ASC', 'POSITIONS_DESC', 'POSITIONS_ASC', 'ENTRIES_DESC', 'ENTRIES_ASC', 'AZ', 'ZA'] as ListSortOption[]).map((opt) => (
+                                    <button 
+                                        key={opt}
+                                        onClick={() => toggleListSort(opt)} 
+                                        className={`w-full min-h-[40px] flex items-center justify-between px-4 py-2.5 text-[9px] font-black font-mono hover:bg-intuition-primary hover:text-black transition-all uppercase tracking-widest ${listSortOption === opt ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}
+                                    >
+                                        <span>{getListSortLabel(opt)}</span>
+                                        {listSortOption === opt && <ShieldCheck size={12} className="text-intuition-primary" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {activeSegment === 'SYNAPSES' && (
+                <div className="relative" ref={claimSortRef}>
+                    <div className={`p-[2px] clip-path-slant transition-colors ${isClaimSortOpen ? 'bg-intuition-primary' : 'bg-slate-900 hover:bg-intuition-primary/50'}`}>
+                        <button 
+                            onClick={() => { setIsClaimSortOpen(!isClaimSortOpen); playClick(); }}
+                            className={`flex items-center justify-between gap-4 sm:gap-6 min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 min-w-[180px] sm:min-w-[260px] bg-black text-[9px] sm:text-[10px] font-black font-mono text-intuition-primary clip-path-slant transition-all`}
+                        >
+                            <div className="flex items-center gap-3"><Filter size={14} />{getClaimSortLabel(claimSortOption)}</div>
+                            <ChevronDown size={14} className={`transition-transform duration-300 ${isClaimSortOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+                    {isClaimSortOpen && (
+                        <div className="absolute right-0 top-full mt-2 w-full max-h-[400px] overflow-y-auto bg-intuition-primary p-[1px] shadow-[0_0_50px_rgba(0,0,0,1)] z-[100] clip-path-slant">
+                            <div className="bg-[#0a0a0a] p-1 clip-path-slant">
+                                {([
+                                    'TOTAL_MCAP_DESC', 'TOTAL_MCAP_ASC',
+                                    'SUPPORT_MCAP_DESC', 'SUPPORT_MCAP_ASC',
+                                    'OPPOSE_MCAP_DESC', 'OPPOSE_MCAP_ASC',
+                                    'SUPPORTERS_DESC', 'SUPPORTERS_ASC',
+                                    'OPPOSERS_DESC', 'OPPOSERS_ASC',
+                                    'POSITIONS_DESC', 'POSITIONS_ASC',
+                                ] as ClaimSortOption[]).map((opt) => (
+                                    <button 
+                                        key={opt}
+                                        onClick={() => toggleClaimSort(opt)} 
+                                        className={`w-full min-h-[40px] flex items-center justify-between px-4 py-2.5 text-[9px] font-black font-mono hover:bg-intuition-primary hover:text-black transition-all uppercase tracking-widest ${claimSortOption === opt ? 'text-intuition-primary bg-intuition-primary/10' : 'text-slate-500'}`}
+                                    >
+                                        <span>{getClaimSortLabel(opt)}</span>
+                                        {claimSortOption === opt && <ShieldCheck size={12} className="text-intuition-primary" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
       </div>
 
       {loading && offset === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8 min-w-0">
            {[...Array(8)].map((_, i) => (
              <div key={i} className="h-[320px] bg-black border-2 border-white/5 animate-pulse relative overflow-hidden clip-path-slant">
                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
@@ -386,154 +591,179 @@ const Markets: React.FC = () => {
             <p className="text-slate-700 text-lg font-black font-mono uppercase tracking-[0.4em]">{showWatchlistOnly ? 'SECTOR_WATCHLIST_EMPTY' : 'NULL_DATA_RECOVERED'}</p>
         </div>
       ) : activeSegment === 'VECTORS' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-5 relative z-10">
+          listViewMode === 'LIST' ? (
+            <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono border-collapse min-w-[600px]">
+                  <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                    <tr>
+                      <th className="px-6 py-5">LIST</th>
+                      <th className="px-6 py-5">ENTRIES</th>
+                      <th className="px-6 py-5">POSITIONS</th>
+                      <th className="px-6 py-5 text-right">MARKET_CAP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredItems.map((list) => (
+                      <tr 
+                        key={list.id} 
+                        onClick={() => { playClick(); navigate(`/markets/${list.id}`); }}
+                        className="hover:bg-white/5 transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
+                      >
+                        <td className="px-6 py-2">
+                          <div className="flex items-center gap-3 py-4">
+                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border border-slate-800 rounded-xl">
+                              {list.image ? <img src={list.image} className="w-full h-full object-cover" alt="" /> : <Component size={18} className="text-slate-600" />}
+                            </div>
+                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[200px]">{list.label || 'Untitled list'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-2">
+                          <div className="flex items-center gap-2">
+                            <Database size={14} className="text-intuition-primary opacity-50" />
+                            <span className="text-sm font-black text-intuition-primary">{formatLargeNumber(list.totalItems || 0)}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-2">
+                          <span className="text-sm font-black text-slate-400">{formatLargeNumber(list.totalPositionCount || 0)}</span>
+                        </td>
+                        <td className="px-6 py-2 text-right">
+                          <span className="text-sm font-black text-white">{formatMarketValue(list.totalMarketCap || 0)} <CurrencySymbol size="sm" className="text-slate-600" /></span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 relative z-10 min-w-0">
               {filteredItems.map((list) => (
                   <Link 
                     key={list.id} 
                     to={`/markets/${list.id}`} 
-                    className="group relative flex flex-col p-6 bg-slate-950/80 backdrop-blur-xl border border-slate-800 hover:border-intuition-primary transition-all shadow-[0_0_60px_rgba(0,0,0,1)] overflow-hidden min-h-[350px]"
-                    style={{ 
-                        clipPath: 'polygon(50% 0%, 100% 15%, 100% 85%, 50% 100%, 0% 85%, 0% 15%)' 
-                    }}
+                    className="group relative flex flex-col p-6 bg-slate-950/80 backdrop-blur-xl border-2 border-slate-800 hover:border-intuition-primary/60 transition-all duration-500 rounded-2xl overflow-hidden min-h-[320px] min-w-0 shadow-[0_0_30px_rgba(0,0,0,0.5)] hover:shadow-[0_0_40px_rgba(0,243,255,0.15),0_0_0_1px_rgba(0,243,255,0.3)]"
                     onClick={playClick}
                     onMouseEnter={playHover}
                   >
-                      <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.05)_1px,transparent_1px)] bg-[size:16px:16px] opacity-10 pointer-events-none"></div>
-                      <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-intuition-primary/30 to-transparent"></div>
-                      <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-intuition-primary/30 to-transparent"></div>
+                      <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.04)_1px,transparent_1px)] bg-[size:20px_20px] opacity-20 pointer-events-none" />
+                      <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent rounded-full" />
+                      <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent rounded-full" />
 
-                      <div className="absolute top-[12%] right-[10%] text-right z-20">
-                          <div className="text-[6px] font-black font-mono text-intuition-primary animate-pulse uppercase tracking-[0.1em]">04-ARES</div>
+                      <div className="absolute top-4 right-4 text-right z-20">
+                          <span className="text-[9px] font-black font-mono text-intuition-primary/80 uppercase tracking-wider">LIST</span>
                       </div>
-                      
-                      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-transparent via-intuition-primary/5 to-transparent -translate-y-full group-hover:animate-[scanline_4s_linear_infinite] pointer-events-none"></div>
 
-                      <div className="flex flex-col items-center justify-center flex-1 relative z-10 mb-6 mt-4">
-                          <div className="relative mb-6 group-hover:scale-105 transition-transform duration-700">
-                              <div className="absolute inset-0 bg-intuition-primary blur-[25px] opacity-5 group-hover:opacity-20 transition-all duration-1000 rounded-full scale-125"></div>
-                              <div className="absolute -inset-8 border border-dashed border-intuition-primary/15 rounded-full animate-spin-slow group-hover:border-intuition-primary/30 transition-all"></div>
-                              <div className="absolute -inset-4 border border-white/5 rounded-full opacity-30 group-hover:scale-110 transition-all"></div>
-                              
-                              <div className="w-22 h-22 bg-black border border-slate-700 flex items-center justify-center text-slate-500 group-hover:text-intuition-primary group-hover:border-intuition-primary transition-all shadow-[0_0_30px_rgba(0,243,255,0.8)] overflow-hidden relative" 
-                                   style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}>
-                                  
-                                  <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,243,255,0.05)_50%)] bg-[length:100%_4px] group-hover:bg-[length:100%_2px] transition-all pointer-events-none"></div>
-
+                      <div className="flex flex-col items-center justify-center flex-1 relative z-10 mb-5 mt-2">
+                          <div className="relative mb-5 group-hover:scale-105 transition-transform duration-500">
+                              <div className="absolute inset-0 bg-intuition-primary blur-[20px] opacity-20 group-hover:opacity-35 transition-all duration-500 rounded-full scale-110" />
+                              <div className="relative w-20 h-20 rounded-2xl bg-black/80 border-2 border-slate-700 group-hover:border-intuition-primary/60 flex items-center justify-center text-slate-500 group-hover:text-intuition-primary transition-all duration-500 overflow-hidden shadow-[0_0_25px_rgba(0,243,255,0.4)]">
                                   {list.image ? (
-                                      <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-1000" alt="" />
+                                      <img src={list.image} className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-500" alt="" />
                                   ) : (
-                                      <Component size={28} className="group-hover:animate-spin-slow opacity-60 group-hover:opacity-100" />
+                                      <Component size={32} className="group-hover:scale-110 transition-transform duration-500 opacity-70 group-hover:opacity-100" />
                                   )}
-                                  
-                                  <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition-colors"></div>
-                                  <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                               </div>
                           </div>
 
                           <div className="px-3 text-center">
-                              <div className="text-[7px] font-black font-mono text-slate-600 uppercase tracking-[0.4em] mb-2 group-hover:text-white transition-colors flex items-center justify-center gap-1.5">
-                                  <div className="w-1 h-1 bg-intuition-primary rounded-full animate-ping"></div>
-                                  SEC_AGGREGATE
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-intuition-primary/10 border border-intuition-primary/30 mb-3">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-intuition-primary animate-pulse" />
+                                  <span className="text-[9px] font-black font-mono text-intuition-primary/90 uppercase tracking-wider">Aggregate</span>
                               </div>
-                              <h3 className="text-lg md:text-xl font-black font-display text-white group-hover:text-glow-blue transition-all uppercase tracking-tighter leading-tight mb-4 drop-shadow-md">{list.label || 'UNTITLED_LIST'}
+                              <h3 className="text-base md:text-lg font-black font-display text-white group-hover:text-glow-blue transition-all uppercase tracking-tight leading-tight mb-3 line-clamp-2">
+                                  {list.label || 'Untitled list'}
                               </h3>
                               
-                              <div className="inline-flex items-center justify-center gap-2 py-1 px-3 bg-white/5 border border-white/5 clip-path-slant group-hover:border-intuition-primary/20 transition-all">
-                                  <Database size={10} className="text-intuition-primary" /> 
-                                  <span className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-[0.1em] group-hover:text-white transition-colors">
-                                    {list.totalItems || 0}_CONSTITUENTS
+                              <div className="inline-flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-white/5 border border-white/10 group-hover:border-intuition-primary/30 transition-all duration-300">
+                                  <Database size={12} className="text-intuition-primary" />
+                                  <span className="text-[10px] font-black font-mono text-slate-400 group-hover:text-white transition-colors">
+                                    {list.totalItems || 0} constituents
                                   </span>
                               </div>
                           </div>
                       </div>
 
-                      <div className="flex items-center justify-center -space-x-3 mt-auto relative z-10 group-hover:translate-y-[-4px] transition-transform duration-700 mb-2 pb-4">
+                      <div className="flex items-center justify-center -space-x-2 mt-auto relative z-10 group-hover:translate-y-[-2px] transition-transform duration-300 mb-4">
                           {(list.items || []).slice(0, 5).map((item: any, i: number) => (
-                              <div key={i} className="w-8 h-8 border border-black bg-slate-900 flex items-center justify-center overflow-hidden shadow-xl hover:z-30 transition-all hover:-translate-y-2 hover:border-intuition-primary"
-                                   style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}>
-                                  {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <div className="text-[6px] font-black text-slate-700">{item.label?.[0]}</div>}
+                              <div key={i} className="w-9 h-9 rounded-xl border-2 border-slate-800 hover:border-intuition-primary/60 bg-slate-900 flex items-center justify-center overflow-hidden shadow-lg transition-all duration-300 hover:-translate-y-1 hover:z-10">
+                                  {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : <span className="text-[10px] font-black text-slate-600">{item.label?.[0]}</span>}
                               </div>
                           ))}
                           {(list.totalItems > 5) && (
-                              <div className="w-8 h-8 border border-black bg-intuition-primary text-black flex items-center justify-center text-[6px] font-black shadow-xl hover:z-30 transition-all hover:-translate-y-2"
-                                   style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}>
+                              <div className="w-9 h-9 rounded-xl border-2 border-intuition-primary/50 bg-intuition-primary/20 text-intuition-primary flex items-center justify-center text-[10px] font-black shadow-lg transition-all duration-300 hover:-translate-y-1 hover:z-10">
                                   +{list.totalItems - 5}
                               </div>
                           )}
                       </div>
 
-                      <div className="absolute bottom-[12%] right-[10%] opacity-20 group-hover:text-intuition-primary group-hover:opacity-100 group-hover:translate-x-1 transition-all">
-                        <ArrowRight size={16} className="drop-shadow-[0_0_8px_currentColor]" />
+                      <div className="absolute bottom-4 right-4 opacity-30 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all duration-300">
+                          <ArrowRight size={18} className="text-intuition-primary drop-shadow-[0_0_8px_rgba(0,243,255,0.5)]" />
                       </div>
                   </Link>
               ))}
           </div>
+          )
       ) : activeSegment === 'SYNAPSES' ? (
           <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
               <div className="overflow-x-auto">
-                <table className="w-full text-left font-mono border-collapse min-w-[1000px]">
-                    <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] border-b-2 border-slate-900">
+                <table className="w-full text-left font-mono border-collapse min-w-[900px] table-fixed">
+                    <colgroup>
+                      <col className="w-[45%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[19%]" />
+                    </colgroup>
+                    <thead className="bg-[#080808] text-slate-700 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-900">
                         <tr>
-                            <th className="px-8 py-6">CLAIM_IDENTITY</th>
-                            <th className="px-8 py-6">SUPPORT</th>
-                            <th className="px-8 py-6">OPPOSE</th>
-                            <th className="px-8 py-6 text-right">HANDSHAKE</th>
+                            <th className="px-4 py-3">CLAIM</th>
+                            <th className="px-4 py-3">SUPPORT</th>
+                            <th className="px-4 py-3">OPPOSE</th>
+                            <th className="px-4 py-3 text-right">HANDSHAKE</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-slate-800/60">
                         {filteredItems.map((claim) => (
                             <tr 
                               key={claim.id} 
                               onClick={() => { playClick(); navigate(`/markets/${claim.id}`); }}
-                              className="hover:bg-white/5 transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
+                              className="hover:bg-white/[0.02] transition-all group relative cursor-pointer active:scale-[0.995] duration-200"
                             >
-                                <td className="px-8 py-8">
-                                    <div className="flex flex-col md:flex-row items-center gap-3">
-                                        <div className="flex items-center gap-3 bg-white/5 pr-4 border border-white/5 clip-path-slant">
-                                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border-r border-white/5">
-                                                {claim.subject.image ? <img src={claim.subject.image} className="w-full h-full object-cover" /> : <User size={16} className="text-slate-700" />}
-                                            </div>
-                                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[120px]">{claim.subject.label}</span>
+                                <td className="px-4 py-3 align-middle">
+                                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                        <div className="w-9 h-9 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+                                            {claim.subject?.image ? <img src={claim.subject.image} className="w-full h-full object-cover" alt="" /> : <User size={16} className="text-slate-700" />}
                                         </div>
-                                        
-                                        <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest px-2">{claim.predicate}</span>
-                                        
-                                        <div className="flex items-center gap-3 bg-white/5 pr-4 border border-white/5 clip-path-slant">
-                                            <div className="w-10 h-10 bg-slate-950 flex items-center justify-center overflow-hidden border-r border-white/5">
-                                                {claim.object.image ? <img src={claim.object.image} className="w-full h-full object-cover" /> : <div className="text-[10px] font-black text-slate-700">{claim.object.label?.[0]}</div>}
-                                            </div>
-                                            <span className="font-black text-white text-[11px] uppercase truncate max-w-[120px]">{claim.object.label}</span>
-                                        </div>
+                                        <span className="font-bold text-white text-sm truncate" title={claim.subject?.label || ''}>{claim.subject?.label || '—'}</span>
+                                        <span className="text-slate-500 text-xs shrink-0">{(claim.predicate || 'LINK').replace(/_/g, ' ').toLowerCase()}</span>
+                                        <span className="px-2.5 py-0.5 rounded-md bg-[#2D3A4B] text-white text-xs font-medium shrink-0 truncate max-w-[120px]" title={claim.object?.label || ''}>{claim.object?.label || '—'}</span>
                                     </div>
                                 </td>
                                 
-                                <td className="px-8 py-8">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <Users size={14} className="text-intuition-primary opacity-50" />
-                                            <span className="text-sm font-black text-intuition-primary">{formatLargeNumber(claim.holders)}</span>
-                                        </div>
-                                        <div className="text-lg font-black text-white inline-flex items-baseline gap-1">{formatMarketValue(claim.value)} <CurrencySymbol size="md" className="text-slate-600" /></div>
+                                <td className="px-4 py-3 align-middle">
+                                    <div className="flex items-center gap-1.5">
+                                        <Users size={14} className="text-[#3498DB] shrink-0" />
+                                        <span className="text-[12px] font-bold text-[#3498DB]">{formatLargeNumber(claim.holders)}</span>
+                                        <span className="text-[12px] font-bold text-[#3498DB]">{formatMarketValue(claim.value)} TRUST</span>
                                     </div>
                                 </td>
                                 
-                                <td className="px-8 py-8">
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex items-center gap-2">
-                                            <Users size={14} className="text-intuition-danger opacity-50" />
-                                            <span className="text-sm font-black text-intuition-danger">{formatLargeNumber(claim.opposeHolders || 0)}</span>
-                                        </div>
-                                        <div className="text-lg font-black text-white inline-flex items-baseline gap-1">{formatMarketValue(claim.opposeValue || 0)} <CurrencySymbol size="md" className="text-slate-600" /></div>
+                                <td className="px-4 py-3 align-middle">
+                                    <div className="flex items-center gap-1.5">
+                                        <Users size={14} className="text-[#F39C12] shrink-0" />
+                                        <span className="text-[12px] font-bold text-[#F39C12]">{formatLargeNumber(claim.opposeHolders || 0)}</span>
+                                        <span className="text-[12px] font-bold text-[#F39C12]">{formatMarketValue(claim.opposeValue || 0)} TRUST</span>
                                     </div>
                                 </td>
 
-                                <td className="px-8 py-8 text-right">
+                                <td className="px-4 py-3 text-right align-middle">
                                     <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-6 py-2.5 bg-intuition-primary text-black font-black text-[10px] uppercase clip-path-slant hover:bg-white transition-all shadow-glow-blue">
-                                            SUPPORT
+                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-4 py-2 bg-[#3498DB] text-white text-xs font-bold rounded-lg hover:bg-[#2980B9] transition-colors">
+                                            Support
                                         </Link>
-                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-6 py-2.5 bg-intuition-danger text-white font-black text-[10px] uppercase clip-path-slant hover:bg-white hover:text-black transition-all shadow-glow-red">
-                                            OPPOSE
+                                        <Link to={`/markets/${claim.id}`} onClick={playClick} className="px-4 py-2 bg-[#F39C12] text-white text-xs font-bold rounded-lg hover:bg-[#E67E22] transition-colors">
+                                            Oppose
                                         </Link>
                                     </div>
                                 </td>
@@ -544,7 +774,7 @@ const Markets: React.FC = () => {
               </div>
           </div>
       ) : viewMode === 'HEATMAP' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 relative z-10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3 min-w-0 relative z-10">
             {filteredItems.map(agent => {
                 const strength = calculateTrustScore(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
                 const mktVal = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
@@ -560,7 +790,7 @@ const Markets: React.FC = () => {
                         key={agent.id} 
                         to={`/markets/${agent.id}`}
                         onClick={playClick}
-                        className={`aspect-square p-4 flex flex-col justify-between hover:scale-105 transition-all duration-300 relative group overflow-hidden border-2 border-black/40 ${bgClass} shadow-2xl clip-path-slant hover:z-20`}
+                        className={`aspect-square p-4 flex flex-col justify-between hover:scale-105 transition-all duration-300 relative group overflow-hidden border border-black/40 ${bgClass} shadow-2xl rounded-2xl hover:z-20`}
                     >
                         <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <div className="text-[10px] font-black font-display text-white truncate z-10 uppercase tracking-tighter drop-shadow-md">{agent.label}</div>
@@ -573,7 +803,7 @@ const Markets: React.FC = () => {
             })}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8 relative z-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 min-w-0 relative z-10 gap-4 sm:gap-6 md:gap-8">
           {filteredItems.map((agent) => {
              const price = calculateAgentPrice(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
              const mktCap = calculateMarketCap(agent.marketCap || agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice);
@@ -614,82 +844,79 @@ const Markets: React.FC = () => {
                 to={`/markets/${agent.id}`}
                 onClick={playClick}
                 onMouseEnter={playHover}
-                className={`group relative flex flex-col bg-black border-2 ${tierStyle.border} transition-all duration-300 overflow-hidden clip-path-slant hover:-translate-y-2 hover:border-white/50 shadow-2xl hover:shadow-[0_0_40px_rgba(0,243,255,0.1)]`}
+                className={`group relative flex flex-col rounded-3xl bg-gradient-to-br ${tierStyle.glow} border border-slate-900/80 transition-all duration-300 overflow-hidden hover:-translate-y-2 hover:border-white/60 shadow-[0_18px_45px_rgba(0,0,0,0.85)]`}
               >
-                <div className={`absolute inset-0 bg-gradient-to-br ${tierStyle.glow} pointer-events-none`}></div>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.06),transparent_55%)] pointer-events-none" />
                 
-                {/* BRANDING CONTAINER - Top Left purely for Curve info */}
-                <div className="absolute top-0 left-0 p-3 z-20 flex flex-col items-start gap-2">
-                    <div className="px-2 py-0.5 bg-black border border-white/5 text-[6px] font-black font-mono text-slate-500 uppercase tracking-widest clip-path-slant group-hover:border-intuition-primary/40 transition-colors">Progressive_Curve</div>
-                    {!verified && (
-                        <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-900 border border-slate-700 text-slate-500 text-[7px] font-black uppercase tracking-widest">
-                            <UserCog size={10} /> USER_NODE
-                        </div>
-                    )}
-                </div>
-                
-                <div className="absolute bottom-0 right-0 p-2 opacity-5 text-white pointer-events-none font-display font-black text-6xl group-hover:scale-150 transition-transform duration-1000">{tierStyle.label}</div>
-                
-                <div className="relative p-6 z-10 flex flex-col h-full">
-                   <div className="flex justify-between items-start mb-6">
-                      <div className={`relative w-20 h-20 shrink-0 border-2 ${tierStyle.border} bg-black flex items-center justify-center overflow-hidden clip-path-slant shadow-2xl group-hover:border-white transition-all`}>
+                <div className="relative p-5 sm:p-6 z-10 flex flex-col h-full">
+                   <div className="flex items-start gap-4 mb-4">
+                      <div className="relative shrink-0">
+                        <div className="absolute -inset-1 rounded-2xl bg-black/60" />
+                        <div className={`relative w-16 h-16 sm:w-18 sm:h-18 border border-white/10 bg-black/80 rounded-2xl flex items-center justify-center overflow-hidden shadow-[0_12px_30px_rgba(0,0,0,0.9)]`}>
                           {agent.image ? (
-                             <img src={agent.image} alt={agent.label} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-1000" />
+                             <img src={agent.image} alt={agent.label} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" />
                           ) : (
-                             <div className={`text-4xl font-black ${tierStyle.color}`}>{agent.label?.[0]?.toUpperCase()}</div>
+                             <div className={`text-3xl font-black ${tierStyle.color}`}>{agent.label?.[0]?.toUpperCase()}</div>
                           )}
+                        </div>
                       </div>
-                      <div className="text-right flex flex-col items-end">
-                          <div className={`text-4xl font-black font-display italic ${tierStyle.color} text-glow drop-shadow-2xl relative`}>
-                              {tierStyle.label}
-                          </div>
-                          {/* VERIFICATION BADGE - Positioned big and bold under the class letter */}
-                          <div className="flex flex-col items-end gap-1 mt-2">
-                              {verified && (
-                                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-500">
-                                    <BadgeCheck size={22} className="text-intuition-primary shadow-glow-blue" strokeWidth={3} />
-                                    <span className="text-[6px] font-black text-intuition-primary uppercase tracking-widest mt-0.5">VERIFIED</span>
-                                </div>
-                              )}
-                              <div className="text-[8px] font-black font-mono text-slate-600 uppercase tracking-widest mt-1">Protocol_Tier</div>
-                          </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[9px] font-mono font-black uppercase tracking-[0.25em] text-slate-400 flex items-center gap-1">
+                            <Shield size={10} className="text-intuition-primary" />
+                            {tierStyle.name}
+                          </span>
+                          {verified && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-intuition-primary/10 border border-intuition-primary/40 text-[8px] font-black text-intuition-primary uppercase tracking-widest">
+                              <BadgeCheck size={11} /> Verified
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-white font-black font-display text-[15px] sm:text-[17px] leading-tight truncate uppercase tracking-tight group-hover:text-intuition-primary transition-colors">
+                          {agent.label || 'UNKNOWN_NODE'}
+                        </h3>
+                        <p className="text-[9px] font-mono text-slate-600 uppercase tracking-[0.25em] mt-1">
+                          ID: {agent.id.slice(0, 10)}...
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 ml-2">
+                        <span className={`text-2xl font-black font-display ${tierStyle.color} leading-none`}>
+                          {tierStyle.label}
+                        </span>
+                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-[0.3em]">
+                          Trust Class
+                        </span>
                       </div>
                    </div>
 
-                   <div className="mb-6 min-h-[60px]">
-                       <div className="flex items-center gap-3 mb-1.5">
-                           <h3 className="text-white font-black font-display text-xl leading-none truncate uppercase tracking-tight group-hover:text-intuition-primary transition-colors">
-                               {agent.label || 'UNKNOWN_NODE'}
-                           </h3>
-                           {tierStyle.label === 'S' && <div className="w-2 h-2 rounded-full bg-intuition-warning animate-pulse shadow-[0_0_10px_#facc15]"></div>}
-                       </div>
-                       <div className="flex justify-between items-center text-[10px] font-black font-mono text-slate-600 uppercase tracking-widest">
-                           <span className="flex items-center gap-1"><Shield size={10} className="text-intuition-primary" /> {tierStyle.name}</span>
-                           <span>ID: {agent.id.slice(0,8)}</span>
-                       </div>
+                   <div className="mt-2 mb-4 grid grid-cols-2 gap-3">
+                     <div className="rounded-2xl bg-black/70 border border-white/5 px-3 py-3 flex flex-col justify-center">
+                       <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Mkt Cap</span>
+                       <span className="text-sm font-mono font-black text-white inline-flex items-baseline gap-1">
+                         <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
+                         {mktCap > 0 ? formatMarketValue(mktCap) : '0.00K'}
+                       </span>
+                     </div>
+                     <div className="rounded-2xl bg-black/70 border border-white/5/10 px-3 py-3 flex flex-col justify-center">
+                       <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Price / Unit</span>
+                       <span className="text-sm font-mono font-black text-white inline-flex items-baseline gap-1">
+                         <CurrencySymbol size="sm" leading className="text-slate-500" />
+                         {formatMarketValue(price)}
+                       </span>
+                     </div>
                    </div>
 
-                   <div className="mt-auto grid grid-cols-2 gap-px bg-slate-900 border border-slate-900 overflow-hidden mb-6">
-                       <div className="bg-black p-3 flex flex-col justify-center border-r border-slate-900 group-hover:bg-slate-950 transition-colors">
-                           <span className="text-[8px] text-slate-600 font-black uppercase tracking-wider mb-1">TOTAL MKT CAP</span>
-                           <span className={`text-xs font-black font-mono text-white`}>{mktCap > 0 ? formatMarketValue(mktCap) : '0.00K'}</span>
-                       </div>
-                       <div className="bg-black p-3 flex flex-col justify-center text-right group-hover:bg-slate-950 transition-colors">
-                           <span className="text-[8px] text-slate-600 font-black uppercase tracking-wider mb-1">PRICE / UNIT</span>
-                           <span className="text-xs font-black font-mono text-white">{formatMarketValue(price)}</span>
-                       </div>
-                   </div>
-
-                   <div className="pt-4 border-t border-white/5 relative overflow-hidden">
-                       <div className="flex justify-between items-end text-[9px] font-black font-mono uppercase mb-2">
-                           <span className={tierStyle.color}>TRUST {strength.toFixed(0)}%</span>
-                           <span className="text-slate-700">DISTRUST {(100-strength).toFixed(0)}%</span>
-                       </div>
-                       <div className="h-2 w-full bg-slate-950 border border-white/5 p-[1px] relative">
-                           <div style={{ width: `${strength}%` }} className={`h-full ${tierStyle.bar} transition-all duration-1000 shadow-[0_0_10px_currentColor] relative`}>
-                                <div className="absolute top-0 right-0 bottom-0 w-1 bg-white/40 blur-[1px]"></div>
-                           </div>
-                       </div>
+                   <div className="mt-auto pt-3">
+                     <div className="flex items-center justify-between text-[9px] font-mono font-black uppercase mb-1">
+                       <span className={tierStyle.color}>Trust {strength.toFixed(0)}%</span>
+                       <span className="text-slate-600">Distrust {(100-strength).toFixed(0)}%</span>
+                     </div>
+                     <div className="h-2.5 w-full rounded-full bg-slate-900/90 border border-white/5 overflow-hidden">
+                       <div
+                         style={{ width: `${strength}%` }}
+                         className={`h-full ${tierStyle.bar} transition-all duration-700 shadow-[0_0_12px_currentColor]`}
+                       />
+                     </div>
                    </div>
                 </div>
               </Link>

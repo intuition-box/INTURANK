@@ -69,6 +69,7 @@ import KPIDashboard from './pages/KPIDashboard';
 import Documentation from './pages/Documentation';
 import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
+import SendTrust from './pages/SendTrust';
 import SDKPlayground from './pages/SDKPlayground';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
@@ -105,7 +106,10 @@ const App: React.FC = () => {
           <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} /> 
           
           <Route path="/stats" element={<Stats />} />
-          <Route path="/markets" element={<Markets />} />
+          <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
+          <Route path="/markets/atoms" element={<Markets />} />
+          <Route path="/markets/triples" element={<Markets />} />
+          <Route path="/markets/lists" element={<Markets />} />
           <Route path="/markets/:id" element={<MarketDetail />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/health" element={<KPIDashboard />} />
@@ -116,6 +120,7 @@ const App: React.FC = () => {
           <Route path="/compare" element={<Compare />} />
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
+          <Route path="/send-trust" element={<SendTrust />} />
           </Routes>
                 </Layout>
                 <EmailNotifyModal />
