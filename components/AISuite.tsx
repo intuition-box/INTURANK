@@ -6,7 +6,7 @@ import { formatEther } from 'viem';
 import { formatDisplayedShares } from '../services/analytics';
 import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
 
-const MODEL_NAME = 'gemini-3-flash-preview';
+const MODEL_NAME = 'gemini-2.5-flash';
 
 export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: Transaction[] }> = ({ agent, triples, history }) => {
     const [brief, setBrief] = useState<string>('');

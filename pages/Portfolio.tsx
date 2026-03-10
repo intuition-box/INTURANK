@@ -20,7 +20,7 @@ const EquityChartTooltip = ({ active, payload }: any) => {
 };
 import { formatEther, getAddress } from 'viem';
 import { connectWallet, getConnectedAccount, getWalletBalance, getShareBalancesBatch, getLocalTransactions } from '../services/web3';
-import { getUserPositions, getPortfolioPositionsWithValue, getUserHistory, getVaultsByIds, getAccountPnlCurrent, getCurveLabel, getMyCreated } from '../services/graphql';
+import { getUserPositions, getPortfolioPositionsWithValue, getUserHistory, getVaultsByIds, getAccountPnlCurrent, getCurveLabel, getMyCreated, resolveMetadata } from '../services/graphql';
 import { Wallet, RefreshCw, Zap, User, Loader2, TrendingUp, Coins, Lock, Activity as PulseIcon, Clock, Terminal, Globe, Layers, LogOut, Sparkles, ChevronDown } from 'lucide-react';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -119,23 +119,24 @@ const Portfolio: React.FC = () => {
     if (isRefreshingRef.current) return;
     isRefreshingRef.current = true;
     setLoading(true);
-    
-    try {
-      setBalanceLoaded(false);
-      setEquityLoaded(false);
-      setPnLLoaded(false);
+    setBalanceLoaded(false);
+    setEquityLoaded(false);
+    setPnLLoaded(false);
 
-      // 1. Fetch multi-source telemetry (positions_with_value for server-sorted ledger when available)
-      const [bal, chainHistory, positionsWithValue, graphPositionsRaw, pnlSnapshot] = await Promise.all([
-          getWalletBalance(address),
+    // Fire balance immediately (fast RPC) so it shows first
+    getWalletBalance(address).then((bal) => {
+      setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+      setBalanceLoaded(true);
+    }).catch(() => setBalanceLoaded(true));
+
+    try {
+      // 2. Fetch main data in parallel (skip balance - already fired above)
+      const [chainHistory, positionsWithValue, graphPositionsRaw, pnlSnapshot] = await Promise.all([
           getUserHistory(address),
           getPortfolioPositionsWithValue(address).catch(() => []),
           getUserPositions(address).catch(() => []),
           getAccountPnlCurrent(address)
       ]);
-
-      setBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
-      setBalanceLoaded(true);
 
       let equitySetFromPnl = false;
       let pnlSetFromPnl = false;
@@ -177,7 +178,8 @@ const Portfolio: React.FC = () => {
       const graphVaultIds = (positionsWithValue.length > 0 ? positionsWithValue : graphPositionsRaw).map((p: any) => p.vault?.term_id?.toLowerCase()).filter(Boolean);
       const candidateVaultIds = Array.from(new Set([...graphVaultIds, ...historyVaultIds])) as string[];
       
-      const metadata = await getVaultsByIds(candidateVaultIds).catch(() => []);
+      // Skip getVaultsByIds when positions_with_value has vault.term (atom/triple) — saves a full GraphQL round-trip
+      const metadata = positionsWithValue.length > 0 ? [] : await getVaultsByIds(candidateVaultIds).catch(() => []);
 
       // 3. PRECISION INVENTORY RECONCILIATION
       const activePositions: any[] = [];
@@ -186,29 +188,45 @@ const Portfolio: React.FC = () => {
       const DUST = 1e-8;
 
       // Use positions_with_value when available (server-sorted by theoretical_value desc, no per-position RPC calls)
+      // Derive label/image/type from vault.term (atom/triple) — no extra getVaultsByIds needed
       if (positionsWithValue.length > 0) {
         for (const p of positionsWithValue) {
           try {
             const rawId = p.vault?.term_id;
             if (!rawId || typeof rawId !== 'string') continue;
             const id = rawId.toLowerCase();
-            const meta = metadata.find((m: any) => m.id.toLowerCase() === id);
-            const rawCurve = p.vault?.curve_id ?? meta?.curveId;
+            const rawCurve = p.vault?.curve_id;
             const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
             const sharesNum = safeParseUnits(p.shares);
             if (!Number.isFinite(sharesNum) || sharesNum <= DUST) continue;
             const value = p.theoretical_value != null ? Number(formatEther(BigInt(p.theoretical_value))) : 0;
-            let label = meta?.label || `Node_${id.slice(0, 8)}`;
-            let image = meta?.image;
-            let type = meta?.type || 'ATOM';
             const triple = p.vault?.term?.triple;
+            const atom = p.vault?.term?.atom;
+            let label: string;
+            let image: string | undefined;
+            let type: string;
             const isCounter = triple?.counter_term_id?.toLowerCase() === id;
             const pointsToDistrust = triple?.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
             if (isCounter || pointsToDistrust) {
-              const subjectLabel = triple?.subject?.label || triple?.subject?.id?.slice(0, 8) || 'NODE';
+              const subjectLabel = triple?.subject ? resolveMetadata(triple.subject).label : triple?.subject?.id?.slice(0, 8) || 'NODE';
               label = `OPPOSING_${subjectLabel}`.toUpperCase();
               image = triple?.subject?.image;
               type = 'CLAIM';
+            } else if (triple) {
+              const sMeta = resolveMetadata(triple.subject);
+              const oMeta = resolveMetadata(triple.object);
+              label = `${sMeta.label} ${triple.predicate?.label || 'LINK'} ${oMeta.label}`;
+              image = triple.subject?.image || triple.object?.image;
+              type = 'CLAIM';
+            } else if (atom) {
+              const meta = resolveMetadata(atom);
+              label = meta.label || `Node_${id.slice(0, 8)}`;
+              image = atom.image || meta.image;
+              type = (meta.type || 'ATOM').toUpperCase();
+            } else {
+              label = `Node_${id.slice(0, 8)}`;
+              image = undefined;
+              type = 'ATOM';
             }
             const pnlPercent = p.pnl_pct != null ? Number(p.pnl_pct) : 0;
             const profit = p.pnl != null ? Number(formatEther(BigInt(p.pnl))) : 0;
@@ -321,35 +339,36 @@ const Portfolio: React.FC = () => {
       }
       setSentimentBias(calculateSentimentBias(displayHistory));
 
-      // 4. Build Equity Volume Temporal chart (only Deposited/Redeemed change equity)
-      const depositRedeemHistory = displayHistory.filter(tx => tx.type === 'DEPOSIT' || tx.type === 'REDEEM');
-      const points: { timestamp: number; val: number }[] = [{ timestamp: Date.now(), val: aggregatedValue }];
-      let runner = aggregatedValue;
-      const historyForChart = depositRedeemHistory.slice(0, 100);
-      for (let i = 0; i < historyForChart.length; i++) {
-          const tx = historyForChart[i];
-          const val = safeParseUnits(tx.assets);
-          if (tx.type === 'DEPOSIT') runner -= val;
-          else runner += val;
-          points.push({ timestamp: tx.timestamp, val: Math.max(0, runner) });
-      }
-      const sorted = points.reverse();
-      // Ensure at least 2 points with visible spread so the chart renders
-      if (sorted.length === 1) {
-          const v = sorted[0].val;
-          sorted.unshift({
-              timestamp: sorted[0].timestamp - 30 * 24 * 60 * 60 * 1000,
-              val: Math.max(0, v * 0.1),
-          });
-      }
-      // Ensure domain has range (flat line with 0 spread can cause empty render)
-      const vals = sorted.map(p => p.val);
-      const minVal = Math.min(...vals);
-      const maxVal = Math.max(...vals);
-      if (minVal === maxVal && maxVal > 0) {
-          sorted.unshift({ ...sorted[0], timestamp: sorted[0].timestamp - 7 * 24 * 60 * 60 * 1000, val: maxVal * 0.5 });
-      }
-      setChartData(sorted.sort((a, b) => a.timestamp - b.timestamp));
+      // 4. Defer chart build so positions render first (UX: stats + table appear faster)
+      const buildChart = () => {
+        const depositRedeemHistory = displayHistory.filter(tx => tx.type === 'DEPOSIT' || tx.type === 'REDEEM');
+        const points: { timestamp: number; val: number }[] = [{ timestamp: Date.now(), val: aggregatedValue }];
+        let runner = aggregatedValue;
+        const historyForChart = depositRedeemHistory.slice(0, 100);
+        for (let i = 0; i < historyForChart.length; i++) {
+            const tx = historyForChart[i];
+            const val = safeParseUnits(tx.assets);
+            if (tx.type === 'DEPOSIT') runner -= val;
+            else runner += val;
+            points.push({ timestamp: tx.timestamp, val: Math.max(0, runner) });
+        }
+        const sorted = points.reverse();
+        if (sorted.length === 1) {
+            const v = sorted[0].val;
+            sorted.unshift({
+                timestamp: sorted[0].timestamp - 30 * 24 * 60 * 60 * 1000,
+                val: Math.max(0, v * 0.1),
+            });
+        }
+        const vals = sorted.map(p => p.val);
+        const minVal = Math.min(...vals);
+        const maxVal = Math.max(...vals);
+        if (minVal === maxVal && maxVal > 0) {
+            sorted.unshift({ ...sorted[0], timestamp: sorted[0].timestamp - 7 * 24 * 60 * 60 * 1000, val: maxVal * 0.5 });
+        }
+        setChartData(sorted.sort((a, b) => a.timestamp - b.timestamp));
+      };
+      requestAnimationFrame(() => requestAnimationFrame(buildChart));
 
     } catch (e) {
       console.error("PORTFOLIO_SYNC_FAILURE", e);
@@ -389,18 +408,21 @@ const Portfolio: React.FC = () => {
     };
   }, [account]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Defer myCreated load so main portfolio (balance, equity, positions) renders first
   useEffect(() => {
     if (!account) {
       setMyCreated({ identities: [], claims: [] });
       return;
     }
     let mounted = true;
-    setMyCreatedLoading(true);
-    getMyCreated(account)
-      .then((data) => { if (mounted) setMyCreated(data); })
-      .catch(() => { if (mounted) setMyCreated({ identities: [], claims: [] }); })
-      .finally(() => { if (mounted) setMyCreatedLoading(false); });
-    return () => { mounted = false; };
+    const timer = setTimeout(() => {
+      setMyCreatedLoading(true);
+      getMyCreated(account)
+        .then((data) => { if (mounted) setMyCreated(data); })
+        .catch(() => { if (mounted) setMyCreated({ identities: [], claims: [] }); })
+        .finally(() => { if (mounted) setMyCreatedLoading(false); });
+    }, 300);
+    return () => { mounted = false; clearTimeout(timer); };
   }, [account]);
 
   useEffect(() => {

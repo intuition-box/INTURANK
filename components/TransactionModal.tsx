@@ -41,7 +41,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
       document.body.style.top = '';
       document.body.style.left = '';
       document.body.style.right = '';
-      window.scrollTo(0, y);
+      // Use instant behavior to prevent unwanted auto-scroll animation on modal close
+      window.scrollTo({ top: y, left: 0, behavior: 'instant' });
     }
     return () => {
       document.body.style.overflow = '';

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useConnect } from 'wagmi';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords } from 'lucide-react';
 import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../services/audio';
@@ -178,7 +178,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
     { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
-    { label: 'CONFLICT_COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
+    { label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={14} /> },
     { label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> },
     { label: 'SDK_LAB', path: '/sdk-lab', icon: <Terminal size={14} /> },
   ];
