@@ -71,6 +71,7 @@ import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
 import SendTrust from './pages/SendTrust';
 import SDKPlayground from './pages/SDKPlayground';
+// import RankedList from './pages/RankedList';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 
@@ -121,6 +122,7 @@ const App: React.FC = () => {
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
           <Route path="/send-trust" element={<SendTrust />} />
+          {/* <Route path="/climb" element={<RankedList />} /> */}
           </Routes>
                 </Layout>
                 <EmailNotifyModal />

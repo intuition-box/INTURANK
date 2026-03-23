@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Database, Network, Info, Loader2, Zap, ArrowRight, ShieldCheck, Cpu, Camera, Search, ChevronRight, HelpCircle, UserPlus, CheckCircle2, Globe, Fingerprint, Trash2, Plus, Terminal as TerminalIcon, ExternalLink, RefreshCw, AlertTriangle, Coins } from 'lucide-react';
+import { X, User, Database, Network, Info, Loader2, Zap, ArrowRight, ShieldCheck, Cpu, Camera, Search, ChevronRight, HelpCircle, UserPlus, CheckCircle2, Globe, Fingerprint, Trash2, Plus, Terminal as TerminalIcon, ExternalLink, RefreshCw, AlertTriangle, Coins, Sparkles } from 'lucide-react';
 import { playClick, playHover, playSuccess } from '../services/audio';
-import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas, getMinClaimDeposit, getTotalTripleCreationCost } from '../services/web3';
-import { searchGlobalAgents } from '../services/graphql';
+import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas, getMinClaimDeposit, getTotalTripleCreationCost, checkProxyApproval, grantProxyApproval, markProxyApproved, calculateTripleId } from '../services/web3';
+import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { Account } from '../types';
 import { toast } from './Toast';
 import { formatEther } from 'viem';
@@ -18,9 +18,10 @@ type ModalView = 'IDLE' | 'CLAIM_OVERVIEW' | 'SELECTOR' | 'IDENTITY_CREATOR';
 type SelectionTarget = 'subject' | 'predicate' | 'object';
 type TxStatus = 'IDLE' | 'CALCULATING' | 'SIGNING' | 'BROADCASTING' | 'CONFIRMING' | 'SUCCESS' | 'ERROR';
 
-const TxTerminal = ({ status, txHash, error, onRetry, onClose }: { 
+const TxTerminal = ({ status, txHash, termId, error, onRetry, onClose }: { 
     status: TxStatus, 
     txHash?: string, 
+    termId?: string,
     error?: string, 
     onRetry: () => void,
     onClose: () => void
@@ -53,7 +54,12 @@ const TxTerminal = ({ status, txHash, error, onRetry, onClose }: {
                         {status === 'SIGNING' && <p className="text-[10px] text-slate-400 uppercase leading-relaxed">Awaiting biometric signature from neural link wallet...</p>}
                         {status === 'BROADCASTING' && <p className="text-[10px] text-slate-400 uppercase leading-relaxed">Transmitting packet to mainnet nodes. Waiting for inclusion...</p>}
                         {status === 'CONFIRMING' && <p className="text-[10px] text-slate-400 uppercase leading-relaxed animate-pulse">Packet received. Reconciling transaction on-chain [Confirming 1/1]...</p>}
-                        {status === 'SUCCESS' && <p className="text-[10px] text-intuition-success uppercase leading-relaxed font-black">Transaction verified. Identity established in global graph.</p>}
+                        {status === 'SUCCESS' && (
+                            <div className="space-y-2">
+                                <p className="text-[10px] text-intuition-success uppercase leading-relaxed font-black">Success! Claim Created & Protocol Synchronized.</p>
+                                <p className="text-[9px] text-slate-400 uppercase leading-relaxed">Your semantic link has been anchored on the Intuition graph.</p>
+                            </div>
+                        )}
                         {status === 'ERROR' && (
                             <div className="space-y-3">
                                 <p className="text-[10px] text-intuition-danger uppercase leading-relaxed font-black">Critical_Failure_Detected</p>
@@ -67,16 +73,27 @@ const TxTerminal = ({ status, txHash, error, onRetry, onClose }: {
                             <ExternalLink size={12} className="shrink-0 group-hover:text-intuition-primary" />
                         </a>
                     )}
-                    <div className="pt-4 flex gap-3">
-                        {status === 'ERROR' ? (
-                            <button onClick={onRetry} className="flex-1 py-4 bg-white text-black font-black uppercase text-[10px] tracking-widest clip-path-slant flex items-center justify-center gap-2">
-                                <RefreshCw size={14} /> Retry_Sequence
-                            </button>
-                        ) : status === 'SUCCESS' ? (
-                            <button onClick={onClose} className="flex-1 py-4 bg-intuition-success text-black font-black uppercase text-[10px] tracking-widest clip-path-slant">
-                                Terminate_Link
-                            </button>
-                        ) : null}
+                    <div className="pt-4 flex flex-col gap-3">
+                        {status === 'SUCCESS' && termId && (
+                            <a 
+                                href={`/markets/${termId}`}
+                                onClick={() => { playClick(); onClose(); }}
+                                className="w-full py-4 bg-intuition-primary text-black font-black uppercase text-[10px] tracking-widest clip-path-slant flex items-center justify-center gap-2 hover:bg-white transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
+                            >
+                                <ExternalLink size={14} /> View_Claim_Portal
+                            </a>
+                        )}
+                        <div className="flex gap-3 w-full">
+                            {status === 'ERROR' ? (
+                                <button onClick={onRetry} className="flex-1 py-4 bg-white text-black font-black uppercase text-[10px] tracking-widest clip-path-slant flex items-center justify-center gap-2">
+                                    <RefreshCw size={14} /> Retry_Sequence
+                                </button>
+                            ) : status === 'SUCCESS' ? (
+                                <button onClick={onClose} className="flex-1 py-4 bg-intuition-success text-black font-black uppercase text-[10px] tracking-widest clip-path-slant">
+                                    {termId ? 'Close_Terminal' : 'Terminate_Link'}
+                                </button>
+                            ) : null}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -90,6 +107,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [txStatus, setTxStatus] = useState<TxStatus>('IDLE');
   const [txHash, setTxHash] = useState<string | undefined>();
+  const [createdTermId, setCreatedTermId] = useState<string | undefined>();
   const [txError, setTxError] = useState<string | undefined>();
   const [wallet, setWallet] = useState<string | null>(null);
   const [walletBalance, setWalletBalance] = useState<string>('0.00');
@@ -100,7 +118,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
     subject: null as Account | null,
     predicate: null as Account | null,
     object: null as Account | null,
-    deposit: '0.1'
+    deposit: '0.5'
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -113,14 +131,14 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
     description: '',
     image: '',
     type: 'Person' as 'Person' | 'Organization' | 'Thing' | 'Account',
-    deposit: '0.1',
+    deposit: '0.5',
     links: [{ label: 'Website', url: '' }]
   });
 
   const [estCost, setEstCost] = useState<string | null>(null);
   const [estGas, setEstGas] = useState<string | null>(null);
   const [isEstimating, setIsEstimating] = useState(false);
-  const [minClaimDeposit, setMinClaimDeposit] = useState<string>('0.1');
+  const [minClaimDeposit, setMinClaimDeposit] = useState<string>('0.5');
   const [totalClaimCost, setTotalClaimCost] = useState<string | null>(null);
 
   useEffect(() => {
@@ -175,7 +193,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (view === 'CLAIM_OVERVIEW') {
-      getMinClaimDeposit().then(setMinClaimDeposit).catch(() => setMinClaimDeposit('0.1'));
+      getMinClaimDeposit().then(setMinClaimDeposit).catch(() => setMinClaimDeposit('0.5'));
     }
   }, [view]);
 
@@ -189,6 +207,19 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (view !== 'SELECTOR') return;
+    
+    if (searchTerm.length === 0) {
+      setIsSearching(true);
+      getAllAgents(12, 0).then(res => {
+        setSearchResults(res.items as unknown as Account[]);
+      }).catch(() => {
+        setSearchResults([]);
+      }).finally(() => {
+        setIsSearching(false);
+      });
+      return;
+    }
+
     if (searchTerm.length < 2) {
       setSearchResults([]);
       return;
@@ -197,7 +228,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
       setIsSearching(true);
       try {
         const results = await searchGlobalAgents(searchTerm);
-        setSearchResults(results);
+        setSearchResults(results as unknown as Account[]);
       } catch (e) {
         console.error("AGENT_SEARCH_CRASH:", e);
       } finally {
@@ -211,8 +242,9 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
     setView('IDLE');
     setTxStatus('IDLE');
     setTxHash(undefined);
+    setCreatedTermId(undefined);
     setTxError(undefined);
-    setTripleForm({ subject: null, predicate: null, object: null, deposit: '0.1' });
+    setTripleForm({ subject: null, predicate: null, object: null, deposit: '0.5' });
     setSearchTerm('');
     setSelectedInSearch(null);
     setEstCost(null);
@@ -222,7 +254,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
         description: '',
         image: '',
         type: 'Person',
-        deposit: '0.1',
+        deposit: '0.5',
         links: [{ label: 'Website', url: '' }]
     });
   };
@@ -259,20 +291,33 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
   };
 
   const handleCreateIdentity = async () => {
-    if (!wallet || !identityForm.name || !identityForm.deposit || parseFloat(identityForm.deposit) < 0.1) return;
-    const totalRequired = (parseFloat(estCost || '0.1') + parseFloat(identityForm.deposit) + parseFloat(estGas || '0.0008'));
+    if (!wallet || !identityForm.name || !identityForm.deposit || parseFloat(identityForm.deposit) < 0.5) return;
+    const totalRequired = (parseFloat(estCost || '0.5') + parseFloat(estGas || '0.0008'));
     if (parseFloat(walletBalance) < totalRequired) {
         toast.error(`INSUFFICIENT_FUNDS: Your ${CURRENCY_SYMBOL} balance (${parseFloat(walletBalance).toFixed(4)}) is lower than total ingress cost.`);
         return;
     }
     setTxStatus('CALCULATING');
+    // Ensure protocol approval before proceeding
+    try {
+        const approved = await checkProxyApproval(wallet);
+        if (!approved) {
+            setTxStatus('SIGNING');
+            await grantProxyApproval(wallet);
+            setTxStatus('CALCULATING');
+        }
+    } catch (e) {
+        console.error("PROXY_APPROVAL_FAILED:", e);
+    }
     setTxError(undefined);
     try {
       const metadata = { name: identityForm.name, description: identityForm.description, image: identityForm.image, type: identityForm.type, links: identityForm.links.filter(l => l.url) };
       await new Promise(r => setTimeout(r, 1000));
       setTxStatus('SIGNING');
-      const { hash } = await createIdentityAtom(metadata, identityForm.deposit, wallet);
+      // Uses createIdentityAtom which now handles Protocol Approval (handshake) automatically via FeeProxy
+      const { hash, termId } = await createIdentityAtom(metadata, identityForm.deposit, wallet);
       setTxHash(hash);
+      setCreatedTermId(termId);
       setTxStatus('BROADCASTING');
       await publicClient.waitForTransactionReceipt({ hash });
       setTxStatus('CONFIRMING');
@@ -298,8 +343,16 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
     try {
       await new Promise(r => setTimeout(r, 800));
       setTxStatus('SIGNING');
+      const approved = await checkProxyApproval(wallet);
+      if (!approved) await grantProxyApproval(wallet);
+      
+      // Calculate termId locally for immediate feedback link
+      const termId = calculateTripleId(tripleForm.subject.id, tripleForm.predicate.id, tripleForm.object.id);
+      
       const hash = await createSemanticTriple(tripleForm.subject.id, tripleForm.predicate.id, tripleForm.object.id, tripleForm.deposit, wallet);
+      markProxyApproved(wallet);
       setTxHash(hash);
+      setCreatedTermId(termId);
       setTxStatus('BROADCASTING');
       await publicClient.waitForTransactionReceipt({ hash });
       setTxStatus('CONFIRMING');
@@ -317,7 +370,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/95 backdrop-blur-2xl animate-in fade-in duration-300">
       <div className="relative w-full max-w-[95vw] sm:max-w-[850px] bg-[#0c0c0c] border border-white/10 rounded-[32px] shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden flex flex-col max-h-[90vh]">
-        <TxTerminal status={txStatus} txHash={txHash} error={txError} onRetry={() => setTxStatus('IDLE')} onClose={onClose} />
+        <TxTerminal status={txStatus} txHash={txHash} termId={createdTermId} error={txError} onRetry={() => setTxStatus('IDLE')} onClose={onClose} />
         <div className="flex items-center justify-between px-4 sm:px-6 md:px-8 py-4 md:py-6 border-b border-white/5 bg-black/20">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-white/5 rounded-2xl flex items-center justify-center text-white border border-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,0.05)]">
@@ -356,7 +409,78 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
                 </button>
             </div>
           )}
-          {/* [Remaining view logic for CLAIM_OVERVIEW, SELECTOR, IDENTITY_CREATOR remains consistent with updated curve usage] */}
+          {view === 'SELECTOR' && (
+            <div className="p-4 sm:p-6 md:p-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+               <div className="flex items-center gap-4">
+                  <button onClick={() => setView('CLAIM_OVERVIEW')} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-600 hover:text-white transition-colors"><ArrowRight size={16} className="rotate-180"/></button>
+                  <div className="relative flex-1 group">
+                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-intuition-primary transition-colors" size={18} />
+                     <input 
+                        autoFocus
+                        value={searchTerm} 
+                        onChange={(e) => setSearchTerm(e.target.value)} 
+                        placeholder={`Search for ${target}...`} 
+                        className="w-full bg-black border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white font-medium focus:border-intuition-primary transition-all outline-none"
+                     />
+                  </div>
+               </div>
+
+               <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {isSearching ? (
+                     <div className="flex flex-col items-center justify-center py-20 gap-4">
+                        <Loader2 className="animate-spin text-intuition-primary" size={32} />
+                        <span className="text-[10px] font-black font-mono text-slate-500 uppercase tracking-widest">Searching Protocol Graph...</span>
+                     </div>
+                  ) : (
+                    <>
+                      {!searchTerm && searchResults.length > 0 && (
+                        <div className="flex items-center gap-2 px-2 mb-4">
+                          <Sparkles size={12} className="text-intuition-primary" />
+                          <span className="text-[10px] font-black text-intuition-primary uppercase tracking-[0.2em]">Suggested Identities</span>
+                        </div>
+                      )}
+                      {searchResults.length > 0 ? (
+                        searchResults.map((a) => (
+                          <button 
+                              key={a.id} 
+                              onClick={() => { setSelectedInSearch(a); handleConfirmSelection(); }}
+                              className={`w-full flex items-center gap-4 p-4 rounded-2xl border transition-all text-left ${selectedInSearch?.id === a.id ? 'bg-intuition-primary/10 border-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.1)]' : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/[0.08]'}`}
+                          >
+                              <div className="w-12 h-12 bg-black border border-white/10 rounded-xl overflow-hidden shrink-0">
+                                {a.image ? <img src={a.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-700 bg-slate-900">{target === 'predicate' ? <Zap size={20}/> : <User size={20}/>}</div>}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-bold text-white truncate">{a.label}</div>
+                                <div className="text-[10px] text-slate-500 font-mono truncate">{a.id.slice(0, 18)}...</div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="text-[10px] font-black text-white uppercase">{target === 'predicate' ? 'Predicate' : 'Atom'}</div>
+                                <div className="text-[9px] text-slate-500 font-mono mt-1">{a.positionCount || 0} Holders</div>
+                              </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="text-center py-20">
+                           <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">No entries found in this sector.</div>
+                        </div>
+                      )}
+                    </>
+                  )}
+               </div>
+
+               <button 
+                  onClick={() => {
+                    playClick();
+                    setReturnTo('SELECTOR');
+                    setIdentityForm({ ...identityForm, name: searchTerm });
+                    setView('IDENTITY_CREATOR');
+                  }}
+                  className="w-full py-4 border-2 border-dashed border-white/10 rounded-2xl text-[10px] font-black text-slate-500 uppercase tracking-widest hover:border-intuition-primary/40 hover:text-white transition-all"
+               >
+                  Construct new identity (Not found?)
+               </button>
+            </div>
+          )}
           {view === 'CLAIM_OVERVIEW' && (
             <div className="p-4 sm:p-6 md:p-8 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex items-center gap-3 sm:gap-4">
@@ -429,7 +553,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
                      <div className="space-y-3">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1 inline-flex items-center gap-1">Initial Deposit (<CurrencySymbol size="sm" />)</label>
                         <div className="relative group">
-                          <input type="number" step="0.1" min="0.1" value={identityForm.deposit} onChange={e => setIdentityForm({...identityForm, deposit: e.target.value})} placeholder="0.1" className="w-full bg-black border border-white/10 rounded-2xl py-4 px-6 text-white font-medium focus:border-intuition-primary transition-all outline-none" />
+                          <input type="number" step="0.1" min="0.5" value={identityForm.deposit} onChange={e => setIdentityForm({...identityForm, deposit: e.target.value})} placeholder="0.5" className="w-full bg-black border border-white/10 rounded-2xl py-4 px-6 text-white font-medium focus:border-intuition-primary transition-all outline-none" />
                           <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-baseline"><CurrencySymbol size="md" className="text-slate-600 font-black" /></div>
                         </div>
                         <div className="mt-4 p-4 border-2 border-slate-900 bg-black clip-path-slant flex items-center justify-between">
@@ -437,10 +561,11 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
                                 <span className="text-[7px] font-black font-mono text-slate-500 uppercase tracking-widest">TOTAL_INGRESS_COMMIT</span>
                                 <span className="text-xl font-black text-white font-display inline-flex items-baseline gap-1">
                                     {(() => {
-                                        const c = parseFloat(estCost || '0.1');
-                                        const d = parseFloat(identityForm.deposit || '0');
+                                        const c = parseFloat(estCost || '0.5');
                                         const g = parseFloat(estGas || '0.0008');
-                                        const sum = c + d + g;
+                                        // Total includes atom cost (fee + deposit) + gas
+                                        // Since estCost already has buffer, we just sum them
+                                        const sum = c + g;
                                         return sum > 0 ? sum.toFixed(4) : '--';
                                     })()} <CurrencySymbol size="lg" />
                                 </span>

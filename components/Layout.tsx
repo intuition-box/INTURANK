@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useConnect } from 'wagmi';
 import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords } from 'lucide-react';
@@ -11,6 +11,7 @@ import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
 import { restoreFollowsFromServerIfEmpty } from '../services/follows';
+import ProfileBadgeWidget from './ProfileBadgeWidget';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -178,6 +179,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
     { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
+    { label: 'THE ARENA', path: '/climb', icon: <Activity size={14} /> },
     { label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={14} /> },
     { label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> },
     { label: 'SDK_LAB', path: '/sdk-lab', icon: <Terminal size={14} /> },
@@ -505,36 +507,30 @@ style={{
               <Plus size={16} /> NEW CLAIM
             </button>
 
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={walletAddress ? toggleDropdown : openModal}
-                onMouseEnter={playHover}
-                className="flex items-center gap-2 px-5 py-2.5 font-mono text-[10px] font-black tracking-[0.25em] rounded-full border bg-black/80 border-slate-700 text-white hover:border-intuition-primary hover:text-intuition-primary transition-all"
-              >
-                <Wallet
-                  size={14}
-                  className={walletAddress ? 'text-intuition-success' : 'text-intuition-primary'}
-                />
-                {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'UPLINK'}
-              </button>
-
-              {isWalletDropdownOpen && walletAddress && (
-                <div className="absolute right-0 mt-3 w-72 bg-black/95 border border-intuition-primary/40 shadow-[0_22px_60px_rgba(0,0,0,1)] z-[70] rounded-3xl animate-dropdown-panel-in backdrop-blur-xl">
-                  <div className="p-1 space-y-0.5 bg-[#080a12]/95 rounded-2xl">
-                    <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
-                      Terminal Access
-                    </div>
-                    <Link
-                      to="/account"
-                      onClick={() => {
-                        playClick();
-                        setIsWalletDropdownOpen(false);
-                      }}
-                      onMouseEnter={playHover}
-                      className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest"
-                    >
-                      <UserCircle size={14} /> PROFILE
-                    </Link>
+            <div className="relative">
+              {walletAddress ? (
+                <ProfileBadgeWidget
+                  address={walletAddress}
+                  isDropdownOpen={isWalletDropdownOpen}
+                  onToggleDropdown={toggleDropdown}
+                  dropdownRef={dropdownRef}
+                >
+                  <div className="absolute right-0 mt-3 w-72 bg-black/95 border border-intuition-primary/40 shadow-[0_22px_60px_rgba(0,0,0,1)] z-[70] rounded-3xl animate-dropdown-panel-in backdrop-blur-xl">
+                      <div className="p-1 space-y-0.5 bg-[#080a12]/95 rounded-2xl">
+                        <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
+                          Terminal Access
+                        </div>
+                        <Link
+                          to={`/profile/${walletAddress}`}
+                          onClick={() => {
+                            playClick();
+                            setIsWalletDropdownOpen(false);
+                          }}
+                          onMouseEnter={playHover}
+                          className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest"
+                        >
+                          <UserCircle size={14} /> PROFILE
+                        </Link>
                     <a
                       href={TRUST_SWAP_URL}
                       target="_blank"
@@ -604,6 +600,16 @@ style={{
                     </button>
                   </div>
                 </div>
+                </ProfileBadgeWidget>
+              ) : (
+                <button
+                  onClick={openModal}
+                  onMouseEnter={playHover}
+                  className="flex items-center gap-2 px-5 py-2.5 font-mono text-[10px] font-black tracking-[0.25em] rounded-full border bg-black/80 border-slate-700 text-white hover:border-intuition-primary hover:text-intuition-primary transition-all"
+                >
+                  <Wallet size={14} className="text-intuition-primary" />
+                  UPLINK
+                </button>
               )}
             </div>
           </div>

@@ -29,6 +29,8 @@ import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShare
 import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID, DISTRUST_ATOM_ID } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { Link } from 'react-router-dom';
+import html2canvas from 'html2canvas';
+import logo from '../logo.png';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
@@ -83,6 +85,9 @@ const Portfolio: React.FC = () => {
   const [myCreatedLoading, setMyCreatedLoading] = useState(false);
   const [holdingsPage, setHoldingsPage] = useState(1);
   const isRefreshingRef = useRef(false);
+  const [sharePosition, setSharePosition] = useState<any | null>(null);
+  const shareCardRef = useRef<HTMLDivElement | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const HOLDINGS_PER_PAGE = 10;
 
@@ -235,7 +240,18 @@ const Portfolio: React.FC = () => {
             aggregatedValue += value;
             aggregatedPnL += profit;
             const duplicate = activePositions.some((x: any) => x.id === id && (x.curveId ?? 1) === (curveId ?? 1));
-            if (!duplicate) activePositions.push({ id, curveId, shares: sharesNum, value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
+            if (!duplicate) {
+              activePositions.push({
+                id,
+                curveId,
+                shares: sharesNum,
+                value,
+                pnl: pnlPercent,
+                profit,
+                atom: { label, id, image, type },
+                firstDepositTimestamp,
+              });
+            }
           } catch (e) { continue; }
         }
       } else {
@@ -302,7 +318,18 @@ const Portfolio: React.FC = () => {
               aggregatedPnL += profit;
 
               const duplicate = activePositions.some((x: any) => x.id === id && (x.curveId ?? 1) === (curveId ?? 1));
-              if (!duplicate) activePositions.push({ id, curveId, shares: sharesNum, value, pnl: pnlPercent, atom: { label, id, image, type }, firstDepositTimestamp });
+              if (!duplicate) {
+                activePositions.push({
+                  id,
+                  curveId,
+                  shares: sharesNum,
+                  value,
+                  pnl: pnlPercent,
+                  profit,
+                  atom: { label, id, image, type },
+                  firstDepositTimestamp,
+                });
+              }
           } catch (e) { continue; }
       }
       }
@@ -451,6 +478,52 @@ const Portfolio: React.FC = () => {
     playClick();
   };
 
+  const closeShareModal = () => {
+    setSharePosition(null);
+  };
+
+  const handleDownloadShareCard = async () => {
+    if (!shareCardRef.current || !sharePosition) return;
+    try {
+      setSharing(true);
+      const canvas = await html2canvas(shareCardRef.current, {
+        backgroundColor: '#020308',
+        scale: window.devicePixelRatio || 2,
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `intuition-pnl-${sharePosition.id.slice(0, 8)}.png`;
+      a.click();
+    } catch (e) {
+      console.error('SHARE_CARD_DOWNLOAD_FAILED', e);
+      toast.error('Failed to export image');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleCopyXText = async () => {
+    if (!sharePosition) return;
+    const pct = (sharePosition.pnl ?? 0).toFixed(2);
+    const profit = typeof sharePosition.profit === 'number' ? sharePosition.profit.toFixed(4) : '0.0000';
+    const text = [
+      `My PnL on Intuition: ${pct}% (${profit} ${CURRENCY_SYMBOL})`,
+      ``,
+      `Asset: ${sharePosition.atom?.label || 'Unknown'}`,
+      `Curve: ${getCurveLabel(sharePosition.curveId ?? 1)}`,
+      `Magnitude: ${formatDisplayedShares(sharePosition.shares)} PORTAL_UNITS`,
+      ``,
+      `Shared via IntuRank on the Intuition Network.`,
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copied X post text');
+    } catch {
+      toast.error('Failed to copy text');
+    }
+  };
+
   if (!account) return (
     <div className="min-h-[90vh] flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-mono px-4">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,243,255,0.03)_0%,transparent_70%)] pointer-events-none"></div>
@@ -515,6 +588,145 @@ const Portfolio: React.FC = () => {
         </div>
       </div>
       </div>
+
+      {sharePosition && (
+        <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/80 backdrop-blur-md px-4 pt-20 sm:pt-28">
+          <div className="w-full max-w-xl bg-[#020308] border border-white/10 rounded-[32px] shadow-[0_0_120px_rgba(0,0,0,1)] p-6 sm:p-8 relative overflow-hidden">
+            <div className="pointer-events-none absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_top_left,rgba(0,243,255,0.16),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(250,204,21,0.18),transparent_55%)]" />
+            <button
+              type="button"
+              onClick={() => { playClick(); closeShareModal(); }}
+              className="absolute top-3 right-3 text-slate-500 hover:text-white text-xs font-mono z-20"
+            >
+              ✕
+            </button>
+
+            <div className="relative z-20 mb-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-black/80 border border-white/10 flex items-center justify-center overflow-hidden">
+                  <img src={logo} alt="IntuRank" className="w-7 h-7 object-contain" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.35em] mb-0.5">
+                    Position_PnL_Sharecard
+                  </div>
+                  <div className="text-[11px] sm:text-xs text-slate-400 font-mono uppercase tracking-[0.24em]">
+                    Verified on Intuition Mainnet
+                  </div>
+                </div>
+              </div>
+              <div className="hidden sm:flex flex-col items-end text-[9px] text-slate-500 font-mono uppercase tracking-[0.24em]">
+                <span>IntuRank Protocol</span>
+                <span className="text-[10px] text-intuition-primary mt-0.5">INTUITION.NETWORK</span>
+              </div>
+            </div>
+
+            <div
+              ref={shareCardRef}
+              className="bg-[#05070d]/95 border border-white/10 rounded-3xl p-6 sm:p-8 mb-6 shadow-[0_0_70px_rgba(0,0,0,1)] max-w-full"
+              style={{ width: 560, maxWidth: '100%' }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-black/80 border border-white/15 flex items-center justify-center overflow-hidden shrink-0">
+                    {sharePosition.atom?.image ? (
+                      <img src={sharePosition.atom.image} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-5 h-5 text-slate-500" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex flex-col gap-1">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-[0.24em]">
+                      Intuition Network · IntuRank
+                    </div>
+                    <div className="text-base sm:text-lg font-black text-white uppercase tracking-tight leading-tight truncate" title={sharePosition.atom?.label}>
+                      {sharePosition.atom?.label}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate">
+                      UID: {sharePosition.id.slice(0, 12)}… · Curve: {getCurveLabel(sharePosition.curveId ?? 1)}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right min-w-[120px]">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-[0.24em] mb-1">
+                    PnL
+                  </div>
+                  <div
+                    className={`text-2xl sm:text-3xl font-black tabular-nums tracking-tight ${
+                      (sharePosition.pnl ?? 0) >= 0 ? 'text-intuition-success' : 'text-intuition-danger'
+                    }`}
+                  >
+                    {(sharePosition.pnl ?? 0) >= 0 ? '+' : ''}
+                    {(sharePosition.pnl ?? 0).toFixed(2)}%
+                  </div>
+                  {typeof sharePosition.profit === 'number' && (
+                    <div className="text-[10px] text-slate-400 font-mono mt-1 flex items-baseline justify-end gap-1">
+                      <span className="uppercase tracking-[0.18em] text-slate-500 mr-1">Realized</span>
+                      <span>{sharePosition.profit >= 0 ? '+' : ''}{sharePosition.profit.toFixed(4)}</span>
+                      <CurrencySymbol size="sm" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-3 gap-4 text-[10px] sm:text-xs font-mono text-slate-300">
+                <div>
+                  <div className="uppercase tracking-[0.25em] text-slate-500 mb-1">
+                    Magnitude
+                  </div>
+                  <div className="text-white font-black tabular-nums">
+                    {formatDisplayedShares(sharePosition.shares)}
+                  </div>
+                  <div className="text-[9px] text-slate-500 uppercase mt-0.5">
+                    PORTAL_UNITS
+                  </div>
+                </div>
+                <div>
+                  <div className="uppercase tracking-[0.25em] text-slate-500 mb-1">
+                    Net_Valuation
+                  </div>
+                  <div className="text-white font-black tabular-nums inline-flex items-baseline gap-1">
+                    <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
+                    <span>{formatMarketValue(sharePosition.value)}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="uppercase tracking-[0.25em] text-slate-500 mb-1">
+                    Identity_Type
+                  </div>
+                  <div className="text-white font-black">
+                    {sharePosition.atom?.type || 'ATOM'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between text-[9px] text-slate-500 font-mono uppercase tracking-[0.24em]">
+                <span>Verified on Intuition Mainnet</span>
+                <span>inturank.intuition.box</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+              <button
+                type="button"
+                onClick={() => { playClick(); handleDownloadShareCard(); }}
+                disabled={sharing}
+                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-intuition-primary text-black font-black text-[10px] sm:text-xs uppercase tracking-[0.25em] hover:bg-white disabled:opacity-60 transition-colors"
+              >
+                {sharing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                Download image
+              </button>
+              <button
+                type="button"
+                onClick={() => { playClick(); handleCopyXText(); }}
+                className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-slate-600 text-slate-200 font-black text-[10px] sm:text-xs uppercase tracking-[0.25em] hover:border-intuition-primary hover:text-intuition-primary transition-colors"
+              >
+                Copy X post text
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="w-full max-w-full mx-auto grid grid-cols-1 gap-6 sm:gap-8 lg:gap-10 min-w-0">
         {/* Row 1: Ledger + Transmission History (left) beside Equity Vol + Asset Exposure (right) */}
@@ -592,14 +804,18 @@ const Portfolio: React.FC = () => {
                     <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 overflow-hidden">Magnitude</th>
                     <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 overflow-hidden">Net_Valuation</th>
                     <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 text-right overflow-hidden">PnL</th>
-                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 text-right overflow-hidden">Exit</th>
+                    <th className="px-2 sm:px-3 md:px-4 xl:px-5 py-3 sm:py-4 md:py-5 text-right overflow-hidden">Exit / Share</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {sortedPositions.length > 0 ? paginatedPositions.map((pos) => {
                     const isOpposition = pos.atom.label.includes('OPPOSING');
                     return (
-                      <tr key={`${pos.id}-${pos.curveId ?? 1}`} className="hover:bg-white/5 transition-all group">
+                      <tr
+                        key={`${pos.id}-${pos.curveId ?? 1}`}
+                        className="hover:bg-white/5 transition-all group cursor-pointer"
+                        onMouseEnter={() => setSelectedPosition(pos)}
+                      >
                         <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 min-w-0 overflow-hidden align-top">
                           <Link to={`/markets/${pos.id}`} className="flex items-center gap-2 sm:gap-4 min-w-0">
                             <div className="w-8 h-8 sm:w-9 sm:h-9 xl:w-11 xl:h-11 bg-slate-900 border border-slate-800 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shrink-0">
@@ -633,14 +849,24 @@ const Portfolio: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-2 sm:px-3 md:px-4 xl:px-5 py-4 sm:py-5 md:py-6 text-right overflow-hidden align-top">
-                          <Link
-                            to={`/markets/${pos.id}`}
-                            onClick={() => { playClick(); }}
-                            onMouseEnter={playHover}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-full transition-all whitespace-nowrap shrink-0"
-                          >
-                            <LogOut size={12} className="sm:w-3.5 sm:h-3.5 shrink-0" /> Exit
-                          </Link>
+                          <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                            <Link
+                              to={`/markets/${pos.id}`}
+                              onClick={() => { playClick(); }}
+                              onMouseEnter={playHover}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 border border-intuition-danger/50 text-intuition-danger hover:bg-intuition-danger/10 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-full transition-all whitespace-nowrap shrink-0"
+                            >
+                              <LogOut size={12} className="sm:w-3.5 sm:h-3.5 shrink-0" /> Exit
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => { playClick(); setSharePosition(pos); }}
+                              onMouseEnter={playHover}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 border border-intuition-primary/50 text-intuition-primary hover:bg-intuition-primary/10 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-full transition-all whitespace-nowrap shrink-0"
+                            >
+                              <Sparkles size={12} className="sm:w-3.5 sm:h-3.5 shrink-0" /> Share
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

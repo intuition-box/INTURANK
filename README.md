@@ -87,7 +87,7 @@ This app also exposes a thin wrapper around the official Intuition TypeScript SD
 
 Key helpers:
 
-- **`createStringAtom(text, deposit?)`**: Creates an atom from a plain string on Intuition Mainnet, optionally with a TRUST deposit (decimal string, e.g. `"0.01"`).
+- **`createStringAtom(text, deposit?)`**: Creates an atom from a plain string on Intuition Mainnet, optionally with a TRUST deposit (decimal string, e.g. `"0.5"`).
 - **`createThingAtom(thing, deposit)`**: Creates a rich JSON‑LD style "Thing" atom using the SDK’s IPFS/Pinata flow.
 - **`createSingleTriple(subjectId, predicateId, objectId, deposit)`**: Creates one `(subject, predicate, object)` triple with a TRUST deposit.
 - **`fetchAtomDetails(atomId)`**: Fetches full atom metadata from the Intuition API.

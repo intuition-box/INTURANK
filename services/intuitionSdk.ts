@@ -1,4 +1,4 @@
-import { createWalletClient, custom, parseEther, type Hex } from 'viem';
+import { createWalletClient, custom, parseEther, type Hex, getAddress } from 'viem';
 import type { WriteConfig, ReadConfig, GlobalSearchOptions, SemanticSearchOptions } from '@0xintuition/sdk';
 import {
   createAtomFromString,
@@ -10,7 +10,8 @@ import {
   intuitionMainnet,
   getMultiVaultAddressFromChainId,
 } from '@0xintuition/sdk';
-import { publicClient, intuitionChain, getConnectedAccount, getProvider } from './web3';
+import { publicClient, intuitionChain, getConnectedAccount, getProvider, padTermId, parseProtocolError } from './web3';
+import { MULTI_VAULT_ABI, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID } from '../constants';
 
 /**
  * MultiVault address resolved via the official Intuition SDK.
@@ -85,14 +86,14 @@ export const createStringAtom = async (
  * This uses the Intuition SDK's IPFS + Pinata integration behind the scenes.
  */
 export const createThingAtom = async (
-  thing: Record<string, unknown>,
+  thing: { name: string; description?: string; image?: string; url?: string },
   deposit: string,
 ) => {
   const config = await getWriteConfig();
   if (!config) throw new Error('Wallet not connected or provider unavailable');
 
   const depositAmount = parseEther(deposit);
-  return createAtomFromThing(config, thing, depositAmount);
+  return createAtomFromThing(config, thing as any, depositAmount);
 };
 
 /**
@@ -111,16 +112,61 @@ export const createSingleTriple = async (
   if (!config) throw new Error('Wallet not connected or provider unavailable');
 
   const depositAmount = parseEther(deposit);
+  const sId = padTermId(subjectId);
+  const pId = padTermId(predicateId);
+  const oId = padTermId(objectId);
 
-  return createTripleStatement(config, {
-    args: [
-      [subjectId],
-      [predicateId],
-      [objectId],
-      [depositAmount],
-    ],
-    value: depositAmount,
-  });
+  // 1. Get base triple cost from MultiVault
+  let tripleCost: bigint;
+  try {
+      tripleCost = await publicClient.readContract({
+          address: MULTI_VAULT_ADDRESS,
+          abi: MULTI_VAULT_ABI,
+          functionName: 'getTripleCost',
+      }) as bigint;
+  } catch {
+      tripleCost = parseEther('0.15');
+  }
+  if (tripleCost < parseEther('0.15')) tripleCost = parseEther('0.15');
+
+  // 2. Get total cost via FeeProxy (required for direct native token funding)
+  let totalCost: bigint;
+  try {
+      totalCost = await publicClient.readContract({
+          address: FEE_PROXY_ADDRESS as `0x${string}`,
+          abi: FEE_PROXY_ABI,
+          functionName: 'getTotalCreationCost',
+          args: [1n, depositAmount, tripleCost],
+      } as any) as bigint;
+  } catch (e) {
+      const raw = tripleCost + depositAmount;
+      // Use 15% fallback fee to be safe if contract call fails
+      totalCost = (raw * 115n) / 100n;
+  }
+
+  // Add 10% safety buffer to satisfy proxy fee checks and handle fluctuations
+  const valueToSend = (totalCost * 110n) / 100n;
+
+  // 3. Create triple via FeeProxy to support direct funding from wallet
+  try {
+      const account = getAddress(config.walletClient.account?.address as string);
+      const { request } = await publicClient.simulateContract({
+          address: FEE_PROXY_ADDRESS as `0x${string}`,
+          abi: FEE_PROXY_ABI,
+          functionName: 'createTriples',
+          account,
+          args: [account, [sId], [pId], [oId], [depositAmount], BigInt(LINEAR_CURVE_ID)],
+          value: valueToSend,
+      } as any);
+
+      return config.walletClient.writeContract(request as any);
+  } catch (error: any) {
+      const parsed = parseProtocolError(error);
+      if (parsed.includes("REVERTED") || parsed.includes("BALANCE") || parsed.includes("FEE")) {
+          throw new Error(parsed);
+      }
+      throw error;
+  }
 };
 
 /**
@@ -136,7 +182,7 @@ export const fetchAtomDetails = async (atomId: Hex) => {
  */
 export const searchIntuition = async (
   query: string,
-  options?: GlobalSearchOptions,
+  options: GlobalSearchOptions = {},
 ) => {
   return globalSearch(query, options);
 };
@@ -147,7 +193,7 @@ export const searchIntuition = async (
  */
 export const semanticSearchIntuition = async (
   query: string,
-  options?: SemanticSearchOptions,
+  options: SemanticSearchOptions = { limit: 10 },
 ) => {
   return semanticSearch(query, options);
 };

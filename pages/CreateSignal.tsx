@@ -4,9 +4,9 @@ import { useAccount } from 'wagmi';
 import { ArrowLeft, Terminal, Zap, Loader2, Database, GitBranch, Search, Camera, CheckCircle, ExternalLink, UserPlus, FileText, Sparkles, Info } from 'lucide-react';
 import { Hex } from 'viem';
 import { createStringAtom } from '../services/intuitionSdk';
-import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, checkProxyApproval, grantProxyApproval, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost } from '../services/web3';
+import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, checkProxyApproval, grantProxyApproval, markProxyApproved, hasCachedProxyApproval, validateTripleAtomsExist, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost, calculateTripleId } from '../services/web3';
 import { uploadImageToIpfs, ensureIpfsUploadConfigured } from '../services/ipfs';
-import { searchGlobalAgents } from '../services/graphql';
+import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { formatEther } from 'viem';
@@ -38,7 +38,7 @@ const CreateSignal: React.FC = () => {
   // Manual CONSTRUCT_ATOM
   const [nodeAlias, setNodeAlias] = useState('');
   const [descriptionPayload, setDescriptionPayload] = useState('');
-  const [atomDeposit, setAtomDeposit] = useState('0.1');
+  const [atomDeposit, setAtomDeposit] = useState('0.5');
   const [imageUrl, setImageUrl] = useState('');
   const [creatingAtom, setCreatingAtom] = useState(false);
 
@@ -49,7 +49,7 @@ const CreateSignal: React.FC = () => {
   const [predicateLabel, setPredicateLabel] = useState('');
   const [objectId, setObjectId] = useState('');
   const [objectLabel, setObjectLabel] = useState('');
-  const [synapseDeposit, setSynapseDeposit] = useState('0.1');
+  const [synapseDeposit, setSynapseDeposit] = useState('0.5');
   const [creatingSynapse, setCreatingSynapse] = useState(false);
   const [nodeSearchOpen, setNodeSearchOpen] = useState<'subject' | 'predicate' | 'object' | null>(null);
   const [nodeSearchQuery, setNodeSearchQuery] = useState('');
@@ -59,12 +59,15 @@ const CreateSignal: React.FC = () => {
   const [returnToSynapseSlot, setReturnToSynapseSlot] = useState<'subject' | 'predicate' | 'object' | null>(null);
   const [claimReviewApproved, setClaimReviewApproved] = useState<boolean | null>(null);
   const [enablingProtocol, setEnablingProtocol] = useState(false);
-  const [minClaimDeposit, setMinClaimDeposit] = useState('0.1');
+  const [minClaimDeposit, setMinClaimDeposit] = useState('0.5');
   const [totalClaimCost, setTotalClaimCost] = useState<string | null>(null);
   const [tripleFee, setTripleFee] = useState<string | null>(null);
   const [totalAtomCost, setTotalAtomCost] = useState<string | null>(null);
   const [atomFee, setAtomFee] = useState<string | null>(null);
   const [identityReviewApproved, setIdentityReviewApproved] = useState<boolean | null>(null);
+  const [claimReviewAtomsValid, setClaimReviewAtomsValid] = useState<boolean | null>(null);
+  const [claimReviewMissingAtoms, setClaimReviewMissingAtoms] = useState<string[]>([]);
+  const [claimReviewBypassValidation, setClaimReviewBypassValidation] = useState(false);
   const nodeSearchInputRef = useRef<HTMLInputElement>(null);
   const prevNodeSearchingRef = useRef(false);
 
@@ -141,9 +144,10 @@ const CreateSignal: React.FC = () => {
         ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
       };
 
-      const { termId } = await createIdentityAtom(metadata, atomDeposit || '0.1', account);
+      const { termId } = await createIdentityAtom(metadata, atomDeposit || '0.5', account);
+      markProxyApproved(account);
       setImageFile(null);
-      if (termId) setLastTermId(termId);
+      if (termId) setLastTermId(termId as Hex);
       if (returnToSynapseSlot) {
         const id = termId as string;
         const label = nodeAlias.trim() || 'New atom';
@@ -168,8 +172,8 @@ const CreateSignal: React.FC = () => {
       toast.error('CONNECT_ALL_NODES');
       return;
     }
-    const depositAmount = synapseDeposit || '0.1';
-    if (parseFloat(depositAmount) < parseFloat(minClaimDeposit || '0.1')) {
+    const depositAmount = synapseDeposit || '0.5';
+    if (parseFloat(depositAmount) < parseFloat(minClaimDeposit || '0.5')) {
       toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}.`);
       return;
     }
@@ -178,8 +182,11 @@ const CreateSignal: React.FC = () => {
       setCreatingSynapse(true);
       const approved = await checkProxyApproval(account);
       if (!approved) await grantProxyApproval(account);
+      
+      const termId = calculateTripleId(subjectId, predicateId, objectId);
       await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
-      setSuccessModal({ termId: null, type: 'synapse' });
+      markProxyApproved(account);
+      setSuccessModal({ termId: termId as Hex, type: 'synapse' });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');
@@ -196,16 +203,16 @@ const CreateSignal: React.FC = () => {
 
   const runNodeSearch = async () => {
     const q = nodeSearchQuery.trim();
-    if (!q) {
-      setNodeSearchResults([]);
-      setNodeSearchError(null);
-      return;
-    }
     setNodeSearchError(null);
     setNodeSearching(true);
     try {
-      const res = await searchGlobalAgents(q);
-      setNodeSearchResults(Array.isArray(res) ? res : []);
+      if (!q) {
+        const res = await getAllAgents(12, 0);
+        setNodeSearchResults(Array.isArray(res.items) ? res.items : []);
+      } else {
+        const res = await searchGlobalAgents(q);
+        setNodeSearchResults(Array.isArray(res) ? res : []);
+      }
     } catch (e: any) {
       setNodeSearchResults([]);
       setNodeSearchError(e?.message || 'Search failed');
@@ -219,8 +226,7 @@ const CreateSignal: React.FC = () => {
     if (!nodeSearchOpen) return;
     const q = nodeSearchQuery.trim();
     if (!q) {
-      setNodeSearchResults([]);
-      setNodeSearchError(null);
+      runNodeSearch();
       return;
     }
     const t = setTimeout(() => { runNodeSearch(); }, 320);
@@ -299,7 +305,7 @@ const CreateSignal: React.FC = () => {
 
   useEffect(() => {
     if (view === 'claim' || view === 'claim_review' || view === 'establish_synapse') {
-      getMinClaimDeposit().then(setMinClaimDeposit).catch(() => setMinClaimDeposit('0.1'));
+      getMinClaimDeposit().then(setMinClaimDeposit).catch(() => setMinClaimDeposit('0.5'));
     }
   }, [view]);
 
@@ -319,7 +325,7 @@ const CreateSignal: React.FC = () => {
       setAtomFee(null);
       return;
     }
-    const deposit = atomDeposit || '0.1';
+    const deposit = atomDeposit || '0.5';
     const isAccount = identitySchemaType === 'Account';
     const metadata = isAccount
       ? { type: 'Account', address: accountAddress.trim(), chain: accountChain }
@@ -334,20 +340,21 @@ const CreateSignal: React.FC = () => {
     if (!isAccount && !nodeAlias.trim()) return;
     getAtomCreationCost(metadata, deposit)
       .then((costBigInt) => {
-        const depositBigInt = BigInt(Math.floor(parseFloat(deposit) * 1e18));
-        const feeBigInt = costBigInt > depositBigInt ? costBigInt - depositBigInt : 0n;
         setTotalAtomCost(formatEther(costBigInt));
-        setAtomFee(formatEther(feeBigInt));
+        // Show the standard 0.15 base fee in the "Creation cost" label to match claim UI
+        setAtomFee('0.150000');
       })
       .catch(() => {
         const dep = parseFloat(deposit);
-        const estFee = dep * 0.05;
-        setTotalAtomCost((dep + estFee).toFixed(6));
-        setAtomFee(estFee.toFixed(6));
+        const baseFee = 0.15;
+        const raw = baseFee + dep;
+        const total = raw * 1.15; // 15% proxy fee fallback
+        setTotalAtomCost(total.toFixed(6));
+        setAtomFee('0.150000');
       });
   }, [view, atomDeposit, identitySchemaType, accountAddress, accountChain, nodeAlias, descriptionPayload, imageUrl, identityUrl]);
 
-  // Check protocol approval when on claim review; use wagmi address to stay in sync
+  // Validate proxy approval for claims
   useEffect(() => {
     if (view !== 'claim_review') return;
     const acc = wagmiAddress ?? null;
@@ -355,12 +362,36 @@ const CreateSignal: React.FC = () => {
       setClaimReviewApproved(null);
       return;
     }
+    if (hasCachedProxyApproval(acc)) {
+      setClaimReviewApproved(true);
+      return;
+    }
     let cancelled = false;
-    checkProxyApproval(acc).then((v) => {
+    const run = async () => {
+      const v = await checkProxyApproval(acc);
       if (!cancelled) setClaimReviewApproved(v);
-    });
+    };
+    run();
     return () => { cancelled = true; };
   }, [view, wagmiAddress]);
+
+  // Validate atoms exist on-chain when on claim review
+  useEffect(() => {
+    if (view !== 'claim_review' || !subjectId || !predicateId || !objectId) {
+      setClaimReviewAtomsValid(null);
+      setClaimReviewMissingAtoms([]);
+      setClaimReviewBypassValidation(false);
+      return;
+    }
+    let cancelled = false;
+    validateTripleAtomsExist(subjectId, predicateId, objectId).then(({ ok, missing }) => {
+      if (!cancelled) {
+        setClaimReviewAtomsValid(ok);
+        setClaimReviewMissingAtoms(missing);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [view, subjectId, predicateId, objectId]);
 
   useEffect(() => {
     if (view !== 'identity_review') return;
@@ -369,10 +400,16 @@ const CreateSignal: React.FC = () => {
       setIdentityReviewApproved(null);
       return;
     }
+    if (hasCachedProxyApproval(acc)) {
+      setIdentityReviewApproved(true);
+      return;
+    }
     let cancelled = false;
-    checkProxyApproval(acc).then((v) => {
+    const run = async () => {
+      const v = await checkProxyApproval(acc);
       if (!cancelled) setIdentityReviewApproved(v);
-    });
+    };
+    run();
     return () => { cancelled = true; };
   }, [view, wagmiAddress]);
 
@@ -384,12 +421,19 @@ const CreateSignal: React.FC = () => {
       return;
     }
     if (!isAccount && !nodeAlias.trim()) return;
+    if (identityReviewApproved !== true) {
+      toast.error('Enable protocol first, then Submit.');
+      return;
+    }
     try {
       const account = await ensureWallet();
       setCreatingAtom(true);
+      
+      // Ensure protocol approval before proceeding
       const approved = await checkProxyApproval(account);
       if (!approved) await grantProxyApproval(account);
-      const deposit = atomDeposit || '0.1';
+
+      const deposit = atomDeposit || '0.5';
       const metadata = isAccount
         ? { type: 'Account', address: accountAddress.trim(), chain: accountChain }
         : {
@@ -400,6 +444,7 @@ const CreateSignal: React.FC = () => {
             ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
           };
       const { termId } = await createIdentityAtom(metadata, deposit, account);
+      markProxyApproved(account);
       setImageFile(null);
       if (termId) setLastTermId(termId as Hex);
       setSuccessModal({ termId: termId ?? null, type: 'atom' });
@@ -415,21 +460,26 @@ const CreateSignal: React.FC = () => {
   const handleSubmitClaimFromReview = async () => {
     playClick();
     if (!subjectId || !predicateId || !objectId) return;
-    const depositAmount = synapseDeposit || '0.1';
-    const minDep = parseFloat(minClaimDeposit || '0.1');
+    const depositAmount = synapseDeposit || '0.5';
+    const minDep = parseFloat(minClaimDeposit || '0.5');
     if (parseFloat(depositAmount) < minDep) {
       toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}. You entered ${depositAmount}.`);
+      return;
+    }
+    if (claimReviewApproved !== true) {
+      toast.error('Enable protocol first, then Submit.');
       return;
     }
     try {
       const account = await ensureWallet();
       setCreatingSynapse(true);
       const approved = await checkProxyApproval(account);
-      if (!approved) {
-        await grantProxyApproval(account);
-      }
-      await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
-      setSuccessModal({ termId: null, type: 'synapse' });
+      if (!approved) await grantProxyApproval(account);
+
+      const termId = calculateTripleId(subjectId, predicateId, objectId);
+      await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account, undefined, claimReviewBypassValidation);
+      markProxyApproved(account);
+      setSuccessModal({ termId: termId as Hex, type: 'synapse' });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');
@@ -498,20 +548,20 @@ const CreateSignal: React.FC = () => {
                 <CheckCircle size={36} className="text-intuition-success" />
               </div>
               <div>
-                <h2 id="success-modal-title" className="text-lg font-black text-white uppercase tracking-widest mb-1">Transaction confirmed</h2>
+                <h2 id="success-modal-title" className="text-lg font-black text-white uppercase tracking-widest mb-1">Success! Transaction Confirmed</h2>
                 <p className="text-[10px] font-black text-intuition-success uppercase tracking-[0.2em]">
-                  {successModal.type === 'signal' && 'Claim created'}
-                  {successModal.type === 'atom' && 'ATOM_ESTABLISHED'}
-                  {successModal.type === 'synapse' && 'SYNAPSE_LINKED'}
+                  {successModal.type === 'signal' && 'Claim Created! Check the protocol graph.'}
+                  {successModal.type === 'atom' && 'Identity Established! Explore your node.'}
+                  {successModal.type === 'synapse' && 'Synapse Linked! View the claim portal.'}
                 </p>
               </div>
               {successModal.termId && (
                 <Link
                   to={`/markets/${successModal.termId}`}
                   onClick={() => { playClick(); setSuccessModal(null); }}
-                  className="flex items-center gap-2 px-6 py-3 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest transition-colors clip-path-slant"
+                  className="flex items-center gap-2 px-6 py-3 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest transition-colors clip-path-slant shadow-[0_0_20px_rgba(0,243,255,0.3)]"
                 >
-                  <ExternalLink size={14} /> Open claim
+                  <ExternalLink size={14} /> {successModal.type === 'atom' ? 'Explore node' : 'View claim'}
                 </Link>
               )}
               <button
@@ -719,7 +769,7 @@ const CreateSignal: React.FC = () => {
                 </div>
                 {atomFee != null && parseFloat(atomFee) > 0 && (
                   <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-400">Protocol fee (5%)</span>
+                    <span className="text-slate-400">Creation cost</span>
                     <span className="text-intuition-primary font-mono inline-flex items-baseline gap-1">{atomFee} <CurrencySymbol size="md" className="text-intuition-primary/90" /></span>
                   </div>
                 )}
@@ -734,8 +784,13 @@ const CreateSignal: React.FC = () => {
                 {identityReviewApproved === false && (
                   <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/40 rounded">
                     <Info size={14} className="text-amber-400 shrink-0" />
-                    <p className="text-[10px] text-amber-200">Approve the IntuRank protocol to charge the 5% fee. You will be prompted to sign an approval.</p>
-                    <button type="button" onClick={async () => { const acc = await ensureWallet(); setEnablingProtocol(true); await grantProxyApproval(acc); setIdentityReviewApproved(true); setEnablingProtocol(false); }} disabled={enablingProtocol} className="ml-auto py-2 px-4 bg-amber-500 text-black font-black text-[9px] uppercase tracking-widest rounded">
+                    <p className="text-[10px] text-amber-200">
+                      IntuRank needs you to approve its proxy so it can deposit in your name. This is a one-time approval.{' '}
+                      <a href="https://docs.intuition.systems" target="_blank" rel="noopener noreferrer" className="text-intuition-primary hover:underline inline-flex items-center gap-1" onClick={playClick}>
+                        Read more <ExternalLink size={10} />
+                      </a>
+                    </p>
+                    <button type="button" onClick={async (e) => { e.preventDefault(); e.stopPropagation(); playClick(); try { const acc = await ensureWallet(); setEnablingProtocol(true); await grantProxyApproval(acc); setIdentityReviewApproved(true); toast.success('Protocol enabled.'); } catch (err: any) { toast.error(err?.message || err?.error?.message || 'Enable failed.'); } finally { setEnablingProtocol(false); } }} disabled={enablingProtocol} className="ml-auto py-2 px-4 bg-amber-500 text-black font-black text-[9px] uppercase tracking-widest rounded">
                       {enablingProtocol ? 'Approving…' : 'Approve'}
                     </button>
                   </div>
@@ -748,7 +803,7 @@ const CreateSignal: React.FC = () => {
                   <button type="button" onClick={() => setView('identity_manual')} className="flex-1 py-3 border border-intuition-primary/50 text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant hover:shadow-neon-blue transition-all">
                     Back
                   </button>
-                  <button type="button" onClick={handleSubmitIdentityFromReview} disabled={creatingAtom} className="flex-1 py-3 bg-intuition-primary border-2 border-intuition-primary text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:bg-white hover:text-intuition-primary hover:shadow-[0_0_28px_rgba(0,243,255,0.4)] transition-all shadow-[0_0_18px_rgba(0,243,255,0.25)]">
+                  <button type="button" onClick={handleSubmitIdentityFromReview} disabled={creatingAtom || identityReviewApproved !== true} className="flex-1 py-3 bg-intuition-primary border-2 border-intuition-primary text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-60 hover:bg-white hover:text-intuition-primary hover:shadow-[0_0_28px_rgba(0,243,255,0.4)] transition-all shadow-[0_0_18px_rgba(0,243,255,0.25)]">
                     {creatingAtom ? <><Loader2 size={14} className="animate-spin inline mr-2" /> Submitting…</> : 'Submit transactions'}
                   </button>
                 </div>
@@ -994,6 +1049,11 @@ const CreateSignal: React.FC = () => {
                     {nodeSearchError && <p className="text-[10px] text-red-400">{nodeSearchError}</p>}
                     <div className="max-h-64 overflow-auto space-y-2">
                       {nodeSearching && <p className="text-[10px] text-slate-500 py-2">Searching the network…</p>}
+                      {!nodeSearching && !nodeSearchQuery.trim() && nodeSearchResults.length > 0 && (
+                        <p className="text-[10px] text-intuition-primary font-black uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
+                          <Sparkles size={10} /> Suggested for you
+                        </p>
+                      )}
                       {!nodeSearching && nodeSearchResults.map((a: any) => (
                         <button key={a.id} type="button" onClick={() => pickNode(nodeSearchOpen!, a.id, a.label)} className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 hover:border-intuition-primary/40 flex items-center gap-3 transition-all">
                           <div className="shrink-0 w-10 h-10 rounded-xl bg-white/10 overflow-hidden flex items-center justify-center">
@@ -1074,7 +1134,7 @@ const CreateSignal: React.FC = () => {
                 </div>
                 {tripleFee != null && (
                   <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-400">Proxy fee</span>
+                    <span className="text-slate-400">Creation cost</span>
                     <span className="text-[#a855f7] font-mono inline-flex items-baseline gap-1">{tripleFee} <CurrencySymbol size="md" className="text-[#a855f7]/90" /></span>
                   </div>
                 )}
@@ -1086,41 +1146,40 @@ const CreateSignal: React.FC = () => {
                   <span className="text-slate-400">Available balance</span>
                   <span className="text-white font-mono inline-flex items-baseline gap-1">{walletBalance || '—'} <CurrencySymbol size="md" className="text-white/90" /></span>
                 </div>
-                <div className="flex items-start gap-2 p-3 bg-white/5 border-2 border-white/10">
-                  <Info size={14} className="text-[#a855f7] shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-slate-400">You will be prompted to approve the transaction in your wallet. The total includes the proxy fee (creation cost).</p>
-                </div>
                 {claimReviewApproved === false && (
-                  <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded shadow-neon-gold">
-                    <p className="text-[10px] text-slate-300 mb-2">Triple creation requires a one-time protocol approval. Click below, sign in your wallet, then Submit.</p>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        playClick();
-                        try {
-                          const account = await getConnectedAccount();
-                          if (!account) { await connectWallet(); return; }
-                          setEnablingProtocol(true);
-                          await grantProxyApproval(account);
-                          setClaimReviewApproved(true);
-                          toast.success('Protocol enabled. You can now Submit.');
-                        } catch (e: any) {
-                          toast.error(e?.message || 'Enable failed');
-                        } finally {
-                          setEnablingProtocol(false);
-                        }
-                      }}
-                      disabled={enablingProtocol}
-                      className="w-full py-2 px-4 bg-amber-500/20 border border-amber-500/60 text-amber-200 font-black text-[10px] uppercase tracking-widest disabled:opacity-60 hover:shadow-neon-gold transition-all"
-                    >
-                      {enablingProtocol ? <><Loader2 size={12} className="animate-spin inline mr-2" /> Enabling…</> : 'Enable protocol'}
+                  <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/40 rounded">
+                    <Info size={14} className="text-amber-400 shrink-0" />
+                    <p className="text-[10px] text-amber-200">
+                      IntuRank needs you to approve its proxy so it can deposit in your name. This is a one-time approval.{' '}
+                      <a href="https://docs.intuition.systems" target="_blank" rel="noopener noreferrer" className="text-intuition-primary hover:underline inline-flex items-center gap-1" onClick={playClick}>
+                        Read more <ExternalLink size={10} />
+                      </a>
+                    </p>
+                    <button type="button" onClick={async (e) => { e.preventDefault(); e.stopPropagation(); playClick(); try { const acc = await ensureWallet(); setEnablingProtocol(true); await grantProxyApproval(acc); setClaimReviewApproved(true); toast.success('Protocol enabled.'); } catch (err: any) { toast.error(err?.message || err?.error?.message || 'Enable failed.'); } finally { setEnablingProtocol(false); } }} disabled={enablingProtocol} className="ml-auto py-2 px-4 bg-amber-500 text-black font-black text-[9px] uppercase tracking-widest rounded">
+                      {enablingProtocol ? 'Approving…' : 'Approve'}
                     </button>
                   </div>
                 )}
-                {claimReviewApproved === true && (
-                  <p className="text-[10px] text-amber-400 font-black uppercase tracking-widest text-glow-gold">Protocol enabled. You can submit.</p>
+                <div className="flex items-start gap-2 p-3 bg-white/5 border-2 border-white/10">
+                  <Info size={14} className="text-[#a855f7] shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-slate-400">You will be prompted to approve the transaction in your wallet. The total includes the protocol creation cost.</p>
+                </div>
+                {claimReviewAtomsValid === false && claimReviewMissingAtoms.length > 0 && (
+                  <div className="p-3 border border-red-500/40 bg-red-500/10 rounded space-y-2">
+                    <p className="text-[10px] text-red-200">
+                      Atom(s) not found on-chain: {claimReviewMissingAtoms.join(', ')}. Create them first or pick existing atoms from search.
+                    </p>
+                    <p className="text-[10px] text-slate-400">If you&apos;re sure they exist on-chain, you can try anyway:</p>
+                    <button
+                      type="button"
+                      onClick={() => { playClick(); setClaimReviewBypassValidation(true); }}
+                      className="text-[10px] font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                    >
+                      Try anyway
+                    </button>
+                  </div>
                 )}
-                {parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.1') && (
+                {parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.5') && (
                   <div className="p-3 border border-amber-500/40 bg-amber-500/10 rounded">
                     <p className="text-[10px] text-amber-200">Deposit below minimum. Increase to at least {minClaimDeposit} {CURRENCY_SYMBOL} to create the claim.</p>
                   </div>
@@ -1129,7 +1188,7 @@ const CreateSignal: React.FC = () => {
                   <button type="button" onClick={() => setView('claim')} className="flex-1 py-3 rounded-xl border-2 border-intuition-primary/50 text-intuition-primary font-semibold text-sm hover:bg-intuition-primary/10 transition-all">
                     Back
                   </button>
-                  <button type="button" onClick={handleSubmitClaimFromReview} disabled={creatingSynapse || parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.1')} className="flex-1 py-3 rounded-xl bg-[#a855f7] border-2 border-[#a855f7] text-white font-bold text-sm disabled:opacity-60 hover:bg-white hover:text-[#a855f7] transition-all">
+                  <button type="button" onClick={handleSubmitClaimFromReview} disabled={creatingSynapse || claimReviewApproved !== true || (claimReviewAtomsValid === false && !claimReviewBypassValidation) || parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.5')} className="flex-1 py-3 rounded-xl bg-[#a855f7] border-2 border-[#a855f7] text-white font-bold text-sm disabled:opacity-60 hover:bg-white hover:text-[#a855f7] transition-all">
                     {creatingSynapse ? <><Loader2 size={14} className="animate-spin inline mr-2" /> Submitting…</> : 'Submit transactions'}
                   </button>
                 </div>
@@ -1201,6 +1260,11 @@ const CreateSignal: React.FC = () => {
                     {nodeSearchError && <p className="text-[10px] text-red-400">{nodeSearchError}</p>}
                     <div className="max-h-64 overflow-auto space-y-2">
                       {nodeSearching && <p className="text-[10px] text-slate-500 py-2">Searching the network…</p>}
+                      {!nodeSearching && !nodeSearchQuery.trim() && nodeSearchResults.length > 0 && (
+                        <p className="text-[10px] text-intuition-primary font-black uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
+                          <Sparkles size={10} /> Suggested for you
+                        </p>
+                      )}
                       {!nodeSearching && nodeSearchResults.map((a: any) => (
                         <button key={a.id} type="button" onClick={() => pickNode(nodeSearchOpen!, a.id, a.label)} className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 hover:border-intuition-primary/40 flex items-center gap-3 transition-all">
                           <div className="shrink-0 w-10 h-10 rounded-xl bg-white/10 overflow-hidden flex items-center justify-center">
@@ -1251,7 +1315,7 @@ const CreateSignal: React.FC = () => {
                     <input type="number" min="0" step="0.01" value={synapseDeposit} onChange={(e) => setSynapseDeposit(e.target.value)} className="w-28 bg-black border border-white/10 py-2 px-3 text-sm text-white font-mono outline-none" />
                   </div>
                   <div className="text-[10px] text-slate-500 inline-flex items-baseline gap-1">MIN_DEPOSIT: {minClaimDeposit} <CurrencySymbol size="sm" /></div>
-                  <button onClick={handleEstablishSynapse} disabled={creatingSynapse || !subjectId || !predicateId || !objectId || parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.1')} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
+                  <button onClick={handleEstablishSynapse} disabled={creatingSynapse || !subjectId || !predicateId || !objectId || parseFloat(synapseDeposit || '0') < parseFloat(minClaimDeposit || '0.5')} className="py-3 px-8 bg-[#a855f7] hover:bg-white text-white hover:text-black font-black text-[10px] uppercase tracking-widest clip-path-slant disabled:opacity-50 disabled:cursor-not-allowed">
                     {creatingSynapse ? <Loader2 size={14} className="animate-spin inline mr-2" /> : null} ESTABLISH_SYNAPSE_LINK
                   </button>
                 </div>

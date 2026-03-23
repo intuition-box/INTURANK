@@ -9,19 +9,26 @@ let isGlobalClaimsFetching = false;
 
 const LIST_PREDICATE_ID = "0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908fb1b0a7d067c3c3cc1f5";
 
-const fetchGraphQL = async (query: string, variables: any = {}) => {
-  const response = await fetch(GRAPHQL_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, variables }),
-  });
-  const result = await response.json();
-  if (result.errors) {
-    const msg = result.errors.map((e: any) => e.message || JSON.stringify(e)).join("; ");
-    console.warn("GraphQL Query Error:", result.errors);
-    throw new Error(msg || "GraphQL error");
-  }
-  return result.data;
+const fetchGraphQL = async (query: string, variables: any = {}, retries = 2): Promise<any> => {
+  const doFetch = async () => {
+    const response = await fetch(GRAPHQL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (response.status === 429 && retries > 0) {
+      await new Promise((r) => setTimeout(r, 1500 * (3 - retries)));
+      return fetchGraphQL(query, variables, retries - 1);
+    }
+    const result = await response.json();
+    if (result.errors) {
+      const msg = result.errors.map((e: any) => e.message || JSON.stringify(e)).join("; ");
+      console.warn("GraphQL Query Error:", msg, result.errors);
+      throw new Error(msg || "GraphQL error");
+    }
+    return result.data;
+  };
+  return doFetch();
 };
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
@@ -187,7 +194,7 @@ export const getNewlyCreatedAtoms = async (limit = 20) => {
     ) {
       type
       created_at
-      atom { term_id label data image type creator { id label image } value { person { name } organization { name } thing { name } account { name } } }
+      atom { term_id label data image type creator { id label image } value { person { name } organization { name } thing { name } account { id label } } }
       triple { term_id counter_term_id creator { id label image } subject { label term_id data image type } predicate { label } object { label term_id data image type } }
     }
   }`;
@@ -781,10 +788,33 @@ export const getPnlLeaderboardPeriod = async (args: Record<string, unknown> = {}
   }
 };
 
+/** Epoch-based PnL leaderboard with minimum threshold filtering and realized PnL fields. */
+export const getPnlLeaderboardPeriodMinThreshold = async (args: Record<string, unknown> = {}, limit?: number) => {
+  const q = `query GetPnlLeaderboardPeriodMinThreshold($args: get_pnl_leaderboard_period_min_threshold_args!) {
+    get_pnl_leaderboard_period_min_threshold(args: $args) {
+      rank
+      account_id
+      account_label
+      account_image
+      realized_pnl_pct
+      unrealized_pnl_pct
+      realized_pnl_formatted
+      unrealized_pnl_formatted
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { args: args || {} });
+    const arr = res?.get_pnl_leaderboard_period_min_threshold ?? [];
+    return limit != null ? arr.slice(0, limit) : arr;
+  } catch (e) {
+    return [];
+  }
+};
+
 /** User's position on Season 2 / epoch-based PnL leaderboard */
 export const getPnlLeaderboardPeriodAccount = async (accountId: string, args: Record<string, unknown> = {}) => {
-  const q = `query GetPnlLeaderboardPeriodAccount($args: get_pnl_leaderboard_period_args!, $where: pnl_leaderboard_entry_bool_exp) {
-    get_pnl_leaderboard_period(args: $args, where: $where, limit: 1) {
+  const q = `query GetPnlLeaderboardPeriodAccount($args: get_pnl_leaderboard_period_args!) {
+    get_pnl_leaderboard_period(args: $args) {
       rank
       account_id
       account_label
@@ -794,12 +824,10 @@ export const getPnlLeaderboardPeriodAccount = async (accountId: string, args: Re
     }
   }`;
   try {
-    const res = await fetchGraphQL(q, {
-      args: args || {},
-      where: { account_id: { _eq: accountId } },
-    });
+    const res = await fetchGraphQL(q, { args: args || {} });
     const arr = res?.get_pnl_leaderboard_period ?? [];
-    return arr[0] ?? null;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    return arr.find((row: any) => String(row.account_id).toLowerCase() === accountId.toLowerCase()) ?? null;
   } catch {
     return null;
   }
@@ -1759,6 +1787,49 @@ export const getHoldersForVault = async (termId: string) => {
   } catch (e) { return { holders: [], totalCount: 0 }; }
 };
 
+/**
+ * Positions for multiple vault term_ids — for user leaderboard per list (Climb leaderboard).
+ * Fetches vaults separately for accurate total_assets/total_shares.
+ *
+ * DATA ACCURACY: Each position's stake value = shares * (total_assets / total_shares).
+ * We aggregate by account: sum of asset value across all atoms in the list.
+ * Ranking: descending by total stake, then by atom count (tiebreaker).
+ * Only positions with shares > 0 are included. Vault IDs use prepareQueryIds for format variants.
+ */
+export const getPositionsForVaults = async (vaultTermIds: string[]): Promise<any[]> => {
+  const ids = Array.from(new Set(vaultTermIds.flatMap((id) => prepareQueryIds(id)))).slice(0, 300);
+  if (ids.length === 0) return [];
+  try {
+  const [posRes, vaultRes] = await Promise.all([
+    fetchGraphQL(`query GetPositionsForVaults($ids: [String!]!) {
+      positions(where: { vault: { term_id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 5000) {
+        shares account_id account { id label image }
+        vault { term_id }
+      }
+    }`, { ids }),
+    fetchGraphQL(`query GetVaultsForPositions($ids: [String!]!) {
+      vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares }
+    }`, { ids }),
+  ]);
+  const positions = posRes?.positions ?? [];
+  const rawVaults = vaultRes?.vaults ?? [];
+  const aggregated = aggregateVaultData(rawVaults);
+  const vaultByTerm = new Map<string, { total_assets: string; total_shares: string }>();
+  aggregated.forEach((v: any) => vaultByTerm.set(normalize(v.term_id), { total_assets: String(v.total_assets ?? '0'), total_shares: String(v.total_shares ?? '1') }));
+  return positions.map((p: any) => {
+    const v = p.vault?.term_id ? vaultByTerm.get(normalize(p.vault.term_id)) : null;
+    return {
+      ...p,
+      vault: {
+        ...p.vault,
+        total_assets: v?.total_assets ?? p.vault?.total_assets ?? '0',
+        total_shares: v?.total_shares ?? p.vault?.total_shares ?? '1',
+      },
+    };
+  });
+  } catch (e) { return []; }
+};
+
 /** Lists containing this term (when term is object) OR identities in this list (when term is list object). Returns entries with subject id for linking to identity markets. */
 export const getAtomInclusionLists = async (termId: string, agentType?: string) => {
   const ids = prepareQueryIds(termId);
@@ -1992,3 +2063,272 @@ export const getGlobalClaims = async (limit: number = 40, offset: number = 0) =>
 export const getAgentOpinions = async (termId: string) => {
     return []; 
 };
+
+export async function getTriplesWithPositions(limit = 10, offset = 0, orderBy: any[] = [], where: any = {}, address?: string) {
+  const query = `
+    query GetTriplesWithPositions($limit: Int, $offset: Int, $orderBy: [triples_order_by!], $where: triples_bool_exp, $address: String) {
+      triples(limit: $limit, offset: $offset, order_by: $orderBy, where: $where) {
+        term_id
+        counter_term_id
+        created_at
+        positions_aggregate {
+          aggregate {
+            count
+          }
+        }
+        subject {
+          term_id
+          wallet_id
+          label
+          image
+          cached_image {
+            ...CachedImageFields
+          }
+          data
+          type
+          value {
+            ...AtomValueLight
+          }
+        }
+        predicate {
+          term_id
+          wallet_id
+          label
+          image
+          cached_image {
+            ...CachedImageFields
+          }
+          data
+          type
+          value {
+            ...AtomValueLight
+          }
+        }
+        object {
+          term_id
+          wallet_id
+          label
+          image
+          cached_image {
+            ...CachedImageFields
+          }
+          data
+          type
+          value {
+            ...AtomValue
+          }
+        }
+        subject_term {
+          ...TermElement
+        }
+        predicate_term {
+          ...TermElement
+        }
+        object_term {
+          ...TermElementFull
+        }
+        term {
+          ...Term
+          vaults(order_by: {curve_id: asc}) {
+            term_id
+            curve_id
+            current_share_price
+            market_cap
+            total_assets
+            total_shares
+            position_count
+            market_cap
+            userPosition: positions(where: {account_id: {_eq: $address}}) {
+              account {
+                id
+                label
+                image
+                cached_image {
+                  ...CachedImageFields
+                }
+              }
+              shares
+            }
+          }
+        }
+        counter_term {
+          ...CounterTerm
+          vaults(order_by: {curve_id: asc}) {
+            term_id
+            curve_id
+            current_share_price
+            market_cap
+            total_assets
+            total_shares
+            position_count
+            market_cap
+            userPosition: positions(where: {account_id: {_eq: $address}}) {
+              account {
+                id
+                label
+                image
+                cached_image {
+                  ...CachedImageFields
+                }
+              }
+              shares
+            }
+          }
+        }
+        creator {
+          id
+          atom_id
+          label
+          image
+          cached_image {
+            ...CachedImageFields
+          }
+        }
+      }
+    }
+    
+    fragment CachedImageFields on cached_images_cached_image {
+      url
+      safe
+    }
+    
+    fragment AtomValueLight on atom_values {
+      person {
+        name
+        image
+        cached_image {
+          ...CachedImageFields
+        }
+        url
+      }
+      thing {
+        name
+        image
+        cached_image {
+          ...CachedImageFields
+        }
+        url
+      }
+      organization {
+        name
+        image
+        url
+      }
+      account {
+        id
+        label
+        image
+        cached_image {
+          ...CachedImageFields
+        }
+      }
+    }
+    
+    fragment AtomValue on atom_values {
+      ...AtomValueLight
+      json_object {
+        description: data(path: "description")
+      }
+    }
+    
+    fragment TermElement on terms {
+      id
+      type
+      atom {
+        term_id
+        data
+        image
+        cached_image {
+          ...CachedImageFields
+        }
+        label
+        emoji
+        type
+        wallet_id
+        value {
+          ...AtomValueLight
+        }
+      }
+      triple {
+        term_id
+        subject {
+          label
+        }
+        predicate {
+          label
+        }
+        object {
+          label
+        }
+      }
+    }
+    
+    fragment TermElementFull on terms {
+      id
+      type
+      atom {
+        term_id
+        data
+        image
+        cached_image {
+          ...CachedImageFields
+        }
+        label
+        emoji
+        type
+        wallet_id
+        value {
+          ...AtomValue
+        }
+        creator {
+          ...AccountMetadata
+        }
+      }
+      triple {
+        term_id
+        subject {
+          label
+        }
+        predicate {
+          label
+        }
+        object {
+          label
+        }
+      }
+    }
+    
+    fragment AccountMetadata on accounts {
+      label
+      image
+      cached_image {
+        ...CachedImageFields
+      }
+      id
+      atom_id
+      type
+    }
+    
+    fragment Term on terms {
+      total_market_cap
+      positions_aggregate {
+        aggregate {
+          count
+        }
+      }
+    }
+    
+    fragment CounterTerm on terms {
+      total_market_cap
+      positions_aggregate {
+        aggregate {
+          count
+        }
+      }
+    }
+  `;
+
+  const variables = { limit, offset, orderBy, where, address };
+  const data = await fetchGraphQL(query, variables);
+  return data?.triples || [];
+}

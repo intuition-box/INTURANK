@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAccount } from 'wagmi';
-import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog, List } from 'lucide-react';
+import { Search, TrendingUp, Filter, Tag, Zap, Activity, ShieldCheck, Loader2, Database, ChevronDown, Star, LayoutGrid, Grid, Hexagon, Network, Layers, ArrowRight, Shield, User, Globe, Cpu, Component, Boxes, ScanSearch, Hash, Users, BadgeCheck, UserCog, List, Trophy } from 'lucide-react';
 import { formatEther } from 'viem';
 import { getAllAgents, searchGlobalAgents, searchClaims, getLists, getTopClaims } from '../services/graphql';
 import { playHover, playClick } from '../services/audio';
@@ -591,7 +591,23 @@ const Markets: React.FC = () => {
             <p className="text-slate-700 text-lg font-black font-mono uppercase tracking-[0.4em]">{showWatchlistOnly ? 'SECTOR_WATCHLIST_EMPTY' : 'NULL_DATA_RECOVERED'}</p>
         </div>
       ) : activeSegment === 'VECTORS' ? (
-          listViewMode === 'LIST' ? (
+          <div className="min-w-0">
+            {/* <Link
+              to="/climb"
+              onClick={playClick}
+              onMouseEnter={playHover}
+              className="flex items-center gap-4 p-4 sm:p-6 mb-6 w-full rounded-2xl bg-gradient-to-r from-amber-400/10 to-intuition-primary/10 border-2 border-amber-400/40 hover:border-amber-400/70 transition-all duration-300 group"
+            >
+              <div className="w-14 h-14 rounded-xl bg-amber-400/20 border border-amber-400/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                <Trophy size={28} className="text-amber-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base sm:text-lg font-black font-display text-white uppercase tracking-tight mb-0.5">Climb the ranks</h3>
+                <p className="text-slate-400 font-mono text-xs sm:text-sm">View the ranked list — Apex, Elite, Rising, New. See your rank and share it.</p>
+              </div>
+              <ArrowRight size={20} className="text-amber-400 shrink-0 group-hover:translate-x-1 transition-transform" />
+            </Link> */}
+            {listViewMode === 'LIST' ? (
             <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-left font-mono border-collapse min-w-[600px]">
@@ -704,7 +720,8 @@ const Markets: React.FC = () => {
                   </Link>
               ))}
           </div>
-          )
+          )}
+          </div>
       ) : activeSegment === 'SYNAPSES' ? (
           <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden relative z-10 animate-in fade-in duration-500 shadow-2xl">
               <div className="overflow-x-auto">

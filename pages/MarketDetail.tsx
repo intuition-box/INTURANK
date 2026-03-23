@@ -121,7 +121,7 @@ const AgentShareModal: React.FC<{
     };
 
     const handleShareX = () => {
-        const text = `Inspecting ${agent.label} on @IntuRank. Quantifying trust at ${strength.toFixed(1)}% conviction. 🚀\n\nJoin the claim:`;
+        const text = `Inspecting ${agent.label || 'Node'} on @IntuRank. Quantifying trust at ${strength.toFixed(1)}% conviction. 🚀\n\nJoin the claim:`;
         const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(canonicalLink)}`;
         window.open(xUrl, '_blank');
         playClick();
@@ -542,10 +542,11 @@ const MarketDetail: React.FC = () => {
   }, [inputAmount, action, wallet, id, sentiment, agent, oppositionAgent, selectedCurveId]);
 
   const addLog = (log: string) => {
-    setTxModal(prev => ({ ...prev, logs: [...prev.logs, log] }));
+    setTxModal((prev: any) => ({ ...prev, logs: [...prev.logs, log] }));
   };
 
   const handleExecute = async () => {
+        if (txModal.status === 'processing') return;
         playClick();
         // Prefer wagmi address so we're in sync with header
         let activeWallet = wagmiAddress ?? wallet;
@@ -638,8 +639,8 @@ const MarketDetail: React.FC = () => {
               sharesFormatted,
               assetsFormatted,
             });
-            setActivityLog(prev => [localTx, ...prev]);
-            setTxModal(prev => ({ 
+            setActivityLog((prev: any) => [localTx, ...prev]);
+            setTxModal((prev: any) => ({ 
                 ...prev, 
                 status: 'success', 
                 title: 'Done', 
@@ -662,7 +663,7 @@ const MarketDetail: React.FC = () => {
             // Re-fetch with slight delay to allow indexer to breathe (use selected curve for balances)
             setTimeout(() => { fetchData(); }, 4000);
         } catch (e) {
-            setTxModal(prev => ({ 
+            setTxModal((prev: any) => ({ 
                 ...prev, 
                 status: 'error', 
                 title: 'UPLINK_LOST', 
@@ -727,6 +728,7 @@ const MarketDetail: React.FC = () => {
   };
 
   const handleSwipeStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    if (txModal.status === 'processing') return;
     e.preventDefault();
     setIsSwiping(true);
     if ('touches' in e) {
@@ -752,7 +754,7 @@ const MarketDetail: React.FC = () => {
     setIsSwiping(false);
     setSwipeProgress(0);
     applySwipeProgress(0);
-    if (prev >= 55) handleExecute();
+    if (prev >= 55 && txModal.status !== 'processing') handleExecute();
   };
 
   useEffect(() => {
@@ -783,8 +785,24 @@ const MarketDetail: React.FC = () => {
     };
   }, [isSwiping]);
 
-  if (loading || !agent)
-        return <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-[#020308]">Loading claim...</div>;
+  if (loading || !agent) {
+        return (
+          <>
+            <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-[#020308]">Loading claim...</div>
+            {txModal.isOpen && (
+              <TransactionModal
+                isOpen={txModal.isOpen}
+                status={txModal.status}
+                title={txModal.title}
+                message={txModal.message}
+                hash={txModal.hash}
+                logs={txModal.logs}
+                onClose={() => setTxModal((p: any) => ({ ...p, isOpen: false }))}
+              />
+            )}
+          </>
+        );
+      }
 
   const selectedVault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
   const overallSpotPrice = calculateAgentPrice(
@@ -837,7 +855,7 @@ const MarketDetail: React.FC = () => {
             message={txModal.message} 
             hash={txModal.hash} 
             logs={txModal.logs}
-            onClose={() => setTxModal(p => ({ ...p, isOpen: false }))} 
+            onClose={() => setTxModal((p: any) => ({ ...p, isOpen: false }))} 
         />
         <CreateModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
         <BondingCurvesInfoPanel isOpen={isCurveInfoOpen} onClose={() => setIsCurveInfoOpen(false)} />
@@ -1125,47 +1143,74 @@ const MarketDetail: React.FC = () => {
                             )}
                         </div>
                         
-                        <div
-                          ref={swipeTrackRef}
-                          className="mt-4 w-full h-14 rounded-full bg-slate-900/80 border border-slate-700/80 relative overflow-visible cursor-grab active:cursor-grabbing select-none touch-none"
-                          style={{ touchAction: 'none', contain: 'layout' }}
-                          onMouseDown={handleSwipeStart}
-                          onTouchStart={handleSwipeStart}
-                          onTouchMove={handleSwipeMove}
-                        >
-                          <div className="absolute inset-1 rounded-full bg-slate-950/80 overflow-hidden">
-                            <div
-                              ref={swipeFillRef}
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${swipeProgress}%`,
-                                background:
-                                  sentiment === 'DISTRUST'
-                                    ? 'linear-gradient(90deg, rgba(248,113,113,0.2), #f97373)'
-                                    : `linear-gradient(90deg, rgba(56,189,248,0.2), ${theme.color})`,
-                              }}
-                            />
+                        {!isApproved && action === 'ACQUIRE' ? (
+                          <div className="mt-4 flex flex-col items-center">
+                            <p className="text-[10px] text-slate-400 font-mono text-center mb-3 leading-relaxed">
+                              You are about to enable the IntuRank proxy contract.<br/>
+                              This allows the protocol to process your acquisitions securely.
+                            </p>
+                            <button
+                              onClick={handleExecute}
+                              disabled={txModal.status === 'processing'}
+                              className={`w-full py-4 rounded-full font-black uppercase text-[11px] tracking-[0.3em] transition-all flex items-center justify-center gap-2 ${
+                                txModal.status === 'processing'
+                                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed border-none'
+                                  : 'bg-white text-black hover:bg-slate-200 active:scale-[0.98]'
+                              }`}
+                              style={txModal.status !== 'processing' ? { boxShadow: `0 0 20px ${theme.color}40` } : {}}
+                            >
+                              {txModal.status === 'processing' ? (
+                                <>
+                                  <Loader2 size={16} className="animate-spin" /> Confirm in wallet...
+                                </>
+                              ) : (
+                                'Enable IntuRank Proxy'
+                              )}
+                            </button>
                           </div>
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <span className="text-[11px] font-black font-mono uppercase tracking-[0.3em] text-slate-300">
-                              {!isApproved && action === 'ACQUIRE'
-                                ? 'Swipe to approve'
-                                : action === 'ACQUIRE'
-                                ? 'Swipe to acquire'
-                                : 'Swipe to redeem'}
-                            </span>
-                          </div>
+                        ) : (
                           <div
-                            ref={swipeHandleRef}
-                            className="absolute top-1/2 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center pointer-events-none z-10"
-                            style={{
-                              left: `${Math.max(5, Math.min(95, swipeProgress))}%`,
-                              transform: 'translate(-50%, -50%)',
-                            }}
+                            ref={swipeTrackRef}
+                            className={`mt-4 w-full h-14 rounded-full bg-slate-900/80 border border-slate-700/80 relative overflow-visible select-none touch-none transition-opacity ${txModal.status === 'processing' ? 'pointer-events-none opacity-60 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
+                            style={{ touchAction: 'none', contain: 'layout' }}
+                            onMouseDown={handleSwipeStart}
+                            onTouchStart={handleSwipeStart}
+                            onTouchMove={handleSwipeMove}
                           >
-                            <ArrowRight size={18} className="text-slate-900" />
+                            <div className="absolute inset-1 rounded-full bg-slate-950/80 overflow-hidden">
+                              <div
+                                ref={swipeFillRef}
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${swipeProgress}%`,
+                                  background:
+                                    sentiment === 'DISTRUST'
+                                      ? 'linear-gradient(90deg, rgba(248,113,113,0.2), #f97373)'
+                                      : `linear-gradient(90deg, rgba(56,189,248,0.2), ${theme.color})`,
+                                }}
+                              />
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[11px] font-black font-mono uppercase tracking-[0.3em] text-slate-300">
+                                {txModal.status === 'processing'
+                                  ? 'Confirm in wallet...'
+                                  : action === 'ACQUIRE'
+                                  ? 'Swipe to acquire'
+                                  : 'Swipe to redeem'}
+                              </span>
+                            </div>
+                            <div
+                              ref={swipeHandleRef}
+                              className="absolute top-1/2 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center pointer-events-none z-10"
+                              style={{
+                                left: `${Math.max(5, Math.min(95, swipeProgress))}%`,
+                                transform: 'translate(-50%, -50%)',
+                              }}
+                            >
+                              <ArrowRight size={18} className="text-slate-900" />
+                            </div>
                           </div>
-                        </div>
+                        )}
                     </div>
                 </div>
 

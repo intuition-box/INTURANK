@@ -1,5 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 /* Added Activity to imports */
 import { Loader2, CheckCircle, XCircle, ExternalLink, X, ArrowRight, AlertTriangle, Terminal, ShieldAlert, Activity } from 'lucide-react';
 import { playClick } from '../services/audio';
@@ -17,7 +18,6 @@ interface TransactionModalProps {
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, title, message, hash, logs = [], onClose }) => {
   const logContainerRef = useRef<HTMLDivElement>(null);
-  const scrollYRef = useRef(0);
 
   useEffect(() => {
     const el = logContainerRef.current;
@@ -26,31 +26,18 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
     }
   }, [logs]);
 
+  // Use overflow-only scroll lock (no position:fixed) to avoid scroll jump on large viewports (e.g. 16" MacBook)
   useEffect(() => {
     if (isOpen) {
-      scrollYRef.current = window.scrollY;
+      const prevHtmlOverflow = document.documentElement.style.overflow;
+      const prevBodyOverflow = document.body.style.overflow;
+      document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollYRef.current}px`;
-      document.body.style.left = '0';
-      document.body.style.right = '0';
-    } else {
-      const y = scrollYRef.current;
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.left = '';
-      document.body.style.right = '';
-      // Use instant behavior to prevent unwanted auto-scroll animation on modal close
-      window.scrollTo({ top: y, left: 0, behavior: 'instant' });
+      return () => {
+        document.documentElement.style.overflow = prevHtmlOverflow;
+        document.body.style.overflow = prevBodyOverflow;
+      };
     }
-    return () => {
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.left = '';
-      document.body.style.right = '';
-    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -63,8 +50,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
   const themeColor = isSuccess ? '#00ff9d' : isError ? '#ff0055' : '#00f3ff';
   const shadowColor = isSuccess ? 'rgba(0,255,157,0.2)' : isError ? 'rgba(255,0,85,0.3)' : 'rgba(0,243,255,0.2)';
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-backdrop-fade-fluid font-mono">
+  const modalContent = (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-backdrop-fade-fluid font-mono">
       <div
         className="relative w-full max-w-lg bg-[#020308] border shadow-[0_0_80px_rgba(0,0,0,1)] rounded-3xl overflow-hidden animate-modal-pop-fluid transition-all duration-500"
         style={{
@@ -185,6 +172,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({ isOpen, status, tit
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 };
 
 export default TransactionModal;
