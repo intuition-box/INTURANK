@@ -129,6 +129,8 @@ export const createSingleTriple = async (
   }
   if (tripleCost < parseEther('0.15')) tripleCost = parseEther('0.15');
 
+  const multiVaultCost = tripleCost + depositAmount;
+
   // 2. Get total cost via FeeProxy (required for direct native token funding)
   let totalCost: bigint;
   try {
@@ -136,7 +138,7 @@ export const createSingleTriple = async (
           address: FEE_PROXY_ADDRESS as `0x${string}`,
           abi: FEE_PROXY_ABI,
           functionName: 'getTotalCreationCost',
-          args: [1n, depositAmount, tripleCost],
+          args: [1n, depositAmount, multiVaultCost],
       } as any) as bigint;
   } catch (e) {
       const raw = tripleCost + depositAmount;

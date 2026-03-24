@@ -308,6 +308,21 @@
       .animate-toast-slide-fluid {
         animation: toast-slide-fluid 0.55s cubic-bezier(0.34, 1.2, 0.64, 1) both;
       }
+      /* Skill chat: proposed tx — rolling strip while pending */
+      @keyframes skill-tx-roll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+      }
+      @keyframes skill-tx-pending-glow {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35), inset 0 0 20px rgba(245, 158, 11, 0.06); }
+        50% { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.75), 0 0 28px rgba(245, 158, 11, 0.25), inset 0 0 24px rgba(245, 158, 11, 0.1); }
+      }
+      .skill-tx-roll-strip {
+        animation: skill-tx-roll 1.4s linear infinite;
+      }
+      .skill-tx-pending-glow {
+        animation: skill-tx-pending-glow 1.25s ease-in-out infinite;
+      }
       /* Create Signal / step transitions: slide + fade */
       @keyframes slide-in-from-right-4 {
         from { opacity: 0; transform: translateX(1rem); }

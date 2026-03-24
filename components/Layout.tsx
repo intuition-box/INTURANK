@@ -1,8 +1,9 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import React, { useState, useEffect, useRef } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { useAccount, useDisconnect, useConnect } from 'wagmi';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords } from 'lucide-react';
+import { useAccount, useDisconnect, useConnect, useConfig } from 'wagmi';
+import { getWalletClient } from '@wagmi/core';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords, Cpu } from 'lucide-react';
 import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../services/audio';
@@ -75,27 +76,46 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   const { openConnectModal } = useConnectModal();
+  const wagmiConfig = useConfig();
   const { address: walletAddress, isConnected, chainId = 0 } = useAccount();
   const { disconnect } = useDisconnect();
-  const { data: connectData } = useConnect();
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const intelRef = useRef<HTMLDivElement>(null);
+  const sidebarAsideRef = useRef<HTMLElement>(null);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Sync RainbowKit/wagmi connection to web3 so getConnectedAccount() and getProvider() work app-wide
+  // Sync RainbowKit/wagmi → web3 (getProvider / sendTransaction). Do not use connector.getProvider():
+  // some connectors exposed via React do not implement it; getWalletClient uses the live connection.
   useEffect(() => {
     if (!isConnected || !walletAddress) {
       setWagmiConnection(null, null);
       return;
     }
-    const connector = connectData?.connector;
-    if (!connector) return;
-    connector.getProvider().then((provider: any) => {
-      setWagmiConnection(walletAddress, provider);
-    }).catch(() => setWagmiConnection(walletAddress, null));
-  }, [isConnected, walletAddress, connectData?.connector]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const wc = await getWalletClient(wagmiConfig, {
+          chainId: CHAIN_ID,
+          account: walletAddress as `0x${string}`,
+          assertChainId: false,
+        });
+        const eip1193 = {
+          request: (args: { method: string; params?: readonly unknown[] | object }) =>
+            wc.request(args as Parameters<(typeof wc)['request']>[0]),
+        };
+        if (!cancelled) setWagmiConnection(walletAddress, eip1193 as unknown as typeof window.ethereum);
+      } catch {
+        const injected = typeof window !== 'undefined' ? (window as unknown as { ethereum?: unknown }).ethereum : undefined;
+        if (!cancelled) setWagmiConnection(walletAddress, (injected as typeof window.ethereum) ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, walletAddress, wagmiConfig]);
 
   // Let legacy connectWallet() calls (Account, Portfolio, etc.) open the RainbowKit modal
   useEffect(() => {
@@ -105,18 +125,29 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const t = event.target as Node;
+      if (dropdownRef.current && !dropdownRef.current.contains(t)) {
         setIsWalletDropdownOpen(false);
       }
-      if (intelRef.current && !intelRef.current.contains(event.target as Node)) {
+      if (intelRef.current && !intelRef.current.contains(t)) {
         setIsIntelOpen(false);
+      }
+      if (
+        !isSidebarCollapsed &&
+        sidebarAsideRef.current &&
+        sidebarToggleRef.current &&
+        !sidebarAsideRef.current.contains(t) &&
+        !sidebarToggleRef.current.contains(t) &&
+        !(dropdownRef.current && dropdownRef.current.contains(t))
+      ) {
+        setIsSidebarCollapsed(true);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [isSidebarCollapsed]);
 
   // Surface email delivery failures to the user (e.g. follow alerts, activity notifications)
   useEffect(() => {
@@ -170,32 +201,42 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     navigate('/create');
   };
 
+  /** Primary destinations — markets, wallet, competitive ladder, skill agent */
   const mainNavItems = [
     { label: 'MARKETS', path: '/markets', icon: <TrendingUp size={14} /> },
     { label: 'PORTFOLIO', path: '/portfolio', icon: <Users size={14} /> },
+    { label: 'THE ARENA', path: '/climb', icon: <Activity size={14} /> },
+    { label: 'INTUITION_SKILL', path: '/skill-playground', icon: <Cpu size={14} /> },
   ];
 
-  const intelItems = [
+  const versusNavItems = [{ label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={14} /> }];
+
+  const exploreNavItems = [
     { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
     { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
-    { label: 'THE ARENA', path: '/climb', icon: <Activity size={14} /> },
-    { label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={14} /> },
-    { label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> },
-    { label: 'SDK_LAB', path: '/sdk-lab', icon: <Terminal size={14} /> },
   ];
+
+  const monitorNavItems = [{ label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> }];
+
+  const allMobileNavItems = [...mainNavItems, ...versusNavItems, ...exploreNavItems, ...monitorNavItems];
 
   const isActive = (path: string) => {
     if (path === '/' && location.pathname !== '/') return false;
     return location.pathname.startsWith(path);
   };
 
-  const isIntelActive = intelItems.some(i => location.pathname.startsWith(i.path));
+  const closeSidebarNav = () => {
+    setIsMenuOpen(false);
+    setIsIntelOpen(false);
+    setIsSidebarCollapsed(true);
+  };
 
   return (
     <div className="min-h-screen bg-intuition-dark text-slate-300 flex font-sans selection:bg-intuition-primary selection:text-black">
       {/* Desktop side nav */}
       <aside
+        ref={sidebarAsideRef}
         className={`hidden lg:flex fixed left-4 top-4 bottom-4 flex-col w-72 xl:w-80 rounded-3xl bg-black/90 border border-slate-800 shadow-[0_18px_45px_rgba(0,0,0,0.95)] overflow-hidden z-40 transition-transform duration-500 ${
           isSidebarCollapsed ? '-translate-x-[23rem]' : 'translate-x-0'
         }`}
@@ -213,7 +254,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex flex-col">
             <Link
               to="/"
-              onClick={playClick}
+              onClick={() => {
+                playClick();
+                setIsSidebarCollapsed(true);
+              }}
               className="text-xl font-black tracking-[0.25em] text-white font-display text-glow-blue"
             >
               INTU<span className="text-intuition-primary">RANK</span>
@@ -224,11 +268,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col px-3 py-4 gap-6 overflow-y-auto">
-          <nav className="space-y-3">
-            <p className="px-3 text-[10px] font-mono text-slate-500 uppercase tracking-[0.25em] mb-1">
-              Main
-            </p>
+        <div className="flex-1 flex flex-col px-3 py-4 gap-5 overflow-y-auto">
+          <nav
+            className="rounded-2xl border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.08] to-transparent p-2.5 space-y-2 shadow-[inset_0_1px_0_0_rgba(0,243,255,0.15)]"
+            aria-label="Primary navigation"
+          >
+            <div className="px-2 pt-0.5 pb-1 border-b border-white/5">
+              <p className="text-[10px] font-mono text-intuition-primary uppercase tracking-[0.28em] font-black">
+                Main
+              </p>
+              <p className="text-[8px] font-mono text-slate-500 uppercase tracking-[0.2em] mt-1 leading-relaxed">
+                Markets · positions · arena · skill agent
+              </p>
+            </div>
             {mainNavItems.map((item) => (
               <NavItem
                 key={item.path}
@@ -236,26 +288,63 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 label={item.label}
                 icon={item.icon}
                 active={isActive(item.path)}
-                onClick={() => setIsMenuOpen(false)}
+                onClick={closeSidebarNav}
               />
             ))}
           </nav>
 
-          <nav className="space-y-2" ref={intelRef}>
-            <p className="px-3 text-[10px] font-mono text-slate-500 uppercase tracking-[0.25em] mb-1">
-              Intel
-            </p>
-            {intelItems.map((item) => (
-              <NavItem
-                key={item.path}
-                to={item.path}
-                label={item.label}
-                icon={item.icon}
-                active={isActive(item.path)}
-                onClick={() => setIsIntelOpen(false)}
-              />
-            ))}
-          </nav>
+          <div ref={intelRef} className="space-y-5 flex flex-col min-h-0">
+            <nav className="space-y-2" aria-label="Versus">
+              <div className="px-3">
+                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-[0.25em] mb-0.5">Versus</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Compare claims side-by-side</p>
+              </div>
+              {versusNavItems.map((item) => (
+                <NavItem
+                  key={item.path}
+                  to={item.path}
+                  label={item.label}
+                  icon={item.icon}
+                  active={isActive(item.path)}
+                  onClick={closeSidebarNav}
+                />
+              ))}
+            </nav>
+
+            <nav className="space-y-2" aria-label="Explore">
+              <div className="px-3">
+                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-[0.25em] mb-0.5">Explore</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Feed, docs & rankings</p>
+              </div>
+              {exploreNavItems.map((item) => (
+                <NavItem
+                  key={item.path}
+                  to={item.path}
+                  label={item.label}
+                  icon={item.icon}
+                  active={isActive(item.path)}
+                  onClick={closeSidebarNav}
+                />
+              ))}
+            </nav>
+
+            <nav className="space-y-2 rounded-xl border border-slate-800/80 bg-slate-950/40 p-2" aria-label="Monitor">
+              <div className="px-2">
+                <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.25em] mb-0.5">Monitor</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Protocol telemetry</p>
+              </div>
+              {monitorNavItems.map((item) => (
+                <NavItem
+                  key={item.path}
+                  to={item.path}
+                  label={item.label}
+                  icon={item.icon}
+                  active={isActive(item.path)}
+                  onClick={closeSidebarNav}
+                />
+              ))}
+            </nav>
+          </div>
         </div>
 
         <div className="px-4 pb-4 pt-2 border-t border-slate-800/70 space-y-2">
@@ -267,6 +356,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Collapse toggle pill (desktop) */}
       <button
+        ref={sidebarToggleRef}
         type="button"
         onClick={() => {
           playClick();
@@ -317,7 +407,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
 
               <div className="lg:hidden flex items-center gap-2">
-                <NotificationBar walletAddress={walletAddress} />
+                <NotificationBar walletAddress={walletAddress ?? null} />
                 <button
                   onClick={() => {
                     playClick();
@@ -339,7 +429,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               />
               <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)] animate-in slide-in-from-top-2 fade-in duration-500">
                 <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
-                  {[...mainNavItems, ...intelItems].map((item, index) => (
+                  {allMobileNavItems.map((item, index) => (
                     <Link
                       key={item.path}
                       to={item.path}
@@ -370,7 +460,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       playClick();
                       setIsMenuOpen(false);
                     }}
-                    style={{ animationDelay: `${([...mainNavItems, ...intelItems].length) * 45}ms` }}
+                    style={{ animationDelay: `${allMobileNavItems.length * 45}ms` }}
                     className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest rounded-full mt-6 hover:bg-intuition-success hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                   >
                     <Coins size={18} /> ACQUIRE_₸_TOKEN
@@ -382,7 +472,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       playClick();
                       setIsMenuOpen(false);
                     }}
-                    style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 1) * 45}ms` }}
+                    style={{ animationDelay: `${(allMobileNavItems.length + 1) * 45}ms` }}
                     className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-[#F0C14B] text-[#F0C14B] font-black font-mono text-[10px] tracking-widest rounded-full mt-2 hover:bg-[#F0C14B] hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                   >
                     <Send size={18} /> SEND_TRUST
@@ -391,7 +481,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <button
                     onClick={handleNewSignal}
                     style={{
-                      animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms`,
+                      animationDelay: `${(allMobileNavItems.length + 2) * 45}ms`,
                     }}
                     className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest rounded-full shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                   >
@@ -407,7 +497,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       if (next) playClick();
                     }}
                     style={{
-                      animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms`,
+                      animationDelay: `${(allMobileNavItems.length + 3) * 45}ms`,
                     }}
                     className="w-full flex items-center justify-between gap-3 px-5 py-4 border-2 border-slate-700 text-slate-300 font-mono font-black text-[10px] tracking-widest rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                   >
@@ -434,7 +524,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <button
                       onClick={handleDisconnect}
 style={{
-                        animationDelay: `${([...mainNavItems, ...intelItems].length + 4) * 45}ms`,
+                        animationDelay: `${(allMobileNavItems.length + 4) * 45}ms`,
                       }}
                     className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                     >
@@ -448,7 +538,7 @@ style={{
                         openModal();
                       }}
                       style={{
-                        animationDelay: `${([...mainNavItems, ...intelItems].length + 4) * 45}ms`,
+                        animationDelay: `${(allMobileNavItems.length + 4) * 45}ms`,
                       }}
                       className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                     >
@@ -497,7 +587,7 @@ style={{
               </button>
             )}
 
-            <NotificationBar walletAddress={walletAddress} />
+            <NotificationBar walletAddress={walletAddress ?? null} />
 
             <button
               onClick={handleNewSignal}

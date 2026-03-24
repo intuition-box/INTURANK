@@ -298,24 +298,13 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
         return;
     }
     setTxStatus('CALCULATING');
-    // Ensure protocol approval before proceeding
-    try {
-        const approved = await checkProxyApproval(wallet);
-        if (!approved) {
-            setTxStatus('SIGNING');
-            await grantProxyApproval(wallet);
-            setTxStatus('CALCULATING');
-        }
-    } catch (e) {
-        console.error("PROXY_APPROVAL_FAILED:", e);
-    }
     setTxError(undefined);
     try {
       const metadata = { name: identityForm.name, description: identityForm.description, image: identityForm.image, type: identityForm.type, links: identityForm.links.filter(l => l.url) };
       await new Promise(r => setTimeout(r, 1000));
       setTxStatus('SIGNING');
-      // Uses createIdentityAtom which now handles Protocol Approval (handshake) automatically via FeeProxy
       const { hash, termId } = await createIdentityAtom(metadata, identityForm.deposit, wallet);
+      markProxyApproved(wallet);
       setTxHash(hash);
       setCreatedTermId(termId);
       setTxStatus('BROADCASTING');

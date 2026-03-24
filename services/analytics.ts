@@ -41,6 +41,38 @@ export const safeParseUnits = (val: string | undefined | null): number => {
     }
 };
 
+/** Sum shares from holder rows (same source as atom Positions tab) for one curve — use when RPC/subgraph disagree. */
+export function getSharesFromHolderRowsForCurve(
+  holders: Array<{ shares?: string | number; account?: { id?: string }; vault?: { curve_id?: number | string } }> | undefined,
+  wallet: string | null | undefined,
+  curveId: number
+): number {
+  if (!holders?.length || !wallet) return 0;
+  const w = wallet.trim().toLowerCase();
+  let sum = 0;
+  for (const h of holders) {
+    const aid = (h.account?.id || '').trim().toLowerCase();
+    if (!aid || aid !== w) continue;
+    if (Number(h.vault?.curve_id) !== curveId) continue;
+    sum += safeParseUnits(String(h.shares ?? '0'));
+  }
+  return sum;
+}
+
+/** Max of RPC/subgraph balance string and Positions-tab holder sum (same graph rows). */
+export function mergeTrustBalanceDisplay(
+  trustBalanceRpcGql: string,
+  holders: Array<{ shares?: string | number; account?: { id?: string }; vault?: { curve_id?: number | string } }> | undefined,
+  wallet: string | null | undefined,
+  curveId: number
+): string {
+  const rpcGql = parseFloat(trustBalanceRpcGql) || 0;
+  const fromH = getSharesFromHolderRowsForCurve(holders, wallet, curveId);
+  const m = Math.max(rpcGql, fromH);
+  if (m <= 0) return '0.00';
+  return m.toFixed(m < 0.01 ? 6 : 4);
+}
+
 export const formatMarketValue = (val: number | string): string => {
     const n = typeof val === 'string' ? parseFloat(val) : val;
     if (isNaN(n) || n === 0 || n < 1e-10) return "0.0000";

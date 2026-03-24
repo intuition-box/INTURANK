@@ -7,11 +7,9 @@ import { formatEther } from 'viem';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { playClick, playHover } from '../services/audio';
 import { Link } from 'react-router-dom';
-import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { GoogleGenAI } from "@google/genai";
-
-const MODEL_NAME = 'gemini-2.5-flash';
 
 // --- TACTICAL CONFLICT SIMULATION COMPONENT (Updated to V3 Inspo) ---
 const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number; rScore: number }> = ({ left, right, lScore, rScore }) => {
@@ -56,7 +54,7 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
             `;
 
             const response = await ai.models.generateContent({
-                model: MODEL_NAME,
+                model: GEMINI_MODEL,
                 contents: prompt,
             });
             setAnalysis(response.text || 'Could not generate summary. Try again.');

@@ -4,9 +4,9 @@ import { GoogleGenAI } from "@google/genai";
 import { Account, Triple, Transaction } from '../types';
 import { formatEther } from 'viem';
 import { formatDisplayedShares } from '../services/analytics';
-import { CURRENCY_SYMBOL, getGeminiApiKey } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
 
-const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'] as const;
+const MODELS = [GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-1.5-flash'] as const;
 
 export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: Transaction[] }> = ({ agent, triples, history }) => {
     const [brief, setBrief] = useState<string>('');

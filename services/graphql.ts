@@ -1,8 +1,9 @@
 
-import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
+import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID } from '../constants';
 import { Transaction, Claim, Triple } from '../types';
 import { hexToString, formatEther, parseEther, getAddress, isAddress } from 'viem';
-import { safeWeiToEther } from './analytics';
+import { safeWeiToEther, safeParseUnits } from './analytics';
+import { publicClient } from './web3';
 
 // Request guard to prevent parallel overlapping global claims fetches
 let isGlobalClaimsFetching = false;
@@ -304,6 +305,271 @@ export const getHomeAtomSections = async (limitPerSection = 12) => {
   return { roiDaily, byMarketcap, newlyCreated };
 };
 
+/** Subgraph often attributes atom/triple creator as FeeProxy when creation routes through IntuRank — resolve real wallet from first deposit sender. */
+const PROTOCOL_ROUTER_ADDRESSES = new Set(
+  [FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS].map((a) => a.toLowerCase())
+);
+
+async function resolveCreatorIfProxyRouter(
+  termId: string,
+  creator: { id?: string; label?: string; image?: string } | null | undefined
+): Promise<{ id?: string; label?: string; image?: string } | null | undefined> {
+  const cid = (creator?.id || '').toLowerCase();
+  if (!termId || !cid || !PROTOCOL_ROUTER_ADDRESSES.has(cid)) return creator;
+
+  const ids = prepareQueryIds(termId);
+  const q = `query ($ids: [String!]!) {
+    events(limit: 40, order_by: {created_at: asc}, where: {
+      type: {_eq: "Deposited"},
+      deposit: { vault: { term_id: { _in: $ids } } }
+    }) {
+      deposit { sender { id label image } }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { ids });
+    for (const ev of res?.events ?? []) {
+      const s = ev?.deposit?.sender;
+      const sid = (s?.id || '').toLowerCase();
+      if (sid && !PROTOCOL_ROUTER_ADDRESSES.has(sid) && isAddress(sid)) {
+        try {
+          return { id: getAddress(sid), label: s.label || undefined, image: s.image || undefined };
+        } catch {
+          return { id: s.id, label: s.label, image: s.image };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('resolveCreatorIfProxyRouter', e);
+  }
+  // Do not surface router contract as a "person"; UI can fall back to Activity / deposits.
+  return {
+    id: undefined,
+    label: 'Wallet (creation routed via FeeProxy)',
+    image: undefined,
+  };
+}
+
+/** Prefer the EOA that signed the AtomCreated / TripleCreated tx — subgraph creator may be a router or proxy (not the user). */
+async function resolveCreatorFromCreationTx(
+  termId: string,
+  creator: { id?: string; label?: string; image?: string } | null | undefined,
+  isTriple: boolean
+): Promise<{ id?: string; label?: string; image?: string } | null | undefined> {
+  if (!termId) return creator;
+  const ids = prepareQueryIds(termId);
+  const q = isTriple
+    ? `query ($ids: [String!]!) {
+        events(limit: 1, order_by: {created_at: asc}, where: {
+          type: {_eq: "TripleCreated"},
+          triple: { term_id: {_in: $ids} }
+        }) { transaction_hash }
+      }`
+    : `query ($ids: [String!]!) {
+        events(limit: 1, order_by: {created_at: asc}, where: {
+          type: {_eq: "AtomCreated"},
+          atom: { term_id: {_in: $ids} }
+        }) { transaction_hash }
+      }`;
+  try {
+    const res = await fetchGraphQL(q, { ids });
+    let hash = res?.events?.[0]?.transaction_hash as string | undefined;
+    if (!hash || typeof hash !== 'string') return creator;
+    if (!hash.startsWith('0x')) hash = `0x${hash}`;
+    const tx = await publicClient.getTransaction({ hash: hash as `0x${string}` });
+    const from = tx?.from;
+    if (!from || !isAddress(from)) return creator;
+    let nextId: string;
+    try {
+      nextId = getAddress(from);
+    } catch {
+      nextId = from;
+    }
+    const prevId = (creator?.id || '').toLowerCase();
+    const same = prevId === nextId.toLowerCase();
+    return {
+      id: nextId,
+      label: same ? creator?.label : undefined,
+      image: same ? creator?.image : undefined,
+    };
+  } catch (e) {
+    console.warn('resolveCreatorFromCreationTx', e);
+    return creator;
+  }
+}
+
+/** Route `id` vs `vault.term_id` from Graph (same logical term, different string padding). */
+export function vaultTermMatchesRoute(routeTermId: string, vaultTermId: string | undefined | null): boolean {
+  if (!routeTermId || !vaultTermId) return false;
+  const routeSet = new Set(prepareQueryIds(routeTermId).map(normalize));
+  for (const v of prepareQueryIds(String(vaultTermId))) {
+    if (routeSet.has(normalize(v))) return true;
+  }
+  return false;
+}
+
+/** Address variants for Graph account_id / account.id (checksum + lowercase + padded ids from prepareQueryIds). */
+function accountVariantsForGraph(account: string): string[] {
+  const out = new Set<string>();
+  const t = (account || '').trim();
+  if (!t) return [];
+  out.add(t.toLowerCase());
+  try {
+    if (isAddress(t)) out.add(getAddress(t));
+  } catch {
+    /* ignore */
+  }
+  for (const v of prepareQueryIds(t)) out.add(v);
+  return Array.from(out);
+}
+
+/** Subgraph position shares for a wallet + term. Uses safeParseUnits (wei or decimal strings). Prefer when MultiVault getShares disagrees with the indexer. */
+export async function getSubgraphPositionSharesForTerm(
+  account: string,
+  termId: string
+): Promise<{ linear: string; exponential: string }> {
+  const ids = prepareQueryIds(termId);
+  const addrs = accountVariantsForGraph(account);
+  if (!ids.length || !addrs.length) return { linear: '0', exponential: '0' };
+
+  const sumRows = (rows: any[] | undefined) => {
+    let linear = 0;
+    let exponential = 0;
+    for (const p of rows ?? []) {
+      const cid = Number(p?.vault?.curve_id);
+      const sh = safeParseUnits(p?.shares != null ? String(p.shares) : '0');
+      if (!Number.isFinite(sh) || sh <= 0) continue;
+      if (cid === LINEAR_CURVE_ID) linear += sh;
+      else if (cid === OFFSET_PROGRESSIVE_CURVE_ID) exponential += sh;
+    }
+    return { linear, exponential };
+  };
+
+  /** Portal-style: vaults(term) → positions(account_id) — matches Intuition GetAccountProfile / term.vaults.userPosition. */
+  const sumVaultNested = (vaults: any[] | undefined) => {
+    let linear = 0;
+    let exponential = 0;
+    for (const v of vaults ?? []) {
+      const cid = Number(v?.curve_id);
+      for (const p of v?.positions ?? []) {
+        const sh = safeParseUnits(p?.shares != null ? String(p.shares) : '0');
+        if (!Number.isFinite(sh) || sh <= 0) continue;
+        if (cid === LINEAR_CURVE_ID) linear += sh;
+        else if (cid === OFFSET_PROGRESSIVE_CURVE_ID) exponential += sh;
+      }
+    }
+    return { linear, exponential };
+  };
+
+  const formatPair = (linear: number, exponential: number) => {
+    const fmt = (n: number) => {
+      if (n <= 0) return '0';
+      return n.toFixed(n < 0.01 ? 6 : 4);
+    };
+    return { linear: fmt(linear), exponential: fmt(exponential) };
+  };
+
+  const qPositions = `query ($ids: [String!]!, $addrs: [String!]!) {
+    positions(where: {
+      _and: [
+        { vault: { term_id: { _in: $ids } } },
+        { _or: [
+          { account_id: { _in: $addrs } },
+          { account: { id: { _in: $addrs } } }
+        ]}
+      ]
+    }) {
+      shares
+      vault { curve_id term_id }
+    }
+  }`;
+
+  const qPwv = `query ($ids: [String!]!, $addrs: [String!]!) {
+    positions_with_value(where: {
+      _and: [
+        { vault: { term_id: { _in: $ids } } },
+        { _or: [
+          { account_id: { _in: $addrs } },
+          { account: { id: { _in: $addrs } } }
+        ]}
+      ]
+    }) {
+      shares
+      vault { curve_id term_id }
+    }
+  }`;
+
+  const qVaultsWithPositions = `query ($ids: [String!]!, $addrs: [String!]!) {
+    vaults(
+      where: { term_id: { _in: $ids } },
+      order_by: { curve_id: asc }
+    ) {
+      curve_id
+      term_id
+      positions(where: {
+        _or: [
+          { account_id: { _in: $addrs } },
+          { account: { id: { _in: $addrs } } }
+        ]
+      }) {
+        shares
+        account_id
+      }
+    }
+  }`;
+
+  const qBroad = `query ($addrs: [String!]!) {
+    positions(
+      where: {
+        _or: [
+          { account_id: { _in: $addrs } },
+          { account: { id: { _in: $addrs } } }
+        ]
+      },
+      limit: 5000,
+      order_by: { shares: desc }
+    ) {
+      shares
+      vault { curve_id term_id }
+    }
+  }`;
+
+  try {
+    const [resPos, resPwv, resVault] = await Promise.all([
+      fetchGraphQL(qPositions, { ids, addrs }).catch(() => ({})),
+      fetchGraphQL(qPwv, { ids, addrs }).catch(() => ({})),
+      fetchGraphQL(qVaultsWithPositions, { ids, addrs }).catch(() => ({})),
+    ]);
+    const fromPos = sumRows(resPos?.positions);
+    const fromPwv = sumRows(resPwv?.positions_with_value);
+    const fromVault = sumVaultNested(resVault?.vaults);
+    let preL = Math.max(fromPos.linear, fromPwv.linear, fromVault.linear);
+    let preE = Math.max(fromPos.exponential, fromPwv.exponential, fromVault.exponential);
+
+    // Term-scoped GraphQL filters can miss rows when term_id string form ≠ route id; Portfolio loads by account then filters — mirror that.
+    if (preL < 1e-18 && preE < 1e-18) {
+      const resBroad = await fetchGraphQL(qBroad, { addrs }).catch(() => ({}));
+      const filtered = (resBroad?.positions ?? []).filter((p: any) => vaultTermMatchesRoute(termId, p?.vault?.term_id));
+      const fromBroad = sumRows(filtered);
+      preL = Math.max(preL, fromBroad.linear);
+      preE = Math.max(preE, fromBroad.exponential);
+    }
+
+    return formatPair(preL, preE);
+  } catch {
+    return { linear: '0', exponential: '0' };
+  }
+}
+
+/** Prefer the larger of RPC MultiVault balance vs subgraph-indexed position (display / UX when they disagree). */
+export function pickEffectiveShareBalance(rpcStr: string, gqlStr: string): string {
+  const r = parseFloat(rpcStr) || 0;
+  const g = parseFloat(gqlStr) || 0;
+  const m = Math.max(r, g);
+  if (m <= 0) return '0.00';
+  return m.toFixed(m < 0.01 ? 6 : 4);
+}
+
 export const getAgentById = async (termId: string) => {
   const ids = prepareQueryIds(termId);
   const q = `query ($ids: [String!]!) { 
@@ -325,10 +591,14 @@ export const getAgentById = async (termId: string) => {
         links = [];
     }
 
+    let rawCreator = a?.creator || t?.creator;
+    rawCreator = await resolveCreatorIfProxyRouter(termId, rawCreator);
+    rawCreator = await resolveCreatorFromCreationTx(termId, rawCreator, !!t);
+
     return {
       id: termId, 
       counterTermId: t?.counter_term_id,
-      label, description: meta.description, image: a?.image, type, links, creator: a?.creator || t?.creator,
+      label, description: meta.description, image: a?.image, type, links, creator: rawCreator,
       totalAssets: v?.total_assets.toString() || "0",
       totalShares: v?.total_shares.toString() || "0",
       currentSharePrice: v?.current_share_price || "0",
@@ -492,15 +762,23 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
 
 /** Fetches all user positions (linear and exponential curves). No curve_id filter — both curve 1 and 2 are included. */
 export const getUserPositions = async (address: string) => {
-  const ids = [address, address.toLowerCase()];
-  const q = `query ($ids: [String!]!) {
-      positions(where: { account: { id: { _in: $ids } }, shares: { _gt: "0" } }, limit: 5000, order_by: { shares: desc }) { 
-        id shares account { id label image } 
-        vault { term_id curve_id total_assets total_shares current_share_price term { atom { term_id label data image type creator { id label image } } triple { term_id subject { label term_id data type image } predicate { label } object { label term_id data type image } counter_term_id creator { id label image } } } } 
+  const addrs = accountVariantsForGraph(address);
+  const q = `query ($addrs: [String!]!) {
+      positions(where: {
+        _and: [
+          { shares: { _gt: "0" } },
+          { _or: [
+            { account_id: { _in: $addrs } },
+            { account: { id: { _in: $addrs } } }
+          ]}
+        ]
+      }, limit: 5000, order_by: { shares: desc }) {
+        id shares account_id account { id label image }
+        vault { term_id curve_id total_assets total_shares current_share_price term { atom { term_id label data image type creator { id label image } } triple { term_id subject { label term_id data type image } predicate { label } object { label term_id data type image } counter_term_id creator { id label image } } } }
       }
   }`;
   try {
-    const data = await fetchGraphQL(q, { ids });
+    const data = await fetchGraphQL(q, { addrs });
     return data?.positions ?? [];
   } catch (e) { return []; }
 };
@@ -1776,14 +2054,17 @@ export const getActivityBySenderIds = async (
 export const getHoldersForVault = async (termId: string) => {
   const ids = prepareQueryIds(termId);
   const q = `query GetHolders($ids: [String!]!) {
-      positions(where: { vault: { term_id: { _in: $ids } }, shares: { _gt: "0" } }, order_by: { shares: desc }, limit: 50) {
-        shares account { id label image }
+      positions(where: { vault: { term_id: { _in: $ids } }, shares: { _gt: "0" } }, order_by: { shares: desc }, limit: 100) {
+        shares
+        account { id label image }
+        vault { curve_id term_id }
       }
   }`;
   try {
     const data = await fetchGraphQL(q, { ids });
     const holders = data?.positions || [];
-    return { holders, totalCount: holders.length };
+    const uniqueAccounts = new Set((holders as any[]).map((h: any) => normalize(h?.account?.id || '')).filter(Boolean));
+    return { holders, totalCount: uniqueAccounts.size };
   } catch (e) { return { holders: [], totalCount: 0 }; }
 };
 

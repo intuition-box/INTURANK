@@ -70,7 +70,7 @@ import Documentation from './pages/Documentation';
 import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
 import SendTrust from './pages/SendTrust';
-import SDKPlayground from './pages/SDKPlayground';
+import SkillPlayground from './pages/SkillPlayground';
 // import RankedList from './pages/RankedList';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
@@ -115,7 +115,7 @@ const App: React.FC = () => {
           <Route path="/feed" element={<Feed />} />
           <Route path="/health" element={<KPIDashboard />} />
           <Route path="/documentation" element={<Documentation />} />
-          <Route path="/sdk-lab" element={<SDKPlayground />} />
+          <Route path="/skill-playground" element={<SkillPlayground />} />
           
           {/* New Features */}
           <Route path="/compare" element={<Compare />} />

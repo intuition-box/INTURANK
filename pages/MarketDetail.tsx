@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
 import { getAgentById, getAgentTriples, getAgentTriplesWithVaults, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
-import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalance, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
+import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalanceEffective, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
 import { formatEther, parseEther } from 'viem';
 import { toast } from '../components/Toast';
@@ -12,8 +12,14 @@ import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
-import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, safeWeiToEther, calculatePositionPnL, calculateRealizedPnL, isSystemVerified } from '../services/analytics';
-import { LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
+import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, safeWeiToEther, calculatePositionPnL, calculateRealizedPnL, isSystemVerified, getSharesFromHolderRowsForCurve, mergeTrustBalanceDisplay } from '../services/analytics';
+import { LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
+
+function isProtocolRouterAddress(addr: string | undefined): boolean {
+  if (!addr) return false;
+  const a = addr.toLowerCase();
+  return a === FEE_PROXY_ADDRESS.toLowerCase() || a === MULTI_VAULT_ADDRESS.toLowerCase();
+}
 import { sendTransactionReceiptEmail } from '../services/emailNotifications';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import html2canvas from 'html2canvas';
@@ -319,6 +325,8 @@ const MarketDetail: React.FC = () => {
   const [sentiment, setSentiment] = useState<'TRUST' | 'DISTRUST'>('TRUST');
   const [inputAmount, setInputAmount] = useState('');
   const [wallet, setWallet] = useState<string | null>(null);
+  /** Prefer wagmi so curve-switch / balance effects run before sync effect copies address into `wallet`. */
+  const effectiveWallet = wagmiAddress ?? wallet;
   const [walletBalance, setWalletBalance] = useState('0.00');
   
   const [trustBalance, setTrustBalance] = useState('0.00');
@@ -365,6 +373,11 @@ const MarketDetail: React.FC = () => {
         try {
             const acc = await getConnectedAccount();
             setWallet(acc);
+            if (!acc) {
+                setTrustBalance('0.00');
+                setDistrustBalance('0.00');
+                setUserPosition(null);
+            }
             if (acc) {
                 setIsWatched(isInWatchlist(id, acc));
                 checkProxyApproval(acc).then(setIsApproved);
@@ -411,16 +424,28 @@ const MarketDetail: React.FC = () => {
 
             if (acc) {
                 setWalletBalance(await getWalletBalance(acc));
-                const curveId = selectedCurveId;
-                const tShares = await getShareBalance(acc, id, curveId);
+                const linearBal = await getShareBalanceEffective(acc, id!, LINEAR_CURVE_ID);
+                const offBal = await getShareBalanceEffective(acc, id!, OFFSET_PROGRESSIVE_CURVE_ID);
+                const ln = parseFloat(linearBal);
+                const on = parseFloat(offBal);
+                let curveId: number = LINEAR_CURVE_ID;
+                if (ln > 1e-8 && on > 1e-8) {
+                    curveId = ln >= on ? LINEAR_CURVE_ID : OFFSET_PROGRESSIVE_CURVE_ID;
+                } else if (on > 1e-8 && ln <= 1e-8) {
+                    curveId = OFFSET_PROGRESSIVE_CURVE_ID;
+                } else {
+                    curveId = LINEAR_CURVE_ID;
+                }
+                setSelectedCurveId(curveId as 1 | 2);
+                const tShares = curveId === LINEAR_CURVE_ID ? linearBal : offBal;
                 setTrustBalance(tShares);
 
                 let dShares = '0.00';
                 if (agentData.type === 'CLAIM') {
                     const cId = agentData.counterTermId || calculateCounterTripleId(id!);
-                    dShares = await getShareBalance(acc, cId, curveId);
+                    dShares = await getShareBalanceEffective(acc, cId, curveId);
                 } else if (oppoData) {
-                    dShares = await getShareBalance(acc, oppoData.id, curveId);
+                    dShares = await getShareBalanceEffective(acc, oppoData.id, curveId);
                 }
                 setDistrustBalance(dShares);
 
@@ -444,7 +469,7 @@ const MarketDetail: React.FC = () => {
         return;
     }
 
-    const sharesRaw = await getShareBalance(acc, currentVaultId, curveId);
+    const sharesRaw = await getShareBalanceEffective(acc, currentVaultId, curveId);
     const sharesNum = parseFloat(sharesRaw);
 
     if (sharesNum > 0.0001) {
@@ -465,30 +490,36 @@ const MarketDetail: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, [id]);
+  // Re-run when route or wallet changes — previously only [id] missed the case where wagmi connected after mount (balances stayed 0).
+  useEffect(() => { fetchData(); }, [id, wagmiAddress]);
 
-  // When selected curve changes, refresh chart from that vault and user balances/position for that curve
+  // When selected curve / vaults / timeframe changes: chart from that vault; balances + position use same curve (prefer wagmi address).
   useEffect(() => {
-    const vault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
+    const vault = vaultsByCurve.find((v) => Number(v.curve_id) === selectedCurveId);
     if (vault) {
       setChartData(generateAnchoredHistory(vault.total_assets, vault.total_shares, vault.current_share_price, timeframe));
+    } else if (agent) {
+      setChartData(generateAnchoredHistory(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice, timeframe));
     }
-    if (wallet && id) {
-      getShareBalance(wallet, id, selectedCurveId).then(setTrustBalance);
+    if (effectiveWallet && id) {
+      getShareBalanceEffective(effectiveWallet, id, selectedCurveId).then(setTrustBalance);
       if (agent?.type === 'CLAIM') {
         const cId = agent.counterTermId || calculateCounterTripleId(id);
-        getShareBalance(wallet, cId, selectedCurveId).then(setDistrustBalance);
+        getShareBalanceEffective(effectiveWallet, cId, selectedCurveId).then(setDistrustBalance);
       } else if (oppositionAgent) {
-        getShareBalance(wallet, oppositionAgent.id, selectedCurveId).then(setDistrustBalance);
+        getShareBalanceEffective(effectiveWallet, oppositionAgent.id, selectedCurveId).then(setDistrustBalance);
       }
-      if (agent && id) updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
+      if (agent && id) updatePositionSummary(effectiveWallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
     }
-  }, [selectedCurveId, vaultsByCurve, timeframe, wallet, id, agent, oppositionAgent, sentiment, activityLog]);
+  }, [selectedCurveId, vaultsByCurve, timeframe, effectiveWallet, id, agent, oppositionAgent, sentiment, activityLog]);
 
   // Sync wallet from wagmi so Execution Deck / SIGNAL_TRUST has connected wallet when user connected in header
   useEffect(() => {
     if (!wagmiAddress) {
       setWallet(null);
+      setTrustBalance('0.00');
+      setDistrustBalance('0.00');
+      setUserPosition(null);
       return;
     }
     setWallet(wagmiAddress);
@@ -500,16 +531,10 @@ const MarketDetail: React.FC = () => {
   }, [wagmiAddress, id]);
 
   useEffect(() => {
-        if (agent) {
-            setChartData(generateAnchoredHistory(agent.totalAssets || '0', agent.totalShares || '0', agent.currentSharePrice, timeframe));
-        }
-  }, [timeframe, agent]);
-
-  useEffect(() => {
-      if (wallet && agent) {
-          updatePositionSummary(wallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
+      if (effectiveWallet && agent) {
+          updatePositionSummary(effectiveWallet, sentiment, activityLog, agent, oppositionAgent, selectedCurveId);
       }
-  }, [sentiment, wallet, activityLog, selectedCurveId]);
+  }, [sentiment, effectiveWallet, activityLog, selectedCurveId, agent, oppositionAgent, id]);
 
   // Lock sentiment to TRUST for standard atoms
   useEffect(() => {
@@ -523,11 +548,11 @@ const MarketDetail: React.FC = () => {
         ? id 
         : (agent?.type === 'CLAIM' ? (agent?.counterTermId || calculateCounterTripleId(id!)) : oppositionAgent?.id);
 
-    if (action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && wallet && activeTargetId) {
+    if (action === 'LIQUIDATE' && inputAmount && parseFloat(inputAmount) > 0 && effectiveWallet && activeTargetId) {
         const timer = setTimeout(async () => {
             setIsQuoting(true);
             try {
-                const quote = await getQuoteRedeem(inputAmount, activeTargetId, wallet, selectedCurveId);
+                const quote = await getQuoteRedeem(inputAmount, activeTargetId, effectiveWallet, selectedCurveId);
                 setEstimatedProceeds(parseFloat(quote).toFixed(4));
             } catch (e) {
                 setEstimatedProceeds('0.0000');
@@ -539,7 +564,7 @@ const MarketDetail: React.FC = () => {
     } else {
         setEstimatedProceeds('0.0000');
     }
-  }, [inputAmount, action, wallet, id, sentiment, agent, oppositionAgent, selectedCurveId]);
+  }, [inputAmount, action, effectiveWallet, id, sentiment, agent, oppositionAgent, selectedCurveId]);
 
   const addLog = (log: string) => {
     setTxModal((prev: any) => ({ ...prev, logs: [...prev.logs, log] }));
@@ -651,12 +676,12 @@ const MarketDetail: React.FC = () => {
             setInputAmount('');
 
             // Refresh share balance for selected curve so LIQUIDATE shows correct balance (RPC may lag briefly)
-            getShareBalance(activeWallet, id!, selectedCurveId).then(setTrustBalance);
+            getShareBalanceEffective(activeWallet, id!, selectedCurveId).then(setTrustBalance);
             if (agent?.type === 'CLAIM') {
               const cId = agent.counterTermId || calculateCounterTripleId(id!);
-              getShareBalance(activeWallet, cId, selectedCurveId).then(setDistrustBalance);
+              getShareBalanceEffective(activeWallet, cId, selectedCurveId).then(setDistrustBalance);
             } else if (oppositionAgent) {
-              getShareBalance(activeWallet, oppositionAgent.id, selectedCurveId).then(setDistrustBalance);
+              getShareBalanceEffective(activeWallet, oppositionAgent.id, selectedCurveId).then(setDistrustBalance);
             }
             updatePositionSummary(activeWallet, sentiment, [localTx, ...activityLog], agent!, oppositionAgent, selectedCurveId);
 
@@ -692,7 +717,10 @@ const MarketDetail: React.FC = () => {
   const handleMax = () => {
         playClick();
         if (action === 'ACQUIRE') setInputAmount(walletBalance);
-        else setInputAmount(sentiment === 'TRUST' ? trustBalance : distrustBalance);
+        else
+          setInputAmount(
+            sentiment === 'TRUST' ? mergeTrustBalanceDisplay(trustBalance, holders, effectiveWallet, selectedCurveId) : distrustBalance
+          );
   };
 
   const getConvictionMetadata = (shares: string | number) => {
@@ -785,6 +813,42 @@ const MarketDetail: React.FC = () => {
     };
   }, [isSwiping]);
 
+  /** Must run every render (before any early return) — Rules of Hooks. */
+  const holderTrustLinear = useMemo(
+    () => (effectiveWallet && holders.length ? getSharesFromHolderRowsForCurve(holders, effectiveWallet, LINEAR_CURVE_ID) : 0),
+    [holders, effectiveWallet]
+  );
+  const holderTrustExp = useMemo(
+    () => (effectiveWallet && holders.length ? getSharesFromHolderRowsForCurve(holders, effectiveWallet, OFFSET_PROGRESSIVE_CURVE_ID) : 0),
+    [holders, effectiveWallet]
+  );
+  const displayTrustBalance = useMemo(
+    () => mergeTrustBalanceDisplay(trustBalance, holders, effectiveWallet, selectedCurveId),
+    [trustBalance, holders, effectiveWallet, selectedCurveId]
+  );
+  const curveMismatchTrust = useMemo(
+    () =>
+      selectedCurveId === OFFSET_PROGRESSIVE_CURVE_ID &&
+      holderTrustExp < 1e-12 &&
+      holderTrustLinear > 1e-12,
+    [selectedCurveId, holderTrustLinear, holderTrustExp]
+  );
+  const curveMismatchTrustInverse = useMemo(
+    () =>
+      selectedCurveId === LINEAR_CURVE_ID &&
+      holderTrustLinear < 1e-12 &&
+      holderTrustExp > 1e-12,
+    [selectedCurveId, holderTrustLinear, holderTrustExp]
+  );
+  const activeBalance = sentiment === 'TRUST' ? displayTrustBalance : distrustBalance;
+
+  /** Full hex term id for this market (claims, SDK, copy) — normalized with 0x prefix. */
+  const termIdNormalized = useMemo(() => {
+    const raw = String(agent?.id ?? '').trim();
+    if (!raw) return '';
+    return raw.startsWith('0x') ? raw : `0x${raw}`;
+  }, [agent?.id]);
+
   if (loading || !agent) {
         return (
           <>
@@ -804,7 +868,7 @@ const MarketDetail: React.FC = () => {
         );
       }
 
-  const selectedVault = vaultsByCurve.find((v) => v.curve_id === selectedCurveId);
+  const selectedVault = vaultsByCurve.find((v) => Number(v.curve_id) === selectedCurveId);
   const overallSpotPrice = calculateAgentPrice(
     agent.totalAssets || '0',
     agent.totalShares || '0',
@@ -834,8 +898,6 @@ const MarketDetail: React.FC = () => {
   const tags = Array.from(new Map<string, { label: string; count: number }>(triples
         .filter(t => t.subject?.term_id === agent.id)
         .map(t => [t.object.term_id, { label: t.object.label, count: Math.floor(Math.random() * 2000) + 1 }])).values());
-  
-  const activeBalance = sentiment === 'TRUST' ? trustBalance : distrustBalance;
 
   return (
     <div className="w-full px-3 sm:px-6 lg:px-10 pt-6 pb-24 sm:pb-32 font-mono text-[#e2e8f0] bg-gradient-to-br from-[#020308] via-[#020616] to-[#020308] max-w-[100vw] overflow-x-hidden">
@@ -866,7 +928,7 @@ const MarketDetail: React.FC = () => {
             <div className="relative w-full max-w-lg my-auto sm:my-0" onClick={e => e.stopPropagation()}>
               <button onClick={() => setShowShareCard(false)} className="absolute -top-16 right-0 text-slate-500 hover:text-white transition-colors p-2 group"><X size={32} className="group-hover:rotate-90 transition-transform" /></button>
               <ShareCard 
-                username={wallet || '0xUser'} 
+                username={effectiveWallet || '0xUser'} 
                 pnl={cardStats.pnl} 
                 entryPrice={cardStats.entry} 
                 currentPrice={cardStats.exit} 
@@ -915,12 +977,16 @@ const MarketDetail: React.FC = () => {
             <div className="hidden lg:block w-[1px] h-4 bg-white/10"></div>
             <div className="flex items-center gap-5 shrink-0">
                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">Creator</span>
-                {agent.creator?.id ? (
+                {agent.creator?.id && !isProtocolRouterAddress(agent.creator.id) ? (
                     <a href={`${EXPLORER_URL}/address/${agent.creator.id}`} target="_blank" rel="noreferrer" onClick={playClick} onMouseEnter={playHover} className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full hover:border-intuition-primary/40 transition-all cursor-pointer group/creator">
                         <div className="w-5 h-5 rounded-full bg-slate-900 border border-white/20 overflow-hidden shrink-0 shadow-glow-blue"><img src={`https://effigy.im/a/${agent.creator.id}.png`} className="w-full h-full object-cover" alt="" /></div>
                         <span className="text-[10px] font-black text-white group-hover/creator:text-intuition-primary transition-colors">{agent.creator?.label || agent.creator?.id?.slice(0, 14)}</span>
                         <ExternalLink size={10} className="text-slate-600 group-hover/creator:text-intuition-primary" />
-                    </a>) : (
+                    </a>) : agent.creator?.label ? (
+                    <div className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full max-w-[min(100%,14rem)]" title={agent.creator.label}>
+                        <User size={10} className="text-slate-500 shrink-0" />
+                        <span className="text-[10px] font-black text-slate-200 truncate">{agent.creator.label}</span>
+                    </div>) : (
                     <div className="flex items-center gap-2.5 px-4 py-1.5 bg-white/5 border border-white/10 rounded-full text-slate-500"><User size={10} /><span className="text-[10px] font-black uppercase">Anonymous</span></div>)}
             </div>
             <div className="hidden lg:block w-[1px] h-4 bg-white/10"></div>
@@ -953,7 +1019,33 @@ const MarketDetail: React.FC = () => {
                     <h1 className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-tight mb-2 sm:mb-4 break-words max-w-full">
                       {agent.label}
                     </h1>
-                    <div className="flex items-center gap-5 text-[9px] font-black text-slate-600 uppercase tracking-widest"><div className="flex items-center gap-2"><Hash size={13} className="text-slate-700" /><span>NODE_ID: <span className="text-slate-500 font-mono">{agent.id.slice(0, 18)}...</span></span></div><div className="w-1 h-1 rounded-full bg-slate-800"></div><span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em]" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>LINEAR_CURVE_UTILITY</span></div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+                        <Hash size={13} className="text-slate-700 shrink-0" />
+                        <span className="shrink-0">TERM ID</span>
+                        <span
+                          className="text-slate-300 font-mono normal-case text-[10px] sm:text-[11px] tracking-normal break-all select-all"
+                          title={termIdNormalized || undefined}
+                        >
+                          {termIdNormalized || '—'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!termIdNormalized) return;
+                            void navigator.clipboard.writeText(termIdNormalized);
+                            playClick();
+                            toast.success('Term ID copied');
+                          }}
+                          className="shrink-0 inline-flex items-center justify-center p-1.5 rounded-md border border-slate-700 hover:border-intuition-primary hover:text-intuition-primary text-slate-500 transition-colors"
+                          title="Copy term ID (for claims & integrations)"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
+                      <div className="w-1 h-1 rounded-full bg-slate-800 shrink-0 hidden sm:block" />
+                      <span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em] shrink-0" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>LINEAR_CURVE_UTILITY</span>
+                    </div>
                 </div>
             </div>
             
@@ -1126,6 +1218,16 @@ const MarketDetail: React.FC = () => {
                                     <button onClick={handleMax} type="button" className="text-[9px] font-bold text-slate-400 hover:text-white px-2 py-0.5 border border-slate-600 hover:border-slate-500 transition-colors">Max</button>
                                 </div>
                             </div>
+                            {action === 'LIQUIDATE' && sentiment === 'TRUST' && curveMismatchTrust && (
+                              <p className="text-[10px] text-amber-400/95 mb-2 font-mono leading-relaxed">
+                                Your position is on the <span className="font-black text-amber-300">Linear</span> curve. Select <span className="font-black text-amber-300">Linear</span> in the curve table to redeem — Exponential has a separate vault.
+                              </p>
+                            )}
+                            {action === 'LIQUIDATE' && sentiment === 'TRUST' && curveMismatchTrustInverse && (
+                              <p className="text-[10px] text-amber-400/95 mb-2 font-mono leading-relaxed">
+                                Your position is on the <span className="font-black text-amber-300">Exponential</span> curve. Select <span className="font-black text-amber-300">Exponential</span> in the curve table to redeem.
+                              </p>
+                            )}
                             <div className="relative border-2 border-slate-800 focus-within:border-white/30 p-1 rounded-2xl transition-all duration-300">
                                 <input type="number" value={inputAmount} onChange={e => setInputAmount(e.target.value)} className="w-full bg-[#080808] border-none p-4 pr-4 text-right text-white font-black font-mono text-xl sm:text-2xl focus:outline-none rounded-xl" placeholder="0" />
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono pointer-events-none">
@@ -1395,7 +1497,7 @@ const MarketDetail: React.FC = () => {
                             <h4 className="text-[11px] font-black text-white uppercase tracking-[0.6em] mb-6 text-glow-white">Protocol_Parameters</h4>
                             <div className="p-8 border border-white/5 bg-white/5 rounded-2xl font-mono text-xs space-y-5 transition-all duration-300">
                                 <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Bonding_Curve</span><span className="font-bold text-glow" style={{ color: theme.color }}>Linear_Utility_1</span></div>
-                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.label || agent.creator?.id?.slice(0, 18) || 'Null_Origin'}</span></div>
+                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.id && !isProtocolRouterAddress(agent.creator.id) ? (agent.creator?.label || agent.creator.id.slice(0, 18)) : (agent.creator?.label || '—')}</span></div>
                                 {(() => {
                                     const primaryLink = agent.links?.[0];
                                     const linkUrl = primaryLink?.url ? (primaryLink.url.startsWith('http') ? primaryLink.url : `https://${primaryLink.url}`) : null;
@@ -1425,6 +1527,7 @@ const MarketDetail: React.FC = () => {
                                 <tr>
                                     <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">RANK</th>
                                     <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">ACCOUNT</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">CURVE</th>
                                     <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">CONVICTION</th>
                                     <th className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">SHARES</th>
                                 </tr>
@@ -1433,7 +1536,7 @@ const MarketDetail: React.FC = () => {
                                 {holders.length > 0 ? holders.map((h, i) => {
                                     const meta = getConvictionMetadata(h.shares);
                                     return (
-                                        <tr key={i} className="hover:bg-white/5 transition-all group">
+                                        <tr key={`${h.account?.id ?? 'x'}-${h.vault?.curve_id ?? i}-${i}`} className="hover:bg-white/5 transition-all group">
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-600 font-black">#{(i + 1).toString().padStart(2, '0')}</td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
                                                 <Link to={`/profile/${h.account.id}`} className="flex items-center gap-2 sm:gap-4 group-hover:text-white transition-colors">
@@ -1442,6 +1545,9 @@ const MarketDetail: React.FC = () => {
                                                     </div>
                                                     <span className="font-black text-white group-hover:text-glow-white transition-colors uppercase tracking-tight truncate max-w-[120px] sm:max-w-none">{h.account.label || h.account.id.slice(0, 24)}...</span>
                                                 </Link>
+                                            </td>
+                                            <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-slate-400 font-mono text-[9px] sm:text-[10px]">
+                                              {Number(h.vault?.curve_id) === LINEAR_CURVE_ID ? 'Linear' : Number(h.vault?.curve_id) === OFFSET_PROGRESSIVE_CURVE_ID ? 'Exponential' : '—'}
                                             </td>
                                             <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
                                                 <span className={`px-2 sm:px-3 py-0.5 sm:py-1 border rounded-sm font-black uppercase tracking-tighter transition-all text-[9px] sm:text-[10px] ${meta.color}`}>
@@ -1452,7 +1558,7 @@ const MarketDetail: React.FC = () => {
                                         </tr>
                                     );
                                 }) : (
-                                    <tr><td colSpan={4} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_POSITIONS_DETECTED</td></tr>)}
+                                    <tr><td colSpan={5} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_POSITIONS_DETECTED</td></tr>)}
                             </tbody>
                         </table>
                     </div>)}

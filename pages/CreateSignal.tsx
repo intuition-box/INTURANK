@@ -10,7 +10,7 @@ import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { formatEther } from 'viem';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue } from '../services/analytics';
 
@@ -33,7 +33,11 @@ const CreateSignal: React.FC = () => {
   const [deposit, setDeposit] = useState('0.01');
   const [creating, setCreating] = useState(false);
   const [lastTermId, setLastTermId] = useState<Hex | null>(null);
-  const [successModal, setSuccessModal] = useState<{ termId: Hex | null; type: 'signal' | 'atom' | 'synapse' } | null>(null);
+  const [successModal, setSuccessModal] = useState<{
+    termId: Hex | null;
+    type: 'signal' | 'atom' | 'synapse';
+    txHash?: Hex | null;
+  } | null>(null);
 
   // Manual CONSTRUCT_ATOM
   const [nodeAlias, setNodeAlias] = useState('');
@@ -94,8 +98,9 @@ const CreateSignal: React.FC = () => {
       setLastTermId(null);
       const result = await createStringAtom(payload.trim(), deposit || undefined);
       const termId = result.state.termId as Hex;
+      const txHash = (result as { transactionHash?: Hex }).transactionHash ?? null;
       setLastTermId(termId);
-      setSuccessModal({ termId, type: 'signal' });
+      setSuccessModal({ termId, type: 'signal', txHash });
       toast.success('Claim created successfully');
     } catch (err: any) {
       toast.error((err?.message || 'BROADCAST_FAILED').slice(0, 120));
@@ -110,11 +115,18 @@ const CreateSignal: React.FC = () => {
       toast.error('ENTER_ENTITY_NAME');
       return;
     }
+    const dep = atomDeposit || '0.5';
+    const minDep = parseFloat(minClaimDeposit || '0.5');
+    if (parseFloat(dep) < minDep) {
+      toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}. You entered ${dep}.`);
+      return;
+    }
     try {
       const account = await ensureWallet();
       setCreatingAtom(true);
       const approved = await checkProxyApproval(account);
       if (!approved) await grantProxyApproval(account);
+
       let resolvedImageUrl = imageUrl.trim();
 
       // If user selected a file and IPFS upload is configured, upload the file and
@@ -144,7 +156,7 @@ const CreateSignal: React.FC = () => {
         ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
       };
 
-      const { termId } = await createIdentityAtom(metadata, atomDeposit || '0.5', account);
+      const { termId, hash: atomTxHash } = await createIdentityAtom(metadata, atomDeposit || '0.5', account);
       markProxyApproved(account);
       setImageFile(null);
       if (termId) setLastTermId(termId as Hex);
@@ -157,7 +169,7 @@ const CreateSignal: React.FC = () => {
         setView('claim');
         setReturnToSynapseSlot(null);
       }
-      setSuccessModal({ termId: termId ?? null, type: 'atom' });
+      setSuccessModal({ termId: termId ?? null, type: 'atom', txHash: atomTxHash });
       toast.success('ATOM_ESTABLISHED');
     } catch (err: any) {
       toast.error((err?.message || 'GENESIS_FAILED').slice(0, 120));
@@ -184,9 +196,9 @@ const CreateSignal: React.FC = () => {
       if (!approved) await grantProxyApproval(account);
       
       const termId = calculateTripleId(subjectId, predicateId, objectId);
-      await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
+      const synapseTxHash = await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
       markProxyApproved(account);
-      setSuccessModal({ termId: termId as Hex, type: 'synapse' });
+      setSuccessModal({ termId: termId as Hex, type: 'synapse', txHash: synapseTxHash });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');
@@ -421,19 +433,18 @@ const CreateSignal: React.FC = () => {
       return;
     }
     if (!isAccount && !nodeAlias.trim()) return;
-    if (identityReviewApproved !== true) {
-      toast.error('Enable protocol first, then Submit.');
+    const deposit = atomDeposit || '0.5';
+    const minDep = parseFloat(minClaimDeposit || '0.5');
+    if (parseFloat(deposit) < minDep) {
+      toast.error(`Minimum deposit is ${minClaimDeposit} ${CURRENCY_SYMBOL}. You entered ${deposit}.`);
       return;
     }
     try {
       const account = await ensureWallet();
       setCreatingAtom(true);
-      
-      // Ensure protocol approval before proceeding
       const approved = await checkProxyApproval(account);
       if (!approved) await grantProxyApproval(account);
 
-      const deposit = atomDeposit || '0.5';
       const metadata = isAccount
         ? { type: 'Account', address: accountAddress.trim(), chain: accountChain }
         : {
@@ -443,11 +454,11 @@ const CreateSignal: React.FC = () => {
             ...(imageUrl.trim() && { image: imageUrl.trim() }),
             ...(identityUrl.trim() && { links: [{ label: 'Link', url: identityUrl.trim() }] }),
           };
-      const { termId } = await createIdentityAtom(metadata, deposit, account);
+      const { termId, hash: atomTxHash } = await createIdentityAtom(metadata, deposit, account);
       markProxyApproved(account);
       setImageFile(null);
       if (termId) setLastTermId(termId as Hex);
-      setSuccessModal({ termId: termId ?? null, type: 'atom' });
+      setSuccessModal({ termId: termId ?? null, type: 'atom', txHash: atomTxHash });
       toast.success('ATOM_ESTABLISHED');
       setView('root');
     } catch (err: any) {
@@ -477,9 +488,9 @@ const CreateSignal: React.FC = () => {
       if (!approved) await grantProxyApproval(account);
 
       const termId = calculateTripleId(subjectId, predicateId, objectId);
-      await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account, undefined, claimReviewBypassValidation);
+      const synapseTxHash = await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account, undefined, claimReviewBypassValidation);
       markProxyApproved(account);
-      setSuccessModal({ termId: termId as Hex, type: 'synapse' });
+      setSuccessModal({ termId: termId as Hex, type: 'synapse', txHash: synapseTxHash });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');
@@ -555,15 +566,38 @@ const CreateSignal: React.FC = () => {
                   {successModal.type === 'synapse' && 'Synapse Linked! View the claim portal.'}
                 </p>
               </div>
-              {successModal.termId && (
-                <Link
-                  to={`/markets/${successModal.termId}`}
-                  onClick={() => { playClick(); setSuccessModal(null); }}
-                  className="flex items-center gap-2 px-6 py-3 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest transition-colors clip-path-slant shadow-[0_0_20px_rgba(0,243,255,0.3)]"
-                >
-                  <ExternalLink size={14} /> {successModal.type === 'atom' ? 'Explore node' : 'View claim'}
-                </Link>
-              )}
+              <div className="flex flex-col items-stretch gap-4 w-full max-w-sm">
+                {successModal.txHash && (
+                  <div className="flex flex-col gap-2 w-full text-left">
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center">Transaction hash</span>
+                    <p
+                      className="text-[10px] font-mono text-slate-300 text-center leading-relaxed"
+                      title={successModal.txHash}
+                    >
+                      {successModal.txHash.slice(0, 12)}…{successModal.txHash.slice(-10)}
+                    </p>
+                    <a
+                      href={`${EXPLORER_URL}/tx/${successModal.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => { playClick(); }}
+                      className="flex items-center justify-center gap-2 px-6 py-3 border-2 border-intuition-primary/50 text-intuition-primary hover:bg-intuition-primary/10 hover:border-intuition-primary font-black text-xs uppercase tracking-widest transition-colors clip-path-slant"
+                    >
+                      <ExternalLink size={14} /> View in explorer
+                    </a>
+                  </div>
+                )}
+                {successModal.termId && (
+                  <Link
+                    to={`/markets/${successModal.termId}`}
+                    onClick={() => { playClick(); setSuccessModal(null); }}
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-intuition-primary hover:bg-white text-black font-black text-xs uppercase tracking-widest transition-colors clip-path-slant shadow-[0_0_20px_rgba(0,243,255,0.3)]"
+                  >
+                    <ExternalLink size={14} />{' '}
+                    {successModal.type === 'atom' ? 'View atom' : 'View claim'}
+                  </Link>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => { playClick(); setSuccessModal(null); }}
@@ -638,11 +672,17 @@ const CreateSignal: React.FC = () => {
               </div>
               <h1 className="text-2xl md:text-4xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Choose how to create</h1>
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
-                <button type="button" disabled className="p-8 bg-white/[0.04] border-2 border-white/10 opacity-60 cursor-not-allowed clip-path-slant text-left">
-                  <Sparkles size={32} className="text-slate-500 mb-4" />
+                <Link
+                  to="/skill-playground"
+                  onClick={playClick}
+                  onMouseEnter={playHover}
+                  className="p-8 bg-white/[0.06] border-2 border-intuition-primary/50 hover:border-intuition-primary hover:bg-intuition-primary/10 hover:shadow-[0_0_30px_rgba(0,243,255,0.25)] clip-path-slant text-left transition-all group"
+                >
+                  <Sparkles size={32} className="text-intuition-primary mb-4 group-hover:scale-110 transition-transform text-glow-blue" />
                   <div className="text-white font-black text-sm uppercase tracking-widest mb-2">Generate identity with AI</div>
-                  <div className="text-[10px] text-slate-500 leading-relaxed">Coming soon.</div>
-                </button>
+                  <div className="text-[10px] text-slate-400 leading-relaxed">Neural-assisted creation. Describe your node and let AI handle the parameters.</div>
+                  <div className="mt-4 text-intuition-primary text-[10px] font-black uppercase tracking-widest text-glow-blue">Launch Agent →</div>
+                </Link>
                 <button
                   onClick={() => { playClick(); setView('identity_manual'); }}
                   onMouseEnter={playHover}
@@ -885,9 +925,6 @@ const CreateSignal: React.FC = () => {
                   </div>
                 )}
               </div>
-              <Link to="/sdk-lab" onClick={playClick} onMouseEnter={playHover} className="mt-6 flex items-center gap-2 text-slate-500 hover:text-intuition-primary text-[10px] font-black uppercase tracking-widest">
-                <Terminal size={12} /> ADVANCED_SDK_LAB
-              </Link>
               {footer}
             </>
             </div>
@@ -996,6 +1033,23 @@ const CreateSignal: React.FC = () => {
                 <span className="text-white font-bold">[is]</span>{' '}
                 <span className="text-intuition-primary font-bold">[trustworthy]</span>.
               </p>
+              <div className="w-full max-w-2xl mx-auto mb-8 rounded-2xl border border-intuition-primary/25 bg-intuition-primary/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-center sm:text-left">
+                <div className="flex items-center justify-center sm:justify-start gap-2 text-[11px] text-slate-300">
+                  <Sparkles size={16} className="text-intuition-primary shrink-0" />
+                  <span>
+                    Want AI-generated calldata and fees? Use the{' '}
+                    <span className="text-white font-semibold">Intuition Skill Playground</span>—then return here to connect nodes manually if you prefer.
+                  </span>
+                </div>
+                <Link
+                  to="/skill-playground"
+                  onClick={playClick}
+                  onMouseEnter={playHover}
+                  className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-intuition-primary text-black font-bold text-xs uppercase tracking-wide hover:bg-white transition-colors"
+                >
+                  Open playground
+                </Link>
+              </div>
               <div className="w-full max-w-2xl mx-auto space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {(['subject', 'predicate', 'object'] as const).map((role) => (

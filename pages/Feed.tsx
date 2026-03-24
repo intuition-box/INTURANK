@@ -11,7 +11,7 @@ import { getFollowedIdentities } from '../services/follows';
 import { resolveENS, toAddress } from '../services/web3';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
-import { EXPLORER_URL, getGeminiApiKey } from '../constants';
+import { EXPLORER_URL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
 import { Transaction } from '../types';
 import { getLocalTransactions } from '../services/web3';
 
@@ -68,7 +68,7 @@ const Feed: React.FC = () => {
             `;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: GEMINI_MODEL,
                 contents: prompt,
             });
             setAresPulse(response.text?.trim() || "EQUILIBRIUM_MAINTAINED_IN_SECTOR_04");

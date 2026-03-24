@@ -9,6 +9,13 @@ export const getGeminiApiKey = (): string => {
   return keys[Math.floor(Math.random() * keys.length)];
 };
 
+/**
+ * Default model for `@google/genai` generateContent across the app.
+ * Set `VITE_GEMINI_MODEL` in `.env.local` to pin a stable ID (e.g. `gemini-2.5-flash`) if a preview is unavailable for your key.
+ */
+export const GEMINI_MODEL =
+  (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim() || 'gemini-3-flash-preview';
+
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";
@@ -101,7 +108,8 @@ export const SEASON_2_EPOCHS = [
 ] as const;
 
 export const MULTI_VAULT_ADDRESS = "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e";
-export const FEE_PROXY_ADDRESS = "0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93";
+/** IntuitionFeeProxy (intuition-box template) — update when redeploying. */
+export const FEE_PROXY_ADDRESS = "0x1a13606A0a3C392214527c896b4cD0E9C0af82E8";
 export const OFFSET_PROGRESSIVE_CURVE_ADDRESS = "0x23afF95153aa88D28B9B97Ba97629E05D5fD335d";
 /** Curve ID 1 = Linear (stable). Curve ID 2 = Offset Progressive (exponential). */
 export const LINEAR_CURVE_ID = 1;
@@ -150,8 +158,7 @@ export const FEE_PROXY_ABI = [
       { "internalType": "address", "name": "receiver", "type": "address" },
       { "internalType": "bytes32", "name": "termId", "type": "bytes32" },
       { "internalType": "uint256", "name": "curveId", "type": "uint256" },
-      { "internalType": "uint256", "name": "minShares", "type": "uint256" },
-      { "internalType": "uint256", "name": "assets", "type": "uint256" }
+      { "internalType": "uint256", "name": "minShares", "type": "uint256" }
     ],
     "name": "deposit",
     "outputs": [{ "internalType": "uint256", "name": "shares", "type": "uint256" }],
@@ -179,11 +186,7 @@ export const FEE_PROXY_ABI = [
     "type": "function"
   },
   {
-    "inputs": [
-      { "internalType": "bytes", "name": "data", "type": "bytes" },
-      { "internalType": "uint256", "name": "deposit", "type": "uint256" },
-      { "internalType": "uint256", "name": "curveId", "type": "uint256" }
-    ],
+    "inputs": [],
     "name": "getAtomCost",
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
@@ -208,8 +211,10 @@ export const FEE_PROXY_ABI = [
   {
     "anonymous": false,
     "inputs": [
+      { "indexed": true, "internalType": "address", "name": "creator", "type": "address" },
       { "indexed": true, "internalType": "bytes32", "name": "termId", "type": "bytes32" },
-      { "indexed": false, "internalType": "bytes", "name": "data", "type": "bytes" }
+      { "indexed": false, "internalType": "bytes", "name": "atomData", "type": "bytes" },
+      { "indexed": false, "internalType": "address", "name": "atomWallet", "type": "address" }
     ],
     "name": "AtomCreated",
     "type": "event"
@@ -217,9 +222,10 @@ export const FEE_PROXY_ABI = [
   {
     "anonymous": false,
     "inputs": [
+      { "indexed": true, "internalType": "address", "name": "creator", "type": "address" },
       { "indexed": true, "internalType": "bytes32", "name": "termId", "type": "bytes32" },
-      { "indexed": true, "internalType": "bytes32", "name": "subjectId", "type": "bytes32" },
-      { "indexed": true, "internalType": "bytes32", "name": "predicateId", "type": "bytes32" },
+      { "indexed": false, "internalType": "bytes32", "name": "subjectId", "type": "bytes32" },
+      { "indexed": false, "internalType": "bytes32", "name": "predicateId", "type": "bytes32" },
       { "indexed": false, "internalType": "bytes32", "name": "objectId", "type": "bytes32" }
     ],
     "name": "TripleCreated",
@@ -338,8 +344,10 @@ export const MULTI_VAULT_ABI = [
   {
     "anonymous": false,
     "inputs": [
+      { "indexed": true, "internalType": "address", "name": "creator", "type": "address" },
       { "indexed": true, "internalType": "bytes32", "name": "termId", "type": "bytes32" },
-      { "indexed": false, "internalType": "bytes", "name": "data", "type": "bytes" }
+      { "indexed": false, "internalType": "bytes", "name": "atomData", "type": "bytes" },
+      { "indexed": false, "internalType": "address", "name": "atomWallet", "type": "address" }
     ],
     "name": "AtomCreated",
     "type": "event"
@@ -347,9 +355,10 @@ export const MULTI_VAULT_ABI = [
   {
     "anonymous": false,
     "inputs": [
+      { "indexed": true, "internalType": "address", "name": "creator", "type": "address" },
       { "indexed": true, "internalType": "bytes32", "name": "termId", "type": "bytes32" },
-      { "indexed": true, "internalType": "bytes32", "name": "subjectId", "type": "bytes32" },
-      { "indexed": true, "internalType": "bytes32", "name": "predicateId", "type": "bytes32" },
+      { "indexed": false, "internalType": "bytes32", "name": "subjectId", "type": "bytes32" },
+      { "indexed": false, "internalType": "bytes32", "name": "predicateId", "type": "bytes32" },
       { "indexed": false, "internalType": "bytes32", "name": "objectId", "type": "bytes32" }
     ],
     "name": "TripleCreated",
