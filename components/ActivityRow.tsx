@@ -79,7 +79,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
 
     return (
         <div 
-            className={`group flex flex-col md:flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4 border-2 bg-black transition-all duration-500 relative overflow-hidden mb-2 clip-path-slant hover:border-white/40 overflow-x-auto min-w-0 ${isWhale ? 'animate-pulse' : ''}`}
+            className={`group flex flex-col md:flex-row items-center gap-3 sm:gap-4 p-3 sm:p-4 border-2 bg-black transition-all duration-500 relative overflow-hidden mb-2 rounded-2xl hover:border-white/40 overflow-x-auto min-w-0 ${isWhale ? 'animate-pulse' : ''}`}
             style={cardStyle}
             onMouseEnter={playHover}
         >
@@ -108,7 +108,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             <div className="flex items-center gap-3 sm:gap-4 shrink-0 min-w-0 md:min-w-[180px] relative z-10">
                 <Link to={`/profile/${event.sender?.id}`} className="relative group/avatar">
                     <div 
-                        className="w-10 h-10 sm:w-12 sm:h-12 bg-black border-2 flex items-center justify-center transition-all group-hover:scale-105 relative overflow-hidden shadow-2xl clip-path-slant shrink-0"
+                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-black border-2 flex items-center justify-center transition-all group-hover:scale-105 relative overflow-hidden shadow-2xl shrink-0"
                         style={{ borderColor: `${colorHex}66` }}
                     >
                         {event.sender?.image ? (
@@ -121,7 +121,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     </div>
                     {isWhale && (
                         <div 
-                            className="absolute -top-1 -right-1 bg-white text-black p-0.5 rounded-sm z-20 shadow-lg border border-black/50"
+                            className="absolute -top-1 -right-1 bg-white text-black p-0.5 rounded-full z-20 shadow-lg border border-black/50"
                             style={{ boxShadow: `0 0 15px white` }}
                         >
                             <Crown size={10} />
@@ -142,12 +142,12 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             {/* Narrative Segment */}
             <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-xs font-mono relative z-10 py-1">
                 <div 
-                    className={`px-3 py-1 border-2 clip-path-slant font-black uppercase text-[8px] sm:text-[9px] tracking-widest shadow-xl transition-all duration-700`}
+                    className={`px-2 py-0.5 rounded-md border font-black uppercase text-[7px] sm:text-[8px] tracking-widest shadow-lg transition-all duration-300`}
                     style={{ 
                         backgroundColor: `${colorHex}15`, 
                         borderColor: `${colorHex}66`,
                         color: colorHex,
-                        textShadow: `0 0 8px ${colorHex}`
+                        textShadow: `0 0 6px ${colorHex}`
                     }}
                 >
                     {isWhale ? `ALPHA_${statusLabel}` : statusLabel}
@@ -164,8 +164,8 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
 
                 <span className="text-slate-500 uppercase font-bold italic tracking-tighter px-2">{" >> "}</span>
 
-                <div className="flex items-center gap-4 bg-black/60 border border-white/5 px-5 py-2.5 clip-path-slant hover:border-white transition-all group/target cursor-pointer shadow-inner">
-                    <div className="w-5 h-5 sm:w-6 sm:h-6 bg-black flex items-center justify-center overflow-hidden border border-white/10 rounded-sm group-hover:scale-110 transition-transform">
+                <div className="flex items-center gap-4 bg-black/60 border border-white/5 px-5 py-2.5 rounded-xl hover:border-white transition-all duration-300 group/target cursor-pointer shadow-inner">
+                    <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-black flex items-center justify-center overflow-hidden border border-white/10 group-hover:scale-110 transition-transform">
                         {event.target?.image ? (
                             <img src={event.target.image} className="w-full h-full object-cover" alt="" />
                         ) : (
@@ -181,22 +181,22 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
             {/* Metadata Badges */}
             <div className="flex items-center gap-3 sm:gap-4 shrink-0 relative z-10">
                 <div 
-                    className={`px-5 py-1.5 border text-[9px] font-black uppercase tracking-[0.2em] flex items-center gap-2 clip-path-slant transition-all shadow-lg overflow-hidden group/badge`}
+                    className={`px-2.5 py-1 rounded-lg border text-[8px] font-black uppercase tracking-[0.15em] flex items-center gap-1.5 transition-all duration-300 shadow-md overflow-hidden group/badge`}
                     style={{ 
                         backgroundColor: `${colorHex}08`, 
                         borderColor: `${colorHex}33`,
                         color: colorHex
                     }}
                 >
-                    <Icon size={12} className="animate-pulse" />
+                    <Icon size={10} className="animate-pulse shrink-0" />
                     {isWhale ? 'WHALE_CONVICTION' : isOpposing ? 'Oppose' : isDeposit ? 'Support' : isAtomCreation ? 'Anchor' : 'Synapse'}
                     {/* Tiny shimmer line inside badge */}
                     <div className="absolute inset-0 w-1/2 h-full bg-white opacity-[0.03] skew-x-[-20deg] -translate-x-full group-hover/badge:translate-x-[200%] transition-transform duration-[1500ms]"></div>
                 </div>
                 <div className="flex flex-col items-end">
-                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Curve</div>
+                    <div className="text-[7px] sm:text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Curve</div>
                     <div 
-                        className="px-2.5 py-0.5 bg-black border text-[9px] sm:text-[10px] font-bold uppercase tracking-wider clip-path-slant"
+                        className="px-2 py-0.5 rounded-md bg-black border text-[8px] font-bold uppercase tracking-wider"
                         style={{ borderColor: `${colorHex}44`, color: colorHex }}
                     >
                         {curveLabel}
@@ -217,7 +217,7 @@ const ActivityRow: React.FC<ActivityRowProps> = ({ event }) => {
                     target="_blank" 
                     rel="noreferrer"
                     onClick={(e) => { e.stopPropagation(); playClick(); }}
-                    className="w-9 h-9 sm:w-11 sm:h-11 bg-black border transition-all flex items-center justify-center clip-path-slant shadow-2xl group/link"
+                    className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-black border-2 transition-all duration-300 flex items-center justify-center shadow-2xl group/link"
                     style={{ borderColor: `${colorHex}44`, color: colorHex }}
                 >
                     <ExternalLink size={18} className="group-hover/link:scale-110 group-hover/link:text-glow-white transition-all" />

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
-import { useAccount, useDisconnect, useConnect } from 'wagmi';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, Terminal, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX } from 'lucide-react';
+import { useAccount, useDisconnect, useConnect, useConfig } from 'wagmi';
+import { getWalletClient } from '@wagmi/core';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords, Cpu } from 'lucide-react';
 import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { CHAIN_ID } from '../constants';
 import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../services/audio';
@@ -10,6 +11,8 @@ import Logo from './Logo';
 import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
+import { restoreFollowsFromServerIfEmpty } from '../services/follows';
+import ProfileBadgeWidget from './ProfileBadgeWidget';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -49,17 +52,19 @@ interface NavItemProps {
 const NavItem: React.FC<NavItemProps> = ({ to, label, icon, active, onClick }) => (
   <Link
     to={to}
-    onClick={() => { playClick(); onClick(); }}
+    onClick={() => {
+      playClick();
+      onClick();
+    }}
     onMouseEnter={playHover}
-    className={`group relative flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${
+    className={`group relative flex items-center gap-2 px-4 sm:px-6 py-2.5 min-h-[40px] text-[10px] font-black tracking-[0.25em] font-mono transition-all duration-300 rounded-full border min-w-0 ${
       active
-        ? 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]'
-        : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
+        ? 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_24px_rgba(0,243,255,0.45)]'
+        : 'text-slate-400 border-transparent bg-white/5 hover:text-white hover:border-intuition-primary/60 hover:bg-intuition-primary/15'
     }`}
   >
-    <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-3 bg-white transition-all duration-500 ${active ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-0'}`}></div>
     {icon}
-    <span>{label}</span>
+    <span className="whitespace-nowrap overflow-visible flex-1 min-w-0">{label}</span>
   </Link>
 );
 
@@ -68,29 +73,49 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
   const [isIntelOpen, setIsIntelOpen] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(() => getSoundEnabled());
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
 
   const { openConnectModal } = useConnectModal();
+  const wagmiConfig = useConfig();
   const { address: walletAddress, isConnected, chainId = 0 } = useAccount();
   const { disconnect } = useDisconnect();
-  const { data: connectData } = useConnect();
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const intelRef = useRef<HTMLDivElement>(null);
+  const sidebarAsideRef = useRef<HTMLElement>(null);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Sync RainbowKit/wagmi connection to web3 so getConnectedAccount() and getProvider() work app-wide
+  // Sync RainbowKit/wagmi → web3 (getProvider / sendTransaction). Do not use connector.getProvider():
+  // some connectors exposed via React do not implement it; getWalletClient uses the live connection.
   useEffect(() => {
     if (!isConnected || !walletAddress) {
       setWagmiConnection(null, null);
       return;
     }
-    const connector = connectData?.connector;
-    if (!connector) return;
-    connector.getProvider().then((provider: any) => {
-      setWagmiConnection(walletAddress, provider);
-    }).catch(() => setWagmiConnection(walletAddress, null));
-  }, [isConnected, walletAddress, connectData?.connector]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const wc = await getWalletClient(wagmiConfig, {
+          chainId: CHAIN_ID,
+          account: walletAddress as `0x${string}`,
+          assertChainId: false,
+        });
+        const eip1193 = {
+          request: (args: { method: string; params?: readonly unknown[] | object }) =>
+            wc.request(args as Parameters<(typeof wc)['request']>[0]),
+        };
+        if (!cancelled) setWagmiConnection(walletAddress, eip1193 as unknown as typeof window.ethereum);
+      } catch {
+        const injected = typeof window !== 'undefined' ? (window as unknown as { ethereum?: unknown }).ethereum : undefined;
+        if (!cancelled) setWagmiConnection(walletAddress, (injected as typeof window.ethereum) ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, walletAddress, wagmiConfig]);
 
   // Let legacy connectWallet() calls (Account, Portfolio, etc.) open the RainbowKit modal
   useEffect(() => {
@@ -100,18 +125,29 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const t = event.target as Node;
+      if (dropdownRef.current && !dropdownRef.current.contains(t)) {
         setIsWalletDropdownOpen(false);
       }
-      if (intelRef.current && !intelRef.current.contains(event.target as Node)) {
+      if (intelRef.current && !intelRef.current.contains(t)) {
         setIsIntelOpen(false);
+      }
+      if (
+        !isSidebarCollapsed &&
+        sidebarAsideRef.current &&
+        sidebarToggleRef.current &&
+        !sidebarAsideRef.current.contains(t) &&
+        !sidebarToggleRef.current.contains(t) &&
+        !(dropdownRef.current && dropdownRef.current.contains(t))
+      ) {
+        setIsSidebarCollapsed(true);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [isSidebarCollapsed]);
 
   // Surface email delivery failures to the user (e.g. follow alerts, activity notifications)
   useEffect(() => {
@@ -122,6 +158,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // When wallet is set and user has daily digest, send digest if 24h passed and queue has items
   useEffect(() => {
     if (walletAddress) maybeSendDailyDigest(walletAddress).catch(() => {});
+  }, [walletAddress]);
+
+  // Restore follows from backend when local is empty (e.g. after hard refresh or new device)
+  useEffect(() => {
+    if (walletAddress) restoreFollowsFromServerIfEmpty(walletAddress).catch(() => {});
   }, [walletAddress]);
 
   const openModal = () => {
@@ -160,431 +201,704 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     navigate('/create');
   };
 
+  /** Primary destinations — markets, wallet, competitive ladder, skill agent */
   const mainNavItems = [
     { label: 'MARKETS', path: '/markets', icon: <TrendingUp size={14} /> },
     { label: 'PORTFOLIO', path: '/portfolio', icon: <Users size={14} /> },
+    { label: 'THE ARENA', path: '/climb', icon: <Activity size={14} /> },
+    { label: 'INTUITION_SKILL', path: '/skill-playground', icon: <Cpu size={14} /> },
   ];
 
-  const intelItems = [
+  const versusNavItems = [{ label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={14} /> }];
+
+  const exploreNavItems = [
     { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
     { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={14} /> },
     { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={14} /> },
-    { label: 'CONFLICT_COMPARE', path: '/compare', icon: <ArrowRightLeft size={14} /> },
-    { label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> },
-    { label: 'SDK_LAB', path: '/sdk-lab', icon: <Terminal size={14} /> },
   ];
 
-  if (walletAddress) {
-    intelItems.push({
-      label: 'REPUTATION',
-      path: `/profile/${walletAddress}`,
-      icon: <UserCircle size={14} />
-    });
-  }
+  const monitorNavItems = [{ label: 'SYSTEM_HEALTH', path: '/health', icon: <HeartPulse size={14} /> }];
+
+  const allMobileNavItems = [...mainNavItems, ...versusNavItems, ...exploreNavItems, ...monitorNavItems];
 
   const isActive = (path: string) => {
     if (path === '/' && location.pathname !== '/') return false;
     return location.pathname.startsWith(path);
   };
 
-  const isIntelActive = intelItems.some(i => location.pathname.startsWith(i.path));
+  const closeSidebarNav = () => {
+    setIsMenuOpen(false);
+    setIsIntelOpen(false);
+    setIsSidebarCollapsed(true);
+  };
 
   return (
-    <div className="min-h-screen bg-intuition-dark text-slate-300 flex flex-col font-sans selection:bg-intuition-primary selection:text-black">
-
-      <nav className="fixed top-0 w-full z-50 border-b-2 border-intuition-primary/10 bg-black/95 backdrop-blur-2xl shadow-[0_0_30px_rgba(0,243,255,0.05)]">
-        <div className="w-full px-3 sm:px-6 lg:px-8 max-w-[100vw] min-w-0">
-          <div className="flex items-center justify-between h-20 min-w-0">
-
-            <div
-              className="flex items-center flex-shrink-0 gap-4 group cursor-pointer"
-              onMouseEnter={playHover}
+    <div className="min-h-screen bg-intuition-dark text-slate-300 flex font-sans selection:bg-intuition-primary selection:text-black">
+      {/* Desktop side nav */}
+      <aside
+        ref={sidebarAsideRef}
+        className={`hidden lg:flex fixed left-4 top-4 bottom-4 flex-col w-72 xl:w-80 rounded-3xl bg-black/90 border border-slate-800 shadow-[0_18px_45px_rgba(0,0,0,0.95)] overflow-hidden z-40 transition-transform duration-500 ${
+          isSidebarCollapsed ? '-translate-x-[23rem]' : 'translate-x-0'
+        }`}
+      >
+        <div
+          className="flex items-center gap-3 px-5 pt-4 pb-3 border-b border-slate-800/70"
+          onMouseEnter={playHover}
+        >
+          <div className="relative">
+            <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-black to-slate-950 border border-intuition-primary/70 flex items-center justify-center text-intuition-primary shadow-[0_0_22px_rgba(0,243,255,0.45)] overflow-hidden" style={{ width: 52, height: 52 }}>
+              <Logo className="w-10 h-10" />
+            </div>
+            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-intuition-secondary rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d]" />
+          </div>
+          <div className="flex flex-col">
+            <Link
+              to="/"
+              onClick={() => {
+                playClick();
+                setIsSidebarCollapsed(true);
+              }}
+              className="text-xl font-black tracking-[0.25em] text-white font-display text-glow-blue"
             >
-              <div className="relative group-hover:scale-115 transition-transform duration-500">
-                <div className="w-18 h-18 rounded-none bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary shadow-[0_0_22px_rgba(0,243,255,0.5)] group-hover:shadow-[0_0_36px_rgba(0,243,255,0.8)] transition-all duration-500 clip-path-slant">
-                  <Logo className="w-14 h-14 group-hover:rotate-3 transition-transform" />
-                </div>
-                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-intuition-secondary rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d]"></div>
-              </div>
-              <div className="flex flex-col group-hover:translate-x-1 transition-transform duration-300">
-                <Link to="/" onClick={playClick} className="text-xl font-black tracking-widest text-white font-display transition-all duration-500 text-glow-blue group-hover:text-intuition-primary">
-                  INTU<span className="text-intuition-primary group-hover:text-white">RANK</span>
-                </Link>
-                <span className="hidden md:block text-[9px] text-intuition-primary/60 font-mono tracking-[0.2em] uppercase font-black">V.1.5.0 STABLE</span>
-              </div>
-            </div>
-
-            <div className="hidden lg:flex items-center gap-1.5">
-              {mainNavItems.map((item) => (
-                <NavItem 
-                  key={item.path} 
-                  to={item.path} 
-                  label={item.label} 
-                  icon={item.icon} 
-                  active={isActive(item.path)} 
-                  onClick={() => setIsMenuOpen(false)} 
-                />
-              ))}
-
-              <div className="relative" ref={intelRef}>
-                <button
-                  onClick={() => { playClick(); setIsIntelOpen(!isIntelOpen); }}
-                  onMouseEnter={playHover}
-                  className={`group relative flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant border-2 ${isIntelActive || isIntelOpen
-                    ? 'text-intuition-primary border-intuition-primary/40 bg-white/5'
-                    : 'text-slate-400 border-slate-900/50 hover:text-white hover:border-intuition-primary/40 hover:bg-intuition-primary/5'
-                    }`}
-                >
-                  <Activity size={14} /> INTEL <ChevronDown size={10} className={`transition-transform duration-300 ${isIntelOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {isIntelOpen && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant p-1 animate-dropdown-panel-in">
-                    <div className="bg-[#080a12] p-1">
-                      {intelItems.map((item, index) => (
-                        <Link
-                          key={item.label}
-                          to={item.path}
-                          onClick={() => { playClick(); setIsIntelOpen(false); }}
-                          onMouseEnter={playHover}
-                          style={{ animationDelay: `${index * 50}ms` }}
-                          className={`flex items-center gap-3 px-4 py-3 text-[9px] font-black font-mono tracking-widest hover:bg-intuition-primary hover:text-black transition-colors uppercase animate-dropdown-item-in ${isActive(item.path) ? 'text-intuition-primary bg-white/5' : 'text-slate-400'}`}
-                        >
-                          {item.icon} {item.label}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleNewSignal}
-                onMouseEnter={playHover}
-                className="group relative hidden md:flex items-center gap-2 px-4 sm:px-6 py-3 min-h-[44px] text-[10px] font-black tracking-widest font-mono transition-all duration-300 clip-path-slant bg-intuition-secondary text-white shadow-[0_0_20px_rgba(255,30,109,0.4)] hover:bg-white hover:text-intuition-secondary active:scale-95 border-2 border-transparent"
-              >
-                <Plus size={16} /> NEW CLAIM
-              </button>
-
-              {walletAddress && chainId !== CHAIN_ID && (
-                <button
-                  onClick={async () => { playClick(); await switchNetwork(); }}
-                  className="hidden md:flex items-center gap-2 px-4 py-2.5 bg-intuition-danger text-white font-black font-mono text-[9px] clip-path-slant animate-pulse shadow-[0_0_15px_#ff1e6d]"
-                >
-                  <AlertTriangle size={14} /> WRONG_NET
-                </button>
-              )}
-
-              <div className="hidden md:block">
-                <NotificationBar walletAddress={walletAddress} />
-              </div>
-
-              <div className="hidden md:block relative" ref={dropdownRef}>
-                <button
-                  onClick={walletAddress ? toggleDropdown : openModal}
-                  onMouseEnter={playHover}
-                  className={`group relative flex items-center gap-2 px-5 py-2.5 font-mono text-[10px] font-black tracking-widest transition-all duration-300 clip-path-slant border-2 cursor-pointer ${walletAddress
-                    ? 'bg-black border-intuition-success/40 text-intuition-success shadow-[0_0_15px_rgba(0,255,157,0.1)] hover:border-intuition-success'
-                    : 'bg-black border-slate-800 text-white hover:border-intuition-primary hover:text-intuition-primary'
-                    }`}
-                >
-                  <Wallet size={14} className={walletAddress ? "text-intuition-success" : "text-intuition-primary"} />
-                  <span>
-                    {walletAddress ? (
-                      <span className="flex items-center gap-2">
-                        {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                        <ChevronDown size={12} className={`transition-transform duration-300 ${isWalletDropdownOpen ? 'rotate-180' : ''}`} />
-                      </span>
-                    ) : (
-                      <span>UPLINK</span>
-                    )}
-                  </span>
-                </button>
-
-                {isWalletDropdownOpen && walletAddress && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[70] clip-path-slant animate-dropdown-panel-in">
-                    <div className="p-1 space-y-0.5 bg-[#080a12]">
-                      <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1 animate-dropdown-item-in" style={{ animationDelay: '0ms' }}>
-                        Terminal Access
-                      </div>
-                      <Link
-                        to="/account"
-                        onClick={() => { playClick(); setIsWalletDropdownOpen(false); }}
-                        onMouseEnter={playHover}
-                        style={{ animationDelay: '50ms' }}
-                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest animate-dropdown-item-in"
-                      >
-                        <UserCircle size={14} /> PROFILE
-                      </Link>
-                      <a
-                        href={TRUST_SWAP_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={() => { playClick(); setIsWalletDropdownOpen(false); }}
-                        onMouseEnter={playHover}
-                        style={{ animationDelay: '100ms' }}
-                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-success hover:bg-white/5 transition-colors uppercase tracking-widest animate-dropdown-item-in"
-                      >
-                        <Coins size={14} /> GET_TRUST
-                      </a>
-                      <button
-                        onClick={handleCopyAddress}
-                        onMouseEnter={playHover}
-                        style={{ animationDelay: '150ms' }}
-                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest animate-dropdown-item-in"
-                      >
-                        <Copy size={14} /> COPY_IDENT_HASH
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = !soundEnabled;
-                          setSoundEnabled(next);
-                          setSoundEnabledState(next);
-                          if (next) playClick();
-                        }}
-                        onMouseEnter={playHover}
-                        style={{ animationDelay: '175ms' }}
-                        className="w-full flex items-center justify-between gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest animate-dropdown-item-in border-t border-white/5"
-                      >
-                        <span className="flex items-center gap-4">
-                          {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                          Sound effects
-                        </span>
-                        <span className={`inline-flex h-5 w-9 shrink-0 items-center rounded-sm border-2 transition-colors ${soundEnabled ? 'border-intuition-primary bg-intuition-primary/30' : 'border-slate-600 bg-slate-800'}`}>
-                          <span className={`inline-block h-4 w-4 translate-x-0.5 rounded-sm bg-white transition-transform ${soundEnabled ? 'translate-x-4' : ''}`} />
-                        </span>
-                      </button>
-                      <button
-                        onClick={handleDisconnect}
-                        onMouseEnter={playHover}
-                        style={{ animationDelay: '200ms' }}
-                        className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors border-t border-white/5 uppercase tracking-widest animate-dropdown-item-in"
-                      >
-                        <LogOut size={14} /> TERMINATE_SYNC
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="lg:hidden flex items-center gap-2">
-              <NotificationBar walletAddress={walletAddress} />
-              <button
-                onClick={() => { playClick(); setIsMenuOpen(!isMenuOpen); }}
-                className="text-intuition-primary p-3 min-h-[44px] min-w-[44px] flex items-center justify-center border-2 border-slate-900 rounded-none bg-black clip-path-slant shadow-lg active:scale-95 transition-transform"
-              >
-                {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
-            </div>
+              INTU<span className="text-intuition-primary">RANK</span>
+            </Link>
+            <span className="text-[9px] text-slate-500 font-mono tracking-[0.25em] uppercase font-black">
+              V.1.5.0
+            </span>
           </div>
         </div>
 
-        {isMenuOpen && (
-          <>
-            <div className="lg:hidden fixed inset-0 top-[5rem] z-[99] bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" aria-hidden />
-            <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)] animate-in slide-in-from-top-2 fade-in duration-500">
-            <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
-              {[...mainNavItems, ...intelItems].map((item, index) => (
-                <Link
+        <div className="flex-1 flex flex-col px-3 py-4 gap-5 overflow-y-auto">
+          <nav
+            className="rounded-2xl border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.08] to-transparent p-2.5 space-y-2 shadow-[inset_0_1px_0_0_rgba(0,243,255,0.15)]"
+            aria-label="Primary navigation"
+          >
+            <div className="px-2 pt-0.5 pb-1 border-b border-white/5">
+              <p className="text-[10px] font-mono text-intuition-primary uppercase tracking-[0.28em] font-black">
+                Main
+              </p>
+              <p className="text-[8px] font-mono text-slate-500 uppercase tracking-[0.2em] mt-1 leading-relaxed">
+                Markets · positions · arena · skill agent
+              </p>
+            </div>
+            {mainNavItems.map((item) => (
+              <NavItem
+                key={item.path}
+                to={item.path}
+                label={item.label}
+                icon={item.icon}
+                active={isActive(item.path)}
+                onClick={closeSidebarNav}
+              />
+            ))}
+          </nav>
+
+          <div ref={intelRef} className="space-y-5 flex flex-col min-h-0">
+            <nav className="space-y-2" aria-label="Versus">
+              <div className="px-3">
+                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-[0.25em] mb-0.5">Versus</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Compare claims side-by-side</p>
+              </div>
+              {versusNavItems.map((item) => (
+                <NavItem
                   key={item.path}
                   to={item.path}
-                  onClick={() => { playClick(); setIsMenuOpen(false); }}
-                  style={{ animationDelay: `${index * 45}ms` }}
-                  className={`relative flex items-center gap-3 min-w-0 pl-5 pr-5 py-4 border-2 text-[9px] sm:text-[10px] font-black font-mono tracking-widest transition-all rounded-sm animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both ${isActive(item.path)
-                    ? 'text-black bg-intuition-primary border-intuition-primary'
-                    : 'text-slate-400 border-slate-900 hover:text-white bg-white/5'
-                    }`}
-                >
-                  {isActive(item.path) && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-black rounded-r" />
-                  )}
-                  <span className="shrink-0 flex items-center justify-center w-5">{item.icon}</span>
-                  <span className="min-w-0 break-words uppercase">{item.label}</span>
-                </Link>
+                  label={item.label}
+                  icon={item.icon}
+                  active={isActive(item.path)}
+                  onClick={closeSidebarNav}
+                />
               ))}
+            </nav>
 
-              <a
-                href={TRUST_SWAP_URL}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => { playClick(); setIsMenuOpen(false); }}
-                style={{ animationDelay: `${([...mainNavItems, ...intelItems].length) * 45}ms` }}
-                className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest clip-path-slant mt-6 hover:bg-intuition-success hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+            <nav className="space-y-2" aria-label="Explore">
+              <div className="px-3">
+                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-[0.25em] mb-0.5">Explore</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Feed, docs & rankings</p>
+              </div>
+              {exploreNavItems.map((item) => (
+                <NavItem
+                  key={item.path}
+                  to={item.path}
+                  label={item.label}
+                  icon={item.icon}
+                  active={isActive(item.path)}
+                  onClick={closeSidebarNav}
+                />
+              ))}
+            </nav>
+
+            <nav className="space-y-2 rounded-xl border border-slate-800/80 bg-slate-950/40 p-2" aria-label="Monitor">
+              <div className="px-2">
+                <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.25em] mb-0.5">Monitor</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Protocol telemetry</p>
+              </div>
+              {monitorNavItems.map((item) => (
+                <NavItem
+                  key={item.path}
+                  to={item.path}
+                  label={item.label}
+                  icon={item.icon}
+                  active={isActive(item.path)}
+                  onClick={closeSidebarNav}
+                />
+              ))}
+            </nav>
+          </div>
+        </div>
+
+        <div className="px-4 pb-4 pt-2 border-t border-slate-800/70 space-y-2">
+          <div className="text-[9px] font-mono text-slate-600 uppercase tracking-[0.25em]">
+            {walletAddress ? 'Connected' : 'No session'}
+          </div>
+        </div>
+      </aside>
+
+      {/* Collapse toggle pill (desktop) */}
+      <button
+        ref={sidebarToggleRef}
+        type="button"
+        onClick={() => {
+          playClick();
+          setIsSidebarCollapsed((prev) => !prev);
+        }}
+        className="hidden lg:flex w-9 h-20 items-center justify-center rounded-full bg-intuition-primary/20 border border-intuition-primary/60 text-intuition-primary hover:bg-intuition-primary hover:text-black hover:border-intuition-primary shadow-[0_0_28px_rgba(0,243,255,0.7)] transition-all z-50"
+        style={{
+          position: 'fixed',
+          top: '1.5rem',
+          left: isSidebarCollapsed ? '1.25rem' : '22.25rem',
+          transform: 'none',
+        }}
+      >
+        <ChevronsRight
+          size={18}
+          className={`transition-transform duration-300 ${isSidebarCollapsed ? '' : 'rotate-180'}`}
+        />
+      </button>
+
+      {/* Main content + mobile nav — min-w-0 + overflow-x-hidden so content reflows when sidebar opens */}
+      <div
+        className={`flex-1 flex flex-col min-h-screen min-w-0 w-full overflow-x-hidden transition-[margin] duration-500 ${
+          isSidebarCollapsed ? 'lg:ml-16 xl:ml-20' : 'lg:ml-[23rem] xl:ml-[25rem]'
+        }`}
+      >
+        <nav className="lg:hidden fixed top-0 w-full z-50 bg-black/95 border-b border-slate-900/70 backdrop-blur-xl shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+          <div className="w-full px-3 sm:px-6 max-w-[100vw] min-w-0">
+            <div className="flex items-center justify-between h-16 min-w-0">
+              <div
+                className="flex items-center flex-shrink-0 gap-3 group cursor-pointer"
+                onMouseEnter={playHover}
               >
-                <Coins size={18} /> ACQUIRE_₸_TOKEN
-              </a>
+                <div className="relative group-hover:scale-110 transition-transform duration-500">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-slate-900 via-black to-slate-950 border border-intuition-primary/70 flex items-center justify-center text-intuition-primary shadow-[0_0_22px_rgba(0,243,255,0.45)] overflow-hidden">
+                    <Logo className="w-9 h-9" />
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-intuition-secondary rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d]" />
+                </div>
+                <div className="flex flex-col">
+                  <Link
+                    to="/"
+                    onClick={playClick}
+                    className="text-lg font-black tracking-[0.25em] text-white font-display text-glow-blue"
+                  >
+                    INTU<span className="text-intuition-primary">RANK</span>
+                  </Link>
+                </div>
+              </div>
 
-              <button
-                onClick={handleNewSignal}
-                style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 1) * 45}ms` }}
-                className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest clip-path-slant shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
-              >
-                <Plus size={18} /> NEW CLAIM
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !soundEnabled;
-                  setSoundEnabled(next);
-                  setSoundEnabledState(next);
-                  if (next) playClick();
-                }}
-                style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 2) * 45}ms` }}
-                className="w-full flex items-center justify-between gap-3 px-5 py-4 border-2 border-slate-700 text-slate-300 font-mono font-black text-[10px] tracking-widest clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
-              >
-                <span className="flex items-center gap-3">
-                  {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-                  Sound effects
-                </span>
-                <span className={`inline-flex h-5 w-9 shrink-0 items-center rounded-sm border-2 transition-colors ${soundEnabled ? 'border-intuition-primary bg-intuition-primary/30' : 'border-slate-600 bg-slate-800'}`}>
-                  <span className={`inline-block h-4 w-4 translate-x-0.5 rounded-sm bg-white transition-transform ${soundEnabled ? 'translate-x-4' : ''}`} />
-                </span>
-              </button>
-
-              {walletAddress ? (
+              <div className="lg:hidden flex items-center gap-2">
+                <NotificationBar walletAddress={walletAddress ?? null} />
                 <button
-                  onClick={handleDisconnect}
-                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms` }}
-                  className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  onClick={() => {
+                    playClick();
+                    setIsMenuOpen(!isMenuOpen);
+                  }}
+                  className="text-intuition-primary p-3 min-h-[40px] min-w-[40px] flex items-center justify-center border border-slate-800 rounded-full bg-black/90 shadow-lg active:scale-95 transition-transform"
                 >
-                  EXIT_SECURE_SESSION
+                  {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {isMenuOpen && (
+            <>
+              <div
+                className="lg:hidden fixed inset-0 top-[4rem] z-[99] bg-black/80 backdrop-blur-sm animate-in fade-in duration-300"
+                aria-hidden
+              />
+              <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)] animate-in slide-in-from-top-2 fade-in duration-500">
+                <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
+                  {allMobileNavItems.map((item, index) => (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => {
+                        playClick();
+                        setIsMenuOpen(false);
+                      }}
+                      style={{ animationDelay: `${index * 45}ms` }}
+                      className={`relative flex items-center gap-3 min-w-0 pl-5 pr-5 py-4 border-2 text-[9px] sm:text-[10px] font-black font-mono tracking-widest transition-all rounded-2xl animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both ${
+                        isActive(item.path)
+                          ? 'text-black bg-intuition-primary border-intuition-primary'
+                          : 'text-slate-400 border-slate-900 hover:text-white bg-white/5'
+                      }`}
+                    >
+                      {isActive(item.path) && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-black rounded-r" />
+                      )}
+                      <span className="shrink-0 flex items-center justify-center w-5">{item.icon}</span>
+                      <span className="min-w-0 break-words uppercase">{item.label}</span>
+                    </Link>
+                  ))}
+
+                  <a
+                    href={TRUST_SWAP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => {
+                      playClick();
+                      setIsMenuOpen(false);
+                    }}
+                    style={{ animationDelay: `${allMobileNavItems.length * 45}ms` }}
+                    className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-intuition-success text-intuition-success font-black font-mono text-[10px] tracking-widest rounded-full mt-6 hover:bg-intuition-success hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  >
+                    <Coins size={18} /> ACQUIRE_₸_TOKEN
+                  </a>
+
+                  <Link
+                    to="/send-trust"
+                    onClick={() => {
+                      playClick();
+                      setIsMenuOpen(false);
+                    }}
+                    style={{ animationDelay: `${(allMobileNavItems.length + 1) * 45}ms` }}
+                    className="w-full flex items-center justify-center gap-3 px-5 py-4 border-2 border-[#F0C14B] text-[#F0C14B] font-black font-mono text-[10px] tracking-widest rounded-full mt-2 hover:bg-[#F0C14B] hover:text-black transition-all animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  >
+                    <Send size={18} /> SEND_TRUST
+                  </Link>
+
+                  <button
+                    onClick={handleNewSignal}
+                    style={{
+                      animationDelay: `${(allMobileNavItems.length + 2) * 45}ms`,
+                    }}
+                    className="w-full flex items-center justify-center gap-3 px-5 py-4 bg-intuition-secondary text-white font-black font-mono text-[10px] tracking-widest rounded-full shadow-xl mt-2 border-2 border-transparent active:scale-95 transition-transform animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  >
+                    <Plus size={18} /> NEW CLAIM
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !soundEnabled;
+                      setSoundEnabled(next);
+                      setSoundEnabledState(next);
+                      if (next) playClick();
+                    }}
+                    style={{
+                      animationDelay: `${(allMobileNavItems.length + 3) * 45}ms`,
+                    }}
+                    className="w-full flex items-center justify-between gap-3 px-5 py-4 border-2 border-slate-700 text-slate-300 font-mono font-black text-[10px] tracking-widest rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  >
+                    <span className="flex items-center gap-3">
+                      {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                      Sound effects
+                    </span>
+                    <span
+                      className={`inline-flex h-5 w-9 shrink-0 items-center rounded-sm border-2 transition-colors ${
+                        soundEnabled
+                          ? 'border-intuition-primary bg-intuition-primary/30'
+                          : 'border-slate-600 bg-slate-800'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 translate-x-0.5 rounded-sm bg-white transition-transform ${
+                          soundEnabled ? 'translate-x-4' : ''
+                        }`}
+                      />
+                    </span>
+                  </button>
+
+                  {walletAddress ? (
+                    <button
+                      onClick={handleDisconnect}
+style={{
+                        animationDelay: `${(allMobileNavItems.length + 4) * 45}ms`,
+                      }}
+                    className="w-full py-4 border-2 border-intuition-danger text-intuition-danger font-mono font-black text-[10px] tracking-widest bg-intuition-danger/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                    >
+                      EXIT_SECURE_SESSION
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        playClick();
+                        setIsMenuOpen(false);
+                        openModal();
+                      }}
+                      style={{
+                        animationDelay: `${(allMobileNavItems.length + 4) * 45}ms`,
+                      }}
+                      className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 rounded-2xl mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                    >
+                      ESTABLISH_NEURAL_LINK
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </nav>
+
+        {/* Desktop top bar: logo + actions */}
+        <div className="hidden lg:flex items-center justify-between gap-4 pl-6 pr-10 pt-4 max-w-[1600px] mx-auto w-full">
+          <div
+            className="flex items-center gap-3 cursor-pointer group"
+            onMouseEnter={playHover}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                playClick();
+                navigate('/');
+              }}
+              className="flex items-center gap-3"
+            >
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-slate-900 via-black to-slate-950 border border-intuition-primary/70 flex items-center justify-center text-intuition-primary shadow-[0_0_18px_rgba(0,243,255,0.5)] overflow-hidden group-hover:scale-105 transition-transform duration-300">
+                <Logo className="w-9 h-9" />
+              </div>
+              <span className="text-base font-black tracking-[0.25em] text-white font-display group-hover:text-intuition-primary transition-colors">
+                INTU<span className="text-intuition-primary group-hover:text-white">RANK</span>
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 ml-auto">
+            {walletAddress && chainId !== CHAIN_ID && (
+              <button
+                onClick={async () => {
+                  playClick();
+                  await switchNetwork();
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 bg-intuition-danger text-white font-black font-mono text-[9px] rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d]"
+              >
+                <AlertTriangle size={14} /> WRONG_NET
+              </button>
+            )}
+
+            <NotificationBar walletAddress={walletAddress ?? null} />
+
+            <button
+              onClick={handleNewSignal}
+              onMouseEnter={playHover}
+              className="group relative hidden xl:flex items-center gap-2 px-5 py-2.5 min-h-[40px] text-[10px] font-black tracking-[0.25em] font-mono rounded-full bg-intuition-secondary text-white shadow-[0_0_20px_rgba(255,30,109,0.6)] hover:bg-white hover:text-intuition-secondary active:scale-95 border border-transparent transition-all"
+            >
+              <Plus size={16} /> NEW CLAIM
+            </button>
+
+            <div className="relative">
+              {walletAddress ? (
+                <ProfileBadgeWidget
+                  address={walletAddress}
+                  isDropdownOpen={isWalletDropdownOpen}
+                  onToggleDropdown={toggleDropdown}
+                  dropdownRef={dropdownRef}
+                >
+                  <div className="absolute right-0 mt-3 w-72 bg-black/95 border border-intuition-primary/40 shadow-[0_22px_60px_rgba(0,0,0,1)] z-[70] rounded-3xl animate-dropdown-panel-in backdrop-blur-xl">
+                      <div className="p-1 space-y-0.5 bg-[#080a12]/95 rounded-2xl">
+                        <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
+                          Terminal Access
+                        </div>
+                        <Link
+                          to={`/profile/${walletAddress}`}
+                          onClick={() => {
+                            playClick();
+                            setIsWalletDropdownOpen(false);
+                          }}
+                          onMouseEnter={playHover}
+                          className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest"
+                        >
+                          <UserCircle size={14} /> PROFILE
+                        </Link>
+                    <a
+                      href={TRUST_SWAP_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => {
+                        playClick();
+                        setIsWalletDropdownOpen(false);
+                      }}
+                      onMouseEnter={playHover}
+                      className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-success hover:bg-white/5 transition-colors uppercase tracking-widest"
+                    >
+                      <Coins size={14} /> GET_TRUST
+                    </a>
+                    <Link
+                      to="/send-trust"
+                      onClick={() => {
+                        playClick();
+                        setIsWalletDropdownOpen(false);
+                      }}
+                      onMouseEnter={playHover}
+                      className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-[#F0C14B] hover:bg-[#F0C14B]/10 transition-colors uppercase tracking-widest"
+                    >
+                      <Send size={14} /> SEND_TRUST
+                    </Link>
+                    <button
+                      onClick={handleCopyAddress}
+                      onMouseEnter={playHover}
+                      className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest"
+                    >
+                      <Copy size={14} /> COPY_IDENT_HASH
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !soundEnabled;
+                        setSoundEnabled(next);
+                        setSoundEnabledState(next);
+                        if (next) playClick();
+                      }}
+                      onMouseEnter={playHover}
+                      className="w-full flex items-center justify-between gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-slate-300 hover:bg-white/5 hover:text-intuition-primary transition-colors uppercase tracking-widest border-t border-white/5"
+                    >
+                      <span className="flex items-center gap-4">
+                        {soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                        Sound effects
+                      </span>
+                      <span
+                        className={`inline-flex h-5 w-9 shrink-0 items-center rounded-sm border-2 transition-colors ${
+                          soundEnabled
+                            ? 'border-intuition-primary bg-intuition-primary/30'
+                            : 'border-slate-600 bg-slate-800'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 translate-x-0.5 rounded-sm bg-white transition-transform ${
+                            soundEnabled ? 'translate-x-4' : ''
+                          }`}
+                        />
+                      </span>
+                    </button>
+                    <button
+                      onClick={handleDisconnect}
+                      onMouseEnter={playHover}
+                      className="w-full flex items-center gap-4 px-4 py-4 text-left text-[10px] font-black font-mono text-intuition-danger hover:bg-intuition-danger/10 transition-colors border-t border-white/5 uppercase tracking-widest"
+                    >
+                      <LogOut size={14} /> TERMINATE_SYNC
+                    </button>
+                  </div>
+                </div>
+                </ProfileBadgeWidget>
               ) : (
                 <button
-                  onClick={() => { playClick(); setIsMenuOpen(false); openModal(); }}
-                  style={{ animationDelay: `${([...mainNavItems, ...intelItems].length + 3) * 45}ms` }}
-                  className="w-full py-4 border-2 border-intuition-primary text-intuition-primary font-mono font-black text-[10px] tracking-widest bg-intuition-primary/5 clip-path-slant mt-2 animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                  onClick={openModal}
+                  onMouseEnter={playHover}
+                  className="flex items-center gap-2 px-5 py-2.5 font-mono text-[10px] font-black tracking-[0.25em] rounded-full border bg-black/80 border-slate-700 text-white hover:border-intuition-primary hover:text-intuition-primary transition-all"
                 >
-                  ESTABLISH_NEURAL_LINK
+                  <Wallet size={14} className="text-intuition-primary" />
+                  UPLINK
                 </button>
               )}
             </div>
           </div>
-          </>
-        )}
-      </nav>
-
-      <main className="flex-grow pt-20 retro-grid relative z-10 overflow-x-hidden mobile-contain min-w-0 w-full max-w-[100vw]">
-        <div key={location.pathname} className="animate-page-enter min-h-full min-w-0">
-          {children}
         </div>
-      </main>
 
-      <footer className="border-t border-white/5 bg-[#020308] py-12 md:py-24 mt-auto z-20 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/[0.04] to-transparent pointer-events-none"></div>
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10 relative z-10">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-20 mb-12 md:mb-24">
+        <main className="flex-grow pt-16 lg:pt-2 retro-grid relative z-10 overflow-x-hidden mobile-contain min-w-0 w-full max-w-full">
+          <div key={location.pathname} className="animate-page-enter min-h-full min-w-0 w-full overflow-x-hidden">
+            {children}
+          </div>
+        </main>
 
-            <div className="md:col-span-2 space-y-10">
-              <div className="flex items-center gap-6 group cursor-pointer" onMouseEnter={playHover}>
-<div className="w-16 h-16 sm:w-20 sm:h-20 md:w-28 md:h-28 border-2 border-intuition-primary rounded-none flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 clip-path-slant overflow-hidden p-1">
-                <Logo className="w-full h-full object-contain group-hover:rotate-3 transition-transform" />
+        <footer className="border-t border-white/5 bg-[#020308] py-12 md:py-24 mt-auto z-20 relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/[0.04] to-transparent pointer-events-none" />
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10 relative z-10">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-20 mb-12 md:mb-24">
+              <div className="md:col-span-2 space-y-10">
+                <div
+                  className="flex items-center gap-6 group cursor-pointer"
+                  onMouseEnter={playHover}
+                >
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-28 md:h-28 border-2 border-intuition-primary rounded-3xl flex items-center justify-center text-intuition-primary group-hover:shadow-[0_0_55px_rgba(0,243,255,0.7)] group-hover:scale-110 transition-all duration-700 overflow-hidden p-1 bg-gradient-to-br from-slate-900 via-black to-slate-950">
+                    <Logo className="w-full h-full object-contain group-hover:rotate-3 transition-transform" />
+                  </div>
+                  <span className="text-3xl sm:text-4xl md:text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
+                    INTU<span className="group-hover:text-white transition-colors">RANK</span>
+                  </span>
                 </div>
-                <span className="text-3xl sm:text-4xl md:text-5xl font-display font-black tracking-tight text-white group-hover:text-intuition-primary transition-all duration-500 uppercase text-glow-blue">
-                  INTU<span className="group-hover:text-white transition-colors">RANK</span>
-                </span>
+                <p className="text-slate-200 font-mono text-sm leading-relaxed max-w-lg uppercase tracking-wider font-black opacity-80">
+                  Quantifying reputation as a tradable asset on the Intuition Network. Establishing
+                  the global source of truth via semantic dynamics.
+                </p>
+                <div className="flex flex-wrap gap-6">
+                  <a
+                    href="https://x.com/inturank"
+                    target="_blank"
+                    rel="noreferrer"
+                    onMouseEnter={playHover}
+                    className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-2xl border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 group"
+                  >
+                    <Twitter size={24} className="group-hover:scale-110 transition-transform" />
+                  </a>
+                  <a
+                    href="https://github.com/intuition-box/INTURANK"
+                    target="_blank"
+                    rel="noreferrer"
+                    onMouseEnter={playHover}
+                    className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-2xl border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 group"
+                  >
+                    <Github size={24} className="group-hover:scale-110 transition-transform" />
+                  </a>
+                  <a
+                    href="https://discord.gg/gz62ER2e7a"
+                    target="_blank"
+                    rel="noreferrer"
+                    onMouseEnter={playHover}
+                    className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-2xl border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 group"
+                  >
+                    <DiscordIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                  </a>
+                  <a
+                    href="https://t.me/inturank"
+                    target="_blank"
+                    rel="noreferrer"
+                    onMouseEnter={playHover}
+                    className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-2xl border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 group"
+                  >
+                    <Send size={24} className="group-hover:scale-110 transition-transform" />
+                  </a>
+                  <a
+                    href="https://inturank.medium.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    onMouseEnter={playHover}
+                    className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-2xl border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 group"
+                  >
+                    <MediumIcon className="w-7 h-7 group-hover:scale-110 transition-transform" />
+                  </a>
+                </div>
               </div>
-              <p className="text-slate-200 font-mono text-sm leading-relaxed max-w-lg uppercase tracking-wider font-black opacity-80">
-                Quantifying reputation as a tradable asset on the Intuition Network. Establishing the global source of truth via semantic dynamics.
-              </p>
-              <div className="flex flex-wrap gap-6">
-                <a href="https://x.com/inturank" target="_blank" rel="noreferrer" 
-                   onMouseEnter={playHover}
-                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
-                  <Twitter size={24} className="group-hover:scale-110 transition-transform" />
-                </a>
-                <a href="https://github.com/intuition-box/INTURANK" target="_blank" rel="noreferrer" 
-                   onMouseEnter={playHover}
-                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
-                  <Github size={24} className="group-hover:scale-110 transition-transform" />
-                </a>
-                <a href="https://discord.gg/gz62ER2e7a" target="_blank" rel="noreferrer" 
-                   onMouseEnter={playHover}
-                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
-                  <DiscordIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                </a>
-                <a href="https://t.me/inturank" target="_blank" rel="noreferrer" 
-                   onMouseEnter={playHover}
-                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
-                  <Send size={24} className="group-hover:scale-110 transition-transform" />
-                </a>
-                <a href="https://inturank.medium.com" target="_blank" rel="noreferrer" 
-                   onMouseEnter={playHover}
-                   className="w-14 h-14 bg-white/5 flex items-center justify-center rounded-none border border-white/10 text-slate-400 hover:text-white hover:border-intuition-primary hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:-translate-y-1 transition-all duration-300 clip-path-slant group">
-                  <MediumIcon className="w-7 h-7 group-hover:scale-110 transition-transform" />
-                </a>
+
+              <div className="space-y-8">
+                <h4 className="text-[12px] font-black font-display text-intuition-primary uppercase tracking-[0.6em]">
+                  Protocol_Nodes
+                </h4>
+                <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
+                  <Link
+                    to="/markets"
+                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" />
+                    Market_Terminal
+                  </Link>
+                  <Link
+                    to="/feed"
+                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" />
+                    Global_Activity
+                  </Link>
+                  <Link
+                    to="/stats"
+                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" />
+                    Network_Scores
+                  </Link>
+                  <Link
+                    to="/portfolio"
+                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" />
+                    Asset_Ledger
+                  </Link>
+                </nav>
+              </div>
+
+              <div className="space-y-8">
+                <h4 className="text-[12px] font-black font-display text-intuition-secondary uppercase tracking-[0.6em] text-glow-red">
+                  Ecosystem_Hub
+                </h4>
+                <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
+                  <Link
+                    to="/documentation"
+                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" />
+                    Documentation <FileText size={12} />
+                  </Link>
+                  <a
+                    href={TRUST_SWAP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-intuition-success hover:text-white transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0" />
+                    Liquidity_Uplink (₸) <ExternalLink size={12} />
+                  </a>
+                  <a
+                    href="https://intuition.systems"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" />
+                    Intuition_Home <ExternalLink size={12} />
+                  </a>
+                  <a
+                    href="https://docs.intuition.systems"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" />
+                    Core_Docs <BookOpen size={12} />
+                  </a>
+                  <a
+                    href="https://explorer.intuition.systems"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group"
+                  >
+                    <ChevronsRight className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" />
+                    Network_Explorer <Globe size={12} />
+                  </a>
+                </nav>
               </div>
             </div>
 
-            <div className="space-y-8">
-              <h4 className="text-[12px] font-black font-display text-intuition-primary uppercase tracking-[0.6em]">Protocol_Nodes</h4>
-              <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
-                <Link to="/markets" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Market_Terminal
-                </Link>
-                <Link to="/feed" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Global_Activity
-                </Link>
-                <Link to="/stats" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Network_Scores
-                </Link>
-                <Link to="/portfolio" className="hover:text-intuition-primary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0" /> Asset_Ledger
-                </Link>
-              </nav>
-            </div>
+            <div className="pt-16 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 items-center justify-items-center gap-12">
+              <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest font-black text-center md:text-left justify-self-start">
+                Sector_04_ARES // Version_1.5.0_STABLE // © 2025 IntuRank_Systems
+              </div>
 
-            <div className="space-y-8">
-              <h4 className="text-[12px] font-black font-display text-intuition-secondary uppercase tracking-[0.6em] text-glow-red">Ecosystem_Hub</h4>
-              <nav className="flex flex-col gap-5 font-mono text-[12px] text-slate-200 uppercase font-black">
-                <Link to="/documentation" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Documentation <FileText size={12} />
-                </Link>
-                <a href={TRUST_SWAP_URL} target="_blank" rel="noreferrer" className="text-intuition-success hover:text-white transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0" /> Liquidity_Uplink (₸) <ExternalLink size={12} />
-                </a>
-                <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Intuition_Home <ExternalLink size={12} />
-                </a>
-                <a href="https://docs.intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Core_Docs <BookOpen size={12} />
-                </a>
-                <a href="https://explorer.intuition.systems" target="_blank" rel="noreferrer" className="hover:text-intuition-secondary transition-colors flex items-center gap-3 group">
-                   <ChevronsRight size={14} className="text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" /> Network_Explorer <Globe size={12} />
-                </a>
-              </nav>
-            </div>
-
-          </div>
-
-          <div className="pt-16 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 items-center justify-items-center gap-12">
-            <div className="text-[10px] font-mono text-slate-600 uppercase tracking-widest font-black text-center md:text-left justify-self-start">
-              Sector_04_ARES // Version_1.5.0_STABLE // © 2025 IntuRank_Systems
-            </div>
-
-            <div className="flex flex-col items-center group/powered relative">
-              <span className="text-[11px] font-black font-mono text-slate-500 uppercase tracking-[0.8em] mb-4 group-hover/powered:text-white transition-all duration-500">Powered By</span>
-              <a href="https://intuition.systems" target="_blank" rel="noreferrer" className="flex items-center gap-8 no-underline">
-                <IntuitionTargetLogo />
-                <span className="text-3xl md:text-5xl lg:text-6xl font-display font-black tracking-[0.25em] text-white group-hover/powered:text-intuition-primary transition-all duration-700 uppercase text-glow-blue">
-                  INTUITION
+              <div className="flex flex-col items-center group/powered relative">
+                <span className="text-[11px] font-black font-mono text-slate-500 uppercase tracking-[0.8em] mb-4 group-hover/powered:text-white transition-all duration-500">
+                  Powered By
                 </span>
-              </a>
-              <div className="absolute -bottom-6 w-48 h-px bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent"></div>
-            </div>
+                <a
+                  href="https://intuition.systems"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-8 no-underline"
+                >
+                  <IntuitionTargetLogo />
+                  <span className="text-3xl md:text-5xl lg:text-6xl font-display font-black tracking-[0.25em] text-white group-hover/powered:text-intuition-primary transition-all duration-700 uppercase text-glow-blue">
+                    INTUITION
+                  </span>
+                </a>
+                <div className="absolute -bottom-6 w-48 h-px bg-gradient-to-r from-transparent via-intuition-primary/40 to-transparent" />
+              </div>
 
-            <div className="flex items-center justify-center md:justify-end gap-3 text-[10px] font-black font-mono text-intuition-secondary uppercase tracking-[0.5em] text-glow-red justify-self-end">
-              <div className="w-2.5 h-2.5 bg-intuition-secondary animate-pulse shadow-[0_0_15px_#ff1e6d]"></div>
-              System_Broadcasting_Live
+              <div className="flex items-center justify-center md:justify-end gap-3 text-[10px] font-black font-mono text-intuition-secondary uppercase tracking-[0.5em] text-glow-red justify-self-end">
+                <div className="w-2.5 h-2.5 bg-intuition-secondary animate-pulse shadow-[0_0_15px_#ff1e6d]" />
+                System_Broadcasting_Live
+              </div>
             </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   );
 };

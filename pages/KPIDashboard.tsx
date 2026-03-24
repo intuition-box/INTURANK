@@ -6,7 +6,7 @@ import { formatEther } from 'viem';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import html2canvas from 'html2canvas';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, FEE_PROXY_ADDRESS } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { getWalletBalance } from '../services/web3';
 
@@ -357,7 +357,7 @@ const KPIDashboard: React.FC = () => {
                                 </div>
                                 <p className="text-[10px] text-slate-400 leading-relaxed uppercase font-mono font-bold group-hover:text-slate-300 transition-colors">
                                     // Target_Identifier:<br/>
-                                    <span className="text-intuition-primary/90 font-black select-all break-all mt-3 block py-3 px-4 bg-white/5 border border-intuition-primary/20 clip-path-slant text-[10px] text-glow-blue group-hover:border-intuition-primary/40 transition-all">0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93</span>
+                                    <span className="text-intuition-primary/90 font-black select-all break-all mt-3 block py-3 px-4 bg-white/5 border border-intuition-primary/20 clip-path-slant text-[10px] text-glow-blue group-hover:border-intuition-primary/40 transition-all">{FEE_PROXY_ADDRESS}</span>
                                 </p>
                              </div>
                         </div>

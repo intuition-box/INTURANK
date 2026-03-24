@@ -30,6 +30,11 @@ PORT=3001
      - **Terminal 2:** `npm run dev` (Vite proxies `/api` to the email server).
    - With both running, the app sends notification emails through Ensend when users are subscribed and activity happens on their holdings.
 
+### In-app Activity vs. Background Notifications
+
+- **In-app Activity panel (bell icon):** Fetches positions and recent events when the user loads or refreshes the page. It polls every 60 seconds while the page is open. **This is an activity feed, not a push notification system** — it only triggers on page load; there is no background service for real-time in-app alerts.
+- **Background email alerts:** For true notifications when the user is away, run the email worker. See [Background email worker](#background-email-worker) below.
+
 ## Production: Deploy on Railway
 
 Railway runs the email server 24/7 with no cold starts. Use the same repo; no separate “email-only” repo needed.
@@ -57,6 +62,7 @@ In the service, go to **Variables** and add:
 | `ENSEND_PROJECT_SECRET` | Your Ensend project secret |
 | `ENSEND_SENDER_EMAIL` | Your sender email (e.g. from Ensend) |
 | `ENSEND_SENDER_NAME` | `IntuRank` (or whatever you want) |
+| `ENABLE_EMAIL_WORKER` | `true` — enables background email alerts when users are away (optional) |
 
 Do **not** set `PORT`; Railway sets it automatically.
 
@@ -84,6 +90,15 @@ Do **not** set `PORT`; Railway sets it automatically.
   Body: `{ "to": "user@example.com", "subject": "...", "message": "..." }`  
   Responds with `{ "ok": true }` on success or an error object on failure.
 
+## Background email worker
+
+The in-app Activity panel only fetches when the user has the page open. For **true background notifications** (emails when the user is away), run the email worker:
+
+1. **Option A — Same process (recommended for production):** Set `ENABLE_EMAIL_WORKER=true` in your server env. The worker runs inside the email server and polls subscribed wallets every 60 seconds.
+2. **Option B — Separate process:** Run `npm run email-worker` in a separate terminal or as a separate service. It reads subscriptions from `email-subs.json` (same file the server writes when users subscribe).
+
+**Worker env:** Same as the server (`ENSEND_PROJECT_SECRET`, `ENSEND_SENDER_EMAIL`, etc.). Optional: `INTUITION_GRAPH_URL` to override the GraphQL endpoint.
+
 ## Follow / activity emails not arriving?
 
 1. **Add your email in the app** — Click the bell (Activity) → **Get email alerts** and enter your email. Follow alerts and activity-on-holdings emails are sent only to that address (stored per wallet in the browser).
@@ -91,3 +106,16 @@ Do **not** set `PORT`; Railway sets it automatically.
 2. **Production: set `VITE_EMAIL_API_URL`** — The frontend must know where the email API lives. In production there is no dev proxy: set `VITE_EMAIL_API_URL` to your email server URL (e.g. the Railway URL from step 4 above) in your build environment (e.g. GitHub Actions secret) so the built app calls the correct host.
 
 3. **Server env** — Ensure `ENSEND_PROJECT_SECRET` and `ENSEND_SENDER_EMAIL` are set where this server runs (e.g. Railway variables). If either is missing, the server returns 503 and the app will show "Email is not configured."
+
+4. **Background alerts when user is away** — The in-app Activity panel only fetches on page load. For emails when the user is offline, set `ENABLE_EMAIL_WORKER=true` (see [Background email worker](#background-email-worker)).
+
+## Checklist: Email notifications when user is away
+
+| Step | What | Where |
+|------|------|-------|
+| 1 | Deploy email server (with worker) to Railway/Render/etc. | Railway dashboard |
+| 2 | Set `ENABLE_EMAIL_WORKER=true` | Railway Variables |
+| 3 | Set `ENSEND_PROJECT_SECRET`, `ENSEND_SENDER_EMAIL`, `ENSEND_SENDER_NAME` | Railway Variables |
+| 4 | Set `VITE_EMAIL_API_URL` to your deployed server URL | GitHub repo → Settings → Secrets → Actions |
+| 5 | User subscribes in app (bell → Get email alerts) | IntuRank app |
+| 6 | User adds follows (optional; syncs automatically) | IntuRank app |

@@ -69,7 +69,9 @@ import KPIDashboard from './pages/KPIDashboard';
 import Documentation from './pages/Documentation';
 import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
-import SDKPlayground from './pages/SDKPlayground';
+import SendTrust from './pages/SendTrust';
+import SkillPlayground from './pages/SkillPlayground';
+// import RankedList from './pages/RankedList';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 
@@ -105,17 +107,22 @@ const App: React.FC = () => {
           <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} /> 
           
           <Route path="/stats" element={<Stats />} />
-          <Route path="/markets" element={<Markets />} />
+          <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
+          <Route path="/markets/atoms" element={<Markets />} />
+          <Route path="/markets/triples" element={<Markets />} />
+          <Route path="/markets/lists" element={<Markets />} />
           <Route path="/markets/:id" element={<MarketDetail />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/health" element={<KPIDashboard />} />
           <Route path="/documentation" element={<Documentation />} />
-          <Route path="/sdk-lab" element={<SDKPlayground />} />
+          <Route path="/skill-playground" element={<SkillPlayground />} />
           
           {/* New Features */}
           <Route path="/compare" element={<Compare />} />
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
+          <Route path="/send-trust" element={<SendTrust />} />
+          {/* <Route path="/climb" element={<RankedList />} /> */}
           </Routes>
                 </Layout>
                 <EmailNotifyModal />

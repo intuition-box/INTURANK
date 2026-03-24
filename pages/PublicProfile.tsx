@@ -1,20 +1,21 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS } from '../services/web3';
+import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS, toAddress } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount, getCurveLabel } from '../services/graphql';
-import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail } from 'lucide-react';
+import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail, Copy, ChevronRight, Trash2 } from 'lucide-react';
 import { formatEther, isAddress } from 'viem';
 import { Transaction } from '../types';
 import { calculateCategoryExposure, calculateSentimentBias, formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
-import { playClick } from '../services/audio';
+import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { isFollowing, addFollow, removeFollow, setFollowEmailAlerts, type FollowEntry } from '../services/follows';
-import { getEmailSubscription } from '../services/emailNotifications';
+// import BadgesSection from '../components/BadgesSection';
+import { getEmailSubscription, removeEmailSubscription, setEmailAlertFrequency, type EmailAlertFrequency } from '../services/emailNotifications';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#ff0055', '#facc15', '#94a3b8'];
@@ -23,7 +24,7 @@ const PublicProfile: React.FC = () => {
   const { address } = useParams<{ address: string }>();
   const navigate = useNavigate();
   const { address: connectedAddress } = useAccount();
-  const { openEmailNotify } = useEmailNotify();
+  const { openEmailNotify, isEmailNotifyOpen } = useEmailNotify();
   const [ensName, setEnsName] = useState<string | null>(null);
   const [followEntry, setFollowEntry] = useState<FollowEntry | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
@@ -38,6 +39,27 @@ const PublicProfile: React.FC = () => {
   const [activeHoldingsCount, setActiveHoldingsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isResolving, setIsResolving] = useState(false);
+  const [subscription, setSubscription] = useState<{ email: string; nickname?: string; subscribedAt?: number; alertFrequency?: EmailAlertFrequency } | null>(null);
+
+  const isOwnProfile = !!address && !!connectedAddress && address.toLowerCase() === connectedAddress.toLowerCase();
+
+  const refreshSubscription = useCallback((addr: string | null) => {
+    if (!addr) {
+      setSubscription(null);
+      return;
+    }
+    const sub = getEmailSubscription(addr);
+    setSubscription(sub ? { email: sub.email, nickname: sub.nickname, subscribedAt: sub.subscribedAt, alertFrequency: sub.alertFrequency } : null);
+  }, []);
+
+  useEffect(() => {
+    if (isOwnProfile && address) refreshSubscription(address);
+    else setSubscription(null);
+  }, [isOwnProfile, address, refreshSubscription]);
+
+  useEffect(() => {
+    if (isEmailNotifyOpen === false && isOwnProfile && address) refreshSubscription(address);
+  }, [isEmailNotifyOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (address) fetchUserData(address);
@@ -257,6 +279,7 @@ const PublicProfile: React.FC = () => {
             {!ensName && <div className="mb-4"></div>}
             <div className="flex flex-wrap items-center gap-3 justify-between font-mono font-black uppercase antialiased">
               <div className="flex flex-wrap gap-3 justify-center md:justify-start items-center">
+                {/* {address && <BadgesSection address={address} compact />} */}
                 <span className="bg-intuition-primary/20 text-intuition-primary px-3 py-2 border border-intuition-primary/40 clip-path-slant text-xs tracking-wide">LEVEL: {activeHoldingsCount > 50 ? 'ELITE_TRADER' : activeHoldingsCount > 10 ? 'MASTER_TRADER' : 'RECON_LEVEL_1'}</span>
                 <span className="bg-white/10 text-slate-200 px-3 py-2 border border-white/20 clip-path-slant text-xs tracking-wide">
                     {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} ACTIVE CLAIMS
@@ -317,12 +340,14 @@ const PublicProfile: React.FC = () => {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         playClick();
+                        const addr = toAddress(address || '');
+                        const idToStore = addr || (await resolveENS(address || '').then((r) => toAddress(r) || r)) || address;
                         const label = ensName || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
                         const hasEmail = !!getEmailSubscription(connectedAddress);
-                        addFollow(connectedAddress, address, { label, emailAlerts: hasEmail });
-                        setFollowEntry(isFollowing(connectedAddress, address) ?? null);
+                        addFollow(connectedAddress, idToStore, { label, emailAlerts: hasEmail });
+                        setFollowEntry(isFollowing(connectedAddress, idToStore) ?? null);
                         if (hasEmail) {
                           toast.success('Following — you’ll get alerts when they buy');
                         } else {
@@ -346,7 +371,10 @@ const PublicProfile: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
+          {/* {address && (
+            <BadgesSection address={address} />
+          )} */}
           <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-primary/40 transition-all shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform"><Shield size={80}/></div>
               <div className="text-[9px] font-black font-mono text-slate-600 uppercase mb-4 tracking-[0.3em] flex items-center gap-3">
@@ -391,6 +419,91 @@ const PublicProfile: React.FC = () => {
               </div>
           </div>
       </div>
+
+      {/* Account settings — only when viewing own profile */}
+      {isOwnProfile && address && (
+        <div className="mb-10 space-y-6">
+          <div className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] flex items-center gap-2 mb-4">
+            <Shield size={14} className="text-intuition-primary" /> Account settings
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-black border border-slate-900 p-6 clip-path-slant">
+              <div className="flex items-center gap-2 mb-3">
+                <Wallet size={14} className="text-intuition-primary" />
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Ident hash</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className="font-mono text-sm text-slate-300 break-all">{address.slice(0, 10)}...{address.slice(-8)}</span>
+                <button
+                  onClick={() => { playClick(); navigator.clipboard.writeText(address); toast.success('Address copied'); }}
+                  onMouseEnter={playHover}
+                  className="flex items-center gap-2 px-4 py-2 border-2 border-slate-700 text-slate-400 font-mono text-[10px] font-black tracking-widest hover:border-intuition-primary hover:text-intuition-primary transition-colors"
+                >
+                  <Copy size={12} /> Copy
+                </button>
+              </div>
+            </div>
+            <div className="bg-black border border-slate-900 p-6 clip-path-slant">
+              <div className="flex items-center gap-2 mb-3">
+                <Mail size={14} className="text-intuition-primary" />
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Email alerts</span>
+              </div>
+              {subscription?.email ? (
+                <div className="space-y-3">
+                  <p className="text-slate-300 font-mono text-sm">Linked: <span className="text-white">{subscription.email}</span></p>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="alertFrequency"
+                        checked={(subscription.alertFrequency ?? 'per_tx') === 'per_tx'}
+                        onChange={() => {
+                          playClick();
+                          setEmailAlertFrequency(address, 'per_tx');
+                          setSubscription(prev => prev ? { ...prev, alertFrequency: 'per_tx' } : null);
+                          toast.success('Alerts: after every buy/sell');
+                        }}
+                        className="sr-only"
+                      />
+                      <span className={`w-3 h-3 rounded-sm border-2 flex items-center justify-center ${(subscription.alertFrequency ?? 'per_tx') === 'per_tx' ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`} />
+                      <span className="text-slate-400 text-xs font-mono">Per tx</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="alertFrequency"
+                        checked={subscription.alertFrequency === 'daily'}
+                        onChange={() => {
+                          playClick();
+                          setEmailAlertFrequency(address, 'daily');
+                          setSubscription(prev => prev ? { ...prev, alertFrequency: 'daily' } : null);
+                          toast.success('Alerts: daily summary');
+                        }}
+                        className="sr-only"
+                      />
+                      <span className={`w-3 h-3 rounded-sm border-2 flex items-center justify-center ${subscription.alertFrequency === 'daily' ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`} />
+                      <span className="text-slate-400 text-xs font-mono">Daily</span>
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="px-3 py-1.5 border border-intuition-primary/50 text-intuition-primary text-[10px] font-black uppercase hover:bg-intuition-primary hover:text-black">Change</button>
+                    <button onClick={() => { playClick(); removeEmailSubscription(address); setSubscription(null); toast.success('Email unlinked'); }} onMouseEnter={playHover} className="px-3 py-1.5 border border-slate-600 text-slate-400 text-[10px] font-black uppercase hover:border-intuition-danger hover:text-intuition-danger flex items-center gap-1"><Trash2 size={10} /> Delete</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-slate-500 text-xs font-mono">No email linked</p>
+                  <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="flex items-center gap-2 px-4 py-2 bg-intuition-primary text-black font-mono text-[10px] font-black uppercase border border-intuition-primary hover:bg-white"><Mail size={12} /> Add email</button>
+                </div>
+              )}
+            </div>
+          </div>
+          <Link to="/portfolio" onClick={playClick} onMouseEnter={playHover} className="flex items-center justify-between w-full py-4 px-4 border-2 border-slate-800 text-slate-400 font-mono text-[10px] font-black tracking-widest hover:border-intuition-primary hover:text-intuition-primary transition-colors">
+            <span>View portfolio</span>
+            <ChevronRight size={16} />
+          </Link>
+        </div>
+      )}
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
           <div className="bg-black border border-slate-900 p-10 clip-path-slant h-[360px] flex flex-col shadow-2xl relative group overflow-hidden">

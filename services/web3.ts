@@ -1,8 +1,9 @@
 
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, type Hex, stringToHex, keccak256, encodePacked, decodeEventLog } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, isAddress, type Hex, stringToHex, toHex, keccak256, encodePacked, decodeEventLog, slice, encodeFunctionData, parseEventLogs } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
-import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL } from '../constants';
+import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL, CURVE_OFFSET } from '../constants';
+import { getSubgraphPositionSharesForTerm, pickEffectiveShareBalance } from './graphql';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import EthereumProvider from '@walletconnect/ethereum-provider';
@@ -74,6 +75,93 @@ const getBrowserProvider = (preference: InjectedPreference = 'default') => {
 
 export const getProvider = () => {
   return activeProvider || getBrowserProvider('default');
+};
+
+/** Send native TRUST to an address. Uses same provider as rest of app so wallet prompts. */
+export const sendNativeTransfer = async (
+  fromAccount: string,
+  to: `0x${string}`,
+  valueWei: bigint
+): Promise<string> => {
+  const provider = getProvider();
+  if (!provider) throw new Error('Wallet not connected');
+  const account = getAddress(fromAccount);
+  
+  // Estimate gas properly first to avoid "intrinsic gas too low" errors
+  // Then let MetaMask handle gas price estimation to avoid display bugs
+  let estimatedGas: bigint;
+  try {
+    estimatedGas = await publicClient.estimateGas({
+      account: account as `0x${string}`,
+      to,
+      value: valueWei,
+    });
+    // Add 20% buffer for safety
+    estimatedGas = (estimatedGas * 120n) / 100n;
+  } catch {
+    // Fallback to higher default if estimation fails
+    estimatedGas = 100000n; // Higher default for L3s
+  }
+  
+  // Use walletClient but DON'T set gasPrice - let MetaMask estimate it
+  // This prevents MetaMask from showing wrong gas fees
+  const walletClient = createWalletClient({
+    chain: intuitionChain,
+    transport: custom(provider),
+    account: account as `0x${string}`,
+  });
+  
+  const hash = await walletClient.sendTransaction({
+    to,
+    value: valueWei,
+    account: account as `0x${string}`,
+    gas: estimatedGas, // Use properly estimated gas
+    // Don't set gasPrice - let MetaMask fetch from network to avoid display bugs
+  });
+  return hash;
+};
+
+/**
+ * Broadcasts a generic transaction with data (calldata), value, and recipient.
+ * Used primarily by the AI Skill Agent to execute generated intents.
+ */
+export const broadcastTransaction = async (
+  fromAccount: string,
+  to: `0x${string}`,
+  valueWei: bigint,
+  data?: `0x${string}`
+): Promise<string> => {
+  const provider = getProvider();
+  if (!provider) throw new Error('Wallet not connected');
+  const account = getAddress(fromAccount);
+  
+  let estimatedGas: bigint;
+  try {
+    estimatedGas = await publicClient.estimateGas({
+      account: account as `0x${string}`,
+      to,
+      value: valueWei,
+      data,
+    });
+    estimatedGas = (estimatedGas * 125n) / 100n;
+  } catch {
+    estimatedGas = 300000n;
+  }
+  
+  const walletClient = createWalletClient({
+    chain: intuitionChain,
+    transport: custom(provider),
+    account: account as `0x${string}`,
+  });
+  
+  const hash = await walletClient.sendTransaction({
+    to,
+    value: valueWei,
+    data,
+    account: account as `0x${string}`,
+    gas: estimatedGas,
+  });
+  return hash;
 };
 
 /**
@@ -173,8 +261,8 @@ export const connectWallet = async (
       });
 
       await provider.connect();
-      const accounts = await provider.request({ method: 'eth_accounts' });
-      if (!accounts || accounts.length === 0) return null;
+      const accounts = (await provider.request({ method: 'eth_accounts' })) as string[] | undefined;
+      if (!Array.isArray(accounts) || accounts.length === 0) return null;
       const address = getAddress(accounts[0]);
 
       activeProvider = provider;
@@ -234,19 +322,78 @@ export const getShareBalance = async (account: string, termId: string, curveId: 
   } catch { return "0"; }
 };
 
-export const getQuoteRedeem = async (sharesAmount: string, termId: string, account: string, curveId: number = OFFSET_PROGRESSIVE_CURVE_ID): Promise<string> => {
+/** RPC getShares merged with subgraph positions — avoids 0 balance when indexer has your deposit but the vault read disagrees. */
+export const getShareBalanceEffective = async (account: string, termId: string, curveId: number = OFFSET_PROGRESSIVE_CURVE_ID) => {
+  const rpc = await getShareBalance(account, termId, curveId);
+  try {
+    const sub = await getSubgraphPositionSharesForTerm(account, termId);
+    const gqlStr = curveId === LINEAR_CURVE_ID ? sub.linear : sub.exponential;
+    return pickEffectiveShareBalance(rpc, gqlStr);
+  } catch {
+    return rpc;
+  }
+};
+
+/** Batch getShareBalance via multicall — reduces N RPC calls to 1. Returns map of "termId:curveId" -> shares string. */
+const MULTICALL_BATCH_SIZE = 80;
+export const getShareBalancesBatch = async (
+  account: string,
+  items: { termId: string; curveId: number }[]
+): Promise<Map<string, string>> => {
+  const result = new Map<string, string>();
+  if (!items.length) return result;
+  const checksumAccount = getAddress(account);
+  for (let i = 0; i < items.length; i += MULTICALL_BATCH_SIZE) {
+    const batch = items.slice(i, i + MULTICALL_BATCH_SIZE);
+    const contracts = batch.map(({ termId, curveId }) => {
+      const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
+      const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
+      return {
+        address: MULTI_VAULT_ADDRESS as `0x${string}`,
+        abi: MULTI_VAULT_ABI,
+        functionName: 'getShares' as const,
+        args: [checksumAccount, termIdBytes32, BigInt(curveId)] as const,
+      };
+    });
+    try {
+      const results = await publicClient.multicall({ contracts, allowFailure: true });
+      batch.forEach(({ termId, curveId }, idx) => {
+        const key = `${termId.toLowerCase()}:${curveId}`;
+        const r = results[idx];
+        result.set(key, r?.status === 'success' && r.result != null ? formatEther(r.result as bigint) : '0');
+      });
+    } catch {
+      batch.forEach(({ termId, curveId }) => result.set(`${termId.toLowerCase()}:${curveId}`, '0'));
+    }
+  }
+  return result;
+};
+
+export const getQuoteRedeem = async (sharesAmount: string, termId: string, account: string, curveId: number = LINEAR_CURVE_ID): Promise<string> => {
     try {
         const rawTermId = termId.startsWith('0x') ? termId : `0x${termId}`;
         const termIdBytes32 = pad(rawTermId as Hex, { size: 32 });
         const targetCurve = BigInt(curveId);
+        const checksum = getAddress(account);
+        let sharesWei = parseEther(sharesAmount || '0');
+        const balanceWei = await publicClient.readContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'getShares',
+            args: [checksum, termIdBytes32, targetCurve],
+        } as any) as bigint;
+        if (sharesWei > balanceWei) sharesWei = balanceWei;
+        if (sharesWei === 0n) return '0';
         const result = await publicClient.readContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
             abi: MULTI_VAULT_ABI,
             functionName: 'previewRedeem',
-            args: [termIdBytes32, targetCurve, parseEther(sharesAmount)]
-        } as any) as [bigint, bigint]; 
+            args: [termIdBytes32, targetCurve, sharesWei],
+        } as any) as [bigint, bigint];
         return formatEther(result[0]);
-    } catch { return "0"; }
+    } catch {
+        return '0';
+    }
 };
 
 export const depositToVault = async (amount: string, termId: string, receiver: string, curveIdOrOnProgress?: number | ((log: string) => void), onProgress?: (log: string) => void) => {
@@ -270,14 +417,14 @@ export const depositToVault = async (amount: string, termId: string, receiver: s
       progressCb?.(`Handshake Cost Calculated: ${formatEther(totalCost)} ${CURRENCY_SYMBOL}`);
 
       progressCb?.("Awaiting Biometric Signature...");
-      const { request } = await publicClient.simulateContract({
-          address: FEE_PROXY_ADDRESS as `0x${string}`,
-          abi: FEE_PROXY_ABI,
-          functionName: 'deposit',
-          account: checksumReceiver,
-          args: [checksumReceiver, termIdBytes32, curveIdBigInt, 0n, assets],
-          value: totalCost,
-      } as any);
+        const { request } = await publicClient.simulateContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'deposit',
+            account: checksumReceiver,
+            args: [checksumReceiver, termIdBytes32, curveIdBigInt, 0n],
+            value: (totalCost * 102n) / 100n, // 2% safety buffer; amount is msg.value (proxy splits fee)
+        } as any);
 
       const hash = await walletClient.writeContract(request);
       progressCb?.(`Broadcasting Packet to Mainnet... Hash: ${hash.slice(0,10)}...`);
@@ -329,11 +476,29 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
 
   try {
       progressCb?.("Calculating Exit Liquidity...");
+      const balanceWei = await publicClient.readContract({
+          address: MULTI_VAULT_ADDRESS as `0x${string}`,
+          abi: MULTI_VAULT_ABI,
+          functionName: 'getShares',
+          args: [checksumReceiver, termIdBytes32, curveIdBigInt],
+      } as any) as bigint;
+      let sharesEffective = shares;
+      if (shares > balanceWei) {
+          progressCb?.(
+              `Requested ${formatEther(shares)} shares; on-chain balance is ${formatEther(balanceWei)}. Using on-chain max.`
+          );
+          sharesEffective = balanceWei;
+      }
+      if (sharesEffective === 0n) {
+          throw new Error(
+              `No shares to redeem on this vault for the selected curve (on-chain balance is 0). If the UI showed a balance from the indexer, pick the other curve or wait for RPC to sync.`
+          );
+      }
       const preview = await publicClient.readContract({
           address: MULTI_VAULT_ADDRESS as `0x${string}`,
           abi: MULTI_VAULT_ABI,
           functionName: 'previewRedeem',
-          args: [termIdBytes32, curveIdBigInt, shares]
+          args: [termIdBytes32, curveIdBigInt, sharesEffective],
       } as any) as [bigint, bigint];
       progressCb?.(`Projected Proceeds: ${formatEther(preview[0])} ${CURRENCY_SYMBOL}`);
 
@@ -343,7 +508,7 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
           abi: MULTI_VAULT_ABI,
           functionName: 'redeemBatch',
           account: checksumReceiver,
-          args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [shares], [0n]],
+          args: [checksumReceiver, [termIdBytes32], [curveIdBigInt], [sharesEffective], [0n]],
       } as any);
 
       const hash = await walletClient.writeContract(request);
@@ -371,17 +536,50 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
           progressCb?.("Indexing delayed on RPC. Local estimate will be used until explorer catches up.");
       }
 
-      return { hash, assets: actualAssets, shares };
+      return { hash, assets: actualAssets, shares: sharesEffective };
   } catch (error: any) {
       console.error("REDEEM_ERROR:", error);
       throw error;
   }
 };
 
+const PROXY_APPROVAL_CACHE_KEY = 'inturank_proxy_approved';
+const PROXY_APPROVAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (approval is one-time on-chain)
+
+function getProxyApprovalCache(addr: string): boolean {
+    try {
+        const raw = localStorage.getItem(PROXY_APPROVAL_CACHE_KEY);
+        if (!raw) return false;
+        const data = JSON.parse(raw);
+        const entry = data[addr.toLowerCase()];
+        if (!entry?.ts) return false;
+        if (Date.now() - entry.ts > PROXY_APPROVAL_CACHE_TTL_MS) return false;
+        return true;
+    } catch { return false; }
+}
+
+function setProxyApprovalCache(addr: string): void {
+    try {
+        const raw = localStorage.getItem(PROXY_APPROVAL_CACHE_KEY) || '{}';
+        const data = JSON.parse(raw);
+        data[addr.toLowerCase()] = { ts: Date.now() };
+        localStorage.setItem(PROXY_APPROVAL_CACHE_KEY, JSON.stringify(data));
+    } catch (_) {}
+}
+
+export const markProxyApproved = (walletAddress: string): void => {
+    try {
+        setProxyApprovalCache(getAddress(walletAddress));
+    } catch (_) {}
+};
+
+/** Sync check for cached approval (no RPC). Use for instant UI feedback. */
+export const hasCachedProxyApproval = (walletAddress: string): boolean =>
+    getProxyApprovalCache(getAddress(walletAddress));
+
 export const checkProxyApproval = async (walletAddress: string): Promise<boolean> => {
     const addr = getAddress(walletAddress);
-    const cacheKey = `inturank_approved_${addr.toLowerCase()}`;
-    if (localStorage.getItem(cacheKey) === 'true') return true;
+    if (getProxyApprovalCache(addr)) return true;
     try {
         const approved = await publicClient.readContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
@@ -389,29 +587,62 @@ export const checkProxyApproval = async (walletAddress: string): Promise<boolean
             functionName: 'isApproved',
             args: [addr, getAddress(FEE_PROXY_ADDRESS), 1]
         } as any);
-        const isOk = Boolean(approved);
-        if (isOk) localStorage.setItem(cacheKey, 'true');
-        return isOk;
-    } catch (e) { return false; }
+        const ok = Boolean(approved);
+        if (ok) setProxyApprovalCache(addr);
+        return ok;
+    } catch (e) {
+        return false;
+    }
+};
+
+const tryGrantWithProvider = async (provider: any, checksumAccount: `0x${string}`): Promise<string> => {
+    const walletClient = createWalletClient({
+        chain: intuitionChain,
+        transport: custom(provider),
+        account: checksumAccount,
+    });
+    const { request } = await publicClient.simulateContract({
+        address: MULTI_VAULT_ADDRESS as `0x${string}`,
+        abi: MULTI_VAULT_ABI,
+        functionName: 'approve',
+        account: checksumAccount,
+        args: [getAddress(FEE_PROXY_ADDRESS), 1],
+    } as any);
+    return walletClient.writeContract(request);
 };
 
 export const grantProxyApproval = async (walletAddress: string): Promise<void> => {
-    const checksumAccount = getAddress(walletAddress);
-    const provider = getProvider();
-    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumAccount });
-    try {
-        const { request } = await publicClient.simulateContract({
-            address: MULTI_VAULT_ADDRESS as `0x${string}`,
-            abi: MULTI_VAULT_ABI,
-            functionName: 'approve',
-            account: checksumAccount,
-            args: [getAddress(FEE_PROXY_ADDRESS), 1],
-        } as any);
-        const hash = await walletClient.writeContract(request);
-        await publicClient.waitForTransactionReceipt({ hash });
-        localStorage.setItem(`inturank_approved_${checksumAccount.toLowerCase()}`, 'true');
-        toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
-    } catch (e: any) { throw e; }
+    const checksumAccount = getAddress(walletAddress) as `0x${string}`;
+    const primary = getProvider();
+    const metaMask = getBrowserProvider('metamask');
+    const fallback = getBrowserProvider('default');
+    const providers = [primary, metaMask, fallback].filter(Boolean) as any[];
+    if (!providers.length) throw new Error('Wallet not connected. Connect your wallet first.');
+    let hash: string | undefined;
+    let lastError: any;
+    for (const provider of providers) {
+        try {
+            hash = await tryGrantWithProvider(provider, checksumAccount);
+            break;
+        } catch (e: any) {
+            lastError = e;
+        }
+    }
+    if (!hash) {
+        const msg = String(lastError?.message || lastError?.error?.message || lastError?.reason || lastError?.shortMessage || lastError || '');
+        const causeMsg = String(lastError?.cause?.message || lastError?.cause || '');
+        const combined = msg + ' ' + causeMsg;
+        if (/Extension ID|sendMessage|runtime\.sendMessage/i.test(combined)) {
+            throw new Error('Wallet extension error. Try: refresh the page, disable other wallet extensions, or use a different browser.');
+        }
+        if (lastError?.code === 4001 || /reject/i.test(msg)) {
+            throw new Error('Wallet not prompting. Try: refresh the page, disable other wallet extensions, or use Chrome with only MetaMask.');
+        }
+        throw lastError;
+    }
+    await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
+    setProxyApprovalCache(checksumAccount);
+    toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
 };
 
 const LOCAL_TX_KEY = 'inturank_ledger_v3';
@@ -450,22 +681,186 @@ export const toggleWatchlist = (id: string, account: string): boolean => {
     return added;
 };
 
+/** Pull nested RPC / viem text so we don't collapse everything to a generic revert. */
+function collectErrorText(error: unknown, depth = 0): string {
+    if (depth > 5 || error == null) return "";
+    if (typeof error === "string") return error;
+    if (typeof error === "object") {
+        const e = error as Record<string, unknown>;
+        const parts: string[] = [];
+        for (const k of ["details", "shortMessage", "message", "cause"]) {
+            const v = e[k];
+            if (typeof v === "string" && v.trim()) parts.push(v.trim());
+            else if (k === "cause" && v) parts.push(collectErrorText(v, depth + 1));
+        }
+        return parts.filter(Boolean).join(" | ");
+    }
+    return String(error);
+}
+
 export const parseProtocolError = (error: any) => {
-    const msg = error?.message || error?.toString() || "";
-    if (msg.includes("0xD76F6FF8")) return "PROTOCOL_APPROVAL_REQUIRED: Please 'Enable Protocol' first.";
-    if (msg.includes("insufficient funds")) return "INSUFFICIENT_TRUST_BALANCE";
-    if (msg.includes("User rejected")) return "USER_REJECTED_HANDSHAKE";
-    // Already a clear triple failure message (e.g. from FeeProxy + SDK fallback)
-    if (msg.includes("Triple creation failed")) return msg.slice(0, 140) + (msg.length > 140 ? "…" : "");
-    // FeeProxy createTriples revert (custom error / undecodable)
-    if (msg.includes("createTriples") || msg.includes("0xd335ef46") || (msg.includes("reverted") && msg.toLowerCase().includes("triple"))) {
+    const rawMsg = error?.message || error?.toString() || "";
+    const combined = `${rawMsg} ${collectErrorText(error)}`.trim();
+    const msg = combined.toLowerCase();
+
+    if (msg.includes("0xd76f6ff8")) return "PROTOCOL_APPROVAL_REQUIRED: Please 'Enable Protocol' first.";
+    if (msg.includes("minimumdeposit") || /MinimumDeposit/i.test(msg)) {
+        return `MINIMUM_DEPOSIT: The protocol requires at least ${formatEther(CURVE_OFFSET)} TRUST as vault deposit (same as claims).`;
+    }
+    if (msg.includes("insufficient funds") || msg.includes("exceeds the balance")) return "INSUFFICIENT_TRUST_BALANCE";
+
+    // MultiVault_InsufficientBalance() custom error selector
+    if (msg.includes("0x7b0a37cf") || /MultiVault_InsufficientBalance/i.test(msg)) {
+        const type = msg.includes("createatoms") ? "atom" : msg.includes("createtriples") ? "triple" : "protocol";
+        return `INSUFFICIENT_TRUST_BALANCE: Not enough TRUST to cover the deposit plus ${type} creation cost. Reduce the deposit or add more TRUST.`;
+    }
+    if (msg.includes("user rejected")) return "USER_REJECTED_HANDSHAKE";
+
+    // FeeProxy createTriples revert 0xd335ef46 (custom error: InsufficientDepositAmountToCoverFees)
+    if (msg.includes("0xd335ef46") || /InsufficientDepositAmountToCoverFees/i.test(msg)) {
+        return "INSUFFICIENT_FEE_COVERAGE: Sent TRUST is below what this calldata requires (fee + deposit). Regenerate JSON so value (wei) matches the assets[] amounts, or add TRUST to the wallet.";
+    }
+
+    // Already a clear failure message
+    if (msg.includes("creation failed")) return combined.slice(0, 200) + (combined.length > 200 ? "…" : "");
+
+    if (msg.includes("createtriples") || (msg.includes("reverted") && msg.includes("triple"))) {
         return "Triple creation failed. Check: all 3 atoms exist on-chain, enough TRUST, and Enable Protocol.";
     }
-    if (msg.includes("reverted") || msg.includes("ContractFunctionRevertedError")) {
+
+    // previewRedeem / redeem — often indexer UI > on-chain getShares, or wrong curve
+    if (msg.includes("previewredeem") || msg.includes("redeembatch") || msg.includes("0x36172e8f")) {
+        return "REDEEM_PREVIEW_FAILED: On-chain shares for this vault/curve are lower than the amount (or zero). Try the other curve, use Max after it refreshes, or wait for the chain to sync.";
+    }
+
+    if (msg.includes("execution reverted") || msg.includes("contractfunctionrevertederror")) {
+        // Prefer raw combined message (often includes revert data) over canned text
+        const concise = combined.length > 320 ? combined.slice(0, 317) + "…" : combined;
+        if (concise.length > 40 && !/^execution reverted$/i.test(concise.trim())) {
+            return concise;
+        }
+        if (msg.includes("createatoms")) {
+            return "Atom creation reverted. Check: TRUST balance ≥ value, value matches fee+deposit in calldata, and Enable Protocol.";
+        }
         return "Transaction reverted. Ensure all 3 atoms exist on-chain and you have enough TRUST.";
     }
-    return msg.slice(0, 120) + (msg.length > 120 ? "…" : "");
+    return combined.slice(0, 200) + (combined.length > 200 ? "…" : "");
 };
+
+/** Selectors for FeeProxy functions this app supports (see constants FEE_PROXY_ABI). */
+const FEE_PROXY_ALLOWED_SELECTORS = new Set([
+    '0x8581c32f', // createAtoms(address,bytes[],uint256[],uint256)
+    '0xbc2439e4', // createTriples(...)
+    '0x58a19d5e', // deposit(...)
+]);
+
+const PREFLIGHT_PREFIX =
+    "Simulation failed — wallet was not opened because this call would revert on-chain. ";
+
+function preflightFailureMessage(err: unknown): string {
+    const parsed = parseProtocolError(err);
+    const nested = collectErrorText(err);
+    const combined = `${parsed} ${nested}`.trim();
+    const avoidGeneric =
+        parsed.startsWith("TRANSACTION_REVERTED") ||
+        (parsed.includes("protocol rejected") && parsed.length < 120);
+    const body =
+        avoidGeneric && nested.length > 40
+            ? nested
+            : combined.length > 30
+              ? combined
+              : parsed;
+    const stripped = body.replace(/\s*\|\s*Version:\s*viem@[\d.]+/gi, "").trim();
+    const trimmed = stripped.length > 420 ? stripped.slice(0, 417) + "…" : stripped;
+    return PREFLIGHT_PREFIX + trimmed;
+}
+
+/**
+ * Simulate the Skill Agent tx before opening the wallet.
+ * FeeProxy: use raw eth_call only — decodeFunctionData/simulateContract can throw IntegerOutOfRangeError
+ * on large uint256 values in viem’s JS number paths; the chain still executes the same bytes correctly.
+ */
+export async function preflightSkillBroadcast(
+    fromAccount: string,
+    to: `0x${string}`,
+    valueWei: bigint,
+    data: `0x${string}`
+): Promise<{ ok: true } | { ok: false; message: string }> {
+    const account = getAddress(fromAccount);
+    const toLc = to.toLowerCase();
+    if (toLc === FEE_PROXY_ADDRESS.toLowerCase()) {
+        const sel = data.slice(0, 10).toLowerCase();
+        if (!FEE_PROXY_ALLOWED_SELECTORS.has(sel)) {
+            return {
+                ok: false,
+                message:
+                    PREFLIGHT_PREFIX +
+                    `FeeProxy calldata uses unknown selector ${sel}. Regenerate the JSON from the agent (or use Create flow). Supported: createAtoms 0x8581c32f, createTriples 0xbc2439e4, deposit 0x58a19d5e.`,
+            };
+        }
+        const hexBody = data.slice(2);
+        if (hexBody.length % 2 !== 0) {
+            return {
+                ok: false,
+                message:
+                    PREFLIGHT_PREFIX +
+                    "The `data` hex has an odd number of characters (copy/paste error). Ask the agent for a fresh JSON block.",
+            };
+        }
+
+        // createAtoms(address receiver, ...): receiver is the last 20 bytes of the first 32-byte argument (calldata bytes 16–35).
+        if (sel === "0x8581c32f") {
+            if (data.length < 2 + 36 * 2) {
+                return {
+                    ok: false,
+                    message:
+                        PREFLIGHT_PREFIX +
+                        "createAtoms calldata is too short to include a receiver address. Ask the agent for a complete JSON block.",
+                };
+            }
+            const receiver = getAddress(slice(data, 16, 36));
+            if (receiver === "0x0000000000000000000000000000000000000000") {
+                return {
+                    ok: false,
+                    message:
+                        PREFLIGHT_PREFIX +
+                        "Receiver address in the JSON is zero (0x000…000). FeeProxy will always revert. Tell the agent: set `receiver` in createAtoms to your connected wallet address — the same address shown in the app when your wallet is connected.",
+                };
+            }
+            if (receiver.toLowerCase() !== account.toLowerCase()) {
+                return {
+                    ok: false,
+                    message:
+                        PREFLIGHT_PREFIX +
+                        `Receiver in calldata is ${receiver.slice(0, 6)}…${receiver.slice(-4)} but your connected wallet is ${account.slice(0, 6)}…${account.slice(-4)}. Connect the matching wallet or ask the agent to regenerate with receiver = your address.`,
+                };
+            }
+        }
+
+        try {
+            await publicClient.call({
+                account,
+                to,
+                data,
+                value: valueWei,
+            });
+            return { ok: true };
+        } catch (err: unknown) {
+            return { ok: false, message: preflightFailureMessage(err) };
+        }
+    }
+    try {
+        await publicClient.call({
+            account,
+            to,
+            data,
+            value: valueWei,
+        });
+        return { ok: true };
+    } catch (err: unknown) {
+        return { ok: false, message: preflightFailureMessage(err) };
+    }
+}
 
 export const publishOpinion = async (text: string, agentId: string, side: string, wallet: string): Promise<string | undefined> => {
     try {
@@ -473,81 +868,466 @@ export const publishOpinion = async (text: string, agentId: string, side: string
     } catch (e) { return undefined; }
 };
 
-export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string, onProgress?: (log: string) => void) => {
-    const checksumReceiver = getAddress(receiver);
-    const dataHex = stringToHex(JSON.stringify(metadata));
-    const depositBigInt = parseEther(depositAmount);
-    const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
-    const provider = getProvider();
-    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
+/** Protocol / UI often paste a full sentence into the name field; long atom bytes make FeeProxy getAtomCost + createAtoms revert. */
+const MAX_ATOM_LABEL_UTF8_BYTES = 256;
+
+function truncateUtf8ToMaxBytes(s: string, maxBytes: number): string {
+    if (!s) return s;
+    const enc = new TextEncoder();
+    if (enc.encode(s).length <= maxBytes) return s;
+    let lo = 0;
+    let hi = s.length;
+    while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (enc.encode(s.slice(0, mid)).length <= maxBytes) lo = mid;
+        else hi = mid - 1;
+    }
+    const out = s.slice(0, lo).trim();
+    return out || 'Atom';
+}
+
+/**
+ * Turn pasted prompts ("Create an atom called \"Foo\" with …") or overlong titles into a short on-chain label.
+ */
+export function normalizeAtomLabel(raw: string): string {
+    let s = (raw || '').trim();
+    if (!s) return 'Atom';
+
+    const q1 = s.match(/\bcalled\s+["']([^"']+)["']/i);
+    if (q1?.[1]?.trim()) s = q1[1].trim();
+    else {
+        const q2 = s.match(/\batom\s+called\s+["']([^"']+)["']/i);
+        if (q2?.[1]?.trim()) s = q2[1].trim();
+        else {
+            const q3 = s.match(/\bnamed\s+["']([^"']+)["']/i);
+            if (q3?.[1]?.trim()) s = q3[1].trim();
+        }
+    }
+
+    s = s.split(/\n/)[0].trim();
+    // Unquoted: "… called My Title with 0.5 …"
+    if (s.length > 80) {
+        const chop = s.split(/\s+with\s+/i)[0].split(/\s+deposit\s+/i)[0].trim();
+        if (chop.length < s.length) s = chop;
+    }
+    // Still a paragraph (pasted prompt into name field) — hard cap
+    if (s.length > 120) s = truncateUtf8ToMaxBytes(s, 120);
+    s = truncateUtf8ToMaxBytes(s, MAX_ATOM_LABEL_UTF8_BYTES);
+    return s || 'Atom';
+}
+
+/** Build atom data bytes for FeeProxy. Uses formats the protocol accepts: Account = address hex; Thing/Person/Organization = plain text name (avoids getAtomCost revert on JSON). */
+const buildAtomDataHex = (metadata: any): `0x${string}` => {
+    let atomStr = '';
+    if (metadata?.type === 'Account' && metadata?.address && isAddress(metadata.address)) {
+        atomStr = getAddress(metadata.address);
+    } else {
+        const raw = (metadata?.name && typeof metadata.name === 'string') ? metadata.name.trim() : 'Atom';
+        atomStr = normalizeAtomLabel(raw);
+    }
+    return stringToHex(atomStr || 'Atom');
+};
+
+/**
+ * FeeProxy.createAtoms: MultiVault gets (atomCost * n) + sum(assets); fees on deposit legs via
+ * getTotalCreationCost(depositCount, totalDeposit, multiVaultCost).
+ */
+/** Used by Skill Chat / tests to align dataHex with on-chain atom id checks. */
+export async function getFeeProxyAtomParams(
+    metadata: any,
+    depositAmount: string
+): Promise<{ dataHex: `0x${string}`; depositWei: bigint; valueWei: bigint }> {
+    const depositWei = parseEther(depositAmount || '0');
+    const dataHex = buildAtomDataHex(metadata);
+    let atomCost = parseEther('0.15');
     try {
-        onProgress?.("Calculating Metadata Cost Vectors...");
-        const totalCost = await publicClient.readContract({
+        const ac = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
             functionName: 'getAtomCost',
-            args: [dataHex, depositBigInt, curveIdBigInt]
         } as any) as bigint;
-        
-        onProgress?.("Awaiting Identity Signature...");
-        const { request } = await publicClient.simulateContract({
+        if (ac > 0n) atomCost = ac;
+    } catch {
+        try {
+            const ac = await publicClient.readContract({
+                address: MULTI_VAULT_ADDRESS as `0x${string}`,
+                abi: MULTI_VAULT_ABI,
+                functionName: 'getAtomCost',
+            } as any) as bigint;
+            if (ac > 0n) atomCost = ac;
+        } catch {
+            console.warn('getAtomCost failed, using fallback 0.15');
+        }
+    }
+    if (atomCost < parseEther('0.15')) atomCost = parseEther('0.15');
+    const multiVaultCost = atomCost + depositWei;
+    const depositCount = depositWei > 0n ? 1n : 0n;
+    let valueWei: bigint;
+    try {
+        valueWei = await publicClient.readContract({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
-            functionName: 'createAtoms',
-            account: checksumReceiver,
-            args: [checksumReceiver, [dataHex], [depositBigInt], [curveIdBigInt]],
-            value: totalCost, 
+            functionName: 'getTotalCreationCost',
+            args: [depositCount, depositWei, multiVaultCost],
+        } as any) as bigint;
+    } catch (e) {
+        console.warn('FeeProxy getTotalCreationCost (atom) failed', e);
+        valueWei = (multiVaultCost * 115n) / 100n;
+    }
+    return { dataHex, depositWei, valueWei };
+}
+
+/** Read TripleCreated termId from a confirmed triple tx (canonical claim id — not keccak(subject,predicate,object)). */
+export async function getTripleTermIdFromTxHash(hash: `0x${string}`): Promise<`0x${string}` | undefined> {
+    try {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        const tripleCreated = parseEventLogs({
+            abi: MULTI_VAULT_ABI,
+            eventName: 'TripleCreated',
+            logs: receipt.logs,
+        });
+        if (tripleCreated.length === 0) {
+            const fromFeeProxy = parseEventLogs({
+                abi: FEE_PROXY_ABI,
+                eventName: 'TripleCreated',
+                logs: receipt.logs,
+            });
+            if (fromFeeProxy.length > 0) {
+                return fromFeeProxy[fromFeeProxy.length - 1].args.termId as `0x${string}`;
+            }
+            return undefined;
+        }
+        return tripleCreated[tripleCreated.length - 1].args.termId as `0x${string}`;
+    } catch (e) {
+        console.warn('getTripleTermIdFromTxHash:', e);
+    }
+    return undefined;
+}
+
+/** Read AtomCreated termId from a confirmed FeeProxy/MultiVault atom tx (Skill Chat, UI). */
+export async function getAtomTermIdFromTxHash(
+    hash: `0x${string}`,
+    dataHexFallback?: `0x${string}`
+): Promise<`0x${string}` | undefined> {
+    try {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        const atomCreated = parseEventLogs({
+            abi: MULTI_VAULT_ABI,
+            eventName: 'AtomCreated',
+            logs: receipt.logs,
+        });
+        if (atomCreated.length > 0) {
+            return atomCreated[0].args.termId as `0x${string}`;
+        }
+        if (dataHexFallback) {
+            const candidate = keccak256(dataHexFallback) as `0x${string}`;
+            try {
+                const exists = await publicClient.readContract({
+                    address: FEE_PROXY_ADDRESS as `0x${string}`,
+                    abi: FEE_PROXY_ABI,
+                    functionName: 'isTermCreated',
+                    args: [candidate],
+                } as any);
+                if (exists) return candidate;
+            } catch {
+                /* ignore */
+            }
+        }
+    } catch (e) {
+        console.warn('getAtomTermIdFromTxHash:', e);
+    }
+    return undefined;
+}
+
+function looksLikeBytes32TermId(s: string): boolean {
+    const t = s.trim();
+    return /^0x[0-9a-fA-F]{64}$/.test(t);
+}
+
+export async function isTermCreatedOnChain(termId: string): Promise<boolean> {
+    const tid = padTermId(termId);
+    try {
+        const v = await publicClient.readContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'isTermCreated',
+            args: [tid],
         } as any);
-        
+        if (v) return true;
+    } catch {
+        /* try FeeProxy */
+    }
+    try {
+        const v = await publicClient.readContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'isTermCreated',
+            args: [tid],
+        } as any);
+        return Boolean(v);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Resolve one atom reference: existing bytes32 term id, or a text label (create atom if missing).
+ * Multiple wallet signatures may be required when creating new atoms.
+ */
+export async function resolveAtomReferenceToTermId(
+    ref: string,
+    depositTrust: string,
+    receiver: string,
+    onProgress?: (log: string) => void
+): Promise<{ termId: `0x${string}`; createdTxHash?: `0x${string}` }> {
+    const trimmed = ref.trim();
+    if (!trimmed) throw new Error('Atom reference (label or term id) is required');
+
+    if (looksLikeBytes32TermId(trimmed)) {
+        const tid = padTermId(trimmed);
+        const exists = await isTermCreatedOnChain(trimmed);
+        if (exists) return { termId: tid };
+        throw new Error(
+            `Term ${trimmed.slice(0, 12)}… is not on-chain. Paste a text label (e.g. "Alice") so the agent can create the atom, or create it in Create first.`
+        );
+    }
+
+    const metadata = { name: normalizeAtomLabel(trimmed), type: 'Thing' as const };
+    const { dataHex } = await getFeeProxyAtomParams(metadata, depositTrust);
+    const candidate = keccak256(dataHex) as `0x${string}`;
+    if (await isTermCreatedOnChain(candidate)) {
+        return { termId: candidate };
+    }
+
+    onProgress?.(`Creating atom "${metadata.name}"…`);
+    const { hash, termId } = await createIdentityAtom(metadata, depositTrust, receiver, onProgress);
+    let tid = termId ?? (await getAtomTermIdFromTxHash(hash, dataHex));
+    if (!tid) tid = candidate;
+    return { termId: tid, createdTxHash: hash };
+}
+
+/**
+ * Create a semantic triple from three text labels (or existing term ids). Creates any missing atoms first (one tx each), then the triple.
+ * Wallets that do not batch will prompt once per transaction — typically up to 4 signatures if all atoms are new.
+ */
+export async function createTripleFromLabels(
+    subjectRef: string,
+    predicateRef: string,
+    objectRef: string,
+    depositTrust: string,
+    receiver: string,
+    onProgress?: (log: string) => void
+): Promise<{
+    atomTxHashes: `0x${string}`[];
+    tripleHash: `0x${string}`;
+    tripleTermId: Hex;
+    subjectId: `0x${string}`;
+    predicateId: `0x${string}`;
+    objectId: `0x${string}`;
+}> {
+    const atomTxHashes: `0x${string}`[] = [];
+
+    onProgress?.('Resolving subject atom…');
+    const s = await resolveAtomReferenceToTermId(subjectRef, depositTrust, receiver, onProgress);
+    if (s.createdTxHash) atomTxHashes.push(s.createdTxHash);
+
+    onProgress?.('Resolving predicate atom…');
+    const p = await resolveAtomReferenceToTermId(predicateRef, depositTrust, receiver, onProgress);
+    if (p.createdTxHash) atomTxHashes.push(p.createdTxHash);
+
+    onProgress?.('Resolving object atom…');
+    const o = await resolveAtomReferenceToTermId(objectRef, depositTrust, receiver, onProgress);
+    if (o.createdTxHash) atomTxHashes.push(o.createdTxHash);
+
+    onProgress?.('Creating triple (claim)…');
+    const tripleHash = await createSemanticTriple(
+        s.termId,
+        p.termId,
+        o.termId,
+        depositTrust,
+        receiver,
+        onProgress,
+        true
+    );
+    const fromReceipt = await getTripleTermIdFromTxHash(tripleHash);
+    const tripleTermId = (fromReceipt ??
+        calculateTripleId(s.termId, p.termId, o.termId)) as Hex;
+    return {
+        atomTxHashes,
+        tripleHash,
+        tripleTermId,
+        subjectId: s.termId,
+        predicateId: p.termId,
+        objectId: o.termId,
+    };
+}
+
+export const createIdentityAtom = async (metadata: any, depositAmount: string, receiver: string, onProgress?: (log: string) => void): Promise<{ hash: `0x${string}`; termId?: `0x${string}` }> => {
+    const checksumReceiver = getAddress(receiver);
+    const depositParsed = parseEther(depositAmount);
+    if (depositParsed < CURVE_OFFSET) {
+        throw new Error(
+            `Minimum deposit is ${formatEther(CURVE_OFFSET)} TRUST. You provided ${depositAmount}.`
+        );
+    }
+
+    const provider = getProvider();
+    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
+
+    try {
+        onProgress?.("Verifying Protocol Approval...");
+        const approved = await checkProxyApproval(receiver);
+        if (!approved) {
+            onProgress?.("Awaiting Protocol Handshake...");
+            await grantProxyApproval(receiver);
+        }
+
+        onProgress?.("Simulating atom creation (FeeProxy)...");
+        const { dataHex, depositWei, valueWei: totalCost } = await getFeeProxyAtomParams(metadata, depositAmount);
+
+        onProgress?.(`Total send: ${formatEther(totalCost)} ${CURRENCY_SYMBOL}`);
+        onProgress?.("Awaiting Identity Signature...");
+
+        let request: any;
+        try {
+            const simulation = await publicClient.simulateContract({
+                address: FEE_PROXY_ADDRESS as `0x${string}`,
+                abi: FEE_PROXY_ABI,
+                functionName: 'createAtoms',
+                account: checksumReceiver,
+                args: [checksumReceiver, [dataHex], [depositWei], BigInt(LINEAR_CURVE_ID)],
+                value: totalCost,
+            } as any);
+            request = simulation.request;
+        } catch (simulationError: any) {
+            console.warn("ATOM_SIMULATION_FAILED:", simulationError);
+            const parsed = parseProtocolError(simulationError);
+            // Search for keywords case-insensitively
+            const upper = parsed.toUpperCase();
+            if (upper.includes("REVERTED") || upper.includes("BALANCE") || upper.includes("FEE")) {
+                throw new Error(parsed);
+            }
+            throw simulationError;
+        }
+
         const hash = await walletClient.writeContract(request);
         onProgress?.(`Broadcasting Identity... Hash: ${hash.slice(0,10)}...`);
+
+        let termId: `0x${string}` | undefined;
+        try {
+            onProgress?.("Identity Anchored in Block.");
+            termId = await getAtomTermIdFromTxHash(hash, dataHex);
+        } catch (e) {
+            console.warn("RECEIPT_WAIT_ERROR:", e);
+        }
+
         window.dispatchEvent(new Event('local-tx-updated'));
-        return hash;
-    } catch (error: any) { throw error; }
+        return { hash, termId };
+    } catch (error: any) {
+        console.error('createIdentityAtom failed:', error?.message || error);
+        const parsed = parseProtocolError(error);
+        const upper = parsed.toUpperCase();
+        if (upper.includes("REVERTED") || upper.includes("BALANCE") || upper.includes("FEE")) {
+            throw new Error(parsed);
+        }
+        throw error;
+    }
 };
 
-export const getAtomCreationCost = async (metadata: any, depositAmount: string) => {
-    const dataHex = stringToHex(JSON.stringify(metadata));
-    const depositBigInt = parseEther(depositAmount);
-    const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
-    return await publicClient.readContract({
-        address: FEE_PROXY_ADDRESS as `0x${string}`,
-        abi: FEE_PROXY_ABI,
-        functionName: 'getAtomCost',
-        args: [dataHex, depositBigInt, curveIdBigInt]
-    } as any) as bigint;
+/** Total TRUST to send: FeeProxy.getTotalCreationCost for one atom + deposit (includes IntuRank fees). */
+export const getAtomCreationCost = async (metadata: any, depositAmount: string): Promise<bigint> => {
+    const { valueWei } = await getFeeProxyAtomParams(metadata, depositAmount);
+    return valueWei;
 };
+
+/**
+ * Skill Chat: build FeeProxy createAtoms calldata (same as createIdentityAtom; no LLM hex).
+ */
+export async function buildCreateAtomTxIntent(
+    receiver: string,
+    label: string,
+    depositTrust: string
+): Promise<{ to: `0x${string}`; data: `0x${string}`; valueWei: bigint; dataHex: `0x${string}` }> {
+    const trimmed = label.trim();
+    if (!trimmed) throw new Error('Atom label is required');
+    let depositWei: bigint;
+    try {
+        depositWei = parseEther(depositTrust.trim() || '0');
+    } catch {
+        throw new Error('Invalid deposit amount (use TRUST as a decimal, e.g. 0.5)');
+    }
+    if (depositWei <= 0n) throw new Error('Deposit must be greater than zero');
+    if (depositWei < CURVE_OFFSET) {
+        throw new Error(
+            `Minimum deposit is ${formatEther(CURVE_OFFSET)} TRUST (same as claims). You entered ${depositTrust.trim()}.`
+        );
+    }
+
+    const metadata = { name: trimmed };
+    const checksum = getAddress(receiver);
+    const { dataHex, depositWei: dep, valueWei } = await getFeeProxyAtomParams(metadata, depositTrust.trim());
+    const data = encodeFunctionData({
+        abi: FEE_PROXY_ABI,
+        functionName: 'createAtoms',
+        args: [checksum, [dataHex], [dep], BigInt(LINEAR_CURVE_ID)],
+    });
+    return {
+        to: FEE_PROXY_ADDRESS as `0x${string}`,
+        data,
+        valueWei,
+        dataHex,
+    };
+}
 
 export const estimateAtomGas = async (account: string, metadata: any, depositAmount: string) => {
     const checksumAccount = getAddress(account);
-    const dataHex = stringToHex(JSON.stringify(metadata));
-    const depositBigInt = parseEther(depositAmount);
-    const curveIdBigInt = BigInt(OFFSET_PROGRESSIVE_CURVE_ID);
     try {
-        const totalCost = await getAtomCreationCost(metadata, depositAmount);
+        const { dataHex, depositWei, valueWei } = await getFeeProxyAtomParams(metadata, depositAmount);
         const gas = await publicClient.estimateContractGas({
             address: FEE_PROXY_ADDRESS as `0x${string}`,
             abi: FEE_PROXY_ABI,
             functionName: 'createAtoms',
             account: checksumAccount,
-            args: [checksumAccount, [dataHex], [depositBigInt], [curveIdBigInt]],
-            value: totalCost,
+            args: [checksumAccount, [dataHex], [depositWei], BigInt(LINEAR_CURVE_ID)],
+            value: valueWei,
         } as any);
         const gasPrice = await publicClient.getGasPrice();
         return gas * gasPrice;
     } catch (error) { return parseEther('0.0008'); }
 };
 
-export const createSemanticTriple = async (subjectId: string, predicateId: string, objectId: string, depositAmount: string, receiver: string, onProgress?: (log: string) => void) => {
-    const checksumReceiver = getAddress(receiver);
-    const sId = pad((subjectId.startsWith('0x') ? subjectId : `0x${subjectId}`) as Hex, { size: 32 });
-    const pId = pad((predicateId.startsWith('0x') ? predicateId : `0x${predicateId}`) as Hex, { size: 32 });
-    const oId = pad((objectId.startsWith('0x') ? objectId : `0x${objectId}`) as Hex, { size: 32 });
-    const assets = parseEther(depositAmount);
-    const provider = getProvider();
-    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
+/**
+ * Returns the minimum deposit (assets) required for claim/triple creation.
+ * Uses CURVE_OFFSET (0.5 TRUST) as the protocol minimum for the bonding curve.
+ */
+export const getMinClaimDeposit = async (): Promise<string> => {
+    return formatEther(CURVE_OFFSET);
+};
+
+/**
+ * Returns the base protocol triple cost from MultiVault (excluding any IntuRank proxy fee).
+ */
+export const getTripleCost = async (): Promise<string> => {
     try {
-        onProgress?.("Simulating Synapse Parameters...");
+        const tripleCost = await publicClient.readContract({
+            address: MULTI_VAULT_ADDRESS as `0x${string}`,
+            abi: MULTI_VAULT_ABI,
+            functionName: 'getTripleCost',
+        } as any) as bigint;
+        return formatEther(tripleCost < parseEther('0.15') ? parseEther('0.15') : tripleCost);
+    } catch {
+        return formatEther(parseEther('0.15'));
+    }
+};
+
+/**
+ * Returns the total cost (deposit + triple cost + proxy fee) for creating a claim.
+ * Uses FeeProxy.getTotalCreationCost so the IntuRank fee is included.
+ */
+export const getTotalTripleCreationCost = async (depositAmount: string): Promise<string> => {
+    const assets = parseEther(depositAmount || '0');
+    try {
+        // Base triple cost (prefer FeeProxy for consistent calculation)
         let tripleCost: bigint;
         try {
             tripleCost = await publicClient.readContract({
@@ -555,40 +1335,190 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
                 abi: FEE_PROXY_ABI,
                 functionName: 'getTripleCost',
             } as any) as bigint;
-        } catch (e) { tripleCost = parseEther('0.101'); }
+        } catch {
+            tripleCost = parseEther('0.15');
+        }
 
+        if (tripleCost < parseEther('0.15')) tripleCost = parseEther('0.15');
+
+        // multiVaultCost = tripleCost * count + totalDeposit (per FeeProxy template)
+        const multiVaultCost = tripleCost + assets;
+        const total = await publicClient.readContract({
+            address: FEE_PROXY_ADDRESS as `0x${string}`,
+            abi: FEE_PROXY_ABI,
+            functionName: 'getTotalCreationCost',
+            args: [1n, assets, multiVaultCost],
+        } as any) as bigint;
+
+        // Include 15% safety buffer in the reported cost
+        return formatEther((total * 115n) / 100n);
+    } catch {
+        // Fallback heuristic: base triple cost (0.15) + deposit + 15% proxy fee + 15% safety buffer
+        const tripleCost = parseEther('0.15');
+        const raw = (tripleCost + assets) * 115n / 100n;
+        const totalWithBuffer = (raw * 115n) / 100n;
+        return formatEther(totalWithBuffer);
+    }
+};
+
+export const padTermId = (id: string): `0x${string}` =>
+    pad((id.startsWith('0x') ? id : `0x${id}`) as Hex, { size: 32 }) as `0x${string}`;
+
+export const validateTripleAtomsExist = async (subjectId: string, predicateId: string, objectId: string): Promise<{ ok: boolean; missing: string[] }> => {
+    const ids = [
+        { id: subjectId, role: 'Subject' },
+        { id: predicateId, role: 'Predicate' },
+        { id: objectId, role: 'Object' },
+    ];
+    const missing: string[] = [];
+    for (const { id, role } of ids) {
+        try {
+            const termId = padTermId(id);
+            let exists = false;
+            try {
+                exists = await publicClient.readContract({
+                    address: MULTI_VAULT_ADDRESS as `0x${string}`,
+                    abi: MULTI_VAULT_ABI,
+                    functionName: 'isTermCreated',
+                    args: [termId],
+                } as any) as boolean;
+            } catch {
+                try {
+                    exists = await publicClient.readContract({
+                        address: FEE_PROXY_ADDRESS as `0x${string}`,
+                        abi: FEE_PROXY_ABI,
+                        functionName: 'isTermCreated',
+                        args: [termId],
+                    } as any) as boolean;
+                } catch {}
+            }
+            if (!exists) missing.push(`${role} (${id.slice(0, 10)}…)`);
+        } catch {
+            missing.push(`${role} (${id.slice(0, 10)}…)`);
+        }
+    }
+    return { ok: missing.length === 0, missing };
+};
+
+export const createSemanticTriple = async (subjectId: string, predicateId: string, objectId: string, depositAmount: string, receiver: string, onProgress?: (log: string) => void, skipValidation?: boolean) => {
+    const assets = parseEther(depositAmount);
+    if (assets < CURVE_OFFSET) {
+        throw new Error(`Minimum deposit is ${formatEther(CURVE_OFFSET)} TRUST. You provided ${depositAmount}.`);
+    }
+    if (!skipValidation) {
+        onProgress?.("Verifying atoms on-chain...");
+        const { ok, missing } = await validateTripleAtomsExist(subjectId, predicateId, objectId);
+        if (!ok) {
+            throw new Error(`Atom(s) not found on-chain: ${missing.join(', ')}. Create them first or pick existing atoms from search.`);
+        }
+    }
+    const checksumReceiver = getAddress(receiver);
+    const sId = padTermId(subjectId);
+    const pId = padTermId(predicateId);
+    const oId = padTermId(objectId);
+    const provider = getProvider();
+    const walletClient = createWalletClient({ chain: intuitionChain, transport: custom(provider), account: checksumReceiver });
+
+    try {
+        onProgress?.("Simulating Synapse Parameters...");
+
+        // 1. Get base triple cost from MultiVault (via FeeProxy or direct)
+        let tripleCost: bigint;
+        try {
+            tripleCost = await publicClient.readContract({
+                address: FEE_PROXY_ADDRESS as `0x${string}`,
+                abi: FEE_PROXY_ABI,
+                functionName: 'getTripleCost',
+            } as any) as bigint;
+        } catch {
+            tripleCost = parseEther('0.15');
+        }
+
+        if (tripleCost < parseEther('0.15')) tripleCost = parseEther('0.15');
+
+        const multiVaultCost = tripleCost + assets;
+
+        // 2. Get total cost via FeeProxy (required for direct native token funding)
         let totalCost: bigint;
         try {
             totalCost = await publicClient.readContract({
                 address: FEE_PROXY_ADDRESS as `0x${string}`,
                 abi: FEE_PROXY_ABI,
                 functionName: 'getTotalCreationCost',
-                args: [1n, assets, tripleCost]
+                args: [1n, assets, multiVaultCost],
             } as any) as bigint;
         } catch (e) {
-            totalCost = assets + tripleCost;
+            const raw = tripleCost + assets;
+            // Use 15% proxy fee fallback if contract call fails
+            totalCost = (raw * 115n) / 100n;
         }
 
+        const valueToSend = totalCost; // buffer already included in totalCost from getTotalTripleCreationCost
+
+        onProgress?.(`Handshake Cost: ${formatEther(valueToSend)} ${CURRENCY_SYMBOL}`);
         onProgress?.("Awaiting Synapse Signature...");
-        const { request } = await publicClient.simulateContract({
-            address: FEE_PROXY_ADDRESS as `0x${string}`,
-            abi: FEE_PROXY_ABI,
-            functionName: 'createTriples',
-            account: checksumReceiver,
-            args: [checksumReceiver, [sId], [pId], [oId], [assets], BigInt(OFFSET_PROGRESSIVE_CURVE_ID)],
-            value: totalCost, 
-        } as any);
         
+        // 3. Create triple via FeeProxy (handles direct native TRUST funding to user's vault balance)
+        let request: any;
+        try {
+            const simulation = await publicClient.simulateContract({
+                address: FEE_PROXY_ADDRESS as `0x${string}`,
+                abi: FEE_PROXY_ABI,
+                functionName: 'createTriples',
+                account: checksumReceiver,
+                args: [checksumReceiver, [sId], [pId], [oId], [assets], BigInt(LINEAR_CURVE_ID)],
+                value: valueToSend,
+            } as any);
+            request = simulation.request;
+        } catch (simulationError: any) {
+            console.warn("SIMULATION_FAILED:", simulationError);
+            const parsed = parseProtocolError(simulationError);
+            const upper = parsed.toUpperCase();
+            if (upper.includes("REVERTED") || upper.includes("BALANCE") || upper.includes("FEE")) {
+                throw new Error(parsed);
+            }
+            throw simulationError;
+        }
+
         const hash = await walletClient.writeContract(request);
+        
         onProgress?.(`Broadcasting Triple... Hash: ${hash.slice(0,10)}...`);
         window.dispatchEvent(new Event('local-tx-updated'));
         return hash;
-    } catch (error: any) { throw error; }
+    } catch (error: any) {
+        console.error('createSemanticTriple failed:', error?.message || error);
+        const parsed = parseProtocolError(error);
+        const upper = parsed.toUpperCase();
+        if (upper.includes("REVERTED") || upper.includes("BALANCE") || upper.includes("FEE")) {
+            throw new Error(parsed);
+        }
+        throw error;
+    }
 };
 
 export const switchNetworkManual = async () => switchNetwork();
 export const getClientChainId = async () => CHAIN_ID;
 export const fetchAtomNameFromChain = async (id: string) => null;
+
+/**
+ * Normalizes an address-like id to a 42-char checksummed address.
+ * Handles both 42-char addresses and 66-char padded format (0x0000...0000 + addr).
+ * Returns null when the id is not a valid address.
+ */
+export const toAddress = (id: string | null | undefined): string | null => {
+  if (!id || typeof id !== 'string') return null;
+  const t = id.trim();
+  if (t.length === 42 && t.startsWith('0x') && isAddress(t)) {
+    try { return getAddress(t); } catch { return null; }
+  }
+  if (t.length === 66 && t.startsWith('0x000000000000000000000000')) {
+    const unpadded = '0x' + t.slice(26);
+    if (isAddress(unpadded)) {
+      try { return getAddress(unpadded); } catch { return null; }
+    }
+  }
+  return null;
+};
 
 /**
  * Resolves an ENS name to an Ethereum address using Mainnet.
@@ -624,4 +1554,4 @@ export const disconnectWallet = () => {
   activeProvider = null;
   if (typeof window !== 'undefined') localStorage.setItem(DISCONNECT_FLAG_KEY, '1');
 };
-export const getProtocolConfig = async () => ({ minDeposit: '0.001' });
+export const getProtocolConfig = async () => ({ minDeposit: '0.5' });
