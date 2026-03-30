@@ -35,6 +35,53 @@ PORT=3001
 - **In-app Activity panel (bell icon):** Fetches positions and recent events when the user loads or refreshes the page. It polls every 60 seconds while the page is open. **This is an activity feed, not a push notification system** — it only triggers on page load; there is no background service for real-time in-app alerts.
 - **Background email alerts:** For true notifications when the user is away, run the email worker. See [Background email worker](#background-email-worker) below.
 
+## Production: Deploy on Coolify (recommended if self-hosting)
+
+[Coolify](https://coolify.io) can run the same stack as before: one long-lived service with `npm start`, plus `ENABLE_EMAIL_WORKER=true` so the API and background worker share one process (see `server/index.js`).
+
+### 1. Create an application
+
+1. In Coolify, **New Resource** → **Application** (or add a service to an existing project).
+2. Connect your Git repository and pick the branch you use for this service (often `main`).
+3. **Build:**
+   - **Dockerfile:** set path to `server/Dockerfile` and **build context** to `.` (repository root).
+   - Alternatively, use a **Nixpacks** / Node build with **install** `npm ci` and **start** `npm start` from the repo root (no Dockerfile).
+
+### 2. Port and health
+
+- Coolify sets `PORT`; the server reads `process.env.PORT` (default `3001`).
+- Map the public port to the container port Coolify assigns (often the same as `PORT`).
+- Optional health check path: `/health`.
+
+### 3. Environment variables
+
+Same as any other host:
+
+| Variable | Value |
+|----------|--------|
+| `ENSEND_PROJECT_SECRET` | Your Ensend project secret |
+| `ENSEND_SENDER_EMAIL` | Your sender email |
+| `ENSEND_SENDER_NAME` | `IntuRank` |
+| `ENABLE_EMAIL_WORKER` | `true` — background emails when users are away |
+
+Optional: `INTUITION_GRAPH_URL` if you need to override the GraphQL endpoint (see `server/email-worker.js`).
+
+### 4. Persistent storage (important)
+
+Subscriptions and follows are stored in **`email-subs.json`** and **`follows.json`**. By default they live next to the server code; in Docker you should **not** mount over `/app/server` (that would hide `index.js`).
+
+- Set **`EMAIL_DATA_DIR=/app/email-data`** (or any empty folder inside the container).
+- In Coolify → your application → **Persistent Storage** (or **Storages**): add a **volume**, name e.g. `inturank-email-data`, **destination path** **`/app/email-data`**.
+- Redeploy. After the first subscribe, you should see `email-subs.json` under that path on the volume.
+
+### 5. Point the frontend at Coolify
+
+1. In **Ensend**, add your **production site origin** to **Authorized Origins** (e.g. `https://yourdomain.com`).
+2. In **GitHub** → repo → **Settings** → **Secrets and variables** → **Actions**, set **`VITE_EMAIL_API_URL`** to your Coolify public URL (no trailing slash), e.g. `https://email-api.yourdomain.com`.
+3. Re-run the **Deploy to GitHub Pages** workflow (or push to `main`) so the built app embeds that URL.
+
+---
+
 ## Production: Deploy on Railway
 
 Railway runs the email server 24/7 with no cold starts. Use the same repo; no separate “email-only” repo needed.
@@ -113,9 +160,10 @@ The in-app Activity panel only fetches when the user has the page open. For **tr
 
 | Step | What | Where |
 |------|------|-------|
-| 1 | Deploy email server (with worker) to Railway/Render/etc. | Railway dashboard |
-| 2 | Set `ENABLE_EMAIL_WORKER=true` | Railway Variables |
-| 3 | Set `ENSEND_PROJECT_SECRET`, `ENSEND_SENDER_EMAIL`, `ENSEND_SENDER_NAME` | Railway Variables |
-| 4 | Set `VITE_EMAIL_API_URL` to your deployed server URL | GitHub repo → Settings → Secrets → Actions |
-| 5 | User subscribes in app (bell → Get email alerts) | IntuRank app |
-| 6 | User adds follows (optional; syncs automatically) | IntuRank app |
+| 1 | Deploy email server (with worker) to Coolify, Railway, Render, etc. | Your host |
+| 2 | Set `ENABLE_EMAIL_WORKER=true` | Server env |
+| 3 | Set `ENSEND_PROJECT_SECRET`, `ENSEND_SENDER_EMAIL`, `ENSEND_SENDER_NAME` | Server env |
+| 4 | **`EMAIL_DATA_DIR=/app/email-data`** + persistent volume on **`/app/email-data`** | Coolify / host (so subs survive restarts) |
+| 5 | Set `VITE_EMAIL_API_URL` to your deployed server URL | GitHub repo → Settings → Secrets → Actions |
+| 6 | User subscribes in app (bell → Get email alerts) | IntuRank app |
+| 7 | User adds follows (optional; syncs automatically) | IntuRank app |

@@ -1346,36 +1346,6 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* Climb the ranks — list hub */}
-      <section className="relative overflow-hidden min-w-0 py-12 sm:py-16 border-b border-white/5 bg-gradient-to-b from-[#050810] via-[#04060a] to-[#060a12]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_50%,rgba(0,243,255,0.04),_transparent_50%)] pointer-events-none" />
-        <div className="relative max-w-6xl mx-auto min-w-0 w-full px-4 sm:px-6 md:px-8" style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}>
-          <Reveal delay={80}>
-            <div className="flex flex-wrap items-center gap-4 mb-6">
-              <div className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl bg-intuition-primary/10 border-2 border-intuition-primary/50 text-intuition-primary font-display font-black uppercase tracking-[0.25em] text-sm shadow-[0_0_30px_rgba(0,243,255,0.2)]">
-                <Trophy size={22} className="shrink-0" />
-                <span>Climb the ranks</span>
-              </div>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-black font-display text-white tracking-tighter mb-2 text-glow-white">
-              Featured lists · Your lists · All lists
-            </h2>
-            <p className="text-slate-300 font-mono text-sm sm:text-base mb-8 leading-relaxed">
-              Browse lists ranked by market cap. See your position, join lists you&apos;re not in, and climb the user leaderboard by staking in list atoms.
-            </p>
-            <Link
-              to="/climb"
-              onClick={playClick}
-              onMouseEnter={playHover}
-              className="group inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-intuition-primary/20 border-2 border-intuition-primary/50 text-intuition-primary font-black font-mono text-sm uppercase tracking-[0.2em] hover:bg-intuition-primary/30 hover:border-intuition-primary hover:text-white hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300"
-            >
-              Open full ladder
-              <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </Reveal>
-        </div>
-      </section>
-
       {/* 2. SEASON 2 LEADERBOARD — second */}
       <section className="relative overflow-hidden min-w-0 py-12 sm:py-16 border-b border-white/5 bg-gradient-to-b from-[#060a12] via-[#050810] to-[#04060a]">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(251,191,36,0.06),_transparent_50%)] pointer-events-none" />

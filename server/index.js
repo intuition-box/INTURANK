@@ -7,6 +7,7 @@
  *   ENSEND_SENDER_EMAIL   - sender address (e.g. yourproject@ensend.co or your domain)
  *   ENSEND_SENDER_NAME    - e.g. "IntuRank"
  *   PORT                  - default 3001
+ *   EMAIL_DATA_DIR        - optional; directory for email-subs.json / follows.json (e.g. /app/email-data with a Docker volume)
  *
  * Run: npm run email-server
  * In dev, Vite proxies /api to this server.
@@ -16,6 +17,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
+import { mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -30,8 +32,14 @@ const ENSEND_SEND_URL = 'https://api.ensend.co/send';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const SUBS_PATH = path.join(__dirname, 'email-subs.json');
-const FOLLOWS_PATH = path.join(__dirname, 'follows.json');
+const DATA_DIR = process.env.EMAIL_DATA_DIR || __dirname;
+try {
+  mkdirSync(DATA_DIR, { recursive: true });
+} catch {
+  // ignore
+}
+const SUBS_PATH = path.join(DATA_DIR, 'email-subs.json');
+const FOLLOWS_PATH = path.join(DATA_DIR, 'follows.json');
 
 async function loadFollowsStore() {
   try {
@@ -283,8 +291,8 @@ app.listen(PORT, () => {
 });
 
 // Optionally start the background email worker in the same process.
-// This is useful in production (e.g. Railway) so a single always-on service
-// can both serve the API and send alerts, without relying on the user's PC.
+// Useful in production (Coolify, Railway, etc.) so one always-on service
+// serves the API and sends alerts without relying on the user's browser.
 if (process.env.ENABLE_EMAIL_WORKER === 'true') {
   import('./email-worker.js')
     .then(() => {

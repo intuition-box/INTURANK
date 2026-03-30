@@ -1,6 +1,6 @@
 
 import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID } from '../constants';
-import { Transaction, Claim, Triple } from '../types';
+import { Account, Transaction, Claim, Triple } from '../types';
 import { hexToString, formatEther, parseEther, getAddress, isAddress } from 'viem';
 import { safeWeiToEther, safeParseUnits } from './analytics';
 import { publicClient } from './web3';
@@ -184,6 +184,70 @@ export const getAllAgents = async (limit = 40, offset = 0) => {
     return { items, hasMore: allVaults.length === limit };
   } catch (e) { return { items: [], hasMore: false }; }
 };
+
+/** Full Account rows for specific term IDs (e.g. Arena duel pair → compare modal). Order matches input `ids`; null if no vault. */
+export async function getAccountsByTermIds(ids: string[]): Promise<(Account | null)[]> {
+  if (ids.length === 0) return [];
+  const unique = [...new Set(ids.map((x) => normalize(x)).filter(Boolean))];
+  if (unique.length === 0) return ids.map(() => null);
+
+  const vaultQ = `query ArenaPairVaults($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
+  try {
+    const vaultData = await fetchGraphQL(vaultQ, { ids: unique });
+    const allVaults = vaultData?.vaults ?? [];
+    if (allVaults.length === 0) return ids.map(() => null);
+
+    const aggregated = aggregateVaultData(allVaults);
+    const dataQuery = `query GetAgentsData ($ids: [String!]!) {
+        atoms(where: { term_id: { _in: $ids } }) { term_id label data image type creator { id label image } value { person { name } organization { name } thing { name } } }
+        triples(where: { term_id: { _in: $ids } }) { term_id counter_term_id creator { id label image } subject { label term_id data image type } predicate { label } object { label term_id data image type } }
+    }`;
+
+    const res = await fetchGraphQL(dataQuery, { ids: unique });
+    const atoms = res?.atoms || [];
+    const triples = res?.triples || [];
+
+    const items: Account[] = aggregated.map((v: any) => {
+      const a = atoms.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+      const t = triples.find((x: any) => normalize(x.term_id) === normalize(v.term_id));
+      const meta = a ? resolveMetadata(a) : { label: v.term_id, description: '', type: 'ATOM', image: undefined, links: [] };
+      let label = meta.label;
+      let type = (meta.type || 'ATOM').toUpperCase();
+      let image = a?.image;
+      let links = meta.links;
+
+      if (t) {
+        const sMeta = resolveMetadata(t.subject);
+        const oMeta = resolveMetadata(t.object);
+        label = `${sMeta.label} ${t.predicate?.label || 'LINK'} ${oMeta.label}`;
+        type = 'CLAIM';
+        image = t.subject?.image || t.object?.image;
+        links = [];
+      }
+
+      return {
+        id: v.term_id,
+        counterTermId: t?.counter_term_id,
+        label,
+        description: meta.description,
+        image,
+        type,
+        links,
+        creator: a?.creator || t?.creator,
+        totalAssets: v.total_assets.toString(),
+        totalShares: v.total_shares.toString(),
+        currentSharePrice: v.current_share_price,
+        marketCap: v.computed_mcap.toString(),
+        positionCount: v.position_count,
+      };
+    });
+
+    const byId = new Map(items.map((i) => [normalize(i.id), i]));
+    return ids.map((id) => byId.get(normalize(id)) ?? null);
+  } catch {
+    return ids.map(() => null);
+  }
+}
 
 /** Fetches ALL newly created atoms/claims: Identity atoms (PERSON, ORG, ACCOUNT), Things, and Claims (TripleCreated). */
 export const getNewlyCreatedAtoms = async (limit = 20) => {
@@ -421,6 +485,56 @@ function accountVariantsForGraph(account: string): string[] {
   }
   for (const v of prepareQueryIds(t)) out.add(v);
   return Array.from(out);
+}
+
+export type GraphAccountRow = { id: string; label: string | null; image: string | null };
+
+/** Batch-fetch Intuition `accounts` rows for wallet id variants (checksum, lowercase, padded). */
+export async function getAccountsByIds(addresses: string[]): Promise<Map<string, GraphAccountRow>> {
+  const uniq = new Set<string>();
+  for (const a of addresses) {
+    for (const v of accountVariantsForGraph(a)) uniq.add(v);
+  }
+  const ids = Array.from(uniq).slice(0, 100);
+  if (!ids.length) return new Map();
+
+  const q = `query GetAccountsByIds($ids: [String!]!) {
+    accounts(where: { id: { _in: $ids } }) {
+      id
+      label
+      image
+    }
+  }`;
+
+  try {
+    const res = await fetchGraphQL(q, { ids });
+    const rows = res?.accounts || [];
+    const map = new Map<string, GraphAccountRow>();
+    for (const r of rows) {
+      const id = String(r.id);
+      map.set(id.toLowerCase(), { id, label: r.label ?? null, image: r.image ?? null });
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+/** Wallet is tied to Intuition when `accounts` returns a row for an id variant; label falls back to short address. */
+export function resolveIntuitionAccountForWallet(
+  walletAddress: string,
+  map: Map<string, GraphAccountRow>
+): { label: string; image?: string } | null {
+  const w = (walletAddress || '').trim();
+  const short = w.length >= 10 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w || '?';
+  for (const v of accountVariantsForGraph(walletAddress)) {
+    const row = map.get(v.toLowerCase());
+    if (row) {
+      const lab = row.label && String(row.label).trim();
+      return { label: lab || short, image: row.image || undefined };
+    }
+  }
+  return null;
 }
 
 /** Subgraph position shares for a wallet + term. Uses safeParseUnits (wei or decimal strings). Prefer when MultiVault getShares disagrees with the indexer. */
@@ -1483,6 +1597,7 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
           : parseFloat(formatEther(BigInt(opposeAssets)));
         return {
           id: row.term_id,
+          counterTermId: row.counter_term_id,
           subject: { ...t.subject, label: resolveMetadata(t.subject).label },
           predicate: t.predicate?.label || 'LINK',
           object: { ...t.object, label: resolveMetadata(t.object).label },
@@ -1590,6 +1705,7 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
         const opposeHolders = counterId ? (opposeHolderMap[counterId] ?? oppose?.position_count ?? 0) : 0;
         return {
             id: v.term_id,
+            counterTermId: t.counter_term_id,
             subject: { ...t.subject, label: resolveMetadata(t.subject).label },
             predicate: t.predicate?.label || 'LINK',
             object: { ...t.object, label: resolveMetadata(t.object).label },
@@ -2344,6 +2460,99 @@ export const getGlobalClaims = async (limit: number = 40, offset: number = 0) =>
 export const getAgentOpinions = async (termId: string) => {
     return []; 
 };
+
+/** Sum market cap (wei) across all vaults for a term — linear + exponential curves. Uses market_cap when set; otherwise total_assets. */
+export function sumVaultMarketCapWei(vaults: any[] | undefined): bigint {
+    if (!vaults?.length) return 0n;
+    let sum = 0n;
+    for (const v of vaults) {
+        const mc = v?.market_cap;
+        const ta = v?.total_assets ?? '0';
+        const raw = mc != null && mc !== '' ? mc : ta;
+        try {
+            sum += BigInt(typeof raw === 'string' ? raw : String(raw));
+        } catch {
+            /* skip malformed */
+        }
+    }
+    return sum;
+}
+
+/** Total position count across all vaults (both curves) for a term. */
+export function sumVaultPositionCount(vaults: any[] | undefined): number {
+    if (!vaults?.length) return 0;
+    return vaults.reduce((n, v) => n + Number(v?.position_count ?? 0), 0);
+}
+
+/** Category filters for The Arena (`/climb`) — predicate label heuristics on `triples`. */
+export type ArenaCategory = 'head-to-head' | 'hot-takes' | 'prediction-markets';
+
+/**
+ * After fetching triples with `%vs%`, keep rows that look like real battles.
+ * Filters out common false positives (e.g. "vscode" containing "vs" as letters only inside a word).
+ */
+export function predicateLooksLikeBattlePredicate(pred: string): boolean {
+    const p = pred.trim();
+    if (!p) return false;
+    if (/\bvscode\b/i.test(p)) return false;
+    if (/\bvs\s*code\b/i.test(p)) return false;
+    if (/\bversus\b/i.test(p)) return true;
+    if (/\s+vs\.?\s/i.test(p)) return true;
+    if (/\s+vs,?\s/i.test(p)) return true;
+    if (/\s+vs\s+/i.test(p)) return true;
+    if (/\bvs\b/i.test(p)) return true;
+    return false;
+}
+
+/** Looser battle signal when strict filter yields zero rows: any `vs` / `versus`, excluding vscode false positives. */
+export function predicateLooksLikeBattlePredicateLoose(pred: string): boolean {
+    const p = pred.trim();
+    if (!p) return false;
+    const lower = p.toLowerCase();
+    if (lower.includes('vscode')) return false;
+    if (/\bversus\b/i.test(p)) return true;
+    return lower.includes('vs');
+}
+
+/**
+ * Social / badge predicates (e.g. "has tag") — high volume but not "debate" claims.
+ * Portal-style claim leaderboards typically surface semantic claims; exclude these from Arena Hot Takes.
+ */
+export function predicateIsSocialTagNoise(pred: string): boolean {
+    const p = (pred || '').trim().toLowerCase().replace(/_/g, ' ');
+    if (!p) return false;
+    if (p === 'has tag' || p === 'has a tag') return true;
+    if (/^has\s+tag\b/.test(p)) return true;
+    return false;
+}
+
+/**
+ * Head-to-head: broad GraphQL match on `vs` / `versus`, then client-side
+ * `predicateLooksLikeBattlePredicate` removes false positives (e.g. "vscode").
+ */
+export function buildArenaTriplesWhere(tab: ArenaCategory): Record<string, unknown> {
+    if (tab === 'head-to-head') {
+        return {
+            _or: [
+                { predicate: { label: { _ilike: '%vs%' } } },
+                { predicate: { label: { _ilike: '% vs %' } } },
+                { predicate: { label: { _ilike: '%versus%' } } },
+                { predicate: { label: { _ilike: '% vs.%' } } },
+                { predicate: { label: { _ilike: '% vs,%' } } },
+            ],
+        };
+    }
+    if (tab === 'prediction-markets') {
+        return {
+            _or: [
+                { predicate: { label: { _ilike: '%predict%' } } },
+                { predicate: { label: { _ilike: '%forecast%' } } },
+                { predicate: { label: { _ilike: '%will %' } } },
+            ],
+        };
+    }
+    return {};
+}
 
 export async function getTriplesWithPositions(limit = 10, offset = 0, orderBy: any[] = [], where: any = {}, address?: string) {
   const query = `

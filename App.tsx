@@ -61,7 +61,6 @@ import Stats from './pages/Stats';
 import Markets from './pages/Markets';
 import MarketDetail from './pages/MarketDetail';
 import Feed from './pages/Feed';
-import Compare from './pages/Compare';
 import Portfolio from './pages/Portfolio';
 import PublicProfile from './pages/PublicProfile';
 import Account from './pages/Account';
@@ -71,7 +70,7 @@ import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
 import SendTrust from './pages/SendTrust';
 import SkillPlayground from './pages/SkillPlayground';
-// import RankedList from './pages/RankedList';
+import RankedList from './pages/RankedList';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 
@@ -118,11 +117,11 @@ const App: React.FC = () => {
           <Route path="/skill-playground" element={<SkillPlayground />} />
           
           {/* New Features */}
-          <Route path="/compare" element={<Compare />} />
+          <Route path="/compare" element={<Navigate to="/climb" replace />} />
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
           <Route path="/send-trust" element={<SendTrust />} />
-          {/* <Route path="/climb" element={<RankedList />} /> */}
+          <Route path="/climb" element={<RankedList />} />
           </Routes>
                 </Layout>
                 <EmailNotifyModal />

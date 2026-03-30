@@ -45,7 +45,7 @@ const Markets: React.FC = () => {
   const [account, setAccount] = useState<string | null>(null);
   
   const [sortOption, setSortOption] = useState<SortOption>('MCAP_DESC');
-  const [claimSortOption, setClaimSortOption] = useState<ClaimSortOption>('SUPPORT_MCAP_DESC');
+  const [claimSortOption, setClaimSortOption] = useState<ClaimSortOption>('TOTAL_MCAP_DESC');
   const [listSortOption, setListSortOption] = useState<ListSortOption>('MCAP_DESC');
   const [listViewMode, setListViewMode] = useState<ListViewMode>('GRID');
   const [isSortOpen, setIsSortOpen] = useState(false);

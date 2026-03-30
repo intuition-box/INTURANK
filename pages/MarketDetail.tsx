@@ -318,6 +318,8 @@ const MarketDetail: React.FC = () => {
   const [followingPositions, setFollowingPositions] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Distinct from loading spinner: invalid route or fetch failed (avoid infinite "Loading" when agent is null). */
+  const [marketLoadError, setMarketLoadError] = useState<null | 'missing-id' | 'failed'>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>('OVERVIEW');
   const [timeframe, setTimeframe] = useState<Timeframe>('1D');
   const [isWatched, setIsWatched] = useState(false);
@@ -368,94 +370,114 @@ const MarketDetail: React.FC = () => {
   }, [lists, listEntriesSearch, listSort]);
 
   const fetchData = async () => {
-        if (!id) return;
-        setLoading(true);
-        try {
-            const acc = await getConnectedAccount();
-            setWallet(acc);
-            if (!acc) {
-                setTrustBalance('0.00');
-                setDistrustBalance('0.00');
-                setUserPosition(null);
+    if (!id) {
+      setLoading(false);
+      setMarketLoadError('missing-id');
+      return;
+    }
+    setMarketLoadError(null);
+    setLoading(true);
+    try {
+      const acc = await getConnectedAccount();
+      setWallet(acc);
+      if (!acc) {
+        setTrustBalance('0.00');
+        setDistrustBalance('0.00');
+        setUserPosition(null);
+      }
+      if (acc) {
+        setIsWatched(isInWatchlist(id, acc));
+        checkProxyApproval(acc).then(setIsApproved);
+      }
+
+      const agentData = await getAgentById(id);
+      const [oppoData, triplesData, claimsWithVaultsData, activityData, holderResult, listDataForAtom, listDataForList, engagedData, incomingResult, vaults] = await Promise.all([
+        getOppositionTriple(id),
+        getAgentTriples(id),
+        getAgentTriplesWithVaults(id),
+        getMarketActivity(id),
+        getHoldersForVault(id),
+        getAtomInclusionListsWithVaults(id, 'ATOM'),
+        getAtomInclusionListsWithVaults(id, 'LIST'),
+        getIdentitiesEngaged(id),
+        getIncomingTriplesForStats(id),
+        getVaultsForTerm(id),
+      ]);
+
+      setAgent(agentData);
+      setOppositionAgent(oppoData);
+      setTriples(triplesData || []);
+      setClaimsWithVaults(claimsWithVaultsData || []);
+
+      let mergedActivity = activityData || [];
+      if (acc) {
+        const localHistory = getLocalTransactions(acc);
+        const relevantLocal = localHistory.filter(
+          (tx) =>
+            tx.vaultId?.toLowerCase() === id.toLowerCase() ||
+            (oppoData && tx.vaultId?.toLowerCase() === oppoData.id.toLowerCase()) ||
+            (agentData?.counterTermId && tx.vaultId?.toLowerCase() === agentData.counterTermId.toLowerCase())
+        );
+        const onChainHashes = new Set(mergedActivity.map((tx) => tx.id.toLowerCase()));
+        const uniqueLocal = relevantLocal.filter((tx) => !onChainHashes.has(tx.id.toLowerCase()));
+        mergedActivity = [...uniqueLocal, ...mergedActivity].sort((a, b) => b.timestamp - a.timestamp);
+      }
+      setActivityLog(mergedActivity);
+
+      setHolders(holderResult.holders || []);
+      setTotalHoldersCount(holderResult.totalCount);
+      const useListsContaining = (listDataForAtom?.length ?? 0) > 0;
+      setShowingListsContaining(useListsContaining);
+      setLists((useListsContaining ? listDataForAtom : listDataForList) || []);
+      setEngagedIdentities(engagedData || []);
+      setFollowersCount(incomingResult.totalCount);
+      setVaultsByCurve(vaults || []);
+      setChartData(generateAnchoredHistory(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice, timeframe));
+
+      // Show the page as soon as subgraph + agent data are ready. Wallet/RPC calls can be slow or hang — do not block UI.
+      setLoading(false);
+
+      if (acc) {
+        void (async () => {
+          try {
+            setWalletBalance(await getWalletBalance(acc));
+            const linearBal = await getShareBalanceEffective(acc, id!, LINEAR_CURVE_ID);
+            const offBal = await getShareBalanceEffective(acc, id!, OFFSET_PROGRESSIVE_CURVE_ID);
+            const ln = parseFloat(linearBal);
+            const on = parseFloat(offBal);
+            let curveId: number = LINEAR_CURVE_ID;
+            if (ln > 1e-8 && on > 1e-8) {
+              curveId = ln >= on ? LINEAR_CURVE_ID : OFFSET_PROGRESSIVE_CURVE_ID;
+            } else if (on > 1e-8 && ln <= 1e-8) {
+              curveId = OFFSET_PROGRESSIVE_CURVE_ID;
+            } else {
+              curveId = LINEAR_CURVE_ID;
             }
-            if (acc) {
-                setIsWatched(isInWatchlist(id, acc));
-                checkProxyApproval(acc).then(setIsApproved);
+            setSelectedCurveId(curveId as 1 | 2);
+            const tShares = curveId === LINEAR_CURVE_ID ? linearBal : offBal;
+            setTrustBalance(tShares);
+
+            let dShares = '0.00';
+            if (agentData.type === 'CLAIM') {
+              const cId = agentData.counterTermId || calculateCounterTripleId(id!);
+              dShares = await getShareBalanceEffective(acc, cId, curveId);
+            } else if (oppoData) {
+              dShares = await getShareBalanceEffective(acc, oppoData.id, curveId);
             }
+            setDistrustBalance(dShares);
 
-            const agentData = await getAgentById(id);
-            const [oppoData, triplesData, claimsWithVaultsData, activityData, holderResult, listDataForAtom, listDataForList, engagedData, incomingResult, vaults] = await Promise.all([
-                getOppositionTriple(id),
-                getAgentTriples(id),
-                getAgentTriplesWithVaults(id),
-                getMarketActivity(id),
-                getHoldersForVault(id),
-                getAtomInclusionListsWithVaults(id, 'ATOM'),
-                getAtomInclusionListsWithVaults(id, 'LIST'),
-                getIdentitiesEngaged(id),
-                getIncomingTriplesForStats(id),
-                getVaultsForTerm(id)
-            ]);
-
-            setAgent(agentData);
-            setOppositionAgent(oppoData);
-            setTriples(triplesData || []);
-            setClaimsWithVaults(claimsWithVaultsData || []);
-            
-            let mergedActivity = activityData || [];
-            if (acc) {
-                const localHistory = getLocalTransactions(acc);
-                const relevantLocal = localHistory.filter(tx => tx.vaultId?.toLowerCase() === id.toLowerCase() || (oppoData && tx.vaultId?.toLowerCase() === oppoData.id.toLowerCase()) || (agentData?.counterTermId && tx.vaultId?.toLowerCase() === agentData.counterTermId.toLowerCase()));
-                const onChainHashes = new Set(mergedActivity.map(tx => tx.id.toLowerCase()));
-                const uniqueLocal = relevantLocal.filter(tx => !onChainHashes.has(tx.id.toLowerCase()));
-                mergedActivity = [...uniqueLocal, ...mergedActivity].sort((a, b) => b.timestamp - a.timestamp);
-            }
-            setActivityLog(mergedActivity);
-
-            setHolders(holderResult.holders || []);
-            setTotalHoldersCount(holderResult.totalCount);
-            const useListsContaining = (listDataForAtom?.length ?? 0) > 0;
-            setShowingListsContaining(useListsContaining);
-            setLists((useListsContaining ? listDataForAtom : listDataForList) || []);
-            setEngagedIdentities(engagedData || []);
-            setFollowersCount(incomingResult.totalCount);
-            setVaultsByCurve(vaults || []);
-            setChartData(generateAnchoredHistory(agentData.totalAssets || '0', agentData.totalShares || '0', agentData.currentSharePrice, timeframe));
-
-            if (acc) {
-                setWalletBalance(await getWalletBalance(acc));
-                const linearBal = await getShareBalanceEffective(acc, id!, LINEAR_CURVE_ID);
-                const offBal = await getShareBalanceEffective(acc, id!, OFFSET_PROGRESSIVE_CURVE_ID);
-                const ln = parseFloat(linearBal);
-                const on = parseFloat(offBal);
-                let curveId: number = LINEAR_CURVE_ID;
-                if (ln > 1e-8 && on > 1e-8) {
-                    curveId = ln >= on ? LINEAR_CURVE_ID : OFFSET_PROGRESSIVE_CURVE_ID;
-                } else if (on > 1e-8 && ln <= 1e-8) {
-                    curveId = OFFSET_PROGRESSIVE_CURVE_ID;
-                } else {
-                    curveId = LINEAR_CURVE_ID;
-                }
-                setSelectedCurveId(curveId as 1 | 2);
-                const tShares = curveId === LINEAR_CURVE_ID ? linearBal : offBal;
-                setTrustBalance(tShares);
-
-                let dShares = '0.00';
-                if (agentData.type === 'CLAIM') {
-                    const cId = agentData.counterTermId || calculateCounterTripleId(id!);
-                    dShares = await getShareBalanceEffective(acc, cId, curveId);
-                } else if (oppoData) {
-                    dShares = await getShareBalanceEffective(acc, oppoData.id, curveId);
-                }
-                setDistrustBalance(dShares);
-
-                updatePositionSummary(acc, sentiment, mergedActivity, agentData, oppoData, curveId);
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
+            await updatePositionSummary(acc, sentiment, mergedActivity, agentData, oppoData, curveId);
+          } catch (rpcErr) {
+            console.warn('MarketDetail wallet balance follow-up failed', rpcErr);
+          }
+        })();
+      }
+    } catch (e) {
+      console.error(e);
+      setMarketLoadError('failed');
+      setAgent(null);
+      setLoading(false);
+    }
   };
 
   const updatePositionSummary = async (acc: string, side: 'TRUST' | 'DISTRUST', activity: Transaction[], agentData: any, oppoData: any, curveId: number = selectedCurveId) => {
@@ -849,24 +871,72 @@ const MarketDetail: React.FC = () => {
     return raw.startsWith('0x') ? raw : `0x${raw}`;
   }, [agent?.id]);
 
-  if (loading || !agent) {
-        return (
-          <>
-            <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-[#020308]">Loading claim...</div>
-            {txModal.isOpen && (
-              <TransactionModal
-                isOpen={txModal.isOpen}
-                status={txModal.status}
-                title={txModal.title}
-                message={txModal.message}
-                hash={txModal.hash}
-                logs={txModal.logs}
-                onClose={() => setTxModal((p: any) => ({ ...p, isOpen: false }))}
-              />
+  if (loading) {
+    return (
+      <>
+        <div className="min-h-screen flex items-center justify-center text-intuition-primary font-mono animate-pulse uppercase tracking-[0.5em] bg-[#020308]">
+          Loading claim...
+        </div>
+        {txModal.isOpen && (
+          <TransactionModal
+            isOpen={txModal.isOpen}
+            status={txModal.status}
+            title={txModal.title}
+            message={txModal.message}
+            hash={txModal.hash}
+            logs={txModal.logs}
+            onClose={() => setTxModal((p: any) => ({ ...p, isOpen: false }))}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (marketLoadError || !agent) {
+    const errMsg =
+      marketLoadError === 'missing-id'
+        ? 'Invalid market link.'
+        : 'Could not load this market. Check your connection or try again.';
+    return (
+      <>
+        <div className="min-h-screen flex flex-col items-center justify-center gap-6 px-6 bg-[#020308] text-center">
+          <p className="text-intuition-primary font-mono text-xs sm:text-sm uppercase tracking-[0.35em] max-w-md">{errMsg}</p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link
+              to="/markets/atoms"
+              onClick={playClick}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-intuition-primary/50 text-intuition-primary font-black text-[10px] uppercase tracking-widest rounded-full hover:bg-intuition-primary/10 transition-colors"
+            >
+              <ArrowLeft size={14} /> Back to markets
+            </Link>
+            {id && (
+              <button
+                type="button"
+                onClick={() => {
+                  playClick();
+                  void fetchData();
+                }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 border border-slate-600 text-slate-300 font-black text-[10px] uppercase tracking-widest rounded-full hover:border-slate-400 transition-colors"
+              >
+                Retry
+              </button>
             )}
-          </>
-        );
-      }
+          </div>
+        </div>
+        {txModal.isOpen && (
+          <TransactionModal
+            isOpen={txModal.isOpen}
+            status={txModal.status}
+            title={txModal.title}
+            message={txModal.message}
+            hash={txModal.hash}
+            logs={txModal.logs}
+            onClose={() => setTxModal((p: any) => ({ ...p, isOpen: false }))}
+          />
+        )}
+      </>
+    );
+  }
 
   const selectedVault = vaultsByCurve.find((v) => Number(v.curve_id) === selectedCurveId);
   const overallSpotPrice = calculateAgentPrice(

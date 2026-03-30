@@ -12,7 +12,14 @@ import { CurrencySymbol } from '../components/CurrencySymbol';
 import { GoogleGenAI } from "@google/genai";
 
 // --- TACTICAL CONFLICT SIMULATION COMPONENT (Updated to V3 Inspo) ---
-const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number; rScore: number }> = ({ left, right, lScore, rScore }) => {
+export const RivalryAnalysis: React.FC<{
+  left: Account;
+  right: Account;
+  lScore: number;
+  rScore: number;
+  /** Arena modal: cyan/fuchsia IntuRank theme; default: amber battleground */
+  variant?: 'default' | 'arena';
+}> = ({ left, right, lScore, rScore, variant = 'default' }) => {
     const [analysis, setAnalysis] = useState<string>('');
     const [loading, setLoading] = useState(false);
     const [displayedText, setDisplayedText] = useState('');
@@ -64,6 +71,58 @@ const RivalryAnalysis: React.FC<{ left: Account; right: Account; lScore: number;
             setLoading(false);
         }
     };
+
+    if (variant === 'arena') {
+        return (
+            <div className="relative mb-5 rounded-2xl border border-cyan-500/25 bg-gradient-to-br from-[#050a12] via-[#070d16] to-[#0a0614] p-4 sm:p-5 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_12px_48px_rgba(0,0,0,0.35)] group">
+                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(34,211,238,0.07)_0%,transparent_42%,rgba(217,70,239,0.06)_100%)]" />
+                <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-cyan-500/10 blur-3xl" />
+                <div className="pointer-events-none absolute -left-12 bottom-0 h-32 w-32 rounded-full bg-fuchsia-600/10 blur-3xl" />
+                <div className="relative z-10">
+                    <div className="flex flex-wrap items-center gap-3 mb-4">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-500/10 shadow-[0_0_24px_rgba(34,211,238,0.15)]">
+                            <Brain size={22} className="text-cyan-300" />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-white font-display">Battle summary</h3>
+                            <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-wider">Plain-language · optional AI</p>
+                        </div>
+                    </div>
+
+                    {!analysis && !loading ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-xl border border-slate-700/60 bg-slate-950/50 px-4 py-4 border-l-4 border-l-cyan-500/60">
+                            <p className="text-sm text-slate-400 leading-relaxed flex-1 min-w-0">
+                                Short summary of who&apos;s ahead and why — same signals as the full battleground, tuned for the arena.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    playClick();
+                                    generateAnalysis();
+                                }}
+                                className="shrink-0 rounded-xl border border-fuchsia-500/40 bg-gradient-to-r from-cyan-500/15 to-fuchsia-600/20 px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.15em] text-white shadow-[0_0_20px_rgba(34,211,238,0.12)] hover:from-cyan-500/25 hover:to-fuchsia-500/30 hover:border-cyan-400/50 transition-all active:scale-[0.98]"
+                            >
+                                Generate report
+                            </button>
+                        </div>
+                    ) : loading ? (
+                        <div className="flex items-center gap-3 rounded-xl border border-cyan-500/20 bg-slate-950/40 px-4 py-4 text-cyan-300/90 text-sm font-medium border-l-4 border-l-cyan-500/50">
+                            <Loader2 size={18} className="animate-spin text-cyan-400" />
+                            <span className="font-mono text-xs uppercase tracking-wider">Synthesizing…</span>
+                        </div>
+                    ) : (
+                        <div className="flex gap-3 items-start rounded-xl border border-slate-700/50 bg-slate-950/40 px-4 py-4 border-l-4 border-l-fuchsia-500/50 animate-in fade-in duration-500">
+                            <Quote size={22} className="text-fuchsia-400/80 shrink-0 mt-0.5" />
+                            <p className="text-slate-200 text-sm leading-relaxed">
+                                {displayedText}
+                                <span className="inline-block w-2 h-3.5 bg-gradient-to-b from-cyan-400 to-fuchsia-400 ml-1 animate-pulse rounded-sm align-middle" />
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-gradient-to-br from-[#020308] via-[#040612] to-[#020308] border-2 border-amber-500/30 p-4 sm:p-6 md:p-10 relative overflow-hidden group shadow-2xl min-h-[180px] mb-6 md:mb-8 rounded-sm hover:border-amber-500/50 hover:shadow-[0_0_40px_rgba(250,204,21,0.08)] transition-all duration-500">
@@ -184,54 +243,81 @@ const PokeBallArena: React.FC<{
 };
 
 // --- UPDATED COMPARISON ROW WITH WEIGHT BARS ---
-const ComparisonRow: React.FC<{ 
-    label: string, 
-    leftVal: string | number, 
-    rightVal: string | number, 
-    unit?: string | React.ReactNode,
-    icon: React.ReactNode 
-}> = ({ label, leftVal, rightVal, unit = '', icon }) => {
-    const lNum = parseFloat(leftVal.toString());
-    const rNum = parseFloat(rightVal.toString());
-    const total = lNum + rNum;
-    
-    // Percentage for background bars (min 5% for visibility)
-    const lPct = total > 0 ? Math.max(5, (lNum / total) * 100) : 50;
-    const rPct = total > 0 ? Math.max(5, (rNum / total) * 100) : 50;
+export const ComparisonRow: React.FC<{
+  label: string;
+  leftVal: string | number;
+  rightVal: string | number;
+  unit?: string | React.ReactNode;
+  icon: React.ReactNode;
+  /** Arena: Lane A/B cyan & fuchsia; default: red & blue TCG */
+  variant?: 'default' | 'arena';
+}> = ({ label, leftVal, rightVal, unit = '', icon, variant = 'default' }) => {
+  const lNum = parseFloat(leftVal.toString());
+  const rNum = parseFloat(rightVal.toString());
+  const total = lNum + rNum;
 
-    const leftWins = lNum > rNum;
-    const rightWins = rNum > lNum;
+  const lPct = total > 0 ? Math.max(5, (lNum / total) * 100) : 50;
+  const rPct = total > 0 ? Math.max(5, (rNum / total) * 100) : 50;
 
-    return (
-        <div className="flex items-center justify-between py-4 px-4 sm:px-6 md:px-10 transition-all group relative overflow-hidden min-h-[80px] sm:min-h-[100px] border-b border-white/5">
-            {/* Asymmetrical Background Weight Bars — red vs blue (TCG style) */}
-            <div className="absolute inset-0 flex pointer-events-none opacity-[0.08] group-hover:opacity-[0.12] transition-opacity">
-                <div className="h-full bg-red-500 transition-all duration-1000 ease-out" style={{ width: `${lPct}%` }}></div>
-                <div className="h-full bg-blue-500 transition-all duration-1000 ease-out" style={{ width: `${rPct}%` }}></div>
-            </div>
+  const leftWins = lNum > rNum;
+  const rightWins = rNum > lNum;
+  const arena = variant === 'arena';
 
-            <div className={`relative z-10 w-1/3 text-right pr-12 transition-all duration-500 ${leftWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
-                <div className={`font-mono font-black text-3xl tracking-tighter ${leftWins ? 'text-red-400' : 'text-white'}`}>
-                    {Number(leftVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </div>
-                <span className="inline-flex items-baseline text-slate-300 font-bold uppercase tracking-wider text-[10px] mt-0.5">{typeof unit === 'string' ? unit : unit}</span>
-            </div>
-            
-            <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0">
-                <div className={`mb-2 p-2 bg-black border border-white/10 shadow-xl transition-all ${leftWins ? 'text-red-400 border-red-500/40' : rightWins ? 'text-blue-400 border-blue-500/40' : 'text-slate-500'}`}>
-                    {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: 16 })}
-                </div>
-                <div className="text-[10px] font-bold font-mono text-slate-200 text-center whitespace-nowrap px-1">{label}</div>
-            </div>
+  const leftBar = arena ? 'bg-cyan-500/35' : 'bg-red-500';
+  const rightBar = arena ? 'bg-fuchsia-500/35' : 'bg-blue-500';
+  const leftText = arena ? (leftWins ? 'text-cyan-300' : 'text-slate-500') : leftWins ? 'text-red-400' : 'text-white';
+  const rightText = arena ? (rightWins ? 'text-fuchsia-300' : 'text-slate-500') : rightWins ? 'text-blue-400' : 'text-white';
+  const iconBox = arena
+    ? `${leftWins ? 'text-cyan-400 border-cyan-500/45' : rightWins ? 'text-fuchsia-400 border-fuchsia-500/45' : 'text-slate-500 border-slate-600/50'}`
+    : `${leftWins ? 'text-red-400 border-red-500/40' : rightWins ? 'text-blue-400 border-blue-500/40' : 'text-slate-500'}`;
 
-            <div className={`relative z-10 w-1/3 text-left pl-12 transition-all duration-500 ${rightWins ? 'scale-110' : 'opacity-40 grayscale'}`}>
-                <div className={`font-mono font-black text-3xl tracking-tighter ${rightWins ? 'text-blue-400' : 'text-white'}`}>
-                    {Number(rightVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </div>
-                <span className="inline-flex items-baseline text-slate-300 font-bold uppercase tracking-wider text-[10px] mt-0.5">{typeof unit === 'string' ? unit : unit}</span>
-            </div>
+  return (
+    <div
+      className={`flex items-center justify-between transition-all group relative overflow-hidden border-b ${
+        arena ? 'py-3 px-3 sm:px-5 min-h-[72px] sm:min-h-[84px] border-slate-800/80' : 'py-4 px-4 sm:px-6 md:px-10 min-h-[80px] sm:min-h-[100px] border-white/5'
+      }`}
+    >
+      <div className={`absolute inset-0 flex pointer-events-none ${arena ? 'opacity-[0.12] group-hover:opacity-[0.18]' : 'opacity-[0.08] group-hover:opacity-[0.12]'} transition-opacity`}>
+        <div className={`h-full ${leftBar} transition-all duration-1000 ease-out`} style={{ width: `${lPct}%` }} />
+        <div className={`h-full ${rightBar} transition-all duration-1000 ease-out`} style={{ width: `${rPct}%` }} />
+      </div>
+
+      <div
+        className={`relative z-10 w-1/3 text-right pr-6 sm:pr-10 transition-all duration-500 ${
+          arena ? (leftWins ? '' : 'opacity-70') : leftWins ? 'scale-110' : 'opacity-40 grayscale'
+        }`}
+      >
+        <div className={`font-mono font-black text-2xl sm:text-3xl tracking-tighter ${leftText}`}>
+          {Number(leftVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
         </div>
-    );
+        <span className="inline-flex items-baseline text-slate-400 font-bold uppercase tracking-wider text-[9px] sm:text-[10px] mt-0.5">
+          {typeof unit === 'string' ? unit : unit}
+        </span>
+      </div>
+
+      <div className="relative z-10 flex flex-col items-center w-1/3 shrink-0 px-1">
+        <div className={`mb-1.5 p-2 rounded-lg bg-black/50 border shadow-lg transition-all ${iconBox}`}>
+          {React.cloneElement(icon as React.ReactElement<{ size?: number }>, { size: arena ? 15 : 16 })}
+        </div>
+        <div className="text-[9px] sm:text-[10px] font-black font-mono text-slate-300 text-center leading-tight uppercase tracking-wide px-0.5">
+          {label}
+        </div>
+      </div>
+
+      <div
+        className={`relative z-10 w-1/3 text-left pl-6 sm:pl-10 transition-all duration-500 ${
+          arena ? (rightWins ? '' : 'opacity-70') : rightWins ? 'scale-110' : 'opacity-40 grayscale'
+        }`}
+      >
+        <div className={`font-mono font-black text-2xl sm:text-3xl tracking-tighter ${rightText}`}>
+          {Number(rightVal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        </div>
+        <span className="inline-flex items-baseline text-slate-400 font-bold uppercase tracking-wider text-[9px] sm:text-[10px] mt-0.5">
+          {typeof unit === 'string' ? unit : unit}
+        </span>
+      </div>
+    </div>
+  );
 };
 
 const Compare: React.FC = () => {

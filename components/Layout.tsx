@@ -209,7 +209,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { label: 'INTUITION_SKILL', path: '/skill-playground', icon: <Cpu size={14} /> },
   ];
 
-  const versusNavItems = [{ label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={14} /> }];
+  const versusNavItems = [{ label: 'BATTLEGROUND', path: '/climb', icon: <Swords size={14} /> }];
 
   const exploreNavItems = [
     { label: 'ACTIVITY', path: '/feed', icon: <Globe size={14} /> },
@@ -297,7 +297,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <nav className="space-y-2" aria-label="Versus">
               <div className="px-3">
                 <p className="text-[10px] font-mono text-slate-400 uppercase tracking-[0.25em] mb-0.5">Versus</p>
-                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Compare claims side-by-side</p>
+                <p className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Arena duels · compare before you pick</p>
               </div>
               {versusNavItems.map((item) => (
                 <NavItem

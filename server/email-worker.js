@@ -11,6 +11,7 @@
  *   ENSEND_SENDER_EMAIL   - From address
  *   ENSEND_SENDER_NAME    - From name (optional, default "IntuRank")
  *   INTUITION_GRAPH_URL   - (optional) override GraphQL URL, defaults to API_URL_PROD
+ *   EMAIL_DATA_DIR        - (optional) same directory as email API uses for email-subs.json
  *
  * Run locally:
  *   npm run email-worker
@@ -19,6 +20,7 @@
 import dotenv from 'dotenv';
 import { API_URL_PROD } from '@0xintuition/graphql';
 import fs from 'fs/promises';
+import { mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getAddress, isAddress } from 'viem';
@@ -40,7 +42,13 @@ if (!ENSEND_PROJECT_SECRET || !ENSEND_SENDER_EMAIL) {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const SUBS_PATH = path.join(__dirname, 'email-subs.json');
+const DATA_DIR = process.env.EMAIL_DATA_DIR || __dirname;
+try {
+  mkdirSync(DATA_DIR, { recursive: true });
+} catch {
+  // ignore
+}
+const SUBS_PATH = path.join(DATA_DIR, 'email-subs.json');
 
 const state = new Map(); // wallet -> ISO timestamp of last successful poll
 const followState = new Map(); // "wallet:identityId" -> Set of event ids we already emailed
