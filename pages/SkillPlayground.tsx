@@ -7,8 +7,8 @@ import { CURRENCY_SYMBOL } from '../constants';
 
 /** Fixed-height shell: inner message list scrolls; outer height does not grow with message count. */
 const CHAT_SHELL =
-    'flex flex-col min-h-0 rounded-xl sm:rounded-2xl ' +
-    'border border-intuition-primary/25 bg-[#06080f]/95 backdrop-blur-md p-1 sm:p-1.5 shadow-[0_0_60px_rgba(0,243,255,0.08)] ' +
+    'flex flex-col min-h-0 rounded-3xl sm:rounded-[1.75rem] ' +
+    'border-2 border-intuition-primary/30 bg-[#06080f]/95 backdrop-blur-md p-1.5 sm:p-2 shadow-[0_0_72px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.04)] ' +
     'overflow-hidden ' +
     'h-[min(88dvh,calc(100dvh-7.5rem))] max-h-[min(88dvh,calc(100dvh-7.5rem))] ' +
     'sm:h-[min(86dvh,calc(100dvh-8.5rem))] sm:max-h-[min(86dvh,calc(100dvh-8.5rem))] ' +
@@ -26,7 +26,7 @@ const SkillPlayground: React.FC = () => {
                 {/* Header — compact so chat gets vertical room */}
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between shrink-0 mb-5 sm:mb-6 lg:mb-7">
                     <div className="flex items-start gap-3 sm:gap-4 min-w-0">
-                        <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-black border-2 border-intuition-primary flex items-center justify-center clip-path-slant shadow-glow-blue">
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-black border-2 border-intuition-primary/80 flex items-center justify-center rounded-2xl sm:rounded-3xl shadow-[0_0_32px_rgba(0,243,255,0.25),inset_0_1px_0_rgba(255,255,255,0.08)]">
                             <Cpu size={26} className="text-intuition-primary animate-pulse" />
                         </div>
                         <div className="min-w-0">
@@ -44,7 +44,7 @@ const SkillPlayground: React.FC = () => {
                             to="/create"
                             onClick={playClick}
                             onMouseEnter={playHover}
-                            className="px-4 sm:px-5 py-2.5 bg-white/5 border border-white/10 hover:border-intuition-primary text-slate-400 hover:text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all clip-path-slant inline-flex items-center gap-2"
+                            className="px-4 sm:px-5 py-2.5 bg-white/5 border border-white/10 hover:border-intuition-primary text-slate-400 hover:text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all rounded-2xl inline-flex items-center gap-2"
                         >
                             <ArrowLeft size={14} /> Back
                         </Link>
@@ -54,7 +54,7 @@ const SkillPlayground: React.FC = () => {
                             rel="noopener noreferrer"
                             onClick={playClick}
                             onMouseEnter={playHover}
-                            className="px-4 sm:px-5 py-2.5 bg-white/5 border-2 border-intuition-primary/40 hover:border-intuition-primary hover:bg-intuition-primary/10 text-intuition-primary hover:text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all clip-path-slant inline-flex items-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.12)]"
+                            className="px-4 sm:px-5 py-2.5 bg-white/5 border-2 border-intuition-primary/40 hover:border-intuition-primary hover:bg-intuition-primary/10 text-intuition-primary hover:text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all rounded-2xl inline-flex items-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.12)]"
                         >
                             <History size={14} /> Explorer
                         </a>
@@ -62,7 +62,7 @@ const SkillPlayground: React.FC = () => {
                             href="https://docs.intuition.systems"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-4 sm:px-5 py-2.5 bg-intuition-primary text-black text-[9px] sm:text-[10px] font-black uppercase tracking-widest clip-path-slant shadow-glow-blue inline-flex items-center gap-2"
+                            className="px-4 sm:px-5 py-2.5 bg-intuition-primary text-black text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-[0_0_28px_rgba(0,243,255,0.35)] inline-flex items-center gap-2"
                         >
                             <BookOpen size={14} /> Docs <ExternalLink size={10} />
                         </a>
@@ -77,7 +77,7 @@ const SkillPlayground: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4 shrink-0">
-                            <div className="bg-black/40 border border-white/10 rounded-xl lg:rounded-2xl p-4 lg:p-5 hover:border-intuition-primary/30 transition-colors">
+                            <div className="bg-black/40 border border-white/10 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-intuition-primary/30 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                                 <div className="flex items-center gap-3 mb-2 lg:mb-3">
                                     <div className="p-1.5 bg-intuition-primary/15 rounded-lg border border-intuition-primary/25">
                                         <Zap size={16} className="text-intuition-primary" />
@@ -88,7 +88,7 @@ const SkillPlayground: React.FC = () => {
                                     Describe your intent in plain English. The agent handles ABI encoding, calldata construction, and fee calculation.
                                 </p>
                             </div>
-                            <div className="bg-black/40 border border-white/10 rounded-xl lg:rounded-2xl p-4 lg:p-5 hover:border-[#ff1e6d]/30 transition-colors">
+                            <div className="bg-black/40 border border-white/10 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-[#ff1e6d]/30 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                                 <div className="flex items-center gap-3 mb-2 lg:mb-3">
                                     <div className="p-1.5 bg-[#ff1e6d]/10 rounded-lg border border-[#ff1e6d]/25">
                                         <ShieldCheck size={16} className="text-[#ff1e6d]" />
@@ -103,7 +103,7 @@ const SkillPlayground: React.FC = () => {
                     </div>
 
                     <aside className="w-full xl:w-[min(100%,300px)] 2xl:w-[320px] shrink-0 xl:sticky xl:top-20 xl:self-start xl:max-h-[min(calc(100dvh-6rem),920px)] overflow-y-auto custom-scrollbar">
-                        <div className="bg-black/80 border border-white/10 p-5 sm:p-6 rounded-xl lg:rounded-2xl relative overflow-hidden group">
+                        <div className="bg-black/80 border border-white/10 p-5 sm:p-6 rounded-2xl lg:rounded-3xl relative overflow-hidden group shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                             <div className="absolute -right-4 -top-4 opacity-[0.06] pointer-events-none group-hover:opacity-[0.1] transition-opacity">
                                 <Terminal size={88} className="text-intuition-primary" />
                             </div>

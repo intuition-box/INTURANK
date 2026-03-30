@@ -1,6 +1,4 @@
-/**
- * Arena XP — local persistence + optional remote sync (VITE_ARENA_LEADERBOARD_URL).
- */
+/** Arena points: local + optional POST to VITE_ARENA_LEADERBOARD_URL */
 const XP_KEY = 'inturank-arena-xp-v1';
 
 export interface ArenaXpRecord {

@@ -117,11 +117,12 @@ const MissionTerminal: React.FC = () => {
             </p>
             
             <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
-              Intuition is the solution. A decentralized, semantic graph where reputation has a price. By attaching financial value to truth, we make lying expensive.
+              IntuRank is how we act on that. Rank markets, follow leaders, and trade conviction on Intuition. Leaderboards, arenas, and live prices turn belief into positions you can size.
             </p>
             
             <p className="text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
-              <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span> <span className="text-slate-300">Not controlled by a bank, but by you. The market decides what is true.</span>
+              <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span>{' '}
+              <span className="text-slate-300">Not controlled by a bank, but by you. The market decides what is true when you rank and trade in IntuRank.</span>
             </p>
             
             <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-2 pt-4 text-glow-blue">
@@ -1729,14 +1730,14 @@ const Home: React.FC = () => {
             <div className="w-12 h-12 bg-intuition-secondary/10 border border-intuition-secondary flex items-center justify-center clip-path-slant shadow-glow-red">
                 <Activity className="text-intuition-secondary animate-pulse" size={24} />
             </div>
-            <h2 className="text-4xl md:text-5xl font-black font-display text-white tracking-tight uppercase text-glow-red">Network_Ingress</h2>
+            <h2 className="text-4xl md:text-5xl font-black font-display text-white tracking-tight uppercase text-glow-red">The network in numbers</h2>
           </Reveal>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
-            <Reveal delay={100}><div className="min-w-0"><StatBox label="Protocol Volume" value={formattedVolume} sub={`${CURRENCY_SYMBOL} EQUITY`} icon={<Box size={18}/>} color="secondary" /></div></Reveal>
-            <Reveal delay={200}><div className="min-w-0"><StatBox label="Semantic Nodes" value={stats.atoms.toLocaleString()} sub="VERIFIED ATOMS" icon={<HardDrive size={18}/>} color="primary" /></div></Reveal>
-            <Reveal delay={300}><div className="min-w-0"><StatBox label="Claims" value={stats.signals.toLocaleString()} sub="ON GRAPH" icon={<Binary size={18}/>} color="secondary" /></div></Reveal>
-            <Reveal delay={400}><div className="min-w-0"><StatBox label="Active positions" value={stats.positions.toLocaleString()} sub="ON PROTOCOL" icon={<Activity size={18}/>} color="primary" /></div></Reveal>
+            <Reveal delay={100}><div className="min-w-0"><StatBox label="TRUST locked" value={formattedVolume} sub={`Total ${CURRENCY_SYMBOL} in markets`} icon={<Box size={18}/>} color="secondary" /></div></Reveal>
+            <Reveal delay={200}><div className="min-w-0"><StatBox label="Identities" value={stats.atoms.toLocaleString()} sub="People, projects & topics" icon={<HardDrive size={18}/>} color="primary" /></div></Reveal>
+            <Reveal delay={300}><div className="min-w-0"><StatBox label="Claims" value={stats.signals.toLocaleString()} sub="Statements on the graph" icon={<Binary size={18}/>} color="secondary" /></div></Reveal>
+            <Reveal delay={400}><div className="min-w-0"><StatBox label="Open positions" value={stats.positions.toLocaleString()} sub="Active stakes" icon={<Activity size={18}/>} color="primary" /></div></Reveal>
           </div>
         </div>
       </div>
@@ -1805,8 +1806,8 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
         
         <div className="flex justify-between items-start mb-6 relative z-10 shrink-0">
             <div className="flex flex-col gap-1.5 min-w-0">
-                <span className="text-slate-500 font-mono text-[9px] uppercase tracking-[0.4em] font-black group-hover:text-white transition-colors truncate">{label}</span>
-                <div className={`h-[1px] w-12 ${isRed ? 'bg-intuition-secondary' : 'bg-intuition-primary'} opacity-40 group-hover:w-full transition-all duration-1000`}></div>
+                <span className="text-slate-300 font-mono text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold text-balance group-hover:text-white transition-colors [text-shadow:0_0_24px_rgba(255,255,255,0.12)]">{label}</span>
+                <div className={`h-[2px] w-12 ${isRed ? 'bg-intuition-secondary' : 'bg-intuition-primary'} opacity-70 group-hover:w-full transition-all duration-1000`}></div>
             </div>
             <div className={`p-3 bg-black border border-white/10 rounded-none clip-path-slant transition-all duration-500 group-hover:scale-110 group-hover:border-current shadow-inner shrink-0 ${textClass}`}>
                 {icon}
@@ -1819,14 +1820,14 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
             </div>
         </div>
 
-        <div className="mt-auto relative z-10 pt-4 flex items-center justify-between border-t border-white/5">
-            <div className="text-slate-500 font-mono text-[8px] uppercase tracking-[0.5em] font-black group-hover:text-white transition-colors flex items-center gap-2">
-                <div className={`w-2 h-2 ${bgClass.split(' ')[0]} animate-pulse shadow-[0_0_10px_currentColor] clip-path-slant`}></div>
-                {sub}
+        <div className="mt-auto relative z-10 pt-4 flex items-center justify-between gap-3 border-t border-white/10">
+            <div className="text-slate-300 font-mono text-[9px] sm:text-[10px] uppercase tracking-[0.12em] font-semibold leading-snug text-balance group-hover:text-white transition-colors flex items-start gap-2 min-w-0">
+                <div className={`w-2 h-2 mt-0.5 shrink-0 ${bgClass.split(' ')[0]} animate-pulse shadow-[0_0_10px_currentColor] clip-path-slant`}></div>
+                <span>{sub}</span>
             </div>
-            <div className="flex items-center gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
-                <div className="text-[7px] font-black font-mono text-slate-600 uppercase tracking-widest group-hover:text-slate-400">Ver_04_ARES</div>
-                <Network size={10} className="text-slate-600 group-hover:text-white" />
+            <div className="flex items-center gap-1.5 shrink-0 text-slate-400">
+                <span className="text-[9px] font-semibold font-mono uppercase tracking-wide">Live</span>
+                <Network size={14} className="text-slate-400 opacity-90" aria-hidden />
             </div>
         </div>
         

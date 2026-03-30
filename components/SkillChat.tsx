@@ -577,10 +577,10 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
 
     return (
         <div
-            className={`flex flex-col h-full min-h-0 max-h-full w-full min-w-0 bg-[#050505] border-2 border-intuition-primary/20 clip-path-slant shadow-2xl overflow-hidden ${className}`}
+            className={`flex flex-col h-full min-h-0 max-h-full w-full min-w-0 bg-gradient-to-b from-[#080a10] to-[#050505] border-2 border-intuition-primary/25 rounded-3xl shadow-[0_0_48px_rgba(0,243,255,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] overflow-hidden ${className}`}
         >
             {/* Header */}
-            <div className="shrink-0 bg-intuition-primary/10 border-b border-intuition-primary/30 p-4 flex items-center justify-between">
+            <div className="shrink-0 rounded-t-3xl bg-intuition-primary/10 border-b border-intuition-primary/30 p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <Terminal size={18} className="text-intuition-primary" />
                     <div className="flex flex-col">
@@ -664,11 +664,11 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 {messages.map((m, i) => (
                     <div key={i} className={`flex w-full min-w-0 ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                         <div className={`flex gap-4 w-full min-w-0 max-w-[min(100%,56rem)] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                            <div className={`w-8 h-8 shrink-0 flex items-center justify-center border-2 ${m.role === 'user' ? 'border-intuition-primary text-intuition-primary' : 'border-[#ff1e6d] text-[#ff1e6d]'} clip-path-slant bg-black`}>
+                            <div className={`w-8 h-8 shrink-0 flex items-center justify-center border-2 ${m.role === 'user' ? 'border-intuition-primary text-intuition-primary' : 'border-[#ff1e6d] text-[#ff1e6d]'} rounded-xl bg-black/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]`}>
                                 {m.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                             </div>
                             <div className="min-w-0 flex-1 space-y-4">
-                                <div className={`p-4 max-w-full min-w-0 ${m.role === 'user' ? 'bg-intuition-primary/10 border-intuition-primary/30' : 'bg-white/5 border-white/10'} border clip-path-slant`}>
+                                <div className={`p-4 max-w-full min-w-0 rounded-2xl ${m.role === 'user' ? 'bg-intuition-primary/10 border-intuition-primary/30' : 'bg-white/5 border-white/10'} border shadow-[0_8px_24px_rgba(0,0,0,0.35)]`}>
                                     <div className={`text-xs leading-relaxed font-mono ${m.role === 'user' ? 'text-white' : 'text-slate-300'} whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}>
                                         {m.content}
                                     </div>
@@ -908,7 +908,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 {loading && (
                     <div className="flex justify-start w-full min-w-0">
                         <div className="flex gap-4 items-center min-w-0 max-w-[min(100%,56rem)] text-slate-500 font-mono text-[10px] animate-pulse">
-                            <div className="w-8 h-8 flex items-center justify-center border-2 border-slate-800 clip-path-slant bg-black">
+                            <div className="w-8 h-8 flex items-center justify-center border-2 border-slate-700 rounded-xl bg-black/80">
                                 <Bot size={16} />
                             </div>
                             <span>PROCESSING_COGNITIVE_REQUEST...</span>
@@ -918,7 +918,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
             </div>
 
             {/* Input Area */}
-            <div className="shrink-0 p-4 bg-black border-t border-white/10">
+            <div className="shrink-0 rounded-b-3xl p-4 bg-black/90 border-t border-white/10 backdrop-blur-sm">
                 <div className="relative flex items-end">
                     <textarea
                         ref={inputRef}
@@ -933,7 +933,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                         }}
                         rows={1}
                         placeholder="Ask to create an atom (e.g. create atom called My Node with 0.5 TRUST)…"
-                        className="w-full bg-white/5 border border-white/20 py-3 pl-4 pr-14 text-xs text-white font-mono focus:border-intuition-primary outline-none clip-path-slant placeholder:text-slate-600 min-h-[52px] max-h-[200px] resize-none overflow-y-auto leading-relaxed"
+                        className="w-full bg-white/5 border border-white/20 py-3 pl-4 pr-14 text-xs text-white font-mono focus:border-intuition-primary outline-none rounded-2xl placeholder:text-slate-600 min-h-[52px] max-h-[200px] resize-none overflow-y-auto leading-relaxed shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)]"
                     />
                     <button
                         type="button"
@@ -955,7 +955,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                         <button
                             key={i}
                             onClick={() => setInput(suggestion)}
-                            className="shrink-0 px-3 py-1.5 bg-white/5 hover:bg-intuition-primary/20 border border-white/10 hover:border-intuition-primary/40 text-[9px] font-black text-slate-500 hover:text-intuition-primary uppercase tracking-widest transition-all clip-path-slant"
+                            className="shrink-0 px-3 py-1.5 bg-white/5 hover:bg-intuition-primary/20 border border-white/10 hover:border-intuition-primary/40 text-[9px] font-black text-slate-500 hover:text-intuition-primary uppercase tracking-widest transition-all rounded-full"
                         >
                             {suggestion}
                         </button>

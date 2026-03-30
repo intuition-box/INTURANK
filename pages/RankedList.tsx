@@ -1,6 +1,4 @@
-/**
- * The Arena: yes/no stance grid per theme. Optional TRUST stake, local XP and ladder.
- */
+/** Arena: local stance grid + arena points. Vaults: /markets/:id */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -23,6 +21,7 @@ import {
   Activity,
   Clock,
   Medal,
+  X,
 } from 'lucide-react';
 import {
   getTopClaims,
@@ -78,9 +77,9 @@ function pickSingleItem(pool: RankItem[], lastId: string | null): RankItem | nul
 
 const STORAGE_PREFIX = 'inturank-arena-pairwise';
 
-/** Discrete stake levels — slider snaps here (no typing TRUST). First non-zero tier is 0.1 TRUST (Spark). */
-const ARENA_STAKE_PRESETS = [0, 0.1, 0.25, 0.5, 1, 2.5, 10] as const;
-const ARENA_STAKE_TITLES = ['Practice', 'Spark', 'Pulse', 'Surge', 'Blitz', 'Nova', 'Singularity'] as const;
+/** Discrete stake levels (no free tier). TRUST is sent as native transfer to `VITE_ARENA_TREASURY_ADDRESS`, not a MultiVault deposit. */
+const ARENA_STAKE_PRESETS = [0.1, 0.25, 0.5, 1, 2.5, 10] as const;
+const ARENA_STAKE_TITLES = ['Spark', 'Pulse', 'Surge', 'Blitz', 'Nova', 'Singularity'] as const;
 
 function formatPresetTrustLabel(n: number): string {
   if (n === 0) return '0 TRUST';
@@ -149,25 +148,25 @@ const THEMES: {
     id: 'claims',
     short: 'Claims',
     icon: <FileText size={16} />,
-    blurb: 'One claim at a time — yes or no to support or oppose. Momentum tracks how the pool leans.',
+    blurb: 'Head-to-head and single claims.',
   },
   {
     id: 'narratives',
     short: 'Narratives',
     icon: <BookOpen size={16} />,
-    blurb: 'Prediction and future-shaped lines — one narrative per round, stance with yes or no.',
+    blurb: 'Future and prediction shaped lines.',
   },
   {
     id: 'tokens',
     short: 'Tokens',
     icon: <Coins size={16} />,
-    blurb: 'Themes and tickers — one at a time; agree or disagree to move momentum.',
+    blurb: 'Ticker themes (not vault markets).',
   },
   {
     id: 'passion',
     short: 'Heat',
     icon: <Flame size={16} />,
-    blurb: 'High-energy claims — same yes/no loop; rank what hits hardest for you.',
+    blurb: 'High-activity claims.',
   },
 ];
 
@@ -222,16 +221,12 @@ function pickReplacementForYesNoGrid(pool: RankItem[], answeredItem: RankItem, v
   return pickSingleItem(pool, answeredItem.id);
 }
 
-/** Momentum vs pool → 3–97% split for the sentiment bar (visual only, not on-chain odds). */
-function poolSentimentYesPct(pool: RankItem[], scores: Record<string, number>, itemId: string): { yes: number; no: number } {
-  if (pool.length === 0) return { yes: 50, no: 50 };
-  const vals = pool.map((it) => scores[it.id] ?? SCORE_START);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = Math.max(max - min, 1e-6);
+/** Session lean bar: nudges ~38–62% from 50 based on this card’s score delta (visual only). */
+function poolSentimentYesPct(_pool: RankItem[], scores: Record<string, number>, itemId: string): { yes: number; no: number } {
   const raw = scores[itemId] ?? SCORE_START;
-  const t = (raw - min) / span;
-  const yes = Math.round(3 + t * 94);
+  const d = raw - SCORE_START;
+  const tilt = Math.max(-12, Math.min(12, d * 0.07));
+  const yes = Math.round(50 + tilt);
   return { yes, no: 100 - yes };
 }
 
@@ -416,12 +411,11 @@ const RankedList: React.FC = () => {
   const [stakingTx, setStakingTx] = useState(false);
   const [players, setPlayers] = useState<ArenaPlayerRow[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
+  /** Last claim the user stanced on: prompt to open Intuition market (step 2 on-ramp). */
+  const [lastStanceMarketCta, setLastStanceMarketCta] = useState<RankItem | null>(null);
   const reduceMotion = useReducedMotion();
 
-  const stakeTRUST = useMemo(() => {
-    const v = ARENA_STAKE_PRESETS[stakePresetIdx] ?? 0;
-    return v === 0 ? '0' : String(v);
-  }, [stakePresetIdx]);
+  const stakeTRUST = useMemo(() => String(ARENA_STAKE_PRESETS[stakePresetIdx] ?? ARENA_STAKE_PRESETS[0]), [stakePresetIdx]);
 
   const treasury = useMemo(() => getTreasury(), []);
 
@@ -512,6 +506,7 @@ const RankedList: React.FC = () => {
   const refreshPool = useCallback(async () => {
     setLoading(true);
     setRound(null);
+    setLastStanceMarketCta(null);
     try {
       const items = await loadPool(theme);
       setPool(items);
@@ -565,25 +560,26 @@ const RankedList: React.FC = () => {
         return;
       }
 
-      if (wei > 0n && isConnected && address) {
-        if (!treasury) {
-          toast.info('On-chain stake unavailable. Your stance still counts — use Practice or try again later.');
-        } else {
-          setStakingTx(true);
-          try {
-            await sendNativeTransfer(address, treasury, wei);
-            toast.success('TRUST staked with this stance.');
-          } catch (e: any) {
-            const msg = e?.shortMessage ?? e?.message ?? 'Transaction failed';
-            toast.error(msg);
-            stakeOk = false;
-          } finally {
-            setStakingTx(false);
-          }
-        }
-      } else if (wei > 0n && !isConnected) {
-        toast.error('Connect your wallet to stake TRUST (or set stake to 0).');
+      if (!isConnected || !address) {
+        toast.error('Connect your wallet to pick.');
         return;
+      }
+
+      if (!treasury) {
+        toast.error('Set VITE_ARENA_TREASURY_ADDRESS so TRUST can be sent on each pick.');
+        return;
+      }
+
+      setStakingTx(true);
+      try {
+        await sendNativeTransfer(address, treasury, wei);
+        toast.success('TRUST sent with this stance.');
+      } catch (e: any) {
+        const msg = e?.shortMessage ?? e?.message ?? 'Transaction failed';
+        toast.error(msg);
+        stakeOk = false;
+      } finally {
+        setStakingTx(false);
       }
 
       if (!stakeOk) return;
@@ -611,8 +607,12 @@ const RankedList: React.FC = () => {
           if (Number.isFinite(trust)) xpDelta = Math.max(1, Math.round(trust * 100));
         }
         const rec = addArenaXp(address, xpDelta, 1);
-        toast.success(`+${xpDelta} XP — you now have ${rec.xp.toLocaleString()} XP`);
+        toast.success(`+${xpDelta} pts · ${rec.xp.toLocaleString()} total`);
         void refreshPlayers({ silent: true });
+      }
+
+      if (item.kind !== 'token') {
+        setLastStanceMarketCta(item);
       }
 
       setRound((prev) => {
@@ -651,6 +651,7 @@ const RankedList: React.FC = () => {
     setDuels(0);
     setStreak(0);
     setRound(null);
+    setLastStanceMarketCta(null);
     toast.success('Rank scores reset for this theme');
   };
 
@@ -728,7 +729,7 @@ const RankedList: React.FC = () => {
               </motion.div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-2 rounded-full border border-slate-600/80 bg-slate-900/90 px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-slate-300">
-                  <Zap size={13} className="text-amber-400/90 shrink-0" /> Yes / no stance pool
+                  <Zap size={13} className="text-amber-400/90 shrink-0" /> Arena · yes / no
                 </span>
               </div>
             </header>
@@ -742,8 +743,8 @@ const RankedList: React.FC = () => {
                   </span>
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 max-w-3xl leading-snug">
-                  Each round shows several claims — agree or disagree per card. Momentum and XP track how you lean. Stake TRUST for
-                  more XP, or stay at 0 for practice.
+                  Stances here don&apos;t settle on-chain; markets do.{' '}
+                  <span className="text-slate-500">Arena points reward play, not being right.</span>
                 </p>
               </div>
 
@@ -767,7 +768,7 @@ const RankedList: React.FC = () => {
                     </div>
                     {address && (
                       <div className="flex items-baseline gap-2 border-t border-slate-800/80 pt-2 sm:border-t-0 sm:pt-0 sm:border-l sm:border-slate-800/80 sm:pl-6">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">Arena XP</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">Arena points</span>
                         <span className="text-base sm:text-lg font-black text-amber-300 tabular-nums arena-xp-roll">{xpRoll.toLocaleString()}</span>
                       </div>
                     )}
@@ -791,7 +792,7 @@ const RankedList: React.FC = () => {
             </div>
 
             <motion.div
-              className="mt-3 relative rounded-xl border border-cyan-400/35 bg-gradient-to-br from-[#050c16] via-[#070f1a] to-fuchsia-950/30 p-3 sm:p-4 md:p-5 shadow-[0_0_40px_rgba(34,211,238,0.1),inset_0_1px_0_rgba(255,255,255,0.07)] overflow-hidden transition-shadow duration-500 hover:shadow-[0_0_56px_rgba(34,211,238,0.14),inset_0_1px_0_rgba(255,255,255,0.09)]"
+              className="mt-3 relative rounded-3xl border border-cyan-400/35 bg-gradient-to-br from-[#050c16] via-[#070f1a] to-fuchsia-950/30 p-3 sm:p-4 md:p-5 shadow-[0_0_40px_rgba(34,211,238,0.1),inset_0_1px_0_rgba(255,255,255,0.07)] overflow-hidden transition-shadow duration-500 hover:shadow-[0_0_56px_rgba(34,211,238,0.14),inset_0_1px_0_rgba(255,255,255,0.09)]"
               initial={reduceMotion ? false : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
@@ -811,7 +812,7 @@ const RankedList: React.FC = () => {
                           TRUST tier stake
                         </p>
                         <p className="text-xs text-slate-400 max-w-md leading-snug">
-                          Drag the orb or tap a tier. Higher stakes earn more XP per pick.
+                          TRUST per pick → treasury wallet (env), not the claim vault. More TRUST → more points.
                         </p>
                       </div>
                     </div>
@@ -820,17 +821,13 @@ const RankedList: React.FC = () => {
                         {ARENA_STAKE_TITLES[stakePresetIdx]}
                       </div>
                       <div className="text-2xl sm:text-[1.65rem] font-black tabular-nums text-white leading-none mt-0.5 tracking-tight">
-                        {stakePresetIdx === 0 ? (
-                          <span className="text-transparent bg-clip-text bg-gradient-to-r from-slate-300 to-slate-500">Free run</span>
-                        ) : (
-                          <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-white to-cyan-200">
-                            {ARENA_STAKE_PRESETS[stakePresetIdx]}{' '}
-                            <span className="text-lg text-cyan-200/95">TRUST</span>
-                          </span>
-                        )}
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-white to-cyan-200">
+                          {ARENA_STAKE_PRESETS[stakePresetIdx]}{' '}
+                          <span className="text-lg text-cyan-200/95">TRUST</span>
+                        </span>
                       </div>
                       <div className="text-xs text-amber-300 font-mono font-bold mt-1 tracking-wide">
-                        +{xpPickPreview} XP <span className="text-amber-400/80 font-sans text-[10px] font-semibold">next pick</span>
+                        +{xpPickPreview} <span className="text-amber-400/80 font-sans text-[10px] font-semibold">pts · next pick</span>
                       </div>
                     </div>
                   </div>
@@ -915,10 +912,10 @@ const RankedList: React.FC = () => {
                     </div>
                   </div>
 
-                  {!isConnected && stakePresetIdx > 0 && (
+                  {!isConnected && (
                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80">
                       <span className="text-[10px] text-amber-400/90 flex items-center gap-1">
-                        <Wallet size={12} /> Connect wallet to stake TRUST on picks
+                        <Wallet size={12} /> Connect wallet to stake TRUST each pick
                       </span>
                     </div>
                   )}
@@ -966,7 +963,7 @@ const RankedList: React.FC = () => {
         >
         <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(300px,26vw)] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 lg:gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80">
         <div className="min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 space-y-4">
-          <div className="rounded-2xl border border-cyan-500/25 bg-gradient-to-br from-[#050a12] via-slate-950/90 to-[#0a0614] p-3 sm:p-4 shadow-[0_0_40px_rgba(34,211,238,0.08),inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <div className="rounded-3xl border border-cyan-500/25 bg-gradient-to-br from-[#050a12] via-slate-950/90 to-[#0a0614] p-3 sm:p-4 shadow-[0_0_40px_rgba(34,211,238,0.08),inset_0_1px_0_rgba(255,255,255,0.05)]">
             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-cyan-400/90 mb-2.5">Arena category</p>
             <div className="flex flex-wrap gap-2">
               {THEMES.map((t) => (
@@ -1017,7 +1014,7 @@ const RankedList: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             >
-              <div className="rounded-2xl border border-white/[0.06] bg-[#0B0E11] p-3 sm:p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+              <div className="rounded-3xl border border-white/[0.08] bg-[#0B0E11] p-3 sm:p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.03]">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       <span className="inline-flex items-center gap-2">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
@@ -1031,7 +1028,8 @@ const RankedList: React.FC = () => {
                           </span>
                         ) : null}
                         <span className="inline-flex items-center gap-1.5 text-amber-200/90">
-                          <Zap size={12} className="text-amber-400" />+{xpPickPreview} XP
+                          <Zap size={12} className="text-amber-400" />
+                          <span>+{xpPickPreview} pts</span>
                         </span>
                       </span>
                     </div>
@@ -1041,11 +1039,25 @@ const RankedList: React.FC = () => {
                         const bar = poolSentimentYesPct(pool, scores, item.id);
                         const spotlight = idx === 0 && (streak >= 3 || duels % 4 === 0);
                         return (
-                          <div
+                          <motion.div
                             key={item.id}
-                            className="rounded-2xl border border-white/[0.07] bg-[#161A1E] overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.5)] flex flex-col min-h-0"
+                            initial={reduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              type: 'spring',
+                              stiffness: 380,
+                              damping: 28,
+                              delay: reduceMotion ? 0 : idx * 0.05,
+                            }}
+                            whileHover={
+                              reduceMotion
+                                ? undefined
+                                : { y: -4, transition: { type: 'spring', stiffness: 400, damping: 22 } }
+                            }
+                            className="group relative rounded-[1.75rem] border-2 border-cyan-500/20 bg-gradient-to-br from-[#121a24] via-[#161A1E] to-[#1c1028] overflow-hidden shadow-[0_12px_48px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/[0.04] flex flex-col min-h-0 hover:border-cyan-400/35 hover:shadow-[0_20px_56px_rgba(34,211,238,0.14)] hover:ring-cyan-400/15 transition-[box-shadow,border-color] duration-300"
                           >
-                            <div className="relative aspect-[16/10] w-full bg-[#0a0d12] shrink-0">
+                            <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-fuchsia-500/10 blur-3xl opacity-70 group-hover:opacity-100 transition-opacity" aria-hidden />
+                            <div className="relative aspect-[16/10] w-full bg-[#0a0d12] shrink-0 overflow-hidden rounded-t-[1.5rem]">
                               {item.kind === 'claim' && item.pairKind === 'claim-vs' ? (
                                 <ArenaVsHeroImages
                                   leftSrc={item.image}
@@ -1060,7 +1072,7 @@ const RankedList: React.FC = () => {
                               )}
                               <div className="absolute inset-0 bg-gradient-to-t from-[#161A1E] via-transparent to-transparent opacity-90" />
                               {spotlight && (
-                                <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded-md bg-black/75 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white ring-1 ring-white/10">
+                                <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-[8px] font-black uppercase tracking-widest text-amber-100 ring-1 ring-amber-400/40 shadow-[0_0_20px_rgba(251,191,36,0.25)]">
                                   <span className="flex gap-0.5" aria-hidden>
                                     <span className="h-1 w-1 rounded-full bg-emerald-400" />
                                     <span className="h-1 w-1 rounded-full bg-fuchsia-400" />
@@ -1087,8 +1099,8 @@ const RankedList: React.FC = () => {
                             </div>
 
                             <div className="px-3 pt-1 pb-1">
-                              <p className="text-[8px] uppercase tracking-[0.18em] text-slate-500 mb-1">Momentum</p>
-                              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800/90 ring-1 ring-white/5">
+                              <p className="text-[8px] uppercase tracking-[0.18em] text-slate-500 mb-1">Session lean</p>
+                              <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-900/95 ring-1 ring-white/10 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)]">
                                 <motion.div
                                   className="h-full shrink-0 rounded-l-full bg-gradient-to-r from-emerald-500 via-teal-400 to-teal-500"
                                   initial={false}
@@ -1103,36 +1115,36 @@ const RankedList: React.FC = () => {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 p-3 pt-2">
+                            <div className="grid grid-cols-2 gap-2.5 p-3 pt-2">
                               <motion.button
                                 type="button"
                                 onClick={() => onYesNo(item, true)}
                                 disabled={stakingTx}
                                 onMouseEnter={playHover}
-                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
-                                transition={{ type: 'spring', stiffness: 450, damping: 24 }}
-                                className="rounded-lg border border-emerald-500/35 bg-[#0d2130] py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-emerald-400/60 hover:bg-[#0f2838] disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.04 }}
+                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.96 }}
+                                transition={{ type: 'spring', stiffness: 450, damping: 22 }}
+                                className="rounded-2xl border-2 border-emerald-400/40 bg-gradient-to-b from-emerald-950/80 to-[#0a1820] py-3 text-center shadow-[0_8px_24px_rgba(16,185,129,0.15),inset_0_1px_0_rgba(255,255,255,0.08)] hover:border-emerald-300/70 hover:shadow-[0_12px_32px_rgba(16,185,129,0.25)] disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
                               >
-                                <span className="block text-sm font-black tracking-tight text-[#00FFA3] drop-shadow-[0_0_12px_rgba(0,255,163,0.35)]">YES</span>
-                                <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-widest text-emerald-400/70">Support</span>
+                                <span className="block text-[15px] font-black tracking-tight text-[#5fffc9] drop-shadow-[0_0_14px_rgba(0,255,163,0.4)]">YES</span>
+                                <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-widest text-emerald-300/80">Support</span>
                               </motion.button>
                               <motion.button
                                 type="button"
                                 onClick={() => onYesNo(item, false)}
                                 disabled={stakingTx}
                                 onMouseEnter={playHover}
-                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
-                                transition={{ type: 'spring', stiffness: 450, damping: 24 }}
-                                className="rounded-lg border border-pink-500/35 bg-[#2a1018] py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-pink-400/55 hover:bg-[#32121c] disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.04 }}
+                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.96 }}
+                                transition={{ type: 'spring', stiffness: 450, damping: 22 }}
+                                className="rounded-2xl border-2 border-fuchsia-500/45 bg-gradient-to-b from-fuchsia-950/50 to-[#1c0a14] py-3 text-center shadow-[0_8px_24px_rgba(217,70,239,0.12),inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-fuchsia-400/70 hover:shadow-[0_12px_32px_rgba(217,70,239,0.22)] disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
                               >
-                                <span className="block text-sm font-black tracking-tight text-[#FF007A] drop-shadow-[0_0_12px_rgba(255,0,122,0.3)]">NO</span>
-                                <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-widest text-pink-400/75">Oppose</span>
+                                <span className="block text-[15px] font-black tracking-tight text-fuchsia-300 drop-shadow-[0_0_14px_rgba(244,114,182,0.35)]">NO</span>
+                                <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-widest text-fuchsia-300/75">Oppose</span>
                               </motion.button>
                             </div>
 
-                            <div className="flex items-center justify-between gap-1.5 border-t border-white/[0.06] bg-black/20 px-3 py-2 text-[9px] text-slate-500 mt-auto">
+                            <div className="flex items-center justify-between gap-1.5 border-t border-white/[0.06] bg-black/25 px-3 py-2.5 text-[9px] text-slate-500 mt-auto rounded-b-[1.35rem]">
                               <span className="inline-flex items-center gap-1 min-w-0">
                                 <span className="flex -space-x-1 shrink-0" aria-hidden>
                                   <span className="h-4 w-4 rounded-full border border-[#161A1E] bg-gradient-to-br from-cyan-500/80 to-teal-600/60" />
@@ -1142,16 +1154,50 @@ const RankedList: React.FC = () => {
                               </span>
                               <span className="inline-flex items-center gap-0.5 text-slate-400 shrink-0">
                                 <Wallet size={11} className="text-slate-500" />
-                                <span className="tabular-nums">{stakePresetIdx === 0 ? '0' : stakeTRUST}</span>
+                                <span className="tabular-nums">{stakeTRUST}</span>
                               </span>
                             </div>
-                          </div>
+                          </motion.div>
                         );
                       })}
                     </div>
 
-                    <p className="text-[9px] text-slate-600 mt-3 text-center leading-snug px-2">
-                      Bar split is per-claim momentum vs the pool (not on-chain odds).
+                    {lastStanceMarketCta && lastStanceMarketCta.kind !== 'token' && itemHref(lastStanceMarketCta) && (
+                      <div className="mt-4 rounded-xl border border-cyan-500/35 bg-cyan-950/40 px-3 py-3 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+                        <p className="text-[11px] sm:text-xs text-slate-400 min-w-0 flex-1 leading-snug">
+                          <span className="text-slate-200 font-semibold">Put conviction on this claim.</span>{' '}
+                          Stances here don&apos;t settle on-chain; markets do.
+                        </p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Link
+                            to={itemHref(lastStanceMarketCta)!}
+                            onClick={() => {
+                              playClick();
+                              setLastStanceMarketCta(null);
+                            }}
+                            title="Open market · stake TRUST in the vault"
+                            className="inline-flex items-center justify-center gap-1 rounded-lg border border-cyan-400/55 bg-cyan-500/20 px-3 py-2 text-[10px] sm:text-[11px] font-black uppercase tracking-wide text-cyan-50 hover:bg-cyan-500/30"
+                          >
+                            Stake TRUST · open market
+                            <ChevronRight size={14} className="opacity-90" />
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClick();
+                              setLastStanceMarketCta(null);
+                            }}
+                            className="p-2 rounded-lg border border-slate-700 text-slate-500 hover:text-slate-300"
+                            aria-label="Dismiss"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-[9px] text-slate-600 mt-3 text-center px-2">
+                      Session momentum · not on-chain odds.
                     </p>
 
                     <div className="mt-4 flex justify-center">
@@ -1174,7 +1220,7 @@ const RankedList: React.FC = () => {
         </div>
 
         <aside className="lg:sticky lg:top-6 h-fit flex flex-col gap-4 min-w-0 w-full p-4 sm:p-5 md:p-6 lg:p-7 bg-[#03080e]/60">
-          <div className="rounded-2xl border border-slate-700/80 bg-gradient-to-b from-slate-900/90 to-[#060b14] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+          <div className="rounded-3xl border border-slate-700/80 bg-gradient-to-b from-slate-900/90 to-[#060b14] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             <div className="mb-3 pb-4 border-b border-slate-800/80">
               <div className="flex items-start gap-3">
                 <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500/20 to-cyan-500/15 border border-amber-400/35 shadow-[0_0_20px_rgba(245,158,11,0.15)] shrink-0">
@@ -1193,14 +1239,14 @@ const RankedList: React.FC = () => {
                   </h2>
                   <div className="h-[3px] w-16 mt-2.5 rounded-full bg-gradient-to-r from-amber-400 via-cyan-400 to-transparent opacity-90" />
                   <p className="text-xs text-slate-400 mt-3 leading-snug">
-                    Claims you&apos;ve moved with yes/no show here. Reset clears this list until you rank again.
+                    Session lean · reset clears.
                   </p>
                 </div>
               </div>
             </div>
             {ranking.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-700/70 bg-slate-950/50 py-8 px-3 text-center text-[11px] text-slate-500 leading-relaxed">
-                No stance scores yet. Vote on the grid — entries appear as you support or oppose claims.
+                Vote the grid first.
               </div>
             ) : (
               <ol className="space-y-1.5 max-h-[min(320px,45vh)] lg:max-h-[min(380px,50vh)] overflow-y-auto pr-1 custom-scrollbar">
@@ -1208,7 +1254,7 @@ const RankedList: React.FC = () => {
                   <li
                     key={it.id}
                     style={reduceMotion ? undefined : { animationDelay: `${rowIdx * 0.04}s` }}
-                    className="flex items-center gap-2.5 rounded-lg border border-slate-800/90 bg-[#070b14] px-2.5 py-2 text-sm transition-all duration-200 hover:border-cyan-500/35 hover:bg-[#0a101c] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                    className="arena-sidebar-row flex items-center gap-2.5 rounded-2xl border border-slate-800/90 bg-[#070b14] px-2.5 py-2 text-sm transition-all duration-200 hover:border-cyan-500/35 hover:bg-[#0a101c] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
                   >
                     <span
                       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-black ${
@@ -1281,7 +1327,7 @@ const RankedList: React.FC = () => {
                   </h2>
                   <div className="h-[3px] w-24 mx-auto lg:mx-0 mt-3 rounded-full bg-gradient-to-r from-amber-400 via-fuchsia-500 to-cyan-400 opacity-95 shadow-[0_0_16px_rgba(217,70,239,0.35)]" />
                   <p className="text-sm md:text-[15px] text-slate-400 mt-4 leading-relaxed max-w-xl lg:max-w-2xl">
-                    Ranked by total Arena XP. Stake harder, rank faster, and climb — everyone sees where you stand.
+                    Arena points (play + optional TRUST per pick). Not a truth score.
                   </p>
                 </div>
               </div>
@@ -1301,7 +1347,7 @@ const RankedList: React.FC = () => {
             {!playersLoading && players.length > 0 && myLadderPosition && (
               <motion.div
                 key={address ?? 'anon'}
-                className="mb-6 rounded-2xl border border-cyan-500/35 bg-gradient-to-r from-cyan-500/[0.08] via-slate-900/80 to-fuchsia-600/[0.06] px-4 py-3.5 text-center sm:text-left shadow-[0_0_28px_rgba(34,211,238,0.1)] transition-shadow duration-300 hover:shadow-[0_0_36px_rgba(34,211,238,0.16)]"
+                className="mb-6 rounded-3xl border border-cyan-500/35 bg-gradient-to-r from-cyan-500/[0.08] via-slate-900/80 to-fuchsia-600/[0.06] px-4 py-3.5 text-center sm:text-left shadow-[0_0_28px_rgba(34,211,238,0.1)] transition-shadow duration-300 hover:shadow-[0_0_36px_rgba(34,211,238,0.16)]"
                 initial={false}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ type: 'spring', stiffness: 320, damping: 28 }}
@@ -1310,7 +1356,7 @@ const RankedList: React.FC = () => {
                   <span className="text-cyan-300 font-black tabular-nums">#{myLadderPosition.place}</span>
                   <span className="text-slate-500 font-normal mx-1">of</span>
                   <span className="text-white font-black tabular-nums">{myLadderPosition.total}</span>
-                  <span className="text-slate-400 font-normal ml-2">— keep ranking to move up.</span>
+                  <span className="text-slate-400 font-normal ml-2">Keep ranking to move up.</span>
                 </p>
               </motion.div>
             )}
@@ -1324,7 +1370,7 @@ const RankedList: React.FC = () => {
               <div className="rounded-2xl border border-dashed border-slate-700/80 bg-slate-950/40 py-16 md:py-20 text-center px-4">
                 <Sparkles className="w-10 h-10 text-slate-600 mx-auto mb-3" />
                 <p className="text-sm text-slate-400 leading-relaxed max-w-md mx-auto">
-                  No entries yet. Connect your wallet, pick with a stake above Practice, and your XP will show here.
+                  Connect, pick, and stake TRUST to show up here.
                 </p>
               </div>
             ) : (
@@ -1355,10 +1401,10 @@ const RankedList: React.FC = () => {
                             {label}
                           </div>
                           <div
-                            className={`w-full rounded-t-xl bg-gradient-to-b ${ring} p-[2px] shadow-xl ${idx === 0 ? 'shadow-[0_0_40px_rgba(251,191,36,0.25)]' : 'shadow-black/50'}`}
+                            className={`w-full rounded-t-3xl bg-gradient-to-b ${ring} p-[3px] shadow-xl ${idx === 0 ? 'shadow-[0_0_40px_rgba(251,191,36,0.25)]' : 'shadow-black/50'}`}
                           >
                             <div
-                              className={`rounded-t-[10px] bg-gradient-to-b from-[#0c1520] to-[#060a10] ${h} flex flex-col items-center justify-end pb-2.5 px-2 border-b border-white/10`}
+                              className={`rounded-t-[1.15rem] bg-gradient-to-b from-[#0c1520] to-[#060a10] ${h} flex flex-col items-center justify-end pb-2.5 px-2 border-b border-white/10`}
                             >
                               <span className="text-sm font-mono text-amber-100 tabular-nums font-black drop-shadow-[0_0_8px_rgba(251,191,36,0.35)]">
                                 {p.arenaXp}
@@ -1407,9 +1453,15 @@ const RankedList: React.FC = () => {
                               ? 'text-orange-300/95'
                               : 'text-slate-500';
                       return (
-                        <li
+                        <motion.li
                           key={p.address}
-                          style={reduceMotion ? undefined : { animationDelay: `${Math.min(rowIdx, 20) * 0.035}s` }}
+                          initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.35,
+                            delay: reduceMotion ? 0 : Math.min(rowIdx, 20) * 0.03,
+                            ease: [0.16, 1, 0.3, 1],
+                          }}
                           className="flex items-stretch gap-2 sm:gap-3 min-w-0"
                           aria-label={`Rank ${p.rank}`}
                         >
@@ -1422,7 +1474,7 @@ const RankedList: React.FC = () => {
                             </span>
                           </div>
                           <div
-                            className={`group relative flex min-w-0 flex-1 flex-col rounded-xl px-3 py-2.5 sm:px-3.5 sm:py-3 text-[13px] transition-all duration-300 ease-out hover:-translate-y-0.5 ${
+                            className={`group relative flex min-w-0 flex-1 flex-col rounded-2xl sm:rounded-3xl px-3 py-2.5 sm:px-3.5 sm:py-3 text-[13px] transition-all duration-300 ease-out hover:-translate-y-0.5 ${
                               isYou
                                 ? 'bg-gradient-to-br from-cyan-500/[0.12] via-slate-950/95 to-slate-950 border border-cyan-400/50 shadow-[0_0_28px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.06)] hover:shadow-[0_0_40px_rgba(34,211,238,0.22)]'
                                 : top
@@ -1431,7 +1483,7 @@ const RankedList: React.FC = () => {
                             }`}
                           >
                             <div className="flex items-start gap-2.5">
-                              <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden ring-1 ring-white/15 bg-gradient-to-br from-slate-800 to-slate-950 shadow-inner">
+                              <div className="relative h-10 w-10 shrink-0 rounded-2xl overflow-hidden ring-1 ring-white/15 bg-gradient-to-br from-slate-800 to-slate-950 shadow-inner">
                                 {p.image ? (
                                   <img src={p.image} alt="" className="h-full w-full object-cover" />
                                 ) : (
@@ -1484,24 +1536,20 @@ const RankedList: React.FC = () => {
                                 </div>
                               </div>
                             </div>
-                            <div className="mt-2.5 h-2 rounded-full bg-slate-900/95 overflow-hidden ring-1 ring-slate-700/70 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)]">
-                              <div
-                                className={`h-full rounded-full transition-[width] duration-300 ease-out ${
+                            <div className="mt-2.5 h-2.5 rounded-full bg-slate-900/95 overflow-hidden ring-1 ring-slate-700/70 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)]">
+                              <motion.div
+                                className={`h-full rounded-full ${
                                   isYou
                                     ? 'bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-fuchsia-600'
                                     : 'bg-gradient-to-r from-amber-400 via-fuchsia-500 to-cyan-400'
                                 }`}
-                                style={{ width: `${xpPct}%` }}
+                                initial={false}
+                                animate={{ width: `${xpPct}%` }}
+                                transition={{ type: 'spring', stiffness: 120, damping: 22 }}
                               />
                             </div>
-                            <div className="flex justify-between items-center mt-1.5 text-[9px] uppercase tracking-[0.15em] font-bold">
-                              <span className="text-slate-500">Chase pack</span>
-                              <span className="tabular-nums text-cyan-300/90">
-                                {xpPct}% <span className="text-slate-600">of leader</span>
-                              </span>
-                            </div>
                           </div>
-                        </li>
+                        </motion.li>
                       );
                     })}
                   </ol>
