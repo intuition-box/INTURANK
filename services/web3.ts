@@ -544,18 +544,18 @@ export const redeemFromVault = async (sharesAmount: string, termId: string, rece
 };
 
 const PROXY_APPROVAL_CACHE_KEY = 'inturank_proxy_approved';
-const PROXY_APPROVAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (approval is one-time on-chain)
 
+/** Last-known on-chain positive (write-through after readContract or tx). Never used to skip RPC. */
 function getProxyApprovalCache(addr: string): boolean {
     try {
         const raw = localStorage.getItem(PROXY_APPROVAL_CACHE_KEY);
         if (!raw) return false;
         const data = JSON.parse(raw);
         const entry = data[addr.toLowerCase()];
-        if (!entry?.ts) return false;
-        if (Date.now() - entry.ts > PROXY_APPROVAL_CACHE_TTL_MS) return false;
-        return true;
-    } catch { return false; }
+        return Boolean(entry?.ts);
+    } catch {
+        return false;
+    }
 }
 
 function setProxyApprovalCache(addr: string): void {
@@ -567,19 +567,32 @@ function setProxyApprovalCache(addr: string): void {
     } catch (_) {}
 }
 
+function clearProxyApprovalCacheEntry(addr: string): void {
+    try {
+        const raw = localStorage.getItem(PROXY_APPROVAL_CACHE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        delete data[addr.toLowerCase()];
+        localStorage.setItem(PROXY_APPROVAL_CACHE_KEY, JSON.stringify(data));
+    } catch (_) {}
+}
+
 export const markProxyApproved = (walletAddress: string): void => {
     try {
         setProxyApprovalCache(getAddress(walletAddress));
     } catch (_) {}
 };
 
-/** Sync check for cached approval (no RPC). Use for instant UI feedback. */
+/**
+ * Sync mirror of last successful on-chain approval check (or post-tx). Does not skip RPC — use only for optional UI hints.
+ * Authoritative status is always `checkProxyApproval` (reads MultiVault.isApproved on-chain).
+ */
 export const hasCachedProxyApproval = (walletAddress: string): boolean =>
     getProxyApprovalCache(getAddress(walletAddress));
 
+/** Reads MultiVault.isApproved(account, FeeProxy, 1) on-chain every time — localStorage is only updated to mirror truth, never a substitute. */
 export const checkProxyApproval = async (walletAddress: string): Promise<boolean> => {
     const addr = getAddress(walletAddress);
-    if (getProxyApprovalCache(addr)) return true;
     try {
         const approved = await publicClient.readContract({
             address: MULTI_VAULT_ADDRESS as `0x${string}`,
@@ -588,7 +601,11 @@ export const checkProxyApproval = async (walletAddress: string): Promise<boolean
             args: [addr, getAddress(FEE_PROXY_ADDRESS), 1]
         } as any);
         const ok = Boolean(approved);
-        if (ok) setProxyApprovalCache(addr);
+        if (ok) {
+            setProxyApprovalCache(addr);
+        } else {
+            clearProxyApprovalCacheEntry(addr);
+        }
         return ok;
     } catch (e) {
         return false;

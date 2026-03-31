@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi';
 import { ArrowLeft, Terminal, Zap, Loader2, Database, GitBranch, Search, Camera, CheckCircle, ExternalLink, UserPlus, FileText, Sparkles, Info } from 'lucide-react';
 import { Hex } from 'viem';
 import { createStringAtom } from '../services/intuitionSdk';
-import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, checkProxyApproval, grantProxyApproval, markProxyApproved, hasCachedProxyApproval, validateTripleAtomsExist, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost, calculateTripleId } from '../services/web3';
+import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, checkProxyApproval, grantProxyApproval, markProxyApproved, validateTripleAtomsExist, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost, calculateTripleId } from '../services/web3';
 import { uploadImageToIpfs, ensureIpfsUploadConfigured } from '../services/ipfs';
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
@@ -374,10 +374,6 @@ const CreateSignal: React.FC = () => {
       setClaimReviewApproved(null);
       return;
     }
-    if (hasCachedProxyApproval(acc)) {
-      setClaimReviewApproved(true);
-      return;
-    }
     let cancelled = false;
     const run = async () => {
       const v = await checkProxyApproval(acc);
@@ -410,10 +406,6 @@ const CreateSignal: React.FC = () => {
     const acc = wagmiAddress ?? null;
     if (!acc) {
       setIdentityReviewApproved(null);
-      return;
-    }
-    if (hasCachedProxyApproval(acc)) {
-      setIdentityReviewApproved(true);
       return;
     }
     let cancelled = false;
