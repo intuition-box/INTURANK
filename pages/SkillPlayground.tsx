@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Cpu, Zap, Info, Terminal, BookOpen, ExternalLink, ShieldCheck, History } from 'lucide-react';
 import SkillChat from '../components/SkillChat';
 import { playClick, playHover } from '../services/audio';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, PAGE_HERO_TITLE } from '../constants';
 
 /** Fixed-height shell: inner message list scrolls; outer height does not grow with message count. */
 const CHAT_SHELL =
@@ -40,9 +40,7 @@ const SkillPlayground: React.FC = () => {
                                     IntuRank
                                 </Link>
                             </p>
-                            <h1 className="text-2xl sm:text-3xl xl:text-4xl font-bold text-white tracking-tight font-display leading-tight">
-                                Intuition Skill Playground
-                            </h1>
+                            <h1 className={PAGE_HERO_TITLE}>Intuition Skill Playground</h1>
                         </div>
                     </div>
 

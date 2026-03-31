@@ -15,8 +15,8 @@ const Maintenance: React.FC = () => {
         </div>
 
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#00f3ff] mb-2 tracking-tight">
-            UNDER MAINTENANCE
+          <h1 className="text-2xl sm:text-3xl font-bold text-white font-display mb-2 tracking-tight">
+            Under maintenance
           </h1>
           <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
             We're performing critical updates. IntuRank will be back shortly.

@@ -37,8 +37,14 @@ export const APP_VERSION = '2.0.0';
 /** Short label for UI chrome (sidebar wordmark, certification strings). */
 export const APP_VERSION_DISPLAY = 'V.2.0';
 
-/** Season 2 / current epoch for period-based PnL leaderboard (get_pnl_leaderboard_period) */
-export const SEASON_2_EPOCH_ID = 8;
+/** Shared page hero typography (matches Markets and Documentation). */
+export const PAGE_HERO_EYEBROW = 'text-sm text-slate-500 font-sans';
+export const PAGE_HERO_TITLE =
+  'text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-white font-display tracking-tight leading-[1.12]';
+export const PAGE_HERO_BODY = 'text-[15px] text-slate-400 leading-relaxed font-sans';
+
+/** Season 2 / fallback epoch id when no window matches (keep aligned with latest shipped epoch) */
+export const SEASON_2_EPOCH_ID = 10;
 
 /** Human-readable date range for Epoch 8 (Season 2 current period) — matches Intuition portal */
 export const SEASON_2_EPOCH_8_DATE_RANGE = 'Feb 24, 4:00 PM – Mar 10, 4:00 PM';
@@ -47,15 +53,32 @@ export const SEASON_2_EPOCH_8_DATE_RANGE = 'Feb 24, 4:00 PM – Mar 10, 4:00 PM'
 export const SEASON_2_EPOCH_8_START = '2026-02-24T16:00:00Z';
 export const SEASON_2_EPOCH_8_END = '2026-03-10T16:00:00Z';
 
-/** Season 2 Epoch schedule for homepage / stats selectors. Approximate 14-day epochs. */
-export const SEASON_2_EPOCHS = [
+export type Season2EpochDef = {
+  id: number;
+  label: string;
+  range: string;
+  start: string;
+  end: string;
+  /** Manual override; if unset, `computeSeason2DefaultEpochId()` uses date windows + env */
+  isCurrent?: boolean;
+};
+
+/** Season 2 Epoch schedule for homepage / stats selectors. Approximate 14-day epochs. New epochs: add at top, set `isCurrent` or rely on date range. */
+export const SEASON_2_EPOCHS: Season2EpochDef[] = [
+  {
+    id: 10,
+    label: 'Epoch 10',
+    range: 'Mar 24, 3:00 PM UTC – Apr 7, 3:00 PM UTC',
+    start: '2026-03-24T15:00:00Z',
+    end: '2026-04-07T15:00:00Z',
+  },
   {
     id: 9,
     label: 'Epoch 9',
-    range: 'Mar 10, 3:00 PM – Mar 24, 3:00 PM',
+    range: 'Mar 10, 3:00 PM UTC – Mar 24, 3:00 PM UTC',
     start: '2026-03-10T15:00:00Z',
+    /** Ends the instant Epoch 10 starts (same boundary the API uses for period queries). */
     end: '2026-03-24T15:00:00Z',
-    isCurrent: true,
   },
   {
     id: 8,
@@ -113,7 +136,43 @@ export const SEASON_2_EPOCHS = [
     start: '2025-11-18T16:00:00Z',
     end: '2025-12-02T16:00:00Z',
   },
-] as const;
+];
+
+/**
+ * Default selected epoch in Season 2 UIs.
+ * 1) `VITE_SEASON2_CURRENT_EPOCH_ID` if set and valid
+ * 2) Epoch whose [start,end] contains `now` (auto-updates when calendar crosses)
+ * 3) Any entry with `isCurrent: true`
+ * 4) Latest epoch that has already started (by highest id)
+ */
+export function computeSeason2DefaultEpochId(nowMs: number = Date.now()): number {
+  const envRaw = import.meta.env.VITE_SEASON2_CURRENT_EPOCH_ID as string | undefined;
+  if (envRaw) {
+    const n = Number(String(envRaw).trim());
+    if (Number.isFinite(n) && SEASON_2_EPOCHS.some((e) => e.id === n)) return n;
+  }
+  const now = nowMs;
+  const byDesc = [...SEASON_2_EPOCHS].sort((a, b) => b.id - a.id);
+  for (const e of byDesc) {
+    const s = new Date(e.start).getTime();
+    const end = new Date(e.end).getTime();
+    if (now >= s && now <= end) return e.id;
+  }
+  for (const e of byDesc) {
+    if (e.isCurrent) return e.id;
+  }
+  for (const e of byDesc) {
+    const s = new Date(e.start).getTime();
+    if (now >= s) return e.id;
+  }
+  return byDesc[0]?.id ?? SEASON_2_EPOCH_ID;
+}
+
+/** Resolved epoch row for “current” Season 2 period (badges, copy). */
+export function getResolvedSeason2EpochForNow(nowMs?: number): Season2EpochDef {
+  const id = computeSeason2DefaultEpochId(nowMs);
+  return SEASON_2_EPOCHS.find((e) => e.id === id) ?? SEASON_2_EPOCHS[0];
+}
 
 export const MULTI_VAULT_ADDRESS = "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e";
 /** IntuitionFeeProxy (intuition-box template) — update when redeploying. */

@@ -6,7 +6,7 @@ import { Send, Coins, ArrowLeft, Loader2, AlertTriangle, User, CheckCircle2, Ext
 import { resolveENS, sendNativeTransfer } from '../services/web3';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
-import { CHAIN_ID, EXPLORER_URL } from '../constants';
+import { CHAIN_ID, EXPLORER_URL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 
 const SendTrust: React.FC = () => {
@@ -244,30 +244,23 @@ const SendTrust: React.FC = () => {
             to="/"
             onMouseEnter={playHover}
             onClick={playClick}
-            className="inline-flex items-center gap-2 text-slate-500 hover:text-[#F0C14B] font-mono text-[10px] font-bold uppercase tracking-[0.2em] transition-colors"
+            className="inline-flex items-center gap-2 text-slate-500 hover:text-[#F0C14B] text-sm font-sans transition-colors"
           >
             <ArrowLeft size={12} /> Back
           </Link>
         </div>
 
-        {/* Section label */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded border border-[#F0C14B]/50 bg-[#F0C14B]/5 mb-6">
-          <Send className="w-4 h-4 text-[#F0C14B]" strokeWidth={2.2} />
-          <span className="text-[#F0C14B] font-mono font-black text-[10px] uppercase tracking-[0.2em]">
-            Send TRUST
-          </span>
-        </div>
-
         {/* Title block */}
-        <div className="mb-10">
-          <h1 className="text-xl sm:text-2xl font-black font-mono text-[#F0C14B] uppercase leading-tight mb-2 drop-shadow-[0_0_20px_rgba(240,193,75,0.25)]">
-            Send TRUST to any address
-          </h1>
-          <p className="text-[#F0C14B]/90 font-mono text-sm sm:text-base uppercase tracking-wide mb-4">
-            via native transfer
-          </p>
-          <p className="text-white/90 text-sm font-mono leading-relaxed max-w-md">
-            Enter a wallet address or ENS name and amount. Your wallet will prompt you to sign. Connect your wallet first if you haven’t.
+        <div className="mb-10 space-y-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#F0C14B]/35 bg-[#F0C14B]/8 mb-1">
+            <Send className="w-4 h-4 text-[#F0C14B]" strokeWidth={2.2} aria-hidden />
+            <span className="text-sm font-sans font-medium text-[#F0C14B]/95">Send TRUST</span>
+          </div>
+          <p className={PAGE_HERO_EYEBROW}>Native transfer</p>
+          <h1 className={PAGE_HERO_TITLE}>Send to any address</h1>
+          <p className={`${PAGE_HERO_BODY} max-w-md`}>
+            Enter a wallet address or ENS name and an amount. Your wallet will ask you to confirm. Connect first if you
+            haven&apos;t already.
           </p>
         </div>
 

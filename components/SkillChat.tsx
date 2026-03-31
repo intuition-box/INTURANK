@@ -8,7 +8,7 @@ import {
   broadcastTransaction,
   intuitionChain,
   switchNetwork,
-  checkProxyApproval,
+  getProxyApprovalStatus,
   grantProxyApproval,
   markProxyApproved,
   parseProtocolError,
@@ -268,7 +268,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
             return;
         }
         let cancelled = false;
-        checkProxyApproval(address)
+        getProxyApprovalStatus(address)
             .then((ok) => {
                 if (!cancelled) setProtocolReady(ok);
             })
@@ -415,7 +415,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         if (String(intent?.action ?? '') === 'tripleFromLabels') {
             try {
                 await switchNetwork();
-                const approved = await checkProxyApproval(address);
+                const approved = await getProxyApprovalStatus(address);
                 if (!approved) {
                     await grantProxyApproval(address);
                     markProxyApproved(address);
@@ -520,7 +520,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         try {
             await switchNetwork();
             if (needsProxy) {
-                const approved = await checkProxyApproval(address);
+                const approved = await getProxyApprovalStatus(address);
                 if (!approved) {
                     await grantProxyApproval(address);
                     markProxyApproved(address);

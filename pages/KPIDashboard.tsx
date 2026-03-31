@@ -3,10 +3,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Shield, Activity, Users, Database, Zap, Download, RefreshCw, FileText, Globe, Terminal, Award, ArrowUpRight, BarChart3, TrendingUp, Loader2, UserCircle, BadgeCheck, Network, Cpu, Lock, Coins, PieChart, Clock, Box, ShieldCheck } from 'lucide-react';
 import { getNetworkKPIs } from '../services/graphql';
 import { formatEther } from 'viem';
+import { PageLoading } from '../components/PageLoading';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import html2canvas from 'html2canvas';
-import { CURRENCY_SYMBOL, FEE_PROXY_ADDRESS } from '../constants';
+import { CURRENCY_SYMBOL, FEE_PROXY_ADDRESS, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { getWalletBalance } from '../services/web3';
 
@@ -135,22 +136,7 @@ const KPIDashboard: React.FC = () => {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex flex-col items-center justify-center gap-10 text-intuition-primary font-sans bg-black">
-                <div className="relative">
-                    <div className="w-20 h-20 border-4 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <Activity size={24} className="animate-pulse" />
-                    </div>
-                </div>
-                <div className="space-y-4 text-center">
-                    <span className="text-sm font-semibold tracking-wide animate-pulse">Loading system health…</span>
-                    <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                        <div className="h-full bg-intuition-primary animate-marquee w-1/3"></div>
-                    </div>
-                </div>
-            </div>
-        );
+        return <PageLoading message="Loading system health…" backLink={null} />;
     }
 
     const formattedProxyTVL = parseFloat(formatEther(BigInt(stats?.proxyTVL || '0'))).toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -166,15 +152,13 @@ const KPIDashboard: React.FC = () => {
     return (
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-sans min-w-0">
             {/* Header */}
-            <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between mb-12 gap-6 border-b border-slate-900 pb-8">
-                <div>
-                    <div className="flex items-center gap-3 text-intuition-secondary mb-2">
-                        <ShieldCheck size={16} className="animate-pulse shadow-glow-red" />
-                        <span className="text-xs font-semibold tracking-wide text-slate-400">Intuition mainnet</span>
+            <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between mb-12 gap-6 border-b border-white/10 pb-8">
+                <div className="space-y-2 min-w-0">
+                    <div className="flex items-center gap-2 text-slate-500">
+                        <ShieldCheck size={16} className="shrink-0 text-intuition-secondary/90" aria-hidden />
+                        <p className={PAGE_HERO_EYEBROW}>Intuition Mainnet · operator metrics</p>
                     </div>
-                    <h1 className="text-4xl md:text-5xl font-bold text-white font-display tracking-tight text-glow-red leading-tight mobile-break min-w-0">
-                        System health
-                    </h1>
+                    <h1 className={`${PAGE_HERO_TITLE} mobile-break`}>System health</h1>
                 </div>
                 
                 <div className="flex flex-wrap gap-3">

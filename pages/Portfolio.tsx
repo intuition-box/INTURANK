@@ -26,8 +26,16 @@ import { Transaction } from '../types';
 import { toast } from '../components/Toast';
 import { playHover, playClick } from '../services/audio';
 import { calculateCategoryExposure, calculateSentimentBias, formatDisplayedShares, calculatePositionPnL, formatMarketValue, safeParseUnits, normalizeTermId, calculateAgentPrice } from '../services/analytics';
-import { CURRENCY_SYMBOL, OFFSET_PROGRESSIVE_CURVE_ID, DISTRUST_ATOM_ID } from '../constants';
+import {
+  CURRENCY_SYMBOL,
+  OFFSET_PROGRESSIVE_CURVE_ID,
+  DISTRUST_ATOM_ID,
+  PAGE_HERO_EYEBROW,
+  PAGE_HERO_TITLE,
+  PAGE_HERO_BODY,
+} from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { PageLoadingSpinner } from '../components/PageLoading';
 import { Link } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import logo from '../logo.png';
@@ -161,6 +169,44 @@ const Portfolio: React.FC = () => {
           setPnLLoaded(true);
           pnlSetFromPnl = true;
         } catch { /* fallback to aggregated later */ }
+      }
+
+      // Fast totals from positions_with_value when snapshot is empty/slow — avoids stat spinners until the full label loop finishes
+      if (!equitySetFromPnl && positionsWithValue.length > 0) {
+        let quickEq = 0;
+        for (const p of positionsWithValue) {
+          try {
+            if (p.theoretical_value != null) quickEq += Number(formatEther(BigInt(p.theoretical_value)));
+          } catch {
+            /* skip row */
+          }
+        }
+        setPortfolioValue(quickEq.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }));
+        setEquityLoaded(true);
+        equitySetFromPnl = true;
+      }
+      if (!pnlSetFromPnl && positionsWithValue.length > 0) {
+        let quickPnl = 0;
+        for (const p of positionsWithValue) {
+          try {
+            if (p.pnl != null) quickPnl += Number(formatEther(BigInt(p.pnl)));
+          } catch {
+            /* skip row */
+          }
+        }
+        setNetPnL(quickPnl);
+        setPnLLoaded(true);
+        pnlSetFromPnl = true;
+      }
+      if (!equitySetFromPnl && positionsWithValue.length === 0 && graphPositionsRaw.length === 0) {
+        setPortfolioValue('0.00');
+        setEquityLoaded(true);
+        equitySetFromPnl = true;
+      }
+      if (!pnlSetFromPnl && positionsWithValue.length === 0 && graphPositionsRaw.length === 0) {
+        setNetPnL(0);
+        setPnLLoaded(true);
+        pnlSetFromPnl = true;
       }
 
       // 2. Transmission history
@@ -366,6 +412,9 @@ const Portfolio: React.FC = () => {
       }
       setSentimentBias(calculateSentimentBias(displayHistory));
 
+      // Main holdings are ready — stop blocking table/spinner on chart prep
+      setLoading(false);
+
       // 4. Defer chart build so positions render first (UX: stats + table appear faster)
       const buildChart = () => {
         const depositRedeemHistory = displayHistory.filter(tx => tx.type === 'DEPOSIT' || tx.type === 'REDEEM');
@@ -529,22 +578,26 @@ const Portfolio: React.FC = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,243,255,0.03)_0%,transparent_70%)] pointer-events-none"></div>
       <div className="relative z-10 w-full max-w-[500px] animate-in fade-in zoom-in-95 duration-700">
         <div className="bg-[#020308] border-2 border-intuition-primary/30 p-10 sm:p-12 flex flex-col items-center text-center rounded-3xl shadow-[0_0_120px_rgba(0,0,0,1)] relative overflow-hidden group">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-intuition-secondary px-8 py-1.5 text-[10px] font-black text-white tracking-[0.4em] uppercase rounded-b-2xl shadow-glow-red">DISCONNECTED</div>
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-intuition-secondary px-8 py-1.5 text-[10px] font-semibold text-white tracking-wide rounded-b-2xl shadow-glow-red">
+              Not connected
+            </div>
             <div className="mt-12 mb-10 relative">
                 <div className="absolute -inset-10 bg-intuition-primary/10 blur-[40px] rounded-full animate-pulse"></div>
                 <div className="relative w-20 h-20 bg-black border-2 border-intuition-primary flex items-center justify-center text-intuition-primary rounded-3xl shadow-glow-blue transition-all duration-700 group-hover:scale-110">
                     <Lock size={32} className="animate-pulse" />
                 </div>
             </div>
-            <div className="mb-10 space-y-2">
-                <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white font-display uppercase tracking-tighter">PORTFOLIO_LOCK</h1>
-                <p className="text-slate-500 font-mono text-[10px] uppercase tracking-[0.2em] font-black px-6">Establish neural sync to view semantic assets and protocol earnings.</p>
+            <div className="mb-10 space-y-3">
+                <h1 className={`${PAGE_HERO_TITLE} text-center`}>Portfolio</h1>
+                <p className="text-slate-400 text-sm font-sans px-4 leading-relaxed">
+                  Connect your wallet to see positions, PnL, and history.
+                </p>
             </div>
             <button 
                 onClick={connectWallet}
-                className="w-full py-5 bg-intuition-primary text-black font-black font-display uppercase tracking-[0.2em] rounded-full shadow-glow-blue hover:bg-white transition-all active:scale-95"
+                className="w-full py-5 bg-intuition-primary text-black font-semibold font-sans tracking-wide rounded-full shadow-glow-blue hover:bg-white transition-all active:scale-95"
             >
-                ESTABLISH_UPLINK
+                Connect wallet
             </button>
         </div>
       </div>
@@ -553,6 +606,13 @@ const Portfolio: React.FC = () => {
 
   return (
     <div className="w-full min-w-0 max-w-full px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 pt-8 sm:pt-10 pb-16 sm:pb-20 font-mono overflow-x-hidden">
+      <div className="w-full max-w-full mx-auto mb-6 sm:mb-8 space-y-2 font-sans">
+        <p className={PAGE_HERO_EYEBROW}>Your positions</p>
+        <h1 className={PAGE_HERO_TITLE}>Portfolio</h1>
+        <p className={`${PAGE_HERO_BODY} max-w-2xl`}>
+          Balances, PnL, and activity across the markets you trade.
+        </p>
+      </div>
       <div className="w-full max-w-full mx-auto mb-8 sm:mb-10 rounded-[2rem] sm:rounded-[2.5rem] bg-gradient-to-br from-slate-950 via-[#020818] to-black shadow-[0_20px_60px_rgba(0,0,0,0.9)] border border-slate-900/60 px-4 sm:px-6 md:px-8 xl:px-10 py-6 sm:py-8 md:py-10 min-w-0">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6 xl:gap-8">
         <StatCard label="Wallet Balance" value={balance} unit={<CurrencySymbol size="2xl" leading />} icon={Wallet} isLoading={loading && !balanceLoaded} />
@@ -875,8 +935,8 @@ const Portfolio: React.FC = () => {
                       <td colSpan={7} className="px-8 py-20 text-center text-slate-600 uppercase font-black tracking-widest text-xs sm:text-sm">
                         {loading ? (
                           <div className="flex flex-col items-center gap-4">
-                            <Loader2 size={24} className="animate-spin text-intuition-primary" />
-                            SYNCHRONIZING_NETWORK_DATA...
+                            <PageLoadingSpinner size="md" />
+                            <span className="text-xs text-slate-500 font-sans">Loading positions…</span>
                           </div>
                         ) : 'NULL_POSITIONS_DETECTED'}
                       </td>

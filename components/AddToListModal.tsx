@@ -7,7 +7,7 @@ import { X, Plus, Loader2, Lock } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
-import { createSemanticTriple, getConnectedAccount, checkProxyApproval, grantProxyApproval, markProxyApproved } from '../services/web3';
+import { createSemanticTriple, getConnectedAccount, getProxyApprovalStatus, grantProxyApproval, markProxyApproved } from '../services/web3';
 import { LIST_PREDICATE_ID } from '../constants';
 import { playClick, playHover } from '../services/audio';
 import { toast } from './Toast';
@@ -102,7 +102,7 @@ const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, listId, listLab
     const addLog = (msg: string) => setTxLogs((prev) => [...prev, msg]);
     try {
       let lastHash: string | undefined;
-      const approved = await checkProxyApproval(acc);
+      const approved = await getProxyApprovalStatus(acc);
       if (!approved) {
         addLog(`Enabling proxy...`);
         await grantProxyApproval(acc);

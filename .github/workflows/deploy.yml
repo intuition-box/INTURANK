@@ -51,6 +51,8 @@ jobs:
           npm run build
         env:
           API_KEY: ${{ secrets.API_KEY }}
+          # Canonical public URL for WalletConnect / RainbowKit metadata (baked in at build time)
+          VITE_APP_URL: https://inturank.intuition.box
           VITE_EMAIL_API_URL: ${{ secrets.VITE_EMAIL_API_URL }}
           VITE_GRAPHQL_URL: ${{ vars.VITE_GRAPHQL_URL }}
           VITE_MAINTENANCE_MODE: ${{ vars.VITE_MAINTENANCE_MODE || 'false' }}

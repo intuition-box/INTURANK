@@ -161,7 +161,9 @@ const AgentProfile: React.FC = () => {
           </div>
           
           <div className="flex-1 text-center md:text-left">
-            <h1 className="text-4xl font-black text-white font-display uppercase tracking-tight text-glow mb-2">{agent.label || 'Anonymous Atom'}</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold text-white font-display tracking-tight leading-tight mb-2 break-words">
+              {agent.label || 'Anonymous atom'}
+            </h1>
             <div className="flex flex-col md:flex-row gap-4 text-[10px] text-slate-500 font-mono mb-6 uppercase">
               <span className="bg-black/30 px-3 py-1 border border-slate-800 break-all">UID: {agent.id}</span>
               {agent.block_number && (

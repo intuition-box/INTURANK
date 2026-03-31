@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { Wallet, Loader2, UserCircle } from 'lucide-react';
 import { connectWallet } from '../services/web3';
+import { PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
+import { PageLoading } from '../components/PageLoading';
 import { playClick, playHover } from '../services/audio';
 
 /**
@@ -19,9 +21,12 @@ const Account: React.FC = () => {
 
   if (address) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-10 h-10 text-intuition-primary animate-spin" />
-      </div>
+      <PageLoading
+        variant="section"
+        message="Opening profile…"
+        backLink={null}
+        className="min-h-[60vh] bg-[#020308] w-full"
+      />
     );
   }
 
@@ -40,8 +45,8 @@ const Account: React.FC = () => {
     <div className="min-h-[60vh] flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-black/60 border-2 border-intuition-primary/30 p-8 clip-path-slant text-center">
         <UserCircle className="w-16 h-16 text-slate-600 mx-auto mb-6" />
-        <h1 className="text-xl font-black font-mono tracking-widest text-white uppercase mb-2">Profile</h1>
-        <p className="text-slate-400 text-sm font-mono mb-8">Connect your wallet to view your profile and manage settings.</p>
+        <h1 className={`${PAGE_HERO_TITLE} text-center`}>Profile</h1>
+        <p className={`${PAGE_HERO_BODY} text-center mb-8`}>Connect your wallet to open your public profile and settings.</p>
         <button
           onClick={handleConnect}
           onMouseEnter={playHover}

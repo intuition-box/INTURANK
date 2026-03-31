@@ -1,19 +1,29 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { ArrowRight, Shield, Activity, ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap } from 'lucide-react';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
-import { formatEther } from 'viem';
+import { formatEther, getAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
-import { getAllAgents, getHomeAtomSections, getNetworkStats, getPnlLeaderboard, getPnlLeaderboardPeriod, getPnlLeaderboardPeriodAccount, buildPnlLeaderboardPeriodArgs, prepareQueryIds, getPnlLeaderboardPeriodMinThreshold } from '../services/graphql';
-import { CURRENCY_SYMBOL, SEASON_2_EPOCH_ID, SEASON_2_EPOCH_8_DATE_RANGE, SEASON_2_EPOCH_8_START, SEASON_2_EPOCH_8_END, SEASON_2_EPOCHS } from '../constants';
+import { getAllAgents, buildHomeAtomSectionsFrom, getNewlyCreatedAtoms, getNetworkStats } from '../services/graphql';
+import { CURRENCY_SYMBOL } from '../constants';
 import { toast } from '../components/Toast';
-import { getConnectedAccount, depositToVault, toggleWatchlist, isInWatchlist, getWalletBalance } from '../services/web3';
+import {
+  getConnectedAccount,
+  depositToVault,
+  toggleWatchlist,
+  isInWatchlist,
+  getWalletBalance,
+  getProxyApprovalStatus,
+  grantProxyApproval,
+  hasCachedProxyApproval,
+} from '../services/web3';
 import Logo from '../components/Logo';
+import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import MuiBox from '@mui/material/Box';
@@ -141,16 +151,30 @@ const MissionTerminal: React.FC = () => {
 
 interface SwipeToBuyProps {
   onConfirm: () => void;
+  /** When true, swipe is inert (e.g. waiting for protocol proxy approval). */
+  disabled?: boolean;
+  /** Parent async work in flight — replaces track with status + spinner. */
+  loading?: boolean;
+  /** Distinguish pre-wallet prep vs waiting for wallet signature. */
+  txPhase?: 'preparing' | 'wallet';
 }
 
-const SwipeToBuy: React.FC<SwipeToBuyProps> = ({ onConfirm }) => {
+const SwipeToBuy: React.FC<SwipeToBuyProps> = ({ onConfirm, disabled, loading = false, txPhase = 'preparing' }) => {
   const [progress, setProgress] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  /** Must not rely on React state for release — state updates async and broke mouseup handling. */
+  const dragActiveRef = useRef(false);
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
 
-  const updateProgress = (clientX: number) => {
+  useEffect(() => {
+    if (loading) setProgress(0);
+  }, [loading]);
+
+  const updateProgress = useCallback((clientX: number) => {
     if (!trackRef.current) return;
     const rect = trackRef.current.getBoundingClientRect();
     const raw = (clientX - rect.left) / rect.width;
@@ -158,68 +182,108 @@ const SwipeToBuy: React.FC<SwipeToBuyProps> = ({ onConfirm }) => {
     progressRef.current = clamped;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => setProgress(clamped));
-  };
+  }, []);
 
-  const handleEnd = () => {
-    if (!isSwiping) return;
-    setIsSwiping(false);
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    const p = progressRef.current;
-    if (p > 0.65) {
-      setProgress(1);
-      setTimeout(() => {
-        onConfirm();
+  const finishDrag = useCallback(
+    (clientX: number) => {
+      if (!dragActiveRef.current) return;
+      updateProgress(clientX);
+      dragActiveRef.current = false;
+      setIsSwiping(false);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      const p = progressRef.current;
+      if (p > 0.65) {
+        setProgress(1);
+        queueMicrotask(() => {
+          onConfirmRef.current();
+        });
+      } else {
         setProgress(0);
-      }, 220);
-    } else {
-      setProgress(0);
+      }
+    },
+    [updateProgress]
+  );
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (disabled || loading) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    dragActiveRef.current = true;
+    setIsSwiping(true);
+    progressRef.current = 0;
+    setProgress(0);
+    updateProgress(e.clientX);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragActiveRef.current) return;
+    e.preventDefault();
+    updateProgress(e.clientX);
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragActiveRef.current) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
     }
+    finishDrag(e.clientX);
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsSwiping(true);
-    setProgress(0);
-    progressRef.current = 0;
-    const onMouseMove = (ev: MouseEvent) => updateProgress(ev.clientX);
-    const onMouseUp = () => {
-      handleEnd();
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+  const onPointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragActiveRef.current) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    finishDrag(e.clientX);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    e.preventDefault();
-    setIsSwiping(true);
-    setProgress(0);
-    progressRef.current = 0;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isSwiping) return;
-    const touch = e.touches[0];
-    if (touch) updateProgress(touch.clientX);
-  };
-
-  const handleTouchEnd = () => {
-    handleEnd();
-  };
+  if (loading) {
+    const title = txPhase === 'wallet' ? 'Confirm in wallet' : 'Preparing transaction';
+    const sub =
+      txPhase === 'wallet'
+        ? 'Check your wallet extension — approve the deposit.'
+        : 'Verifying protocol & preparing your deposit…';
+    return (
+      <div
+        className="relative w-full min-h-[52px] rounded-full border-2 border-intuition-primary/50 bg-[#050814]/90 flex items-center gap-3 px-4 py-2.5 shadow-[inset_0_0_20px_rgba(0,243,255,0.08)]"
+        role="status"
+        aria-busy="true"
+        aria-label={title}
+      >
+        <Loader2 className="w-5 h-5 text-intuition-primary animate-spin shrink-0" aria-hidden />
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+          <span className="text-[11px] font-black font-display text-white uppercase tracking-[0.18em] truncate">{title}</span>
+          <span className="text-[10px] text-slate-500 font-mono leading-snug">{sub}</span>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-intuition-primary/15 overflow-hidden rounded-b-full">
+          <div className="h-full w-2/5 max-w-[45%] bg-intuition-primary/70 rounded-full animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       ref={trackRef}
-      onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      className="relative w-full h-12 rounded-full swipe-to-buy-track border-2 border-intuition-primary/40 overflow-hidden select-none group touch-none"
-      style={{ cursor: isSwiping ? 'grabbing' : 'grab' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      className={`relative w-full h-12 rounded-full swipe-to-buy-track border-2 overflow-hidden select-none group touch-none ${
+        disabled ? 'border-slate-600/50 opacity-50 pointer-events-none' : 'border-intuition-primary/40'
+      }`}
+      style={{ cursor: disabled ? 'not-allowed' : isSwiping ? 'grabbing' : 'grab', touchAction: 'none' }}
+      aria-disabled={disabled}
     >
       {/* Progress fill */}
       <div
@@ -229,12 +293,12 @@ const SwipeToBuy: React.FC<SwipeToBuyProps> = ({ onConfirm }) => {
       {/* Label */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
         <span className="text-[11px] font-black font-display text-slate-400 group-hover:text-intuition-primary/90 transition-colors uppercase tracking-[0.2em]">
-          {progress > 0.65 ? '◆ RELEASE TO CONFIRM ◆' : '→ SWIPE TO BUY →'}
+          {disabled ? 'Enable protocol above' : progress > 0.65 ? '◆ RELEASE TO CONFIRM ◆' : '→ SWIPE TO BUY →'}
         </span>
       </div>
-      {/* Thumb */}
+      {/* Thumb: ignore pointer so drags always hit the track (stable coordinates) */}
       <div
-        className="absolute top-1 bottom-1 w-9 rounded-full swipe-to-buy-thumb bg-intuition-primary text-black flex items-center justify-center font-black text-base will-change-transform"
+        className="absolute top-1 bottom-1 w-9 rounded-full swipe-to-buy-thumb bg-intuition-primary text-black flex items-center justify-center font-black text-base will-change-transform pointer-events-none"
         style={{
           left: `calc(0.25rem + ${progress} * (100% - 2.75rem))`,
           transition: isSwiping ? 'none' : 'left 0.15s ease-out',
@@ -731,6 +795,10 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [walletBalance, setWalletBalance] = useState('0');
+  /** null = loading / unknown; false = show enable CTA; true = fee proxy approved */
+  const [proxyApproved, setProxyApproved] = useState<boolean | null>(null);
+  const [enablingProxy, setEnablingProxy] = useState(false);
+  const [txPhase, setTxPhase] = useState<'preparing' | 'wallet'>('preparing');
   const price = agent ? parseFloat(formatEther(BigInt(agent.currentSharePrice || '0')) || '0').toFixed(4) : '0';
 
   useEffect(() => {
@@ -740,6 +808,48 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
       setWalletBalance('0');
     }
   }, [isOpen, walletAddress]);
+
+  useEffect(() => {
+    if (!isOpen || !walletAddress) {
+      setProxyApproved(null);
+      return;
+    }
+    const addr = getAddress(walletAddress as `0x${string}`);
+    // Instant UI: localStorage says they already enabled for this address
+    setProxyApproved(hasCachedProxyApproval(addr) ? true : null);
+    let cancelled = false;
+    getProxyApprovalStatus(addr)
+      .then((ok) => {
+        if (!cancelled) setProxyApproved(ok);
+      })
+      .catch(() => {
+        if (!cancelled) setProxyApproved(hasCachedProxyApproval(addr));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, walletAddress]);
+
+  const handleEnableProxy = async () => {
+    if (!walletAddress || enablingProxy) return;
+    const acc = (await getConnectedAccount()) ?? getAddress(walletAddress as `0x${string}`);
+    if (!acc) {
+      toast.error('Wallet not ready.');
+      return;
+    }
+    setEnablingProxy(true);
+    try {
+      playClick();
+      toast.info('Confirm approval in your wallet…');
+      await grantProxyApproval(acc);
+      setProxyApproved(true);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || 'Protocol enable failed.');
+    } finally {
+      setEnablingProxy(false);
+    }
+  };
 
   const handleConfirm = async () => {
     if (loading) return;
@@ -752,15 +862,30 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
       toast.error('Enter amount to deploy.');
       return;
     }
-    const acc = await getConnectedAccount();
-    if (!acc) {
-      toast.error('Wallet not ready.');
-      return;
-    }
     setLoading(true);
+    setTxPhase('preparing');
     try {
+      const acc = (await getConnectedAccount()) ?? getAddress(walletAddress as `0x${string}`);
+      if (!acc) {
+        toast.error('Wallet not ready.');
+        return;
+      }
+      const fastPath = hasCachedProxyApproval(acc);
+      const approved = await getProxyApprovalStatus(acc, {
+        readRetries: fastPath ? 1 : 5,
+        readDelayMs: 280,
+      });
+      if (!approved) {
+        setProxyApproved(false);
+        toast.error(
+          'Could not confirm protocol proxy on-chain. If you just enabled it, wait a few seconds and try again.'
+        );
+        return;
+      }
+      setProxyApproved(true);
+      setTxPhase('wallet');
       playClick();
-      toast.info('Awaiting signature…');
+      toast.info('Confirm in your wallet…');
       await depositToVault(trimmed, agent.id, acc, 1, (log) => toast.info(log));
       toast.success('Acquisition complete.');
       onSuccess(agent.label || 'this atom');
@@ -770,8 +895,11 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
       toast.error(err?.message || 'Transaction failed.');
     } finally {
       setLoading(false);
+      setTxPhase('preparing');
     }
   };
+
+  const swipeDisabled = Boolean(walletAddress && proxyApproved !== true);
 
   return (
     <Drawer
@@ -791,7 +919,7 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
           top: '22%',
           transform: 'translateY(-50%)',
           bottom: 'auto',
-          maxHeight: 520,
+          maxHeight: 600,
           borderTopLeftRadius: 16,
           borderBottomLeftRadius: 16,
           overflow: 'hidden',
@@ -927,16 +1055,60 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
                 ≈ {amount ? (Number(amount) * Number(price)).toFixed(3) : '0'} {CURRENCY_SYMBOL}
               </Typography>
             </MuiBox>
+            {walletAddress && proxyApproved === null && (
+              <MuiBox sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                <Loader2 size={14} className="animate-spin shrink-0 text-intuition-primary" />
+                <Typography sx={{ fontSize: 10, color: 'rgba(148,163,184,0.85)', fontFamily: "'Fira Code', monospace" }}>
+                  Checking protocol…
+                </Typography>
+              </MuiBox>
+            )}
+            {walletAddress && proxyApproved === false && (
+              <MuiBox
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(245,158,11,0.06)',
+                  border: '1px solid rgba(245,158,11,0.35)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1,
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontFamily: "'Fira Code', monospace",
+                    fontSize: 9,
+                    color: 'rgba(251,191,36,0.95)',
+                    letterSpacing: '0.2em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Protocol proxy
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'rgba(226,232,240,0.88)', lineHeight: 1.45 }}>
+                  Approve the fee proxy once so deposits can run through the protocol.
+                </Typography>
+                <button
+                  type="button"
+                  onClick={handleEnableProxy}
+                  disabled={enablingProxy}
+                  className="w-full py-2.5 px-3 rounded-xl font-black text-[10px] uppercase tracking-[0.2em] transition-all bg-amber-500/90 text-black hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed border border-amber-400/50"
+                >
+                  {enablingProxy ? 'Waiting for wallet…' : 'Enable protocol'}
+                </button>
+              </MuiBox>
+            )}
             <MuiBox sx={{ pt: 2 }}>
               <Typography sx={{ mb: 1.5, fontFamily: "'Fira Code', monospace", fontSize: 9, color: 'rgba(0,243,255,0.6)', letterSpacing: '0.25em', textTransform: 'uppercase' }}>
                 DEPLOY
               </Typography>
-              <SwipeToBuy onConfirm={handleConfirm} />
-              {loading && (
-                <Typography sx={{ mt: 1.5, fontSize: 11, color: 'rgba(148,163,184,0.7)', textAlign: 'center', fontFamily: "'Fira Code', monospace" }}>
-                  Processing…
-                </Typography>
-              )}
+              <SwipeToBuy
+                onConfirm={handleConfirm}
+                disabled={swipeDisabled}
+                loading={loading}
+                txPhase={txPhase}
+              />
             </MuiBox>
           </MuiBox>
         )}
@@ -952,189 +1124,61 @@ const Home: React.FC = () => {
   const [atomSections, setAtomSections] = useState<{ roiDaily: any[]; byMarketcap: any[]; newlyCreated: any[] }>({ roiDaily: [], byMarketcap: [], newlyCreated: [] });
   const [buyPanelAgent, setBuyPanelAgent] = useState<any | null>(null);
   const [acquisitionSuccess, setAcquisitionSuccess] = useState<{ agentLabel: string } | null>(null);
-  const [pnlTop, setPnlTop] = useState<any[]>([]);
-  const [pnlLoading, setPnlLoading] = useState(true);
-  const [userPnlPosition, setUserPnlPosition] = useState<{ rank: number; account_label?: string; total_pnl_raw?: string; pnl_pct?: number } | null>(null);
   const { openConnectModal } = useConnectModal();
   const { address: walletAddress } = useAccount();
-  const [selectedEpochId, setSelectedEpochId] = useState<number>(() => {
-    const current = SEASON_2_EPOCHS.find((e) => e.isCurrent)?.id;
-    return current ?? SEASON_2_EPOCH_ID ?? 8;
-  });
-  const [sortMetric, setSortMetric] = useState<'REALIZED_PNL' | 'REALIZED_ROI_PCT'>('REALIZED_PNL');
-  const [epochMenuOpen, setEpochMenuOpen] = useState(false);
-  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
-  const selectedEpoch =
-    SEASON_2_EPOCHS.find((e) => e.id === selectedEpochId) ||
-    SEASON_2_EPOCHS.find((e) => e.id === SEASON_2_EPOCH_ID) ||
-    SEASON_2_EPOCHS[0];
+  const [season2Anchor, setSeason2Anchor] = useState<HTMLElement | null>(null);
+  const [season2LoadEnabled, setSeason2LoadEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!season2Anchor) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setSeason2LoadEnabled(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setSeason2LoadEnabled(true);
+      },
+      { rootMargin: '360px 0px', threshold: 0.01 }
+    );
+    io.observe(season2Anchor);
+    return () => io.disconnect();
+  }, [season2Anchor]);
 
   useEffect(() => {
     const initData = async () => {
       try {
-        const agentsData = await getAllAgents().catch(() => ({ items: [], hasMore: false }));
+        const [agentsData, netStats, newlyCreated] = await Promise.all([
+          getAllAgents(40, 0).catch(() => ({ items: [] as any[], hasMore: false })),
+          getNetworkStats().catch(() => ({ tvl: '0', atoms: 0, signals: 0, positions: 0 })),
+          getNewlyCreatedAtoms(10).catch(() => []),
+        ]);
         const agents = agentsData.items || [];
-        const topAgents = agents.slice(0, 15).map(a => {
-           const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
-           const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
-           const price = shares > 0 ? (assets / shares).toFixed(4) : "0.0001";
-           return { symbol: (a.label || 'NODE').toUpperCase().slice(0, 12), price, isUp: Math.random() > 0.45 };
+        const topAgents = agents.slice(0, 15).map((a) => {
+          const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
+          const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
+          const price = shares > 0 ? (assets / shares).toFixed(4) : '0.0001';
+          return { symbol: (a.label || 'NODE').toUpperCase().slice(0, 12), price, isUp: Math.random() > 0.45 };
         });
         setTickerData(topAgents);
-        const sections = await getHomeAtomSections(10).catch(() => ({ roiDaily: [], byMarketcap: [], newlyCreated: [] }));
-        setAtomSections(sections);
-        const netStats = await getNetworkStats().catch(() => ({ tvl: "0", atoms: 0, signals: 0, positions: 0 }));
+        setAtomSections(buildHomeAtomSectionsFrom(agents, newlyCreated, 10));
         setStats(netStats);
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+      }
     };
     initData();
   }, []);
 
-  // Season 2 PnL leaderboard — reacts to epoch + sort metric
-  useEffect(() => {
-    const fetchPnl = async () => {
-      setPnlLoading(true);
-      const epoch = selectedEpoch || {
-        id: SEASON_2_EPOCH_ID,
-        start: SEASON_2_EPOCH_8_START,
-        end: SEASON_2_EPOCH_8_END,
-      };
-      try {
-        // For min-threshold endpoint, mirror backend usage closely: only pass dates (+ internal min threshold),
-        // and sort client-side by the selected metric.
-        const baseArgs: Record<string, unknown> = {
-          // @ts-expect-error epoch typing is narrow on fallback literal
-          p_start_date: epoch.start,
-          // @ts-expect-error epoch typing is narrow on fallback literal
-          p_end_date: epoch.end,
-        };
-        const pnlMin = await getPnlLeaderboardPeriodMinThreshold(baseArgs, 50);
-        if (pnlMin && pnlMin.length > 0) {
-          const sorted = [...pnlMin].sort((a: any, b: any) => {
-            if (sortMetric === 'REALIZED_ROI_PCT') {
-              const av = Number(a.realized_pnl_pct ?? 0);
-              const bv = Number(b.realized_pnl_pct ?? 0);
-              return bv - av;
-            }
-            const parseValue = (v: any) => {
-              if (v == null) return 0;
-              const num = Number(String(v).replace(/[^\d.-]/g, ''));
-              return Number.isFinite(num) ? num : 0;
-            };
-            const av = parseValue(a.realized_pnl_formatted);
-            const bv = parseValue(b.realized_pnl_formatted);
-            return bv - av;
-          });
-          setPnlTop(sorted.slice(0, 10));
-        } else {
-          const args = buildPnlLeaderboardPeriodArgs(
-            // @ts-expect-error epoch typing is narrow on fallback literal
-            epoch.start,
-            // @ts-expect-error epoch typing is narrow on fallback literal
-            epoch.end,
-            { limit: 10 }
-          );
-          const pnl = await getPnlLeaderboardPeriod(args, 10);
-          if (pnl && pnl.length > 0) {
-            setPnlTop(pnl.slice(0, 10));
-          } else {
-            const fallback = await getPnlLeaderboard(0, 10);
-            setPnlTop((fallback || []).slice(0, 10));
-          }
-        }
-      } catch (e) {
-        console.warn("Season 2 PnL period fetch failed, using fallback:", e);
-        try {
-          const fallback = await getPnlLeaderboard(0, 10);
-          setPnlTop((fallback || []).slice(0, 10));
-        } catch (e2) {
-          console.error("PnL leaderboard fetch failed:", e2);
-          setPnlTop([]);
-        }
-      } finally {
-        setPnlLoading(false);
-      }
-    };
-    fetchPnl();
-  }, [selectedEpochId, sortMetric]);
-
-  // Live polling for NEWLY CREATED — pauses when tab is hidden to avoid timer backlog and jank
+  // Live polling for NEWLY CREATED — lightweight (events + vaults only, no duplicate getAllAgents)
   useEffect(() => {
     const poll = async () => {
-      const sections = await getHomeAtomSections(20).catch(() => ({ roiDaily: [], byMarketcap: [], newlyCreated: [] }));
-      setAtomSections(prev => ({ ...prev, newlyCreated: sections.newlyCreated }));
+      const raw = await getNewlyCreatedAtoms(20).catch(() => []);
+      if (raw.length > 0) setAtomSections((prev) => ({ ...prev, newlyCreated: raw }));
     };
     return subscribeVisibilityAwareInterval(poll, 5000);
   }, []);
-
-  useEffect(() => {
-    if (!walletAddress) { setUserPnlPosition(null); return; }
-    const fetchUserPosition = async () => {
-      try {
-        const epoch = selectedEpoch || {
-          id: SEASON_2_EPOCH_ID,
-          start: SEASON_2_EPOCH_8_START,
-          end: SEASON_2_EPOCH_8_END,
-        };
-        const args = buildPnlLeaderboardPeriodArgs(
-          // @ts-expect-error epoch typing is narrow on fallback literal
-          epoch.start,
-          // @ts-expect-error epoch typing is narrow on fallback literal
-          epoch.end,
-          { limit: 250 }
-        );
-        let pos = await getPnlLeaderboardPeriodAccount(walletAddress, args);
-        if (pos) {
-          setUserPnlPosition({ rank: pos.rank, account_label: pos.account_label, total_pnl_raw: pos.total_pnl_raw, pnl_pct: pos.pnl_pct });
-          return;
-        }
-        const all = await getPnlLeaderboardPeriod(args, 250);
-        if (all && all.length > 0) {
-          const variants = prepareQueryIds(walletAddress);
-          const found = all.find((e: any) => {
-            const id = (e.account_id || '').trim();
-            return variants.some((v) => v.toLowerCase() === id.toLowerCase());
-          });
-          setUserPnlPosition(found ? { rank: found.rank, account_label: found.account_label, total_pnl_raw: found.total_pnl_raw, pnl_pct: found.pnl_pct } : null);
-          return;
-        }
-        const fallback = await getPnlLeaderboard(0, 250);
-        const variants = prepareQueryIds(walletAddress);
-        const found = fallback?.find((e: any) => {
-          const id = (e.account_id || '').trim();
-          return variants.some((v) => v.toLowerCase() === id.toLowerCase());
-        });
-        setUserPnlPosition(found ? { rank: found.rank, account_label: found.account_label, total_pnl_raw: found.total_pnl_raw, pnl_pct: found.pnl_pct } : null);
-      } catch {
-        try {
-          const fallback = await getPnlLeaderboard(0, 250);
-          const variants = prepareQueryIds(walletAddress);
-          const found = fallback?.find((e: any) => {
-            const id = (e.account_id || '').trim();
-            return variants.some((v) => v.toLowerCase() === id.toLowerCase());
-          });
-          setUserPnlPosition(found ? { rank: found.rank, account_label: found.account_label, total_pnl_raw: found.total_pnl_raw, pnl_pct: found.pnl_pct } : null);
-        } catch {
-          setUserPnlPosition(null);
-        }
-      }
-    };
-    fetchUserPosition();
-  }, [walletAddress, selectedEpochId]);
-
-  // Sync user position from pnlTop when user appears in the table (e.g. top 10)
-  useEffect(() => {
-    if (!walletAddress || pnlLoading || pnlTop.length === 0) return;
-    const variants = prepareQueryIds(walletAddress);
-    const pos = pnlTop.find((e: any) => {
-      const id = (e.account_id || '').trim();
-      return variants.some((v) => v.toLowerCase() === id.toLowerCase());
-    });
-    if (pos) {
-      setUserPnlPosition({ rank: pos.rank, account_label: pos.account_label, total_pnl_raw: pos.total_pnl_raw, pnl_pct: pos.pnl_pct });
-    }
-  }, [walletAddress, pnlTop, pnlLoading]);
 
   useEffect(() => {
     const onWatchlistUpdate = () => setAtomSections((prev) => ({ ...prev }));
@@ -1346,283 +1390,18 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* 2. SEASON 2 LEADERBOARD — second */}
-      <section className="relative overflow-hidden min-w-0 py-12 sm:py-16 border-b border-white/5 bg-gradient-to-b from-[#060a12] via-[#050810] to-[#04060a]">
+      {/* 2. SEASON 2 LEADERBOARD — live snippet (expanded view on /stats) */}
+      <section
+        ref={setSeason2Anchor}
+        className="relative overflow-hidden min-w-0 py-12 sm:py-16 border-b border-white/5 bg-gradient-to-b from-[#060a12] via-[#050810] to-[#04060a]"
+      >
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(251,191,36,0.06),_transparent_50%)] pointer-events-none" />
-        <div className="relative max-w-6xl mx-auto min-w-0 w-full px-4 sm:px-6 md:px-8" style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}>
+        <div
+          className="relative max-w-6xl mx-auto min-w-0 w-full px-4 sm:px-6 md:px-8"
+          style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}
+        >
           <Reveal delay={80}>
-              <div className="flex flex-wrap items-center gap-4 mb-8">
-              <div className="inline-flex items-center gap-4 px-6 py-3.5 rounded-2xl bg-amber-400/10 border-2 border-amber-400 text-amber-300 font-display font-black uppercase tracking-[0.25em] text-sm sm:text-base shadow-[0_0_40px_rgba(251,191,36,0.3)]">
-                <Trophy size={24} className="shrink-0" />
-                <span>Intuition&apos;s Season 2 Leaderboard</span>
-              </div>
-                <span className="text-slate-500 font-mono text-xs uppercase tracking-wider">
-                  Epoch {selectedEpoch.id}
-                  {selectedEpoch.isCurrent ? ' · Current' : ''} · {selectedEpoch.range}
-                </span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black font-display text-white tracking-tighter mb-2 text-glow-white">
-              Wanna rank up?
-            </h2>
-            <p className="text-slate-300 font-mono text-sm sm:text-base mb-8 leading-relaxed">
-              Dive into the{' '}
-              <a
-                href="#trending-atoms"
-                onClick={(e) => {
-                  e.preventDefault();
-                  playClick();
-                  document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                className="font-display font-black text-intuition-primary text-glow-blue hover:text-white hover:shadow-[0_0_12px_rgba(0,243,255,0.6)] transition-all duration-500 cursor-pointer underline decoration-intuition-primary/50 underline-offset-2 hover:decoration-intuition-primary"
-              >
-                Trending Atoms
-              </a>
-              {' '}on the Intuition Network. Swipe, stake, and climb the leaderboard.
-            </p>
-
-            {/* Epoch + Sort controls */}
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-              <div className="flex flex-wrap gap-4">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-slate-500">
-                    Epoch
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { playClick(); setEpochMenuOpen((open) => !open); }}
-                    className="inline-flex items-center justify-between min-w-[180px] px-3 py-2 rounded-lg border border-white/15 bg-black/40 text-xs font-mono text-slate-100 hover:border-amber-400/60 hover:bg-white/5 transition-colors"
-                  >
-                    <span className="flex flex-col text-left">
-                      <span className="font-semibold">
-                        {selectedEpoch.label}{selectedEpoch.isCurrent ? ' · Current' : ''}
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        {selectedEpoch.range}
-                      </span>
-                    </span>
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                  </button>
-                  {epochMenuOpen && (
-                    <div className="mt-1 w-full max-w-xs rounded-lg border border-white/15 bg-black/90 shadow-xl text-xs font-mono z-20">
-                      {SEASON_2_EPOCHS.map((epoch) => (
-                        <button
-                          key={epoch.id}
-                          type="button"
-                          onClick={() => {
-                            playClick();
-                            setSelectedEpochId(epoch.id);
-                            setEpochMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-white/5 ${
-                            epoch.id === selectedEpoch.id ? 'text-amber-300' : 'text-slate-200'
-                          }`}
-                        >
-                          <span>{epoch.label}{epoch.isCurrent ? ' · Current' : ''}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-mono uppercase tracking-[0.25em] text-slate-500">
-                    Sort Metric
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { playClick(); setSortMenuOpen((open) => !open); }}
-                    className="inline-flex items-center justify-between min-w-[180px] px-3 py-2 rounded-lg border border-white/15 bg-black/40 text-xs font-mono text-slate-100 hover:border-amber-400/60 hover:bg-white/5 transition-colors"
-                  >
-                    <span>
-                      {sortMetric === 'REALIZED_PNL' ? 'Realized PnL' : 'Realized ROI%'}
-                    </span>
-                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                  </button>
-                  {sortMenuOpen && (
-                    <div className="mt-1 w-full max-w-xs rounded-lg border border-white/15 bg-black/90 shadow-xl text-xs font-mono z-20">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playClick();
-                          setSortMetric('REALIZED_PNL');
-                          setSortMenuOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-white/5 ${
-                          sortMetric === 'REALIZED_PNL' ? 'text-amber-300' : 'text-slate-200'
-                        }`}
-                      >
-                        <span>Realized PnL</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playClick();
-                          setSortMetric('REALIZED_ROI_PCT');
-                          setSortMenuOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 text-left hover:bg-white/5 ${
-                          sortMetric === 'REALIZED_ROI_PCT' ? 'text-amber-300' : 'text-slate-200'
-                        }`}
-                      >
-                        <span>Realized ROI%</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* User's position — pinned at the very top */}
-            {walletAddress && userPnlPosition && (
-              <div className="mb-6 px-5 py-4 rounded-xl border border-white/10 bg-white/[0.02]">
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                  <div className="flex items-center gap-4">
-                    <span className="text-intuition-primary font-display font-black text-xl">#{userPnlPosition.rank}</span>
-                    <div>
-                      <p className="text-slate-500 text-xs font-medium mb-0.5">Your position</p>
-                      <p className="text-white font-semibold truncate max-w-[200px]">{userPnlPosition.account_label || `${(walletAddress || '').slice(0,8)}...${(walletAddress || '').slice(-4)}`}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {userPnlPosition.pnl_pct != null && (
-                      <span className="text-intuition-success font-mono font-semibold text-sm">+{(Math.abs(Number(userPnlPosition.pnl_pct)) <= 1 ? Number(userPnlPosition.pnl_pct) * 100 : Number(userPnlPosition.pnl_pct)).toFixed(1)}% ROI</span>
-                    )}
-                    {userPnlPosition.total_pnl_raw && (
-                      <span className="text-slate-300 font-mono font-semibold text-sm">
-                        +{parseFloat(formatEther(BigInt(userPnlPosition.total_pnl_raw))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {CURRENCY_SYMBOL}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-            {walletAddress && !userPnlPosition && (
-              <div className="mb-6 py-4 px-5 rounded-2xl bg-black/40 border border-white/10">
-                <p className="text-slate-500 font-mono text-xs uppercase tracking-wider">Connect & trade to see your rank on the leaderboard</p>
-              </div>
-            )}
-
-            {/* Actual leaderboard table */}
-            <div className="rounded-2xl border-2 border-white/10 bg-black/40 overflow-hidden shadow-xl mb-8 min-w-0">
-              <div className="overflow-x-auto overflow-y-visible">
-                <table className="w-full text-left font-mono border-collapse min-w-[520px] text-xs sm:text-sm">
-                  <thead className="bg-black/60 border-b border-white/10">
-                    <tr>
-                      <th className="px-3 sm:px-6 py-3 sm:py-4 w-16 sm:w-20 text-center text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">RANK</th>
-                      <th className="px-3 sm:px-6 py-3 sm:py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">USER</th>
-                      <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">PNL</th>
-                      <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">ROI%</th>
-                      <th className="px-3 sm:px-6 py-3 sm:py-4 w-16 sm:w-24"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {pnlLoading ? (
-                      <tr>
-                        <td colSpan={5} className="px-4 sm:px-6 py-16 text-center">
-                          <div className="flex flex-col items-center gap-4">
-                            <Loader2 className="w-10 h-10 text-intuition-primary animate-spin" />
-                            <span className="text-slate-500 font-mono text-sm uppercase tracking-wider">Loading leaderboard…</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : pnlTop.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-4 sm:px-6 py-16 text-center text-slate-500 font-mono text-sm uppercase tracking-wider">
-                          No leaderboard data available
-                        </td>
-                      </tr>
-                    ) : (() => {
-                      const top10 = pnlTop.slice(0, 10);
-                      const walletVariants = walletAddress ? prepareQueryIds(walletAddress) : [];
-                      const userInTop = top10.find((x: any) => {
-                        const id = (x.account_id || '').trim();
-                        return walletVariants.some((v) => v.toLowerCase() === id.toLowerCase());
-                      });
-                      const ordered = userInTop ? [userInTop, ...top10.filter((x: any) => x !== userInTop)] : top10;
-                      return ordered.map((e: any, i: number) => {
-                      let pnlDisplay = '';
-                      let pnlNumeric = 0;
-                      if (e.realized_pnl_formatted != null) {
-                        pnlDisplay = String(e.realized_pnl_formatted);
-                        const num = Number(String(e.realized_pnl_formatted).replace(/[^\d.-]/g, ''));
-                        pnlNumeric = Number.isFinite(num) ? num : 0;
-                      } else {
-                        try {
-                          const pnlEth = parseFloat(formatEther(BigInt(e.total_pnl_raw || '0')));
-                          pnlNumeric = pnlEth;
-                          pnlDisplay = `${pnlEth.toLocaleString(undefined, {
-                            minimumFractionDigits: 1,
-                            maximumFractionDigits: 1,
-                          })} ${CURRENCY_SYMBOL}`;
-                        } catch {
-                          pnlNumeric = 0;
-                          pnlDisplay = `0.0 ${CURRENCY_SYMBOL}`;
-                        }
-                      }
-                      const pctRaw =
-                        e.realized_pnl_pct != null
-                          ? Number(e.realized_pnl_pct)
-                          : e.pnl_pct != null
-                          ? Number(e.pnl_pct)
-                          : 0;
-                      const pct = Math.abs(pctRaw) <= 1 ? pctRaw * 100 : pctRaw;
-                      const id = (e.account_id || '').trim();
-                      const isUser = walletAddress && walletVariants.some((v) => v.toLowerCase() === id.toLowerCase());
-                      const label = e.account_label || `${(e.account_id || '').slice(0, 10)}...${(e.account_id || '').slice(-6)}`;
-                      const displayRank = i + 1;
-                      const rankColor = displayRank === 1 ? 'text-amber-400' : displayRank === 2 ? 'text-slate-300' : displayRank === 3 ? 'text-amber-600' : 'text-slate-500';
-                      return (
-                        <tr key={e.account_id || i} className={`hover:bg-white/5 transition-colors ${isUser ? 'bg-intuition-primary/10 border-l-4 border-l-intuition-primary' : ''}`}>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-center">
-                            <span className={`font-black font-display text-sm sm:text-lg ${rankColor}`}>#{displayRank}</span>
-                          </td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4">
-                            <div className="flex items-center gap-2 sm:gap-3">
-                              <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-slate-800 overflow-hidden flex-shrink-0 border border-white/10">
-                                <img src={e.account_image || `https://effigy.im/a/${e.account_id}.png`} alt="" className="w-full h-full object-cover" />
-                              </div>
-                              <span className="font-bold text-white text-xs sm:text-sm truncate max-w-[100px] sm:max-w-[200px]">{label}</span>
-                              {isUser && <span className="text-[9px] font-mono text-intuition-primary uppercase tracking-wider px-2 py-0.5 rounded bg-intuition-primary/20 shrink-0">You</span>}
-                            </div>
-                          </td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-right font-black text-intuition-success text-xs sm:text-base">
-                            {pnlDisplay}
-                          </td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-right font-bold text-intuition-success text-xs sm:text-sm">
-                            {pct >= 0 ? '+' : ''}
-                            {pct.toFixed(1)}%
-                          </td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-right">
-                            <Link to={`/profile/${e.account_id}`} onClick={playClick} className="inline-flex px-3 py-1.5 rounded-lg bg-intuition-primary/20 border border-intuition-primary/50 text-intuition-primary font-mono text-[10px] font-bold uppercase tracking-wider hover:bg-intuition-primary hover:text-black transition-colors">
-                              Profile
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    });
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-4 items-center">
-            <Link
-              to="/stats"
-              onClick={playClick}
-              className="group inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-gradient-to-r from-intuition-primary/20 to-intuition-secondary/20 border-2 border-intuition-primary/50 text-intuition-primary font-black font-mono text-sm uppercase tracking-[0.2em] hover:from-intuition-primary/30 hover:to-intuition-secondary/30 hover:border-intuition-primary hover:text-white hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300"
-            >
-              View full leaderboard
-              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-            </Link>
-            <Link
-              to="/climb"
-              onClick={playClick}
-              className="group inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-amber-400/10 border-2 border-amber-400/50 text-amber-300 font-black font-mono text-sm uppercase tracking-[0.2em] hover:bg-amber-400/20 hover:border-amber-400 hover:text-amber-200 hover:shadow-[0_0_30px_rgba(251,191,36,0.2)] transition-all duration-300"
-            >
-              <Trophy size={18} className="group-hover:scale-110 transition-transform" />
-              Epoch list champions
-            </Link>
-          </div>
+            <Season2LeaderboardPanel variant="home" loadEnabled={season2LoadEnabled} />
           </Reveal>
         </div>
       </section>

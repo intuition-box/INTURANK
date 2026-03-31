@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, ExternalLink, User, Shield } from 'lucide-react';
 import { getAllAgents } from '../services/graphql';
+import { PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
 import { Account } from '../types';
 
 const Agents: React.FC = () => {
@@ -32,9 +33,10 @@ const Agents: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Active Agents</h1>
-          <p className="text-slate-400 mt-1">Discover and stake on Intuition identities.</p>
+        <div className="space-y-2 min-w-0">
+          <p className={PAGE_HERO_EYEBROW}>Directory</p>
+          <h1 className={PAGE_HERO_TITLE}>Active agents</h1>
+          <p className={`${PAGE_HERO_BODY} max-w-xl`}>Browse and search atoms on the graph by label or term id.</p>
         </div>
         
         <div className="relative">

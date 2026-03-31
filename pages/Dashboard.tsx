@@ -177,13 +177,14 @@ const Dashboard: React.FC = () => {
         <div className="w-24 h-24 border-2 border-dashed border-intuition-border rounded-full flex items-center justify-center mb-8 animate-spin-slow">
           <Wallet size={40} className="text-intuition-primary" />
         </div>
-        <h1 className="text-3xl font-bold text-white mb-4 font-display uppercase tracking-widest">Authentication Required</h1>
+        <h1 className="text-3xl font-bold text-white mb-2 font-display tracking-tight">Sign in required</h1>
+        <p className="text-slate-400 text-sm font-sans mb-6 max-w-sm">Connect your wallet to view this dashboard.</p>
         <button 
           onClick={handleConnect}
           onMouseEnter={playHover}
-          className="px-8 py-3 bg-intuition-primary text-black font-bold font-display tracking-wider hover:bg-white transition-colors clip-path-slant hover-glow"
+          className="px-8 py-3 bg-intuition-primary text-black font-semibold font-sans rounded-xl hover:bg-white transition-colors"
         >
-          INITIALIZE_LINK
+          Connect wallet
         </button>
       </div>
     );
@@ -214,7 +215,7 @@ const Dashboard: React.FC = () => {
                     <UserCircle size={12} /> VIEW PUBLIC PROFILE
                 </Link>
             </div>
-            <h1 className="text-3xl md:text-4xl font-black text-white font-display tracking-wider mb-2 text-glow">{account.slice(0, 6)}...{account.slice(-4)}</h1>
+            <h1 className="text-3xl md:text-4xl font-bold text-white font-display tracking-tight mb-2">{account.slice(0, 6)}...{account.slice(-4)}</h1>
             <div className="flex flex-wrap gap-4 justify-center md:justify-start font-mono text-xs">
               <span className="bg-intuition-success/10 text-intuition-success px-2 py-1 border border-intuition-success/30">LEVEL: {positions.length > 0 ? 'TRADER' : 'NOVICE'}</span>
               <span className="bg-intuition-warning/10 text-intuition-warning px-2 py-1 border border-intuition-warning/30">POSITIONS: {positions.length}</span>

@@ -6,13 +6,15 @@ import { getTopPositions, getAllAgents, getTopClaims, getAccountPnlCurrent, getP
 import { reverseResolveENS, resolveENS } from '../services/web3';
 import { formatEther, isAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { formatMarketValue, isSystemVerified } from '../services/analytics';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { PageLoading } from '../components/PageLoading';
+import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
 
-type LeaderboardType = 'STAKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
+type LeaderboardType = 'STAKERS' | 'SEASON_2' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
 
 interface LeaderboardEntry {
   rank: number;
@@ -29,11 +31,53 @@ interface LeaderboardEntry {
   verified?: boolean;
 }
 
-const PNL_CACHE_MS = 2 * 60 * 1000; // 2 minutes
+const PNL_CACHE_MS = 5 * 60 * 1000; // 5 minutes (memory + sessionStorage)
+const PNL_STORAGE_KEY = 'inturank_stats_pnl_lb_v1';
+const PNL_FETCH_LIMIT = 20;
+
+const VALID_LB_TABS: LeaderboardType[] = ['STAKERS', 'SEASON_2', 'PNL', 'AGENTS_SUPPORT', 'AGENTS_CONTROVERSY', 'CLAIMS'];
+
+function parseTabParam(searchParams: URLSearchParams): LeaderboardType {
+  const raw = searchParams.get('tab');
+  if (!raw) return 'STAKERS';
+  if (raw.toLowerCase() === 'season2') return 'SEASON_2';
+  const u = raw.toUpperCase() as LeaderboardType;
+  if (VALID_LB_TABS.includes(u)) return u;
+  return 'STAKERS';
+}
+
+function tabParamForLeaderboard(tab: LeaderboardType): string {
+  if (tab === 'SEASON_2') return 'season2';
+  return tab.toLowerCase();
+}
+
+function loadPnlFromStorage(): { entries: LeaderboardEntry[]; at: number } | null {
+  try {
+    const s = sessionStorage.getItem(PNL_STORAGE_KEY);
+    if (!s) return null;
+    const o = JSON.parse(s) as { entries?: LeaderboardEntry[]; at?: number };
+    if (!o?.entries?.length || typeof o.at !== 'number') return null;
+    if (Date.now() - o.at > PNL_CACHE_MS) return null;
+    return { entries: o.entries, at: o.at };
+  } catch {
+    return null;
+  }
+}
+
+function savePnlToStorage(entries: LeaderboardEntry[], at: number) {
+  try {
+    sessionStorage.setItem(PNL_STORAGE_KEY, JSON.stringify({ entries, at }));
+  } catch {
+    /* quota / private mode */
+  }
+}
 
 const Stats: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<LeaderboardType>('STAKERS');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const initialTab = parseTabParam(searchParams);
+  const [activeTab, setActiveTab] = useState<LeaderboardType>(initialTab);
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -59,50 +103,66 @@ const Stats: React.FC = () => {
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
 
-  // --- NAME RESOLUTION EFFECT ---
+  useEffect(() => {
+    setActiveTab(parseTabParam(searchParams));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (loading) return;
+    const hash = location.hash.replace(/^#/, '');
+    if (!hash) return;
+    const delay =
+      activeTab === 'SEASON_2' && (hash === 'season2-champions' || hash === 'season2-panel') ? 550 : 200;
+    const t = window.setTimeout(() => {
+      document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, delay);
+    return () => window.clearTimeout(t);
+  }, [loading, location.hash, activeTab, data.length]);
+
+  // --- NAME RESOLUTION EFFECT (PnL: parallel + cap so the tab stays snappy) ---
   useEffect(() => {
       if (loading || data.length === 0 || (activeTab !== 'STAKERS' && activeTab !== 'PNL')) return;
 
       const resolveUnknowns = async () => {
-          let hasUpdates = false;
           const updatedData = [...data];
-          const topItems = updatedData.slice(0, 50);
-          
-          for (let i = 0; i < topItems.length; i++) {
-              const item = topItems[i];
+          const limit = activeTab === 'PNL' ? 14 : 50;
+          const topItems = updatedData.slice(0, limit);
+          const patches = await Promise.all(
+            topItems.map(async (item, i) => {
               if (item.label.startsWith('Trader 0x')) {
-                  try {
-                      const ens = await reverseResolveENS(item.id);
-                      if (ens && ens !== item.label) {
-                          updatedData[i] = { 
-                              ...item, 
-                              label: ens,
-                              image: updatedData[i].image || `https://effigy.im/a/${item.id}.png`
-                          };
-                          hasUpdates = true;
-                      } else if (!updatedData[i].image) {
-                          updatedData[i] = {
-                              ...item,
-                              image: `https://effigy.im/a/${item.id}.png`
-                          };
-                          hasUpdates = true;
-                      }
-                  } catch {
-                      if (!updatedData[i].image) {
-                          updatedData[i] = {
-                              ...item,
-                              image: `https://effigy.im/a/${item.id}.png`
-                          };
-                          hasUpdates = true;
-                      }
+                try {
+                  const ens = await reverseResolveENS(item.id);
+                  if (ens && ens !== item.label) {
+                    return {
+                      i,
+                      next: {
+                        ...item,
+                        label: ens,
+                        image: item.image || `https://effigy.im/a/${item.id}.png`,
+                      },
+                    };
                   }
+                  if (!item.image) {
+                    return { i, next: { ...item, image: `https://effigy.im/a/${item.id}.png` } };
+                  }
+                } catch {
+                  if (!item.image) {
+                    return { i, next: { ...item, image: `https://effigy.im/a/${item.id}.png` } };
+                  }
+                }
               } else if (!item.image) {
-                  updatedData[i] = {
-                      ...item,
-                      image: `https://effigy.im/a/${item.id}.png`
-                  };
-                  hasUpdates = true;
+                return { i, next: { ...item, image: `https://effigy.im/a/${item.id}.png` } };
               }
+              return null;
+            })
+          );
+
+          let hasUpdates = false;
+          for (const p of patches) {
+            if (p) {
+              updatedData[p.i] = p.next;
+              hasUpdates = true;
+            }
           }
 
           if (hasUpdates) {
@@ -114,12 +174,53 @@ const Stats: React.FC = () => {
   }, [data, loading, activeTab]);
 
   const fetchData = async () => {
+    if (activeTab === 'SEASON_2') {
+      setLoading(false);
+      setError(false);
+      setData([]);
+      return;
+    }
     if (activeTab === 'PNL') {
-      const cached = pnlCacheRef.current;
-      if (cached && Date.now() - cached.at < PNL_CACHE_MS) {
-        setData(cached.entries);
+      const mem = pnlCacheRef.current;
+      const disk = loadPnlFromStorage();
+      const fresh =
+        mem && Date.now() - mem.at < PNL_CACHE_MS
+          ? mem
+          : disk && Date.now() - disk.at < PNL_CACHE_MS
+            ? { entries: disk.entries, at: disk.at }
+            : null;
+      if (fresh) {
+        setData(fresh.entries);
         setLoading(false);
         setError(false);
+        pnlCacheRef.current = fresh;
+        try {
+          const pnlRows = await getPnlLeaderboard(0, PNL_FETCH_LIMIT);
+          const sorted = (pnlRows || []).map((row: any) => {
+            const pnlEth = parseFloat(formatEther(BigInt(row.total_pnl_raw || '0')));
+            const pct = row.pnl_pct != null ? Number(row.pnl_pct) : 0;
+            const winRate = row.win_rate != null ? Number(row.win_rate) : 0;
+            return {
+              rank: row.rank ?? 0,
+              id: row.account_id,
+              label: row.account_label || ensNameForDisplay(row.account_id),
+              subLabel: 'PNL_LEADERBOARD',
+              value:
+                (pnlEth >= 0 ? '+' : '') +
+                pnlEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+                ' ' +
+                CURRENCY_SYMBOL,
+              rawValue: pnlEth,
+              image: `https://effigy.im/a/${row.account_id}.png`,
+              subject: { pnl_pct: pct, win_rate: winRate, total_volume_raw: row.total_volume_raw },
+            };
+          });
+          pnlCacheRef.current = { entries: sorted, at: Date.now() };
+          savePnlToStorage(sorted, Date.now());
+          setData(sorted);
+        } catch {
+          /* keep stale */
+        }
         return;
       }
     }
@@ -241,11 +342,9 @@ const Stats: React.FC = () => {
           }));
           setData(sorted);
       } else if (activeTab === 'PNL') {
-          // Request fewer rows so the backend returns faster; API can be slow.
-          const pnlRows = await getPnlLeaderboard(0, 30);
+          const pnlRows = await getPnlLeaderboard(0, PNL_FETCH_LIMIT);
           const sorted = (pnlRows || []).map((row: any) => {
               const pnlEth = parseFloat(formatEther(BigInt(row.total_pnl_raw || '0')));
-              const volEth = parseFloat(formatEther(BigInt(row.total_volume_raw || '0')));
               const pct = row.pnl_pct != null ? Number(row.pnl_pct) : 0;
               const winRate = row.win_rate != null ? Number(row.win_rate) : 0;
               return {
@@ -260,6 +359,7 @@ const Stats: React.FC = () => {
               };
           });
           pnlCacheRef.current = { entries: sorted, at: Date.now() };
+          savePnlToStorage(sorted, Date.now());
           setData(sorted);
       }
     } catch (e) {
@@ -448,17 +548,16 @@ const Stats: React.FC = () => {
       
       <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 relative z-10 min-w-0">
         
-        {/* Header with High-Intensity Glow */}
-        <div className="text-center mb-20 relative">
-          <div className="inline-block relative">
-             <h1 className="text-6xl md:text-8xl font-black text-white font-display uppercase tracking-tight mb-4 text-glow-white relative z-10">
-                LEADERBOARDS
-             </h1>
-             <div className="absolute -inset-8 bg-intuition-primary/10 blur-3xl opacity-50 z-0 rounded-full"></div>
-          </div>
-          <div className="flex items-center justify-center gap-4 text-intuition-primary font-mono text-sm tracking-[0.6em] uppercase mobile-break text-center px-2">
-            <Trophy size={18} className="animate-bounce shrink-0" /> 
-            COMPETITION_DRIVES_INTELLIGENCE
+        {/* Header */}
+        <div className="text-center mb-16 max-w-3xl mx-auto space-y-3">
+          <p className={PAGE_HERO_EYEBROW}>Rankings &amp; reputation</p>
+          <h1 className={PAGE_HERO_TITLE}>Leaderboards</h1>
+          <p className={PAGE_HERO_BODY}>
+            Explore top stakers, PnL, supported atoms, and active claims across the network.
+          </p>
+          <div className="flex items-center justify-center gap-2 pt-2 text-intuition-primary">
+            <Trophy size={18} className="shrink-0" aria-hidden />
+            <span className="text-sm font-sans text-slate-400">Seasonal competition and epochs update over time.</span>
           </div>
         </div>
 
@@ -466,6 +565,7 @@ const Stats: React.FC = () => {
         <div className="flex flex-wrap justify-center gap-3 mb-16 bg-black/40 p-2 border-2 border-slate-900 clip-path-slant backdrop-blur-xl relative z-20 shadow-2xl">
             {[
                 { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-glow-blue' },
+                { id: 'SEASON_2', icon: Trophy, label: 'SEASON 2', color: 'bg-amber-400', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(251,191,36,0.45)]' },
                 { id: 'PNL', icon: TrendingUp, label: 'TOP PNL', color: 'bg-amber-500', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(245,158,11,0.4)]' },
                 { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_25px_#00ff9d]' },
                 { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'Claim entropy', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
@@ -477,7 +577,20 @@ const Stats: React.FC = () => {
                 return (
                     <button 
                         key={tab.id}
-                        onClick={() => { playClick(); setActiveTab(tab.id as any); setSearchQuery(''); }}
+                        onClick={() => {
+                          playClick();
+                          const id = tab.id as LeaderboardType;
+                          setActiveTab(id);
+                          setSearchQuery('');
+                          setSearchParams(
+                            (prev) => {
+                              const n = new URLSearchParams(prev);
+                              n.set('tab', tabParamForLeaderboard(id));
+                              return n;
+                            },
+                            { replace: true }
+                          );
+                        }}
                         onMouseEnter={playHover}
                         className={`min-h-[44px] px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
                             isActive 
@@ -642,18 +755,17 @@ const Stats: React.FC = () => {
         )}
 
         {/* Content Area */}
-        {loading ? (
-           <div className="flex flex-col items-center justify-center h-[500px] gap-8">
-              <div className="relative">
-                  <div className="w-24 h-24 border-4 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="text-intuition-primary animate-pulse" size={32}/>
-                  </div>
-              </div>
-              <div className="text-intuition-primary font-black text-xl animate-pulse font-display tracking-[0.3em] text-glow-blue">
-                {activeTab === 'PNL' ? 'Loading PNL leaderboard…' : 'Loading rankings…'}
-              </div>
-           </div>
+        {activeTab === 'SEASON_2' ? (
+          <div className="max-w-6xl mx-auto w-full animate-in fade-in duration-500">
+            <Season2LeaderboardPanel />
+          </div>
+        ) : loading ? (
+          <PageLoading
+            variant="section"
+            backLink={null}
+            className="min-h-[500px]"
+            message={activeTab === 'PNL' ? 'Loading PNL leaderboard…' : 'Loading rankings…'}
+          />
         ) : error ? (
            <div className="flex flex-col items-center justify-center h-[500px] gap-10 text-center border-2 border-intuition-secondary/20 bg-[#050505] p-20 clip-path-slant shadow-glow-red">
               <ShieldAlert className="text-intuition-secondary animate-pulse" size={80} />
@@ -670,11 +782,19 @@ const Stats: React.FC = () => {
               [NULL_SET] No claim data
            </div>
         ) : activeTab === 'PNL' ? (
-            <div className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500">
+            <div
+              id="network-pnl"
+              className="bg-black border-2 border-slate-900 clip-path-slant overflow-hidden shadow-2xl relative group animate-in fade-in zoom-in-95 duration-500 scroll-mt-28"
+            >
                 <div className="p-4 sm:p-6 md:p-8 border-b-2 border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                    <div className="flex items-center gap-4">
                         <TrendingUp size={24} className="text-amber-500 animate-pulse shrink-0" />
-                        <h3 className="font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase text-lg sm:text-xl">PnL_Leaderboard</h3>
+                        <div>
+                          <h3 className="font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase text-lg sm:text-xl">PnL_Leaderboard</h3>
+                          <p className="text-[11px] text-slate-500 font-sans font-medium normal-case tracking-normal mt-1 max-w-xl">
+                            Network-wide realized PnL (all-time style rankings). Season 2 epochs live under the Season 2 tab.
+                          </p>
+                        </div>
                    </div>
                    <div className="text-[10px] text-slate-700 font-black uppercase tracking-[0.3em]">get_pnl_leaderboard</div>
                 </div>
@@ -693,7 +813,12 @@ const Stats: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {data.map((item, i) => (
-                                <tr key={item.id} className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 30}ms` }}>
+                                <tr
+                                  key={item.id}
+                                  id={i === 0 ? 'pnl-top-row' : undefined}
+                                  className="hover:bg-white/5 transition-all group relative animate-in fade-in slide-in-from-bottom-2"
+                                  style={{ animationDelay: `${i * 30}ms` }}
+                                >
                                     <td className="px-4 md:px-10 py-4 md:py-6 text-center font-black text-slate-700 text-base sm:text-lg group-hover:text-amber-500 transition-colors">#{String(item.rank || i + 1).padStart(2, '0')}</td>
                                     <td className="px-4 md:px-10 py-4 md:py-6">
                                         <div className="flex items-center gap-2 sm:gap-4 bg-slate-900/50 pr-4 sm:pr-6 rounded-none clip-path-slant border border-slate-800 group-hover:border-amber-500/40 transition-colors">
