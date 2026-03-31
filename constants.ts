@@ -1,5 +1,8 @@
 export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
 
+/** `VITE_ARENA_ENABLED=true` → full Arena at `/climb`. Otherwise `/climb` shows a coming-soon placeholder (nav unchanged). */
+export const ARENA_ENABLED = import.meta.env.VITE_ARENA_ENABLED === 'true';
+
 /** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
 export const getGeminiApiKey = (): string => {
   const raw = String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim();
@@ -11,10 +14,10 @@ export const getGeminiApiKey = (): string => {
 
 /**
  * Default model for `@google/genai` generateContent across the app.
- * Set `VITE_GEMINI_MODEL` in `.env.local` to pin a stable ID (e.g. `gemini-2.5-flash`) if a preview is unavailable for your key.
+ * Set `VITE_GEMINI_MODEL` in `.env.local` to pin a model ID (e.g. `gemini-2.0-flash`) if the default is unavailable for your key.
  */
 export const GEMINI_MODEL =
-  (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim() || 'gemini-3-flash-preview';
+  (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim() || 'gemini-2.5-flash';
 
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
@@ -28,6 +31,11 @@ export const GRAPHQL_URL =
   import.meta.env.DEV ? "/v1/graphql" : (import.meta.env.VITE_GRAPHQL_URL || "https://mainnet.intuition.sh/v1/graphql");
 export const EXPLORER_URL = "https://explorer.intuition.systems";
 export const CURRENCY_SYMBOL = "₸";
+
+/** Semantic app release; keep `package.json` `"version"` in sync. */
+export const APP_VERSION = '2.0.0';
+/** Short label for UI chrome (sidebar wordmark, certification strings). */
+export const APP_VERSION_DISPLAY = 'V.2.0';
 
 /** Season 2 / current epoch for period-based PnL leaderboard (get_pnl_leaderboard_period) */
 export const SEASON_2_EPOCH_ID = 8;

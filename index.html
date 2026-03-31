@@ -113,18 +113,18 @@
     <style>
       /* Fluid system-wide animation: liquid, smooth easing */
       :root {
-        --anim-ease: cubic-bezier(0.32, 0.72, 0, 1);
-        --anim-ease-out: cubic-bezier(0.33, 1, 0.68, 1);
-        --anim-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-        --anim-duration-fast: 0.35s;
-        --anim-duration-normal: 0.5s;
-        --anim-duration-slow: 0.7s;
+        --anim-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+        --anim-ease-out: cubic-bezier(0.2, 0.85, 0.25, 1);
+        --anim-ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
+        --anim-duration-fast: 0.18s;
+        --anim-duration-normal: 0.24s;
+        --anim-duration-slow: 0.32s;
       }
       @media (max-width: 768px) {
         :root {
-          --anim-duration-fast: 0.28s;
-          --anim-duration-normal: 0.38s;
-          --anim-duration-slow: 0.5s;
+          --anim-duration-fast: 0.16s;
+          --anim-duration-normal: 0.22s;
+          --anim-duration-slow: 0.28s;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -133,13 +133,6 @@
           --anim-duration-normal: 0.01ms;
           --anim-duration-slow: 0.01ms;
         }
-      }
-
-      * {
-        transition-timing-function: var(--anim-ease-out);
-      }
-      @media (prefers-reduced-motion: reduce) {
-        * { transition-timing-function: step-end; }
       }
 
       html { scroll-behavior: smooth; overflow-x: hidden; }
@@ -631,11 +624,11 @@
 
       /* Page enter: sleek reveal (respects reduced motion via :root vars) */
       @keyframes page-enter {
-        from { opacity: 0; transform: translateY(14px); }
+        from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: translateY(0); }
       }
       @keyframes page-enter-scale {
-        from { opacity: 0; transform: translateY(8px) scale(0.99); }
+        from { opacity: 0; transform: translateY(4px) scale(0.995); }
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
       .animate-page-enter {
@@ -825,8 +818,7 @@
 </head>
   <body>
     <div id="root"></div>
-    <div class="scanlines"></div>
-    <div class="scanline-moving"></div>
+    <div class="scanlines" aria-hidden="true"></div>
     <script type="module" src="./index.tsx"></script>
   <script type="module" src="/index.tsx"></script>
 </body>

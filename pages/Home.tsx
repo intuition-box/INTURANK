@@ -8,6 +8,7 @@ import { ArrowRight, Shield, Activity, ChevronDown, ChevronRight, ChevronUp, Che
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { formatEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
+import { subscribeVisibilityAwareInterval } from '../services/visibility';
 import { getAllAgents, getHomeAtomSections, getNetworkStats, getPnlLeaderboard, getPnlLeaderboardPeriod, getPnlLeaderboardPeriodAccount, buildPnlLeaderboardPeriodArgs, prepareQueryIds, getPnlLeaderboardPeriodMinThreshold } from '../services/graphql';
 import { CURRENCY_SYMBOL, SEASON_2_EPOCH_ID, SEASON_2_EPOCH_8_DATE_RANGE, SEASON_2_EPOCH_8_START, SEASON_2_EPOCH_8_END, SEASON_2_EPOCHS } from '../constants';
 import { toast } from '../components/Toast';
@@ -349,7 +350,7 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
     if (!showCreatedAgo || !agent?.createdAt) return;
     const tick = () => setTimeAgo(formatTimeAgo(agent.createdAt));
     tick();
-    const id = setInterval(tick, 1000);
+    const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
   }, [showCreatedAgo, agent?.createdAt]);
   const price = parseFloat(formatEther(BigInt(agent.currentSharePrice || '0')) || '0').toFixed(4);
@@ -1058,15 +1059,13 @@ const Home: React.FC = () => {
     fetchPnl();
   }, [selectedEpochId, sortMetric]);
 
-  // Live polling for NEWLY CREATED — refresh every 5s. Uses events when available; fallback to atoms by recency when events empty
+  // Live polling for NEWLY CREATED — pauses when tab is hidden to avoid timer backlog and jank
   useEffect(() => {
     const poll = async () => {
       const sections = await getHomeAtomSections(20).catch(() => ({ roiDaily: [], byMarketcap: [], newlyCreated: [] }));
       setAtomSections(prev => ({ ...prev, newlyCreated: sections.newlyCreated }));
     };
-    poll(); // run immediately
-    const id = setInterval(poll, 5000);
-    return () => clearInterval(id);
+    return subscribeVisibilityAwareInterval(poll, 5000);
   }, []);
 
   useEffect(() => {

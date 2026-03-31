@@ -32,7 +32,7 @@ interface Message {
     txOutcome?: TxBroadcastOutcome;
     txHash?: string;
     txError?: string;
-    /** Market / claim detail — atom or triple term id */
+    /** Market / claim detail: atom or triple term id */
     txTermId?: string;
     /** Extra atom txs when running createTripleFromLabels */
     txAtomHashes?: string[];
@@ -47,7 +47,7 @@ function isUserRejectionError(err: unknown): boolean {
 }
 
 const SYSTEM_PROMPT = `
-You are the Intuition Skill Agent — you teach the Intuition Protocol in plain language and help users decide what to do on-chain. The app builds real transactions for them (atoms and triples → IntuRank FeeProxy + MultiVault); users should never have to paste raw hex.
+You are the Intuition Skill Agent. You teach the Intuition Protocol in plain language and help users decide what to do on-chain. The app builds real transactions for them (atoms and triples → IntuRank FeeProxy + MultiVault); users should never have to paste raw hex.
 
 PROTOCOL KNOWLEDGE:
 - Atoms: identities/concepts. Creation uses a protocol fee plus a vault deposit in TRUST.
@@ -57,8 +57,8 @@ PROTOCOL KNOWLEDGE:
 - FeeProxy: ${FEE_PROXY_ADDRESS}
 - Chain ID: ${CHAIN_ID} (Intuition Mainnet)
 
-CREATING A SINGLE ATOM (primary path — simple for everyone):
-When the user wants to create one atom, explain briefly, then output EXACTLY one JSON block in this shape (no "data", no "to", no "value" — the app fills those in):
+CREATING A SINGLE ATOM (primary path, simple for everyone):
+When the user wants to create one atom, explain briefly, then output EXACTLY one JSON block in this shape (no "data", no "to", no "value". The app fills those in):
 \`\`\`json
 {
   "action": "createAtom",
@@ -71,7 +71,7 @@ When the user wants to create one atom, explain briefly, then output EXACTLY one
 - depositTrust is the vault deposit in TRUST as a decimal string. Minimum is **0.5** (same bonding-curve floor as claims); use "0.5" or higher.
 - If the user's wallet is not connected, say they must connect it first, then ask again.
 
-CREATING A TRIPLE (CLAIM) FROM LABELS — app creates missing atoms automatically:
+CREATING A TRIPLE (CLAIM) FROM LABELS. App creates missing atoms automatically:
 When the user wants a semantic claim (subject → predicate → object), use EXACTLY one JSON block:
 \`\`\`json
 {
@@ -84,7 +84,7 @@ When the user wants a semantic claim (subject → predicate → object), use EXA
   "description": "One line: what this claim means"
 }
 \`\`\`
-- **subject**, **predicate**, **object** are human-readable atom names OR existing \`0x\` term ids (66 hex chars). For text labels, the app creates any atom that does not exist yet, then submits the triple — **multiple wallet signatures** may be required (up to one per missing atom + one for the triple); this is normal.
+- **subject**, **predicate**, **object** are human-readable atom names OR existing \`0x\` term ids (66 hex chars). For text labels, the app creates any atom that does not exist yet, then submits the triple. **Multiple wallet signatures** may be required (up to one per missing atom + one for the triple); this is normal.
 - **depositTrust** minimum is **0.5** TRUST (vault deposit for the triple leg).
 - Alternatively, users may pass three term ids if all atoms already exist.
 
@@ -92,10 +92,15 @@ ADVANCED / OTHER ACTIONS:
 Only if the user explicitly needs deposits or other operations not covered above, you may describe what is needed; do not invent long hex strings.
 
 GUIDELINES:
-1. Default tone: helpful and clear — not everyone is a developer.
+1. Default tone: helpful and clear. Not everyone is a developer.
 2. Answer questions about the protocol without forcing a transaction.
 3. For "make an atom" / "create X", use the createAtom JSON block above.
 4. For "link X to Y via Z" / "claim that…" / triple / synapse / claim, use the createTriple JSON block above.
+
+LANGUAGE (MULTILINGUAL):
+- Write your explanations and conversational replies in the **same language** the user is using (e.g. French, Spanish, Japanese, Arabic). If they switch language, follow their latest message. If the message is ambiguous, default to English.
+- JSON blocks must use **English keys only** (\`action\`, \`label\`, \`depositTrust\`, \`chainId\`, \`description\`, \`subject\`, \`predicate\`, \`object\`) so the app can parse and execute. **Values** inside JSON may be in any language (Unicode): atom names, triple parts, and descriptions can match the user's locale and will be processed as protocol metadata.
+- Do not translate JSON keys. Keep \`chainId\` as "1155" unless the app context changes.
 
 CURRENT CONTEXT:
 - MultiVault: ${MULTI_VAULT_ADDRESS}
@@ -127,7 +132,7 @@ function formatGeminiError(error: unknown): string {
         if (m && typeof m === 'string') {
             if (parsed.error?.code === 403 || /leaked|invalid|revoked|permission/i.test(m)) {
                 return (
-                    'API access denied (403). Google flagged this key—often because it was exposed in git, a screenshot, or a public repo. ' +
+                    'API access denied (403). Google flagged this key. Often because it was exposed in git, a screenshot, or a public repo. ' +
                     'Create a new key at https://aistudio.google.com/apikey , put it in `.env.local` as `VITE_GEMINI_API_KEY=...`, restart `npm run dev`, and never commit keys.'
                 );
             }
@@ -155,15 +160,54 @@ type SkillChatProps = {
 };
 
 const SKILL_CHAT_STORAGE_KEY = 'inturank_skill_chat_v1';
-const SKILL_CHAT_MAX_MESSAGES = 120;
+/** Cap persisted history to keep localStorage small and snappy */
+const SKILL_CHAT_MAX_MESSAGES = 48;
 
 const DEFAULT_SKILL_MESSAGES: Message[] = [
     {
         role: 'assistant',
         content:
-            "SYSTEM_ONLINE. I'm the Intuition Skill Agent — ask in plain English (e.g. “create an atom called Cool Project with 0.1 TRUST deposit”). I'll explain and, when you're ready, give you a Sign & Broadcast button — the app builds the transaction for you.",
+            "Hi. I explain Intuition in plain language and help you create atoms or triples when you are ready. Ask anything, or describe what to create (for example: create an atom called My Project with a 0.5 TRUST deposit). You can write in English or another language—I will reply in the same language when possible. When the chain is involved, you will see a short summary and a Sign & broadcast button.",
     },
 ];
+
+/** Keeps chat readable: raw JSON from the model lives in a disclosure instead of inline. */
+function AssistantMessageBody({ content }: { content: string }) {
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    const re = /```json\s*([\s\S]*?)```/gi;
+    let m: RegExpExecArray | null;
+    let key = 0;
+    while ((m = re.exec(content)) !== null) {
+        if (m.index > last) {
+            parts.push(
+                <span key={key++} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                    {content.slice(last, m.index)}
+                </span>
+            );
+        }
+        parts.push(
+            <details key={key++} className="mt-3 rounded-xl border border-white/10 bg-black/30 text-left">
+                <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-slate-500 font-sans hover:text-slate-300 [&::-webkit-details-marker]:hidden flex items-center gap-2">
+                    <span className="text-intuition-primary/90">▸</span> Technical details (JSON)
+                </summary>
+                <pre className="max-h-40 overflow-auto border-t border-white/5 p-3 text-[10px] leading-relaxed text-slate-400 font-mono">{m[1].trim()}</pre>
+            </details>
+        );
+        last = m.index + m[0].length;
+    }
+    if (last === 0) {
+        return <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{content}</div>;
+    }
+    if (last < content.length) {
+        parts.push(
+            <span key={key++} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {content.slice(last)}
+            </span>
+        );
+    }
+    return <div className="space-y-1">{parts}</div>;
+}
 
 function loadSkillChatMessages(): Message[] {
     if (typeof window === 'undefined') return DEFAULT_SKILL_MESSAGES;
@@ -253,7 +297,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         try {
             const apiKey = getGeminiApiKey();
             if (!apiKey) {
-                setMessages(prev => [...prev, { role: 'assistant', content: "Neural uplink restricted. VITE_GEMINI_API_KEY is missing." }]);
+                setMessages(prev => [...prev, { role: 'assistant', content: 'Add VITE_GEMINI_API_KEY to your .env.local file to use the agent.' }]);
                 return;
             }
 
@@ -262,7 +306,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
             // Format history for the models.generateContent API
             const contents = [
                 { role: 'user', parts: [{ text: SYSTEM_PROMPT }] },
-                { role: 'model', parts: [{ text: "UNDERSTOOD. Systems initialized." }] },
+                { role: 'model', parts: [{ text: 'Understood. Ready when you are.' }] },
                 ...messages.slice(1).map(m => ({
                     role: m.role === 'user' ? 'user' : 'model',
                     parts: [{ text: m.content }],
@@ -274,7 +318,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 model: GEMINI_MODEL,
                 contents,
             });
-            const responseText = (result.text ?? (result as any).candidates?.[0]?.content?.parts?.[0]?.text) || "NO_SIGNAL_RECEIVED";
+            const responseText = (result.text ?? (result as any).candidates?.[0]?.content?.parts?.[0]?.text) || 'No response from the model.';
 
             const jsonMatch = responseText.match(/```json\s*([\s\S]*?)```/);
             let txIntent: any = null;
@@ -285,7 +329,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     if (parsed.action === 'createAtom') {
                         if (!address) {
                             contentAppend =
-                                '\n\n_(Connect your wallet, then send the same message again — the app will build the transaction for you.)_';
+                                '\n\n_(Connect your wallet and send the same message again to build the transaction.)_';
                         } else {
                             const label = String(parsed.label ?? '').trim();
                             const depositTrust = String(parsed.depositTrust ?? '0').trim();
@@ -310,7 +354,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     } else if (parsed.action === 'createTriple') {
                         if (!address) {
                             contentAppend =
-                                '\n\n_(Connect your wallet, then send the same message again — the app will build the pipeline for you.)_';
+                                '\n\n_(Connect your wallet and send the same message again to continue.)_';
                         } else {
                             const subject = String(parsed.subject ?? '').trim();
                             const predicate = String(parsed.predicate ?? '').trim();
@@ -367,7 +411,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
             return;
         }
 
-        /** Triple pipeline: create missing atoms (sequential txs) then triple — no single calldata. */
+        /** Triple pipeline: create missing atoms (sequential txs) then triple. No single calldata. */
         if (String(intent?.action ?? '') === 'tripleFromLabels') {
             try {
                 await switchNetwork();
@@ -580,12 +624,12 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
             className={`flex flex-col h-full min-h-0 max-h-full w-full min-w-0 bg-gradient-to-b from-[#080a10] to-[#050505] border-2 border-intuition-primary/25 rounded-3xl shadow-[0_0_48px_rgba(0,243,255,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] overflow-hidden ${className}`}
         >
             {/* Header */}
-            <div className="shrink-0 rounded-t-3xl bg-intuition-primary/10 border-b border-intuition-primary/30 p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <Terminal size={18} className="text-intuition-primary" />
-                    <div className="flex flex-col">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">Intuition Skill Agent</span>
-                        <span className="text-[8px] font-mono text-intuition-primary uppercase animate-pulse">Ready for uplink</span>
+            <div className="shrink-0 rounded-t-3xl bg-intuition-primary/10 border-b border-intuition-primary/30 p-3 sm:p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                    <Terminal size={18} className="text-intuition-primary shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-semibold text-white font-sans tracking-tight">Skill agent</span>
+                        <span className="text-xs text-slate-500 font-sans">Intuition Mainnet</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -599,32 +643,29 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                 /* ignore */
                             }
                             setMessages(DEFAULT_SKILL_MESSAGES);
-                            toast.info('Chat history cleared');
+                            toast.info('Chat cleared');
                         }}
                         onMouseEnter={playHover}
-                        className="text-[8px] font-black uppercase tracking-widest text-slate-500 hover:text-intuition-primary transition-colors px-1.5 py-1"
+                        className="text-xs font-medium text-slate-500 hover:text-intuition-primary transition-colors px-2 py-1 font-sans"
                     >
-                        Clear history
+                        Clear
                     </button>
-                    <div className="px-2 py-0.5 bg-green-500/20 border border-green-500/50 rounded text-[8px] font-black text-green-400 uppercase tracking-widest">
-                        Mainnet_v1.2
-                    </div>
                 </div>
             </div>
 
             {address && (
                 <div className="shrink-0 border-b border-white/10 px-4 py-2.5 sm:px-6 bg-black/60">
                     {protocolReady === null ? (
-                        <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wide">Checking protocol access…</p>
+                        <p className="text-xs text-slate-500 font-sans">Checking permissions…</p>
                     ) : protocolReady ? (
-                        <div className="flex items-center gap-2 text-[10px] sm:text-[11px] font-mono text-emerald-400/90">
+                        <div className="flex items-center gap-2 text-xs text-emerald-400/95 font-sans">
                             <ShieldCheck size={14} className="shrink-0" />
-                            <span>IntuRank protocol enabled — you can sign transactions below.</span>
+                            <span>Ready to sign. TRUST allowance is set.</span>
                         </div>
                     ) : (
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-[10px] sm:text-[11px] font-mono text-amber-200/90 leading-snug min-w-0">
-                                One-time step: allow IntuRank to move your TRUST for atoms/triples (same as Create flow). Your wallet will open when you tap the button.
+                            <p className="text-xs text-amber-100/90 leading-snug min-w-0 font-sans">
+                                Allow IntuRank to move TRUST for atoms and triples (same as Create). Your wallet will open once.
                             </p>
                             <button
                                 type="button"
@@ -637,7 +678,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                         await grantProxyApproval(address);
                                         markProxyApproved(address);
                                         setProtocolReady(true);
-                                        toast.success('Protocol enabled. Try Sign & Broadcast again.');
+                                        toast.success('You can sign transactions now.');
                                     } catch (e: unknown) {
                                         toast.error(parseProtocolError(e) || extractErrorText(e) || 'Could not enable protocol');
                                     } finally {
@@ -646,17 +687,17 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                 }}
                                 disabled={enablingProtocol}
                                 onMouseEnter={playHover}
-                                className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-black text-[9px] sm:text-[10px] uppercase tracking-widest rounded-lg border border-amber-300/80"
+                                className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-semibold text-sm rounded-lg border border-amber-300/80"
                             >
                                 {enablingProtocol ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-                                Enable protocol
+                                Enable
                             </button>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* Scroll only here — flex-1 + min-h-0 so the panel height stays fixed and old messages scroll up */}
+            {/* Scroll only here: flex-1 + min-h-0 so the panel height stays fixed and old messages scroll up */}
             <div 
                 ref={scrollRef}
                 className="min-h-0 flex-1 min-w-0 overflow-y-auto overflow-x-clip overscroll-y-contain p-4 sm:p-6 space-y-6 custom-scrollbar"
@@ -669,9 +710,15 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                             </div>
                             <div className="min-w-0 flex-1 space-y-4">
                                 <div className={`p-4 max-w-full min-w-0 rounded-2xl ${m.role === 'user' ? 'bg-intuition-primary/10 border-intuition-primary/30' : 'bg-white/5 border-white/10'} border shadow-[0_8px_24px_rgba(0,0,0,0.35)]`}>
-                                    <div className={`text-xs leading-relaxed font-mono ${m.role === 'user' ? 'text-white' : 'text-slate-300'} whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}>
-                                        {m.content}
-                                    </div>
+                                    {m.role === 'assistant' ? (
+                                        <div className="text-xs leading-relaxed text-slate-300 font-sans">
+                                            <AssistantMessageBody content={m.content} />
+                                        </div>
+                                    ) : (
+                                        <div className="text-xs leading-relaxed font-mono text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                                            {m.content}
+                                        </div>
+                                    )}
                                 </div>
                                 {m.txIntent && (
                                     <div
@@ -691,7 +738,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                             .filter(Boolean)
                                             .join(' ')}
                                     >
-                                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-black uppercase tracking-widest text-xs sm:text-sm min-w-0">
+                                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm font-semibold font-sans min-w-0">
                                             {m.txOutcome === 'success' &&
                                                 <CheckCircle2 size={22} className="text-emerald-400 shrink-0" />}
                                             {m.txOutcome === 'rejected' &&
@@ -710,24 +757,24 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                                           ? 'text-red-400'
                                                           : m.txOutcome === 'pending'
                                                             ? 'text-amber-300'
-                                                            : 'text-amber-400'
+                                                            : 'text-amber-200'
                                                 }`}
                                             >
-                                                {m.txOutcome === 'pending' && 'Awaiting signature'}
-                                                {m.txOutcome === 'success' && 'Successful'}
-                                                {m.txOutcome === 'rejected' && 'User rejected transaction'}
-                                                {m.txOutcome === 'failed' && 'Transaction failed'}
-                                                {!m.txOutcome && 'Proposed transaction'}
+                                                {m.txOutcome === 'pending' && 'Waiting for wallet'}
+                                                {m.txOutcome === 'success' && 'Confirmed on-chain'}
+                                                {m.txOutcome === 'rejected' && 'Cancelled'}
+                                                {m.txOutcome === 'failed' && 'Failed'}
+                                                {!m.txOutcome && 'Review transaction'}
                                             </span>
                                         </div>
 
                                         {(m.txOutcome === undefined || m.txOutcome === 'pending') && (
-                                            <div className="rounded-xl bg-black/35 border border-white/10 p-4 text-xs sm:text-sm text-slate-400 font-mono space-y-3">
+                                            <div className="rounded-xl bg-black/35 border border-white/10 p-4 text-xs sm:text-sm text-slate-400 font-sans space-y-3">
                                                 {m.txIntent.action === 'tripleFromLabels' ? (
                                                     <>
-                                                        <p className="text-[10px] text-violet-300/95 uppercase tracking-[0.15em] font-black flex items-center gap-2">
+                                                        <p className="text-xs text-violet-200/95 font-medium font-sans flex items-center gap-2">
                                                             <Layers size={14} className="shrink-0" />
-                                                            Built in-app — FeeProxy (atoms + triple)
+                                                            Triple (missing atoms are created first)
                                                         </p>
                                                         <div className="space-y-2 text-[11px] sm:text-xs">
                                                             <div className="flex justify-between gap-4 border-b border-white/5 pb-2">
@@ -747,15 +794,15 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                                                 <span className="text-white font-bold">{m.txIntent.depositTrust} {CURRENCY_SYMBOL}</span>
                                                             </div>
                                                         </div>
-                                                        <p className="text-[10px] text-slate-500 leading-relaxed">
-                                                            Missing atoms are created first. Your wallet may ask for <strong className="text-slate-400">several signatures in order</strong> — this is expected (EOA wallets cannot batch into one tap).
+                                                        <p className="text-xs text-slate-500 leading-relaxed font-sans">
+                                                            You may need to approve more than one transaction in order. That is normal.
                                                         </p>
                                                     </>
                                                 ) : (
                                                     <>
                                                         {m.txIntent.txBuiltIn && (
-                                                            <p className="text-[10px] text-cyan-400/90 uppercase tracking-widest mb-1">
-                                                                Built in-app — FeeProxy.createAtoms (no pasted hex)
+                                                            <p className="text-xs text-cyan-300/90 font-medium font-sans mb-1">
+                                                                New atom (built in-app)
                                                             </p>
                                                         )}
                                                         <div className="space-y-2">
@@ -815,32 +862,31 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                                         }}
                                                     />
                                                 </div>
-                                                <p className="text-[11px] sm:text-xs text-amber-200/90 font-mono leading-relaxed [overflow-wrap:anywhere]">
+                                                <p className="text-xs text-amber-100/90 font-sans leading-relaxed [overflow-wrap:anywhere]">
                                                     {m.txIntent?.action === 'tripleFromLabels'
-                                                        ? 'Signing pipeline — approve each transaction in your wallet in order (atoms first if any are missing, then the triple).'
-                                                        : 'Waiting for your wallet. Approve or reject the transaction there.'}
+                                                        ? 'Approve each prompt in your wallet in order.'
+                                                        : 'Approve or reject in your wallet.'}
                                                 </p>
                                             </div>
                                         )}
 
                                         {m.txOutcome === 'success' && (
                                             <div className="rounded-xl bg-black/40 border border-emerald-500/25 p-4 space-y-4">
-                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400/90">
-                                                    Transaction details
+                                                <p className="text-xs font-semibold text-emerald-400/95 font-sans">
+                                                    Done
                                                 </p>
-                                                <p className="text-xs sm:text-sm text-slate-300 font-mono leading-relaxed">
-                                                    Broadcast confirmed. Your transaction succeeded and is on-chain.
+                                                <p className="text-sm text-slate-300 font-sans leading-relaxed">
+                                                    Your transaction is on-chain.
                                                 </p>
                                                 {m.txAtomHashes && m.txAtomHashes.length > 0 && (
-                                                    <p className="text-[10px] text-slate-500 font-mono leading-relaxed">
-                                                        This run also signed <span className="text-slate-400">{m.txAtomHashes.length}</span> atom transaction
-                                                        {m.txAtomHashes.length > 1 ? 's' : ''} — check the explorer for each hash if needed.
+                                                    <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                                                        Also signed {m.txAtomHashes.length} atom transaction{m.txAtomHashes.length > 1 ? 's' : ''}. See the explorer for details.
                                                     </p>
                                                 )}
                                                 {m.txHash ? (
                                                     <div className="space-y-2">
-                                                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 block">
-                                                            {m.txIntent?.action === 'tripleFromLabels' ? 'Triple tx hash' : 'Transaction hash'}
+                                                        <span className="text-xs font-medium text-slate-500 block font-sans">
+                                                            {m.txIntent?.action === 'tripleFromLabels' ? 'Triple transaction' : 'Transaction'}
                                                         </span>
                                                         <p
                                                             className="text-[11px] font-mono text-slate-200 break-all"
@@ -850,7 +896,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                                         </p>
                                                     </div>
                                                 ) : (
-                                                    <p className="text-[11px] font-mono text-slate-500">Tx hash unavailable.</p>
+                                                    <p className="text-xs font-sans text-slate-500">Hash unavailable.</p>
                                                 )}
                                                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-1">
                                                     {m.txHash && (
@@ -858,18 +904,18 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                                             href={`${intuitionChain.blockExplorers.default.url}/tx/${m.txHash}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-xl transition-colors"
+                                                            className="inline-flex items-center justify-center gap-2 px-5 py-3 border-2 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 font-semibold text-sm rounded-xl transition-colors font-sans"
                                                         >
-                                                            <ExternalLink size={16} /> View in explorer
+                                                            <ExternalLink size={16} /> Explorer
                                                         </a>
                                                     )}
                                                     {m.txTermId && (
                                                         <Link
                                                             to={`/markets/${m.txTermId}`}
-                                                            className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[10px] sm:text-xs uppercase tracking-widest rounded-xl shadow-[0_0_24px_rgba(16,185,129,0.25)] transition-colors"
+                                                            className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-sm rounded-xl shadow-[0_0_24px_rgba(16,185,129,0.25)] transition-colors font-sans"
                                                         >
                                                             <ExternalLink size={16} />
-                                                            {m.txIntent?.action === 'tripleFromLabels' ? 'View claim' : 'View atom'}
+                                                            {m.txIntent?.action === 'tripleFromLabels' ? 'Open claim' : 'Open atom'}
                                                         </Link>
                                                     )}
                                                 </div>
@@ -877,15 +923,14 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                         )}
 
                                         {m.txOutcome === 'rejected' && (
-                                            <p className="text-xs sm:text-sm text-red-200/95 font-mono leading-relaxed">
-                                                You cancelled or declined this transaction in your wallet (or closed the
-                                                prompt).
+                                            <p className="text-sm text-red-200/95 font-sans leading-relaxed">
+                                                Declined in wallet.
                                             </p>
                                         )}
 
                                         {m.txOutcome === 'failed' && (
-                                            <p className="text-xs sm:text-sm text-red-200/95 font-mono leading-relaxed">
-                                                {m.txError || 'The transaction could not be completed.'}
+                                            <p className="text-sm text-red-200/95 font-sans leading-relaxed">
+                                                {m.txError || 'Something went wrong.'}
                                             </p>
                                         )}
 
@@ -894,9 +939,9 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                                 type="button"
                                                 onClick={() => executeTx(m.txIntent, i)}
                                                 disabled={txBusy}
-                                                className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs sm:text-sm uppercase tracking-widest transition-all rounded-lg border border-amber-300/90 hover:border-white disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_24px_rgba(245,158,11,0.3)]"
+                                                className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-all rounded-lg border border-amber-300/90 hover:border-white disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_24px_rgba(245,158,11,0.3)] font-sans"
                                             >
-                                                <CheckCircle2 size={20} /> Sign &amp; Broadcast
+                                                <CheckCircle2 size={20} /> Sign &amp; broadcast
                                             </button>
                                         )}
                                     </div>
@@ -907,11 +952,11 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 ))}
                 {loading && (
                     <div className="flex justify-start w-full min-w-0">
-                        <div className="flex gap-4 items-center min-w-0 max-w-[min(100%,56rem)] text-slate-500 font-mono text-[10px] animate-pulse">
+                        <div className="flex gap-4 items-center min-w-0 max-w-[min(100%,56rem)] text-slate-500 text-sm font-sans animate-pulse">
                             <div className="w-8 h-8 flex items-center justify-center border-2 border-slate-700 rounded-xl bg-black/80">
                                 <Bot size={16} />
                             </div>
-                            <span>PROCESSING_COGNITIVE_REQUEST...</span>
+                            <span>Thinking…</span>
                         </div>
                     </div>
                 )}
@@ -932,8 +977,8 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                             void handleSend();
                         }}
                         rows={1}
-                        placeholder="Ask to create an atom (e.g. create atom called My Node with 0.5 TRUST)…"
-                        className="w-full bg-white/5 border border-white/20 py-3 pl-4 pr-14 text-xs text-white font-mono focus:border-intuition-primary outline-none rounded-2xl placeholder:text-slate-600 min-h-[52px] max-h-[200px] resize-none overflow-y-auto leading-relaxed shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)]"
+                        placeholder="Ask anything, or describe an atom or triple to create…"
+                        className="w-full bg-white/5 border border-white/20 py-3 pl-4 pr-14 text-sm text-white font-sans focus:border-intuition-primary outline-none rounded-2xl placeholder:text-slate-600 min-h-[52px] max-h-[200px] resize-none overflow-y-auto leading-relaxed shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)]"
                     />
                     <button
                         type="button"
@@ -944,20 +989,21 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                         <Send size={18} />
                     </button>
                 </div>
-                <div className="mt-3 flex gap-2 sm:gap-3 overflow-x-auto pb-2 scrollbar-none">
+                <div className="mt-3 flex flex-wrap gap-2 overflow-x-auto pb-1 scrollbar-none">
                     {[
-                        'Create an atom called "IntuRank Sandbox" with 0.5 TRUST deposit',
-                        'Create a triple: subject "Alice", predicate "trusts", object "Bob" — depositTrust 0.5 — output createTriple JSON',
-                        "Make a claim that Intuition rocks — subject Intuition, predicate is, object awesome — 0.5 TRUST",
-                        "What is the difference between an atom and a triple?",
-                        "List the FeeProxy and MultiVault addresses for this app",
+                        { short: 'Create an atom', full: 'Create an atom called IntuRank Sandbox with 0.5 TRUST deposit' },
+                        { short: 'Alice trusts Bob', full: 'Create a triple: subject Alice, predicate trusts, object Bob, deposit 0.5 TRUST' },
+                        { short: 'Atoms vs triples', full: 'What is the difference between an atom and a triple?' },
+                        { short: 'Contract addresses', full: 'What are the FeeProxy and MultiVault addresses used in this app?' },
                     ].map((suggestion, i) => (
                         <button
                             key={i}
-                            onClick={() => setInput(suggestion)}
-                            className="shrink-0 px-3 py-1.5 bg-white/5 hover:bg-intuition-primary/20 border border-white/10 hover:border-intuition-primary/40 text-[9px] font-black text-slate-500 hover:text-intuition-primary uppercase tracking-widest transition-all rounded-full"
+                            type="button"
+                            title={suggestion.full}
+                            onClick={() => setInput(suggestion.full)}
+                            className="shrink-0 px-3 py-2 bg-white/5 hover:bg-intuition-primary/15 border border-white/10 hover:border-intuition-primary/40 text-xs font-medium text-slate-400 hover:text-intuition-primary transition-all rounded-full font-sans max-w-[200px] truncate"
                         >
-                            {suggestion}
+                            {suggestion.short}
                         </button>
                     ))}
                 </div>

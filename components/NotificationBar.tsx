@@ -11,6 +11,7 @@ import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { EXPLORER_URL } from '../constants';
 import { CurrencySymbol } from './CurrencySymbol';
 import { playClick, playHover } from '../services/audio';
+import { subscribeVisibilityAwareInterval } from '../services/visibility';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const READ_STORAGE_KEY_PREFIX = 'inturank_notification_read_';
@@ -188,8 +189,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
       }
     };
     fetch();
-    const t = setInterval(fetch, REFRESH_INTERVAL_MS);
-    return () => clearInterval(t);
+    return subscribeVisibilityAwareInterval(fetch, REFRESH_INTERVAL_MS);
   }, [walletAddress]);
 
   useEffect(() => {
@@ -228,28 +228,28 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
   if (!walletAddress) return null;
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative z-[1] overflow-visible" ref={ref}>
       <button
         type="button"
         onClick={() => { playClick(); setOpen((o) => !o); }}
         onMouseEnter={playHover}
-        className={`flex items-center justify-center min-w-[44px] min-h-[44px] w-10 h-10 rounded-2xl border-2 transition-all duration-300 ${
+        className={`relative flex items-center justify-center min-w-[44px] min-h-[44px] w-10 h-10 rounded-2xl border-2 transition-all duration-300 ${
           open
             ? 'border-intuition-primary bg-intuition-primary/10 text-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.2)]'
-            : 'border-slate-800 text-slate-400 hover:border-intuition-primary/50 hover:text-intuition-primary'
+            : 'border-slate-700/90 text-slate-400 hover:border-intuition-primary/50 hover:text-intuition-primary'
         }`}
         aria-label="Activity on your holdings and people you follow"
       >
-        <Bell size={18} />
+        <Bell size={18} strokeWidth={2} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-black bg-intuition-secondary text-white rounded-full">
+          <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center text-[10px] font-bold font-sans leading-none bg-intuition-secondary text-white rounded-full ring-2 ring-[#020308]">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-2 w-[400px] max-w-[calc(100vw-2rem)] max-h-[75vh] overflow-hidden bg-[#020308] border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1),0_0_30px_rgba(0,243,255,0.08)] z-[60] rounded-2xl animate-notification-panel-in flex flex-col">
+        <div className="absolute top-full right-0 mt-2 w-[400px] max-w-[calc(100vw-2rem)] max-h-[75vh] overflow-hidden bg-[#020308] border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1),0_0_30px_rgba(0,243,255,0.08)] z-[110] rounded-2xl animate-notification-panel-in flex flex-col">
           <div className="p-3 border-b border-white/10 bg-[#050a12] shrink-0">
             <h3 className="text-[12px] font-black font-mono text-white uppercase tracking-widest">
               Activity

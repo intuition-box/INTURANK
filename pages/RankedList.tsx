@@ -440,6 +440,7 @@ const RankedList: React.FC = () => {
 
   /** Slot-style counting — animates when XP changes (e.g. after a pick). */
   const xpAnimRef = useRef<number | null>(null);
+  const xpRafRef = useRef<number | null>(null);
   const [xpRoll, setXpRoll] = useState(0);
   useEffect(() => {
     xpAnimRef.current = null;
@@ -459,7 +460,6 @@ const RankedList: React.FC = () => {
       setXpRoll(target);
       return;
     }
-    let raf = 0;
     const dur = 900;
     const t0 = performance.now();
     const tick = (now: number) => {
@@ -468,13 +468,17 @@ const RankedList: React.FC = () => {
       const v = Math.round(start + (target - start) * eased);
       setXpRoll(v);
       if (u < 1) {
-        raf = requestAnimationFrame(tick);
+        xpRafRef.current = requestAnimationFrame(tick);
       } else {
+        xpRafRef.current = null;
         xpAnimRef.current = target;
       }
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    xpRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (xpRafRef.current != null) cancelAnimationFrame(xpRafRef.current);
+      xpRafRef.current = null;
+    };
   }, [myXp.xp, reduceMotion]);
 
   const playersMaxXp = useMemo(() => {
