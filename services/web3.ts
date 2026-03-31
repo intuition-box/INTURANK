@@ -1,5 +1,5 @@
 
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, isAddress, type Hex, stringToHex, toHex, keccak256, encodePacked, decodeEventLog, slice, encodeFunctionData, parseEventLogs } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, isAddress, type Hex, stringToHex, toHex, keccak256, encodePacked, decodeEventLog, slice, encodeFunctionData, parseEventLogs, type TransactionReceipt } from 'viem';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
 import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL, CURVE_OFFSET } from '../constants';
@@ -567,16 +567,6 @@ function setProxyApprovalCache(addr: string): void {
     } catch (_) {}
 }
 
-function clearProxyApprovalCacheEntry(addr: string): void {
-    try {
-        const raw = localStorage.getItem(PROXY_APPROVAL_CACHE_KEY);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        delete data[addr.toLowerCase()];
-        localStorage.setItem(PROXY_APPROVAL_CACHE_KEY, JSON.stringify(data));
-    } catch (_) {}
-}
-
 export const markProxyApproved = (walletAddress: string): void => {
     try {
         setProxyApprovalCache(getAddress(walletAddress));
@@ -584,8 +574,8 @@ export const markProxyApproved = (walletAddress: string): void => {
 };
 
 /**
- * Sync mirror of last successful on-chain approval check (or post-tx). Does not skip RPC — use only for optional UI hints.
- * Authoritative status is always `checkProxyApproval` (reads MultiVault.isApproved on-chain).
+ * True if we recently recorded a successful approve tx or `checkProxyApproval` read.
+ * Used as a fallback when `isApproved` reads lag after a mined approval (RPC / view mismatch).
  */
 export const hasCachedProxyApproval = (walletAddress: string): boolean =>
     getProxyApprovalCache(getAddress(walletAddress));
@@ -603,14 +593,93 @@ export const checkProxyApproval = async (walletAddress: string): Promise<boolean
         const ok = Boolean(approved);
         if (ok) {
             setProxyApprovalCache(addr);
-        } else {
-            clearProxyApprovalCacheEntry(addr);
         }
+        // Do not clear cache on false: reads can fail or lag vs a mined approve tx; `grantProxyApproval` sets cache from receipt.
         return ok;
     } catch (e) {
         return false;
     }
 };
+
+/**
+ * After a proxy approval tx, RPC reads can briefly lag behind the receipt.
+ * Use this before failing a deposit or right after grantProxyApproval.
+ */
+export const checkProxyApprovalWithRetry = async (
+    walletAddress: string,
+    opts?: { retries?: number; delayMs?: number }
+): Promise<boolean> => {
+    const retries = opts?.retries ?? 8;
+    const delayMs = opts?.delayMs ?? 400;
+    const addr = getAddress(walletAddress);
+    for (let i = 0; i < retries; i++) {
+        const ok = await checkProxyApproval(addr);
+        if (ok) return true;
+        if (i < retries - 1) await new Promise((r) => setTimeout(r, delayMs));
+    }
+    return false;
+};
+
+/**
+ * Hybrid gate: try on-chain `isApproved` first (optionally with read retries); if still false, trust localStorage
+ * written after a successful enable tx or a prior positive read — avoids re-prompting when RPC/view lags.
+ */
+export const getProxyApprovalStatus = async (
+    walletAddress: string,
+    opts?: { readRetries?: number; readDelayMs?: number }
+): Promise<boolean> => {
+    const addr = getAddress(walletAddress);
+    const retries = opts?.readRetries ?? 0;
+    const onChain =
+        retries > 0
+            ? await checkProxyApprovalWithRetry(addr, {
+                  retries,
+                  delayMs: opts?.readDelayMs ?? 400,
+              })
+            : await checkProxyApproval(addr);
+    if (onChain) return true;
+    return hasCachedProxyApproval(addr);
+};
+
+/** Emitted by MultiVault when `approve(operator, approvalType)` is processed (matches @0xintuition/protocol). */
+const APPROVAL_TYPE_UPDATED_ABI = [
+    {
+        type: 'event',
+        name: 'ApprovalTypeUpdated',
+        inputs: [
+            { name: 'sender', type: 'address', indexed: true },
+            { name: 'receiver', type: 'address', indexed: true },
+            { name: 'approvalType', type: 'uint8', indexed: false },
+        ],
+    },
+] as const;
+
+/**
+ * Confirms FeeProxy approval from receipt logs when `isApproved` reads fail (RPC lag, indexer, or ABI drift).
+ */
+function didApprovalEventConfirm(
+    receipt: TransactionReceipt,
+    account: `0x${string}`,
+    feeProxy: `0x${string}`
+): boolean {
+    try {
+        const logs = parseEventLogs({
+            abi: APPROVAL_TYPE_UPDATED_ABI,
+            logs: receipt.logs,
+            eventName: 'ApprovalTypeUpdated',
+        });
+        const u = getAddress(account);
+        const f = getAddress(feeProxy);
+        for (const l of logs) {
+            const s = getAddress(l.args.sender as `0x${string}`);
+            const r = getAddress(l.args.receiver as `0x${string}`);
+            if ((s === u && r === f) || (s === f && r === u)) return true;
+        }
+    } catch {
+        /* malformed logs */
+    }
+    return false;
+}
 
 const tryGrantWithProvider = async (provider: any, checksumAccount: `0x${string}`): Promise<string> => {
     const walletClient = createWalletClient({
@@ -657,7 +726,27 @@ export const grantProxyApproval = async (walletAddress: string): Promise<void> =
         }
         throw lastError;
     }
-    await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
+    if (receipt.status !== 'success') {
+        throw new Error('Approval transaction failed on-chain.');
+    }
+
+    const fee = getAddress(FEE_PROXY_ADDRESS);
+    const fromRead = await checkProxyApprovalWithRetry(checksumAccount, { retries: 8, delayMs: 450 });
+    const fromLogs = didApprovalEventConfirm(receipt, checksumAccount, fee);
+
+    if (fromRead || fromLogs) {
+        setProxyApprovalCache(checksumAccount);
+        toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
+        return;
+    }
+
+    // Receipt succeeded — our approve tx was mined. `isApproved` reads can still fail (RPC, contract view drift).
+    // Trust the successful receipt so users are not blocked; deposit path still hits the real contract.
+    console.warn(
+        '[IntuRank] Proxy approval tx confirmed but isApproved read did not return true yet; trusting receipt.',
+        { hash }
+    );
     setProxyApprovalCache(checksumAccount);
     toast.success("HANDSHAKE_COMPLETE: Protocol enabled.");
 };
@@ -1193,7 +1282,7 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
 
     try {
         onProgress?.("Verifying Protocol Approval...");
-        const approved = await checkProxyApproval(receiver);
+        const approved = await getProxyApprovalStatus(receiver);
         if (!approved) {
             onProgress?.("Awaiting Protocol Handshake...");
             await grantProxyApproval(receiver);

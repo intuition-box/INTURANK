@@ -5,7 +5,7 @@
 import { getPnlLeaderboardPeriodAccount, buildPnlLeaderboardPeriodArgs } from './graphql';
 import { getTopPositions } from './graphql';
 import { formatEther } from 'viem';
-import { SEASON_2_EPOCHS } from '../constants';
+import { getResolvedSeason2EpochForNow } from '../constants';
 
 const normalize = (x: string) => (x ? x.toLowerCase() : '');
 
@@ -50,7 +50,7 @@ export async function getUserLeaderboardRanks(address: string): Promise<UserBadg
   const ranks: LeaderboardRank[] = [];
 
   // 1. PnL Season 2 (current epoch)
-  const currentEpoch = SEASON_2_EPOCHS.find((e) => e.isCurrent) || SEASON_2_EPOCHS[0];
+  const currentEpoch = getResolvedSeason2EpochForNow();
   try {
     const args = buildPnlLeaderboardPeriodArgs(currentEpoch.start, currentEpoch.end);
     const pnlRow = await getPnlLeaderboardPeriodAccount(address, args);

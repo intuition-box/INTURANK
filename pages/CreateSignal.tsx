@@ -4,13 +4,13 @@ import { useAccount } from 'wagmi';
 import { ArrowLeft, Terminal, Zap, Loader2, Database, GitBranch, Search, Camera, CheckCircle, ExternalLink, UserPlus, FileText, Sparkles, Info } from 'lucide-react';
 import { Hex } from 'viem';
 import { createStringAtom } from '../services/intuitionSdk';
-import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, checkProxyApproval, grantProxyApproval, markProxyApproved, validateTripleAtomsExist, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost, calculateTripleId } from '../services/web3';
+import { getConnectedAccount, connectWallet, getWalletBalance, createSemanticTriple, createIdentityAtom, getAtomCreationCost, getProxyApprovalStatus, grantProxyApproval, markProxyApproved, validateTripleAtomsExist, parseProtocolError, getMinClaimDeposit, getTotalTripleCreationCost, getTripleCost, calculateTripleId } from '../services/web3';
 import { uploadImageToIpfs, ensureIpfsUploadConfigured } from '../services/ipfs';
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { formatEther } from 'viem';
-import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
+import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue } from '../services/analytics';
 
@@ -124,7 +124,7 @@ const CreateSignal: React.FC = () => {
     try {
       const account = await ensureWallet();
       setCreatingAtom(true);
-      const approved = await checkProxyApproval(account);
+      const approved = await getProxyApprovalStatus(account);
       if (!approved) await grantProxyApproval(account);
 
       let resolvedImageUrl = imageUrl.trim();
@@ -192,7 +192,7 @@ const CreateSignal: React.FC = () => {
     try {
       const account = await ensureWallet();
       setCreatingSynapse(true);
-      const approved = await checkProxyApproval(account);
+      const approved = await getProxyApprovalStatus(account);
       if (!approved) await grantProxyApproval(account);
       
       const termId = calculateTripleId(subjectId, predicateId, objectId);
@@ -376,7 +376,7 @@ const CreateSignal: React.FC = () => {
     }
     let cancelled = false;
     const run = async () => {
-      const v = await checkProxyApproval(acc);
+      const v = await getProxyApprovalStatus(acc);
       if (!cancelled) setClaimReviewApproved(v);
     };
     run();
@@ -410,7 +410,7 @@ const CreateSignal: React.FC = () => {
     }
     let cancelled = false;
     const run = async () => {
-      const v = await checkProxyApproval(acc);
+      const v = await getProxyApprovalStatus(acc);
       if (!cancelled) setIdentityReviewApproved(v);
     };
     run();
@@ -434,7 +434,7 @@ const CreateSignal: React.FC = () => {
     try {
       const account = await ensureWallet();
       setCreatingAtom(true);
-      const approved = await checkProxyApproval(account);
+      const approved = await getProxyApprovalStatus(account);
       if (!approved) await grantProxyApproval(account);
 
       const metadata = isAccount
@@ -476,7 +476,7 @@ const CreateSignal: React.FC = () => {
     try {
       const account = await ensureWallet();
       setCreatingSynapse(true);
-      const approved = await checkProxyApproval(account);
+      const approved = await getProxyApprovalStatus(account);
       if (!approved) await grantProxyApproval(account);
 
       const termId = calculateTripleId(subjectId, predicateId, objectId);
@@ -621,8 +621,8 @@ const CreateSignal: React.FC = () => {
                 </Link>
                 <span className="text-[9px] text-intuition-primary uppercase tracking-[0.4em] font-black">CREATE</span>
               </div>
-              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-3">Create identity or claim</h1>
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] text-center mb-10 max-w-lg mx-auto">
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-3`}>Create identity or claim</h1>
+              <p className={`${PAGE_HERO_BODY} text-center mb-10 max-w-lg mx-auto`}>
                 Anchor a new identity on the graph or attest a semantic claim (triple).
               </p>
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -662,7 +662,7 @@ const CreateSignal: React.FC = () => {
                 </button>
                 <span className="text-[9px] text-slate-400 uppercase tracking-[0.4em] font-black">Create identity</span>
               </div>
-              <h1 className="text-2xl md:text-4xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Choose how to create</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-8`}>Choose how to create</h1>
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Link
                   to="/skill-playground"
@@ -701,7 +701,7 @@ const CreateSignal: React.FC = () => {
                 </button>
                 <span className="text-[9px] text-amber-400/90 uppercase tracking-[0.4em] font-black">Create identity</span>
               </div>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Create new identity</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-8`}>Create new identity</h1>
               <div className="w-full max-w-lg mx-auto space-y-5 text-left">
                 <div>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1 block">Schema type</label>
@@ -790,7 +790,7 @@ const CreateSignal: React.FC = () => {
                 </button>
                 <span className="text-[9px] text-intuition-primary uppercase tracking-[0.4em] font-black">Create identity</span>
               </div>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Review & confirm</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-8`}>Review & confirm</h1>
               <div className="w-full max-w-md space-y-5 text-left">
                 <div className="border-2 border-intuition-primary/50 p-4 bg-[#050505] shadow-[0_0_20px_rgba(0,243,255,0.15)]">
                   <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Identity</div>
@@ -850,9 +850,8 @@ const CreateSignal: React.FC = () => {
             <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               {frameHeader}
-              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">Create claim</h1>
-              <h1 className="text-3xl md:text-5xl font-black text-intuition-primary font-display tracking-tighter uppercase text-center mb-8">ACTIVE</h1>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center mb-10">
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-3`}>Create claim</h1>
+              <p className={`${PAGE_HERO_BODY} text-center mb-10 max-w-lg mx-auto`}>
                 Choose how to create a new claim on the Intuition trust graph.
               </p>
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
@@ -862,7 +861,7 @@ const CreateSignal: React.FC = () => {
                   className="p-8 bg-white/5 border-2 border-intuition-primary/40 hover:border-intuition-primary hover:bg-intuition-primary/10 clip-path-slant text-left transition-all group"
                 >
                   <Terminal size={32} className="text-intuition-primary mb-4 group-hover:scale-110 transition-transform" />
-                  <div className="text-white font-black text-sm uppercase tracking-widest mb-2">USE_SDK</div>
+                  <div className="text-white font-semibold text-sm mb-2">Use SDK</div>
                   <div className="text-[10px] text-slate-500 leading-relaxed">Quick broadcast. Payload + deposit; SDK handles creation on-chain.</div>
                   <div className="mt-4 text-intuition-primary text-[10px] font-black uppercase tracking-widest">Create claim →</div>
                 </button>
@@ -872,7 +871,7 @@ const CreateSignal: React.FC = () => {
                   className="p-8 bg-white/5 border-2 border-white/10 hover:border-amber-500/50 hover:bg-amber-500/5 clip-path-slant text-left transition-all group"
                 >
                   <Database size={32} className="text-amber-400 mb-4 group-hover:scale-110 transition-transform" />
-                  <div className="text-white font-black text-sm uppercase tracking-widest mb-2">MANUAL</div>
+                  <div className="text-white font-semibold text-sm mb-2">Manual</div>
                   <div className="text-[10px] text-slate-500 leading-relaxed">Full control. Construct an atom or define a synapse (triple) step by step.</div>
                   <div className="mt-4 text-amber-400 text-[10px] font-black uppercase tracking-widest">CHOOSE_PATHWAY →</div>
                 </button>
@@ -887,10 +886,9 @@ const CreateSignal: React.FC = () => {
             <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
               {frameHeader}
-              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-2">SIGNAL_INGRESS</h1>
-              <h1 className="text-3xl md:text-5xl font-black text-intuition-primary font-display tracking-tighter uppercase text-center mb-6">ACTIVE</h1>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center mb-8">
-                On-chain creation via SDK. Broadcast a new signal below.
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-3`}>Create with SDK</h1>
+              <p className={`${PAGE_HERO_BODY} text-center mb-8 max-w-md mx-auto`}>
+                On-chain creation via SDK. Enter your claim and optional deposit below.
               </p>
               <div className="w-full max-w-md space-y-4 mb-8 text-left">
                 <div>
@@ -926,23 +924,21 @@ const CreateSignal: React.FC = () => {
           {view === 'manual_pathway' && (
             <div className="w-full animate-in fade-in slide-in-from-right-4 duration-300 fill-mode-both">
             <>
-              <div className="text-[9px] text-slate-600 uppercase tracking-[0.4em] mb-2">INGRESS_MODULE // S05_ARES</div>
-              <h1 className="text-3xl md:text-5xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">SIGNAL_TERMINAL</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-6`}>Manual creation</h1>
               <div className="w-full mb-8">
-                <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.25em] mb-4">CHOOSE_PATHWAY</div>
-                <p className="text-[10px] text-slate-500 leading-relaxed mb-8">
+                <p className={`${PAGE_HERO_BODY} text-center mb-8 max-w-lg mx-auto`}>
                   Select the type of claim to create on the Intuition trust graph. All creations use the linear curve for initial predictable liquidity.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <button onClick={() => { playClick(); setView('construct_atom'); }} onMouseEnter={playHover} className="p-8 bg-white/5 border border-intuition-primary/40 hover:border-intuition-primary clip-path-slant text-left transition-all group">
                     <Database size={28} className="text-intuition-primary mb-4" />
-                    <div className="text-white font-black text-sm uppercase tracking-widest mb-2">CONSTRUCT_ATOM</div>
+                    <div className="text-white font-semibold text-sm mb-2">Create atom</div>
                     <div className="text-[10px] text-slate-500 leading-relaxed mb-4">Create a new atom (identity). Add metadata, image, and initial liquidity.</div>
                     <span className="text-intuition-primary text-[10px] font-black uppercase tracking-widest">INITIALIZE_GENESIS →</span>
                   </button>
                   <button onClick={() => { playClick(); setView('establish_synapse'); }} onMouseEnter={playHover} className="p-8 bg-white/5 border border-[#a855f7]/40 hover:border-[#a855f7] clip-path-slant text-left transition-all group">
                     <GitBranch size={28} className="text-[#a855f7] mb-4" />
-                    <div className="text-white font-black text-sm uppercase tracking-widest mb-2">DEFINE_SYNAPSE</div>
+                    <div className="text-white font-semibold text-sm mb-2">Define claim</div>
                     <div className="text-[10px] text-slate-500 leading-relaxed mb-4">Connect atoms via semantic claims. Build intelligence bridges between nodes to establish relational consensus.</div>
                     <span className="text-[#a855f7] text-[10px] font-black uppercase tracking-widest">ESTABLISH_LINKAGE →</span>
                   </button>
@@ -965,8 +961,7 @@ const CreateSignal: React.FC = () => {
               >
                 <ArrowLeft size={14} /> Back
               </button>
-              <div className="text-[9px] text-slate-600 uppercase tracking-[0.4em] mb-2">INGRESS_MODULE // S05_ARES</div>
-              <h1 className="text-2xl md:text-4xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">CONSTRUCT_ATOM</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-8`}>Create atom</h1>
               <div className="w-full max-w-lg space-y-6 text-left">
                 <div className="border-2 border-dashed border-white/20 p-8 flex flex-col items-center justify-center gap-2">
                   <Camera size={32} className="text-slate-600" />
@@ -1018,7 +1013,7 @@ const CreateSignal: React.FC = () => {
                 </button>
                 <span className="text-[9px] text-[#a855f7] uppercase tracking-[0.4em] font-black">CREATE CLAIM</span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-bold text-white text-center mb-3">Create claim</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-3`}>Create claim</h1>
               <p className="text-base text-slate-200 text-center mb-8 max-w-lg mx-auto leading-relaxed font-medium">
                 Claim anything about anything. Claims in Intuition (also called triples) are structured as a semantic triple — like a sentence. For example:{' '}
                 <span className="text-intuition-primary font-bold">[Alice]</span>{' '}
@@ -1171,7 +1166,7 @@ const CreateSignal: React.FC = () => {
                 </button>
                 <span className="text-[9px] text-[#a855f7] uppercase tracking-[0.4em] font-black">CREATE CLAIM</span>
               </div>
-              <h1 className="text-xl md:text-2xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">Review & confirm</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-8`}>Review & confirm</h1>
               <div className="w-full max-w-md mx-auto space-y-5 text-left">
                 <div className="rounded-2xl border-2 border-[#a855f7]/50 p-5 bg-[#050505] shadow-[0_0_24px_rgba(168,85,247,0.2)]">
                   <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide mb-2">Claim (triple)</div>
@@ -1251,8 +1246,7 @@ const CreateSignal: React.FC = () => {
               <button onClick={() => setView('manual_pathway')} className="absolute top-6 left-6 inline-flex items-center gap-2 px-4 py-2.5 border-2 border-slate-700 text-slate-300 hover:border-intuition-primary hover:text-intuition-primary font-black text-[10px] uppercase tracking-widest clip-path-slant transition-all duration-200 z-10">
                 <ArrowLeft size={14} /> BACK
               </button>
-              <div className="text-[9px] text-slate-600 uppercase tracking-[0.4em] mb-2">INGRESS_MODULE // S05_ARES</div>
-              <h1 className="text-2xl md:text-4xl font-black text-white font-display tracking-tighter uppercase text-center mb-8">ESTABLISH_SYNAPSE</h1>
+              <h1 className={`${PAGE_HERO_TITLE} text-center mb-8`}>Create claim</h1>
               <div className="w-full max-w-2xl space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {(['subject', 'predicate', 'object'] as const).map((role) => (

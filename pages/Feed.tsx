@@ -11,10 +11,18 @@ import { getFollowedIdentities } from '../services/follows';
 import { resolveENS, toAddress } from '../services/web3';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
-import { EXPLORER_URL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
+import {
+  EXPLORER_URL,
+  getGeminiApiKey,
+  GEMINI_MODEL,
+  PAGE_HERO_EYEBROW,
+  PAGE_HERO_TITLE,
+  PAGE_HERO_BODY,
+} from '../constants';
 import { Transaction } from '../types';
 import { getLocalTransactions } from '../services/web3';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
+import { PageLoading, PageLoadingSpinner } from '../components/PageLoading';
 
 type SortOption = 'Newest' | 'Oldest' | 'Highest Volume';
 
@@ -255,36 +263,28 @@ const Feed: React.FC = () => {
 
     return (
         <div className="w-full max-w-[1600px] mx-auto px-6 py-12 pb-40 font-mono relative z-10">
-            {/* Header Readout */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-12 border-b-2 border-slate-900 pb-10">
-                <div className="relative">
-                    <div className="flex items-center gap-6 text-intuition-primary mb-4 relative z-10">
-                        <div className="w-16 h-16 rounded-2xl bg-black border-2 border-intuition-primary flex items-center justify-center shadow-glow-blue">
-                             <Activity size={32} className="animate-pulse" />
+            {/* Header */}
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12 border-b border-white/10 pb-10">
+                <div className="relative min-w-0 max-w-3xl space-y-3">
+                    <div className="flex items-start gap-4">
+                        <div className="w-14 h-14 shrink-0 rounded-2xl bg-black border border-intuition-primary/40 flex items-center justify-center shadow-[0_0_24px_rgba(0,243,255,0.15)]">
+                            <Activity size={28} className="text-intuition-primary" />
                         </div>
-                        <div>
-                             <div className="text-xs font-bold tracking-[0.3em] uppercase text-slate-400 mb-1">Global activity</div>
-                             <h1 className="text-4xl md:text-7xl font-black text-white font-display uppercase tracking-tighter text-glow-white leading-none">ACTIVITY</h1>
+                        <div className="min-w-0 space-y-2">
+                            <p className={PAGE_HERO_EYEBROW}>Network activity</p>
+                            <h1 className={PAGE_HERO_TITLE}>Activity</h1>
+                            <p className={`${PAGE_HERO_BODY} max-w-2xl`}>
+                                Live feed of positions, deposits, and graph events. Follow how capital moves across the trust
+                                graph.
+                            </p>
                         </div>
                     </div>
-                    <p className="text-slate-300 font-mono text-sm uppercase tracking-wider leading-relaxed max-w-2xl border-l-2 border-slate-700 pl-6">
-                        Reconciling real-time capital flow and semantic shifts in the global trust graph. Surveillance layer S04 activated.
-                    </p>
                 </div>
-                
-                <div className="flex items-center gap-8 relative z-10">
-                    <div className="text-right hidden sm:block">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Throughput</div>
-                        <div className="flex items-center justify-end gap-4">
-                             <span className="text-2xl font-black text-intuition-success font-display tracking-widest uppercase text-glow-success leading-none">LOCKED</span>
-                             <div className="w-4 h-4 rounded-full bg-intuition-success animate-pulse shadow-glow-success"></div>
-                        </div>
-                    </div>
-                    <div className="w-[2px] h-12 bg-slate-800 hidden sm:block"></div>
-                    <div className="flex flex-col gap-1 items-end">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Signal integrity</div>
-                        <div className="text-xl font-black text-white font-mono tracking-tighter">99.98%</div>
-                    </div>
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end shrink-0">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 font-sans">
+                        <span className="h-1.5 w-1.5 rounded-full bg-intuition-success animate-pulse" aria-hidden />
+                        Live index
+                    </span>
                 </div>
             </div>
 
@@ -665,18 +665,13 @@ const Feed: React.FC = () => {
                 </div>
 
                 {loading && events.length === 0 ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-10 text-intuition-primary">
-                        <div className="relative">
-                            <div className="w-24 h-24 border-4 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <Terminal size={32} className="animate-pulse" />
-                            </div>
-                        </div>
-                        <div className="flex flex-col items-center gap-2 text-center">
-                             <span className="font-mono text-sm font-bold text-white tracking-wider uppercase animate-pulse">Loading activity…</span>
-                             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-2">Connecting to network…</div>
-                        </div>
-                    </div>
+                    <PageLoading
+                        variant="section"
+                        message="Loading activity…"
+                        subMessage="Connecting to the network…"
+                        backLink={null}
+                        className="absolute inset-0 bg-[#020308]/85 backdrop-blur-[2px]"
+                    />
                 ) : filteredEvents.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-48 border-2 border-dashed border-slate-900 bg-black/40 rounded-xl relative group">
                         <div className="absolute inset-0 bg-intuition-danger/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -699,14 +694,9 @@ const Feed: React.FC = () => {
                 {/* Observer / Loader */}
                 <div ref={observerTarget} className="h-64 flex flex-col items-center justify-center mt-12 border-t border-white/5 pt-12">
                     {loadingMore ? (
-                        <div className="flex flex-col items-center gap-6">
-                            <div className="relative">
-                                <div className="w-12 h-12 border-2 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <Activity size={18} className="text-intuition-primary animate-pulse" />
-                                </div>
-                            </div>
-                            <span className="text-sm font-bold font-mono text-intuition-primary uppercase tracking-wider animate-pulse">Loading more…</span>
+                        <div className="flex flex-col items-center gap-4">
+                            <PageLoadingSpinner size="md" />
+                            <span className="text-sm text-slate-400 font-sans">Loading more…</span>
                         </div>
                     ) : !hasMore && events.length > 0 && (
                         <div className="flex flex-col items-center gap-6 opacity-80">

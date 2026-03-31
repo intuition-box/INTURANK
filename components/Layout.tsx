@@ -205,7 +205,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [openConnectModal]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: PointerEvent) => {
       const t = event.target as Node;
       if (dropdownRef.current && !dropdownRef.current.contains(t)) {
         setIsWalletDropdownOpen(false);
@@ -214,9 +214,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         setIsIntelOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('pointerdown', handleClickOutside);
     };
   }, []);
 

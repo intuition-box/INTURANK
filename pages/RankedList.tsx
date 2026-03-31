@@ -740,7 +740,7 @@ const RankedList: React.FC = () => {
 
             <div className="border-b border-slate-800/90 pb-4 space-y-3">
               <div className="min-w-0 space-y-2">
-                <h2 className="text-lg sm:text-xl md:text-2xl font-black text-white font-display uppercase tracking-tight leading-[1.12]">
+                <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-white font-display tracking-tight leading-[1.12]">
                   Stance on{' '}
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-white to-fuchsia-300">
                     the grid

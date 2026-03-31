@@ -10,7 +10,7 @@ import { Account } from '../types';
 import { getWatchlist, getConnectedAccount } from '../services/web3';
 import { toast } from '../components/Toast';
 import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber, isSystemVerified } from '../services/analytics';
-import { APP_VERSION, CURRENCY_SYMBOL } from '../constants';
+import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, NETWORK_NAME, PAGE_HERO_TITLE } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
@@ -367,48 +367,57 @@ const Markets: React.FC = () => {
   return (
     <div className="w-full min-w-0 overflow-x-hidden px-4 sm:px-6 lg:px-8 pt-12 pb-32">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-8 border-b border-white/5 pb-10 relative z-10">
-        <div className="relative z-10 space-y-1 min-w-0">
-          <div className="flex items-center gap-2 text-intuition-primary/80 mobile-break">
-            <span className="text-[11px] font-black font-mono tracking-widest uppercase">
-              {">_"} SECTOR_ANALYSIS_SYSTEM_V{APP_VERSION.replace(/\./g, '_')}_ARES
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between mb-12 gap-8 border-b border-white/10 pb-10 relative z-10">
+        <div className="relative z-10 min-w-0 max-w-2xl space-y-3">
+          <p className="text-sm text-slate-500 font-sans">
+            Reputation markets · {APP_VERSION_DISPLAY}
+          </p>
+          <h1 className={PAGE_HERO_TITLE}>Markets</h1>
+          <p className="text-[15px] text-slate-400 leading-relaxed font-sans">
+            Browse atoms, claims, and lists. Prices and positions settle on-chain in {CURRENCY_SYMBOL} on {NETWORK_NAME}.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 font-sans">
+              <Globe size={14} className="text-intuition-primary/90 shrink-0" aria-hidden />
+              {NETWORK_NAME}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 font-sans">
+              <Activity size={14} className="text-slate-500 shrink-0" aria-hidden />
+              TRUST ({CURRENCY_SYMBOL})
             </span>
           </div>
-          <h1 className="text-4xl sm:text-6xl md:text-[5rem] font-black text-white font-display tracking-tighter uppercase text-glow-blue leading-tight py-2 mobile-break min-w-0">
-            MARKET_CORE
-          </h1>
-          <div className="flex items-center gap-4 pt-2">
-              <div className="flex items-center gap-2 px-3 py-1.5 border border-intuition-primary/30 bg-intuition-primary/5 clip-path-slant group">
-                  <Globe size={12} className="text-intuition-primary group-hover:animate-spin-slow" />
-                  <span className="text-[10px] font-black font-mono text-intuition-primary uppercase tracking-widest">
-                    GLB_CONVERGENCE: <span className="text-white">209</span>
-                  </span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 border border-intuition-secondary/30 bg-intuition-secondary/5 clip-path-slant group">
-                  <Activity size={12} className="text-intuition-secondary animate-pulse" />
-                  <span className="text-[10px] font-black font-mono text-intuition-secondary uppercase tracking-widest">
-                    NET_THROUGHPUT: <span className="text-white">STABLE</span>
-                  </span>
-              </div>
-          </div>
         </div>
-        
-        <div className="flex bg-black border-2 border-slate-900 p-1 clip-path-slant relative z-10 h-fit self-center">
-            {(['NODES', 'SYNAPSES', 'VECTORS'] as MarketSegment[]).map((seg) => {
-                const isActive = activeSegment === seg;
-                const label = seg === 'NODES' ? 'Atoms' : seg === 'SYNAPSES' ? 'Claims' : 'Lists';
-                return (
-                    <button 
-                        key={seg}
-                        onClick={() => { navigate(`/markets/${PATH_FROM_SEGMENT[seg]}`); playClick(); }}
-                        onMouseEnter={playHover}
-                        className={`px-8 py-3 flex items-center gap-3 font-mono text-[11px] font-black uppercase transition-all clip-path-slant ${isActive ? 'text-black bg-intuition-primary shadow-[0_0_25px_rgba(0,243,255,0.4)]' : 'text-slate-500 hover:text-white'}`}
-                    >
-                        {seg === 'NODES' ? <Hexagon size={16} /> : seg === 'SYNAPSES' ? <Network size={16} /> : <Layers size={16} />} 
-                        {label}
-                    </button>
-                );
-            })}
+
+        <div
+          className="flex shrink-0 rounded-2xl border border-white/[0.08] bg-[#080a10] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] relative z-10 h-fit self-stretch lg:self-center"
+          role="tablist"
+          aria-label="Market type"
+        >
+          {(['NODES', 'SYNAPSES', 'VECTORS'] as MarketSegment[]).map((seg) => {
+            const isActive = activeSegment === seg;
+            const label = seg === 'NODES' ? 'Atoms' : seg === 'SYNAPSES' ? 'Claims' : 'Lists';
+            return (
+              <button
+                key={seg}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  navigate(`/markets/${PATH_FROM_SEGMENT[seg]}`);
+                  playClick();
+                }}
+                onMouseEnter={playHover}
+                className={`px-4 sm:px-6 py-2.5 sm:py-3 flex items-center gap-2 rounded-xl text-sm font-medium font-sans transition-colors ${
+                  isActive
+                    ? 'text-black bg-intuition-primary shadow-[0_0_0_1px_rgba(0,243,255,0.35)]'
+                    : 'text-slate-500 hover:text-slate-200 hover:bg-white/[0.04]'
+                }`}
+              >
+                {seg === 'NODES' ? <Hexagon size={17} className="shrink-0 opacity-90" /> : seg === 'SYNAPSES' ? <Network size={17} className="shrink-0 opacity-90" /> : <Layers size={17} className="shrink-0 opacity-90" />}
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

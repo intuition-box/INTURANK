@@ -9,7 +9,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import type { Theme } from '@rainbow-me/rainbowkit';
 import '@rainbow-me/rainbowkit/styles.css';
-import { wagmiConfig } from './wagmi-config';
+import { wagmiConfig, intuitionChain } from './wagmi-config';
 import { muiTheme } from './theme/muiTheme';
 
 // IntuRank palette
@@ -100,6 +100,11 @@ const App: React.FC = () => {
             theme={rainbowKitTheme}
             modalSize="compact"
             coolMode={false}
+            initialChain={intuitionChain}
+            appInfo={{
+              appName: 'IntuRank',
+              learnMoreUrl: 'https://intuition.systems',
+            }}
           >
             <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <EmailNotifyProvider>

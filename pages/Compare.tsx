@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, Activity, Zap, Trophy, Brain, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3, TrendingUp, Flame, Swords } from 'lucide-react';
+import { Search, Activity, Zap, Trophy, Brain, Loader2, Quote, Terminal, Crosshair, Network, Shield, Users, BarChart3, TrendingUp, Swords } from 'lucide-react';
 import { getAllAgents, getRedemptionCountForVault } from '../services/graphql';
 import { Account } from '../types';
 import { calculateTrustScore, calculateVolatility, formatMarketValue } from '../services/analytics';
@@ -404,27 +404,28 @@ const Compare: React.FC = () => {
         <div className="min-h-screen bg-[#020308] pt-12 pb-32 px-4 sm:px-6 max-w-[1500px] mx-auto relative font-mono selection:bg-intuition-primary selection:text-black min-w-0 overflow-x-hidden">
             <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
 
-                <div className="flex flex-col lg:flex-row items-center justify-between mb-12 gap-8 border-b-2 border-slate-800 pb-10 relative z-10">
-                <div className="flex items-center gap-6">
-                    <div className="w-16 h-16 bg-black/80 border-2 border-amber-500/50 flex items-center justify-center text-amber-400 clip-path-slant shadow-[0_0_24px_rgba(250,204,21,0.2)]">
-                        <Swords size={32} />
+                <div className="flex flex-col lg:flex-row lg:items-end justify-between mb-12 gap-8 border-b border-white/10 pb-10 relative z-10">
+                <div className="flex items-start gap-4 min-w-0">
+                    <div className="w-14 h-14 shrink-0 rounded-2xl bg-black/80 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-[0_0_20px_rgba(250,204,21,0.15)]">
+                        <Swords size={28} />
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2 text-amber-400/90 font-black font-mono text-[9px] tracking-[0.5em] uppercase mb-1">
-                             <Flame size={10} className="animate-pulse" /> ATOM_VERSUS
-                        </div>
-                        <h1 className="text-4xl md:text-6xl font-black font-display tracking-tight uppercase leading-tight mobile-break min-w-0">
-                            <span className="text-white text-glow-white">BATTLE</span><span className="text-amber-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.4)]">GROUND</span>
+                    <div className="min-w-0 space-y-2">
+                        <p className="text-sm text-slate-500 font-sans">Compare two atoms</p>
+                        <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-white font-display tracking-tight leading-[1.12] mobile-break">
+                            Battleground
                         </h1>
+                        <p className="text-[15px] text-slate-400 leading-relaxed font-sans max-w-xl">
+                            Side-by-side stats and rivalry metrics. Pick two champions to analyze.
+                        </p>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-4">
-                    <div className="px-6 py-3 bg-black/60 border border-amber-500/20 font-mono text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-3">
-                        <Terminal size={14} className="text-amber-400" /> STATUS: <span className="text-white">{leftAgent && rightAgent ? 'COMBAT_READY' : 'AWAITING_CHAMPIONS'}</span>
-                    </div>
-                    <div className="px-6 py-3 bg-amber-500/20 border border-amber-500/50 text-amber-400 font-black font-mono text-[10px] uppercase tracking-widest hover:bg-amber-500/30 active:scale-95 transition-all">
-                        VERSUS ACTIVE
+                <div className="flex flex-wrap gap-2 shrink-0">
+                    <div className="px-4 py-2.5 rounded-xl bg-black/50 border border-white/10 text-slate-400 text-sm font-sans flex items-center gap-2">
+                        <Terminal size={14} className="text-amber-400 shrink-0" aria-hidden />
+                        <span>
+                          {leftAgent && rightAgent ? 'Ready to compare' : 'Pick two atoms'}
+                        </span>
                     </div>
                 </div>
             </div>

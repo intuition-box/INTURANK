@@ -9,8 +9,9 @@ import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, R
 import { formatEther, isAddress } from 'viem';
 import { Transaction } from '../types';
 import { calculateCategoryExposure, calculateSentimentBias, formatMarketValue, formatDisplayedShares } from '../services/analytics';
-import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID } from '../constants';
+import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { PageLoadingSpinner } from '../components/PageLoading';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { isFollowing, addFollow, removeFollow, setFollowEmailAlerts, type FollowEntry } from '../services/follows';
@@ -238,6 +239,16 @@ const PublicProfile: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#020308] pt-8 pb-20 px-4 max-w-7xl mx-auto font-mono selection:bg-intuition-primary selection:text-black">
+      <header className="mb-8 space-y-2 font-sans">
+        <p className={PAGE_HERO_EYEBROW}>{isOwnProfile ? 'Your account' : 'Trader profile'}</p>
+        <h1 className={PAGE_HERO_TITLE}>Profile</h1>
+        <p className={`${PAGE_HERO_BODY} max-w-2xl`}>
+          {isOwnProfile
+            ? 'Balances, positions, and activity for your connected wallet.'
+            : 'Public view of positions and on-chain activity for this address.'}
+        </p>
+      </header>
+
       <div className="flex justify-end mb-8 relative z-20">
           <div className="flex items-center bg-black border border-slate-800 p-1 clip-path-slant focus-within:border-intuition-primary transition-all shadow-2xl">
               <input 
@@ -267,10 +278,10 @@ const PublicProfile: React.FC = () => {
             <User size={56} className="text-slate-600 group-hover:text-intuition-primary transition-colors" />
           </div>
           <div className="flex-1 min-w-0 text-center md:text-left relative z-10">
-            <div className="text-slate-400 font-mono text-[11px] tracking-[0.3em] uppercase mb-3 font-black antialiased">Reputation_Profile_S04</div>
-            <h1 className="text-4xl md:text-5xl font-black text-white font-display tracking-tighter mb-1 text-glow-white uppercase">
-                {ensName || (address ? address.slice(0, 6) + "..." + address.slice(-4) : "INVALID_IDENT")}
-            </h1>
+            <p className="text-sm text-slate-500 font-sans mb-2">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white font-display tracking-tight mb-1 break-words">
+                {ensName || (address ? address.slice(0, 6) + "..." + address.slice(-4) : "Unknown address")}
+            </h2>
             {ensName && (
                 <div className="text-xs font-black font-mono text-intuition-primary/80 tracking-widest mb-6 bg-black w-fit px-3 py-1.5 border border-intuition-primary/30 clip-path-slant mx-auto md:mx-0 antialiased">
                     {address}
@@ -617,9 +628,9 @@ const PublicProfile: React.FC = () => {
                       )) : (
                           <tr><td colSpan={6} className="p-20 text-center text-slate-700 uppercase font-black tracking-[0.5em] text-[10px]">
                               {loading ? (
-                                  <div className="flex flex-col items-center gap-5">
-                                      <div className="w-10 h-10 border-2 border-intuition-primary/20 border-t-intuition-primary rounded-full animate-spin"></div>
-                                      <span>Synchronizing_Public_Sync...</span>
+                                  <div className="flex flex-col items-center gap-4">
+                                      <PageLoadingSpinner size="sm" />
+                                      <span className="text-xs text-slate-500 font-sans">Loading claims…</span>
                                   </div>
                               ) : (
                                   'No claims recovered from mainnet'

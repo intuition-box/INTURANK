@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, User, Database, Network, Info, Loader2, Zap, ArrowRight, ShieldCheck, Cpu, Camera, Search, ChevronRight, HelpCircle, UserPlus, CheckCircle2, Globe, Fingerprint, Trash2, Plus, Terminal as TerminalIcon, ExternalLink, RefreshCw, AlertTriangle, Coins, Sparkles } from 'lucide-react';
 import { playClick, playHover, playSuccess } from '../services/audio';
-import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas, getMinClaimDeposit, getTotalTripleCreationCost, checkProxyApproval, grantProxyApproval, markProxyApproved, calculateTripleId } from '../services/web3';
+import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas, getMinClaimDeposit, getTotalTripleCreationCost, getProxyApprovalStatus, grantProxyApproval, markProxyApproved, calculateTripleId } from '../services/web3';
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { Account } from '../types';
 import { toast } from './Toast';
@@ -332,7 +332,7 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
     try {
       await new Promise(r => setTimeout(r, 800));
       setTxStatus('SIGNING');
-      const approved = await checkProxyApproval(wallet);
+      const approved = await getProxyApprovalStatus(wallet);
       if (!approved) await grantProxyApproval(wallet);
       
       // Calculate termId locally for immediate feedback link

@@ -15,14 +15,43 @@ const intuitionChain = {
   },
 } as const satisfies Chain;
 
-const projectId = (import.meta as any).env?.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
-if (!projectId && typeof window !== 'undefined') {
-  console.warn('IntuRank: VITE_WALLETCONNECT_PROJECT_ID is not set. WalletConnect will not work.');
+const env = import.meta.env as { VITE_WALLETCONNECT_PROJECT_ID?: string; VITE_APP_URL?: string };
+const rawProjectId = env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
+const isPlaceholderProjectId =
+  !rawProjectId ||
+  rawProjectId === 'your_walletconnect_project_id' ||
+  rawProjectId === '00000000000000000000000000000000';
+const projectId = isPlaceholderProjectId ? '00000000000000000000000000000000' : rawProjectId;
+
+if (isPlaceholderProjectId && typeof window !== 'undefined') {
+  console.warn(
+    '[IntuRank] Set VITE_WALLETCONNECT_PROJECT_ID (https://cloud.reown.com) — mobile wallets need a valid WalletConnect project ID.'
+  );
 }
+
+/** Canonical site URL for WalletConnect deep links / metadata (production: set VITE_APP_URL to your public origin). */
+function resolveAppUrl(): string | undefined {
+  const fromEnv = env.VITE_APP_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+  return undefined;
+}
+
+function resolveAppIcon(appUrl: string | undefined): string | undefined {
+  const base = appUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+  if (!base) return undefined;
+  return `${base.replace(/\/$/, '')}/icon.png`;
+}
+
+const appUrl = resolveAppUrl();
+const appIcon = resolveAppIcon(appUrl);
 
 export const wagmiConfig = getDefaultConfig({
   appName: 'IntuRank',
-  projectId: projectId || '00000000000000000000000000000000',
+  appDescription: 'Trust Intelligence Layer on Intuition',
+  appUrl,
+  appIcon,
+  projectId,
   chains: [intuitionChain],
   transports: {
     [CHAIN_ID]: http(RPC_URL),

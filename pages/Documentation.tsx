@@ -21,6 +21,8 @@ import {
   Send,
   Wallet,
   UserCircle,
+  FileText,
+  ArrowLeft,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { playClick, playHover } from '../services/audio';
@@ -36,6 +38,7 @@ import {
   FEE_PROXY_ADDRESS,
   NETWORK_NAME,
   OFFSET_PROGRESSIVE_CURVE_ID,
+  PAGE_HERO_TITLE,
 } from '../constants';
 
 type SectionDef = {
@@ -208,7 +211,57 @@ const Documentation: React.FC = () => {
 
   return (
     <div className="w-full min-h-screen bg-[#020308] selection:bg-intuition-primary selection:text-black lg:min-h-0 lg:h-[calc(100dvh-7rem)] lg:max-h-[calc(100dvh-7rem)] lg:overflow-hidden lg:flex lg:flex-col">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14 w-full lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 md:py-12 w-full lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between shrink-0 mb-8 sm:mb-9 lg:mb-8 w-full">
+          <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 shrink-0 bg-black border-2 border-intuition-primary/80 flex items-center justify-center rounded-2xl sm:rounded-3xl shadow-[0_0_32px_rgba(0,243,255,0.25),inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <FileText size={26} className="text-intuition-primary" aria-hidden />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm text-slate-500 font-sans mb-0.5">
+                Brought to you by{' '}
+                <Link
+                  to="/"
+                  onClick={playClick}
+                  onMouseEnter={playHover}
+                  className="font-semibold text-intuition-primary hover:text-intuition-primary/85 transition-colors"
+                >
+                  IntuRank
+                </Link>
+              </p>
+              <h1 className={PAGE_HERO_TITLE}>Documentation</h1>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
+            <Link
+              to="/"
+              onClick={playClick}
+              onMouseEnter={playHover}
+              className="px-4 sm:px-5 py-2.5 bg-white/5 border border-white/10 hover:border-intuition-primary text-slate-300 hover:text-white text-sm font-medium rounded-2xl inline-flex items-center gap-2 transition-all"
+            >
+              <ArrowLeft size={14} /> Back
+            </Link>
+            <Link
+              to="/markets"
+              onClick={playClick}
+              onMouseEnter={playHover}
+              className="px-4 sm:px-5 py-2.5 bg-white/5 border-2 border-intuition-primary/40 hover:border-intuition-primary hover:bg-intuition-primary/10 text-intuition-primary hover:text-white text-sm font-medium transition-all rounded-2xl inline-flex items-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.12)]"
+            >
+              Markets <ArrowRight className="w-4 h-4" />
+            </Link>
+            <a
+              href="https://docs.intuition.systems"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={playClick}
+              onMouseEnter={playHover}
+              className="px-4 sm:px-5 py-2.5 bg-intuition-primary text-black text-sm font-semibold rounded-2xl shadow-[0_0_28px_rgba(0,243,255,0.35)] inline-flex items-center gap-2"
+            >
+              <BookOpen size={14} /> Protocol docs <ExternalLink size={10} className="opacity-80" />
+            </a>
+          </div>
+        </header>
+
         {/*
           Desktop: only <main> scrolls — TOC stays in the left column (no fixed/JS overlap).
         */}
@@ -253,32 +306,20 @@ const Documentation: React.FC = () => {
             role="main"
             className="min-w-0 flex-1 min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-1 scroll-smooth"
           >
-            {/* Title + intro live only in the right column beside the TOC */}
-            <header className="mb-10 md:mb-14 max-w-[52rem]">
+            <div className="mb-10 md:mb-14 max-w-[52rem]">
               <p className="text-[11px] font-mono text-slate-500 uppercase tracking-[0.2em] mb-3">
-                Documentation · {APP_VERSION_DISPLAY} · {NETWORK_NAME}
+                {APP_VERSION_DISPLAY} · {NETWORK_NAME} · chain {CHAIN_ID}
               </p>
-              <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight mb-4">
-                IntuRank
-              </h1>
               <p className="text-base sm:text-lg text-slate-400 leading-relaxed">
                 A full-stack guide to IntuRank {APP_VERSION_DISPLAY}: the trust graph, how markets price conviction with
-                bonding curves, what each major screen is for, and how to operate safely on {NETWORK_NAME} (chain{' '}
-                {CHAIN_ID}). Use it alongside the{' '}
-                <ProseLink href="https://docs.intuition.systems">Intuition protocol docs</ProseLink> for deeper
-                contract-level detail.
+                bonding curves, what each major screen is for, and how to operate safely on {NETWORK_NAME}. Use it
+                alongside the <ProseLink href="https://docs.intuition.systems">Intuition protocol docs</ProseLink> for
+                deeper contract-level detail.
               </p>
               <div className="mt-6 flex flex-wrap gap-3 text-sm">
-                <Link
-                  to="/markets"
-                  onClick={playClick}
-                  className="inline-flex items-center gap-2 rounded-lg bg-intuition-primary/15 border border-intuition-primary/35 px-4 py-2 text-intuition-primary font-medium hover:bg-intuition-primary/25 transition-colors"
-                >
-                  Open markets <ArrowRight className="w-4 h-4" />
-                </Link>
                 <ProseLink href={EXPLORER_URL}>Block explorer</ProseLink>
               </div>
-            </header>
+            </div>
 
             <div className="lg:hidden mb-8 rounded-xl border border-white/10 bg-[#0a0c12] p-4">
               <label htmlFor="doc-section-jump" className="block text-xs font-medium text-slate-500 mb-2">

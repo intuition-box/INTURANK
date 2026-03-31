@@ -18,8 +18,8 @@ const ComingSoon: React.FC = () => {
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:32px_32px] opacity-10"></div>
           
           {/* Status Badge */}
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-intuition-secondary/10 border border-intuition-secondary px-6 py-1 text-[9px] font-black text-intuition-secondary tracking-[0.4em] uppercase clip-path-slant animate-pulse shadow-glow-red">
-            ACCESS_RESTRICTED
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-intuition-secondary/10 border border-intuition-secondary px-6 py-1.5 text-xs font-semibold text-intuition-secondary rounded-lg">
+            Not available
           </div>
 
           <div className="relative mb-12 mt-4">
@@ -29,13 +29,17 @@ const ComingSoon: React.FC = () => {
             </div>
           </div>
 
-          <div className="mb-10 space-y-4">
-            <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tighter uppercase leading-none text-glow-white">SIGNAL_INGRESS</h1>
-            <h1 className="text-4xl md:text-6xl font-black text-intuition-primary font-display tracking-tighter uppercase leading-none text-glow-blue">ENCRYPTED</h1>
+          <div className="mb-10 space-y-3 text-center">
+            <h1 className="text-3xl md:text-4xl font-bold text-white font-display tracking-tight leading-tight">
+              Coming soon
+            </h1>
+            <p className="text-[15px] text-slate-400 font-sans leading-relaxed max-w-md mx-auto">
+              This area isn&apos;t available yet. We&apos;re still wiring up on-chain creation flows for this build.
+            </p>
           </div>
 
-          <p className="text-xs font-black text-slate-500 uppercase tracking-[0.25em] leading-relaxed max-w-md mb-12">
-            Sector_05 integration is currently in progress. Neural handshake for <span className="text-white">ON-CHAIN_CREATION</span> protocols will be activated in the next terminal push.
+          <p className="text-sm text-slate-500 font-sans leading-relaxed max-w-md mb-12 mx-auto text-center">
+            Check the next release for updates, or use Markets and Create from the main navigation.
           </p>
 
           <div className="w-full flex flex-col md:flex-row gap-4 relative z-20">
@@ -43,17 +47,17 @@ const ComingSoon: React.FC = () => {
               to="/" 
               onClick={playClick}
               onMouseEnter={playHover}
-              className="flex-1 bg-white/5 border border-white/10 hover:border-white text-white font-black py-4 text-xs tracking-[0.3em] uppercase flex items-center justify-center gap-3 transition-all clip-path-slant"
+              className="flex-1 bg-white/5 border border-white/10 hover:border-white text-white font-semibold py-4 text-sm flex items-center justify-center gap-3 transition-all rounded-xl"
             >
-              <ArrowLeft size={16} /> RETURN_TO_ROOT
+              <ArrowLeft size={16} /> Back home
             </Link>
             <Link 
               to="/markets" 
               onClick={playClick}
               onMouseEnter={playHover}
-              className="flex-1 bg-intuition-primary hover:bg-white text-black font-black py-4 text-xs tracking-[0.3em] uppercase flex items-center justify-center gap-3 transition-all shadow-glow-blue clip-path-slant"
+              className="flex-1 bg-intuition-primary hover:bg-white text-black font-semibold py-4 text-sm flex items-center justify-center gap-3 transition-all rounded-xl shadow-[0_0_24px_rgba(0,243,255,0.2)]"
             >
-              <Network size={16} /> EXPLORER_MARKETS
+              <Network size={16} /> Browse markets
             </Link>
           </div>
 

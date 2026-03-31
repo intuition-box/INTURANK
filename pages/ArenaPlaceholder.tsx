@@ -30,7 +30,7 @@ const ArenaPlaceholder: React.FC = () => {
             <Trophy size={40} className="text-cyan-200 drop-shadow-[0_0_12px_rgba(34,211,238,0.5)]" />
           </div>
 
-          <h1 className="text-3xl md:text-4xl font-black font-display uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-fuchsia-200 mb-3">
+          <h1 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-white mb-3">
             The Arena
           </h1>
           <p className="text-sm md:text-[15px] text-slate-400 leading-relaxed mb-2 max-w-md mx-auto">

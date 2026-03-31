@@ -343,13 +343,12 @@ export const getNewlyCreatedAtoms = async (limit = 20) => {
   }
 };
 
-/** For Home: three sections — ROI daily (by activity), by marketcap, newly created (from events, fallback to low-position atoms). */
-export const getHomeAtomSections = async (limitPerSection = 12) => {
-  const [allItems, newlyCreatedRaw] = await Promise.all([
-    getAllAgents(limitPerSection * 4, 0).then(r => r.items),
-    getNewlyCreatedAtoms(limitPerSection)
-  ]);
-
+/** Pure split of Home trending columns — use with `getAllAgents` + `getNewlyCreatedAtoms` fetched in parallel. */
+export const buildHomeAtomSectionsFrom = (
+  allItems: any[],
+  newlyCreatedRaw: any[],
+  limitPerSection: number
+) => {
   const byMarketcap = [...allItems].sort((a, b) => {
     const ma = parseFloat(a.marketCap || '0');
     const mb = parseFloat(b.marketCap || '0');
@@ -357,7 +356,6 @@ export const getHomeAtomSections = async (limitPerSection = 12) => {
   }).slice(0, limitPerSection);
   const roiDaily = [...allItems].sort((a, b) => (b.positionCount || 0) - (a.positionCount || 0)).slice(0, limitPerSection);
 
-  // Newly created: use events when available; otherwise fallback to atoms with fewest positions (proxy for newer)
   let newlyCreated = newlyCreatedRaw;
   if (newlyCreated.length === 0 && allItems.length > 0) {
     newlyCreated = [...allItems]
@@ -367,6 +365,15 @@ export const getHomeAtomSections = async (limitPerSection = 12) => {
   }
 
   return { roiDaily, byMarketcap, newlyCreated };
+};
+
+/** For Home: three sections — ROI daily (by activity), by marketcap, newly created (from events, fallback to low-position atoms). */
+export const getHomeAtomSections = async (limitPerSection = 12) => {
+  const [allItems, newlyCreatedRaw] = await Promise.all([
+    getAllAgents(limitPerSection * 4, 0).then(r => r.items),
+    getNewlyCreatedAtoms(limitPerSection)
+  ]);
+  return buildHomeAtomSectionsFrom(allItems, newlyCreatedRaw, limitPerSection);
 };
 
 /** Subgraph often attributes atom/triple creator as FeeProxy when creation routes through IntuRank — resolve real wallet from first deposit sender. */
@@ -1145,6 +1152,13 @@ export const getPnlLeaderboard = async (p_offset: number = 0, p_limit: number = 
   }
 };
 
+/** Normalize epoch boundaries to full ISO-8601 UTC (`…T…Z` → `…T….000Z`) so they match GraphQL playground payloads. */
+export const normalizeGraphqlIsoDate = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toISOString();
+};
+
 /** Build args for get_pnl_leaderboard_period. Schema requires p_start_date and p_end_date (ISO strings). */
 export const buildPnlLeaderboardPeriodArgs = (
   startDate: string,
@@ -1156,6 +1170,35 @@ export const buildPnlLeaderboardPeriodArgs = (
   if (options?.offset != null) args.p_offset = options.offset;
   if (options?.sortBy != null) args.p_sort_by = options.sortBy;
   if (options?.sortOrder != null) args.p_sort_order = options.sortOrder;
+  return args;
+};
+
+/** Build args for get_pnl_leaderboard_period_min_threshold (same optional paging/sort keys as period). */
+export const buildPnlLeaderboardPeriodMinThresholdArgs = (
+  startDate: string,
+  endDate: string,
+  options?: {
+    limit?: number;
+    offset?: number;
+    sortBy?: string;
+    sortOrder?: string;
+    excludeProtocolAccounts?: boolean;
+    minDeposit?: number;
+    minPositions?: number;
+    minVolume?: number;
+    termId?: string;
+  }
+) => {
+  const args: Record<string, unknown> = { p_start_date: startDate, p_end_date: endDate };
+  if (options?.limit != null) args.p_limit = options.limit;
+  if (options?.offset != null) args.p_offset = options.offset;
+  if (options?.sortBy != null) args.p_sort_by = options.sortBy;
+  if (options?.sortOrder != null) args.p_sort_order = options.sortOrder;
+  if (options?.excludeProtocolAccounts != null) args.p_exclude_protocol_accounts = options.excludeProtocolAccounts;
+  if (options?.minDeposit != null) args.p_min_deposit = options.minDeposit;
+  if (options?.minPositions != null) args.p_min_positions = options.minPositions;
+  if (options?.minVolume != null) args.p_min_volume = options.minVolume;
+  if (options?.termId != null) args.p_term_id = options.termId;
   return args;
 };
 
@@ -1176,6 +1219,7 @@ export const getPnlLeaderboardPeriod = async (args: Record<string, unknown> = {}
     const arr = res?.get_pnl_leaderboard_period ?? [];
     return limit != null ? arr.slice(0, limit) : arr;
   } catch (e) {
+    if (import.meta.env.DEV) console.warn('[graphql] getPnlLeaderboardPeriod failed', e);
     return [];
   }
 };
@@ -1199,6 +1243,7 @@ export const getPnlLeaderboardPeriodMinThreshold = async (args: Record<string, u
     const arr = res?.get_pnl_leaderboard_period_min_threshold ?? [];
     return limit != null ? arr.slice(0, limit) : arr;
   } catch (e) {
+    if (import.meta.env.DEV) console.warn('[graphql] getPnlLeaderboardPeriodMinThreshold failed', e);
     return [];
   }
 };
