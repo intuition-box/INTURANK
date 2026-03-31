@@ -1,118 +1,288 @@
+# IntuRank Vanguard
 
-# 🌐 IntuRank
+IntuRank is a web client for exploring and interacting with the [Intuition](https://docs.intuition.systems) trust graph: markets, portfolio, claims, stats, and tooling built with **React**, **Vite**, **wagmi/viem**, and the Intuition GraphQL API.
 
-> **The Semantic Trust-Graph Intelligence Layer**
-> *Stake on Identity. Short the Noise. Profit from Truth.*
+## Development
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-1.4.0--stable-green)
-![Network](https://img.shields.io/badge/network-Intuition%20Mainnet-purple)
+```bash
+npm install
+npm run dev
+```
 
-## 📖 Overview
+Open the URL Vite prints (usually `http://localhost:5173`). The app uses a **HashRouter**, so routes look like `/#/markets`, `/#/skill-playground`, etc.
 
-**IntuRank** is a high-fidelity prediction market interface built natively on the [Intuition Network](https://intuition.systems). It visualizes reputation as a tradable asset, allowing users to signal trust (or distrust) on any identity, claim, or concept ("Atoms") within the graph.
+### Environment
 
-By combining financial incentives with semantic data, IntuRank creates a **"Credit Score for Everything"**—a decentralized mechanism to curate truth and reputation in an age of information overload.
+Copy `.env.example` to `.env.local` and set values as needed:
 
-## ✨ Key Features
+| Variable | Purpose |
+|----------|---------|
+| `VITE_GEMINI_API_KEY` | Powers the **Intuition Skill Playground** chat (Gemini). Comma-separated keys are supported; one is chosen at random per request. |
+| `VITE_WALLETCONNECT_PROJECT_ID` | WalletConnect (mobile / QR). |
+| `VITE_GRAPHQL_URL` | Production GraphQL endpoint. In dev, leave unset so `/v1/graphql` is proxied by Vite. |
+| Others in `.env.example` | IPFS uploads, email hooks, maintenance mode, etc. |
 
-### 📉 Semantic Markets
-- **Trade Reputation:** Buy and sell shares in specific Agents/Atoms using the `MultiVault` protocol.
-- **Offset Progressive Bonding Curve:** System-wide utilization of the `OffsetProgressiveCurve` (`0x23af...`) for advanced non-linear price discovery and high-conviction rewards.
-- **Hot/Cold Filtering:** Advanced search algorithms to pinpoint identities amidst the noise.
-
-### 🧠 Intelligence Dashboard
-- **Portfolio Tracking:** Real-time tracking of held positions, estimated value, and PnL.
-- **AI Synthesis:** Integrated Gemini-3-Flash/Pro analysis for market collision reports and agent briefings.
-- **Activity Logs:** A local and on-chain transaction history reconciler.
-
-### 📡 Signal Transmission
-- **On-Chain Opinions:** Transmit semantic triples (Subject -> Predicate -> Object) directly to the blockchain.
-- **Sentiment Analysis:** Visual breakdown of Trust vs. Distrust probability based on market movements.
-
-### 🎮 Immersive UX
-- **Arcade Aesthetics:** CRT scanlines, neon glows, and retro-futuristic typography.
-- **Procedural Audio:** A custom audio engine (`services/audio.ts`) generates UI sounds using the Web Audio API.
-- **Gamification:** "High Scores" leaderboards tracking the top reputation traders in the metaverse.
-
-## 🛠 Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| **Frontend** | React 19, Vite, TypeScript |
-| **Styling** | Tailwind CSS (Custom Config) |
-| **Blockchain** | Viem (Type-safe Ethereum Interface) |
-| **Data** | GraphQL (Intuition Subgraph) |
-| **Intelligence** | Gemini 3 API (Google GenAI) |
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js (v20+)
-- A Web3 Wallet (MetaMask, Rabby) connected to **Intuition Mainnet**.
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/intuition-box/INTURANK.git
-   cd INTURANK
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Run Development Server**
-   ```bash
-   npm run dev
-   ```
-
-## 🔗 Smart Contract Integration
-
-IntuRank interacts primarily with the **Intuition MultiVault** and **Fee Proxy**.
-
-- **Curve Protocol:** All vaults are initialized on the `OffsetProgressiveCurve`.
-- **Deposit:** `deposit` via Fee Proxy - Acquires shares with automatic fee calculation.
-- **Redeem:** `redeemBatch` via MultiVault - Burns shares to claim underlying TRUST assets.
-- **Atoms/Triples:** Uses `createAtoms` and `createTriples` to register new identities and opinions.
-
-## 🧩 Intuition SDK Integration (`@0xintuition/sdk`)
-
-This app also exposes a thin wrapper around the official Intuition TypeScript SDK to make higher-level graph operations easy to use from React and from AI agents inside Cursor.
-
-- **Dependency**: `@0xintuition/sdk` (peer: `viem ^2.x`)
-- **Service entrypoint**: `services/intuitionSdk.ts`
-
-Key helpers:
-
-- **`createStringAtom(text, deposit?)`**: Creates an atom from a plain string on Intuition Mainnet, optionally with a TRUST deposit (decimal string, e.g. `"0.01"`).
-- **`createThingAtom(thing, deposit)`**: Creates a rich JSON‑LD style "Thing" atom using the SDK’s IPFS/Pinata flow.
-- **`createSingleTriple(subjectId, predicateId, objectId, deposit)`**: Creates one `(subject, predicate, object)` triple with a TRUST deposit.
-- **`fetchAtomDetails(atomId)`**: Fetches full atom metadata from the Intuition API.
-- **`searchIntuition(query, options?)`**: Text search across atoms/accounts/triples/collections.
-- **`semanticSearchIntuition(query, options?)`**: Embedding-based semantic search over the graph.
-
-All write helpers automatically:
-
-- Resolve the canonical `MultiVault` address via `getMultiVaultAddressFromChainId(intuitionMainnet.id)`.
-- Reuse the existing `publicClient` and `intuitionChain` from `services/web3.ts`.
-- Bind to the currently connected browser wallet (MetaMask/Rabby) via EIP‑1193.
-
-For full protocol and SDK docs, see the upstream monorepo: `https://github.com/0xIntuition/intuition-ts`.
-
-## 🔧 Troubleshooting
-
-### `'set' on proxy: trap returned falsish for property 'tronlinkParams'`
-This comes from the **TronLink** browser extension when it tries to inject into the page. The app now suppresses this so it doesn’t crash. If you don’t use TronLink, disable the extension for this site or use a different browser profile.
-
-### `The source http://localhost:3000/ has not been authorized yet`
-This is **WalletConnect** (used by RainbowKit) rejecting the page origin. It usually appears if you open the app at `http://localhost:3000` (e.g. after changing Vite’s port or running Remotion Studio on 3000).
-
-- **Fix:** In the [WalletConnect Cloud](https://cloud.walletconnect.com) dashboard, open your project → **Settings** → add `http://localhost:3000` to the **Allowed origins** list. Changes can take a few minutes to apply.
-- **Alternative:** Run the app on the default Vite port so the URL is `http://localhost:5173`, which is typically already allowed (`npm run dev`).
+**Intuition Skill Playground:** With a connected wallet on **Intuition Mainnet (chain 1155)** and `VITE_GEMINI_API_KEY` set, open **Intel → Skill Playground** or go to `/#/skill-playground`. The in-app agent proposes unsigned transactions (`to`, `data`, `value`); you review and **Sign & Broadcast** through your wallet—the same pattern as the CLI Skill workflow below.
 
 ---
 
-*Powered by [Intuition Systems](https://intuition.systems).*
+# Intuition Skill Tutorial
+
+> **Give your AI agent shared, verifiable onchain memory in ~10 minutes.**
+
+This tutorial explains how to use the **Intuition Skill** to generate correct-by-construction transaction parameters for the Intuition Protocol, then execute them (e.g. with **viem** or the **IntuRank** wallet flow).
+
+---
+
+## What You'll Learn
+
+- How to install and use the **Intuition Skill** in your AI coding agent (Cursor, Claude Code, etc.)
+- How to create **Atoms** (identities/concepts) on Intuition
+- How to create **Triples** (structured claims) linking Atoms
+- How to deposit **TRUST** into vaults to stake on claims
+- How to bridge: **Skill output → viem → blockchain** (or **Skill output → IntuRank Sign & Broadcast**)
+
+---
+
+## Prerequisites
+
+- **Node.js 20+** installed
+- A **funded demo wallet** on Intuition Mainnet (get TRUST from faucet or bridge)
+- An **AI coding agent** that supports `npx skills`:
+  - Cursor (recommended)
+  - Claude Code
+  - Codex
+  - Or any agent compatible with the Skills protocol
+
+---
+
+## Quick Start
+
+### Step 1: Install Dependencies
+
+```bash
+npm install
+```
+
+### Step 2: Install the Intuition Skill (for your coding agent)
+
+This teaches your agent the correct Intuition Protocol ABIs, calldata encoding, and `msg.value` calculations:
+
+```bash
+npx skills add 0xintuition/agent-skills --skill intuition
+```
+
+**What this does:** Your agent understands:
+
+- Correct contract addresses (MultiVault, FeeProxy)
+- Proper calldata encoding for `createAtoms`, `createTriples`, `deposit`, `redeem`
+- Exact `msg.value` calculations (deposit + fees)
+- GraphQL query patterns
+- IPFS metadata flows
+
+### Step 3: Set Up Environment
+
+```bash
+cp .env.example .env.local
+```
+
+For **local scripts** or tools that sign with a private key (not used by the default IntuRank UI), you may set:
+
+```bash
+INTUITION_RPC_URL=https://rpc.intuition.systems/http
+INTUITION_CHAIN_ID=1155
+PRIVATE_KEY=0xYOUR_PRIVATE_KEY_HERE
+```
+
+> **Security:** Never commit `.env.local` or real keys. Use a test wallet with minimal funds.
+
+For **IntuRank in the browser**, configure `VITE_GEMINI_API_KEY` and connect a wallet; broadcasting uses the wallet, not `PRIVATE_KEY`.
+
+### Step 4: Run the App
+
+```bash
+npm run dev
+```
+
+Use the **Skill Playground** in the sidebar (Intel menu) for a ready-made agent UI, or integrate the same `{ to, data, value, chainId }` pattern in your own code.
+
+---
+
+## How Each Example Works (agent / CLI pattern)
+
+The standalone tutorial repo uses small TypeScript files under `src/examples/`. **IntuRank** implements the same contract pattern in-app: the Skill Agent outputs JSON; **Sign & Broadcast** sends it via viem through your connected wallet.
+
+### Example 1: Create an Atom
+
+**What it does:** Creates a new identity/concept on Intuition (e.g., "Ethereum", "Alice", "Design").
+
+**Workflow:**
+
+1. **Ask the Skill** (in your AI agent chat):
+
+   ```
+   /intuition --write createAtoms "My First Atom" --deposit 0.01 --network mainnet
+   ```
+
+2. **Copy the Skill's output** (JSON like):
+
+   ```json
+   {
+     "to": "0xCbFe767E67d04fBD58f8e3b721b8d07a73D16c93",
+     "data": "0x1234abcd...",
+     "value": "10000000000000000",
+     "chainId": "1155"
+   }
+   ```
+
+3. **In IntuRank:** paste the same intent into the **Skill Playground** chat, or paste parameters into your own viem `sendTransaction` call.
+
+4. **In a script:** set `unsignedTx` from the Skill output and broadcast with your wallet client.
+
+**Expected result:** a transaction hash on [Intuition Explorer](https://explorer.intuition.systems).
+
+---
+
+### Example 2: Create a Triple
+
+**What it does:** Creates a structured claim linking three Atoms (Subject → Predicate → Object).
+
+**Example:** "Alice is skilled in Design"
+
+- **Subject:** `Alice` (Atom ID)
+- **Predicate:** `is skilled in` (Atom ID)
+- **Object:** `Design` (Atom ID)
+
+**Workflow:**
+
+1. Create or resolve the three Atom IDs (Example 1 or GraphQL).
+
+2. **Ask the Skill:**
+
+   ```
+   /intuition --write createTriples <subjectId> <predicateId> <objectId> --deposit 0.1 --network mainnet
+   ```
+
+3. Execute via Skill output + viem, or use the **Skill Playground** with a natural-language request that includes the three term IDs.
+
+---
+
+### Example 3: Deposit into a Vault
+
+**What it does:** Stakes TRUST into an Atom or Triple vault.
+
+1. Get a `termId` (Atom or Triple ID).
+
+2. **Ask the Skill:**
+
+   ```
+   /intuition --write deposit <termId> 0.1 --network mainnet
+   ```
+
+3. Paste Skill output into your executor or confirm in the Playground when the agent proposes the transaction.
+
+---
+
+## The Complete Workflow
+
+```
+┌─────────────────┐
+│  AI Agent       │
+│  (Cursor/Claude)│
+└────────┬────────┘
+         │
+         │ /intuition --write createAtoms ...
+         │
+         ▼
+┌─────────────────┐
+│  Intuition Skill│
+│  (generates tx) │
+└────────┬────────┘
+         │
+         │ Returns: { to, data, value, chainId }
+         │
+         ▼
+┌─────────────────┐
+│  Your Code or   │
+│  IntuRank UI    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  viem / wallet  │
+│  (signs & sends)│
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Intuition L3   │
+└─────────────────┘
+```
+
+---
+
+## Testing Without Broadcasting
+
+In **IntuRank**, review the **Proposed Transaction** block before clicking **Sign & Broadcast**. You can also ask the agent to explain parameters without sending.
+
+For scripts, keep broadcast lines commented until you are ready to spend gas.
+
+---
+
+## Understanding Skill Output
+
+The Skill returns **unsigned transaction parameters**:
+
+- **`to`**: Contract address (MultiVault or FeeProxy)
+- **`data`**: Encoded calldata (function selector + args)
+- **`value`**: TRUST amount in wei (as base-10 string)
+- **`chainId`**: Intuition chain ID (**1155** for mainnet)
+
+**Why this design?**
+
+- The agent handles correctness (ABI, calldata, values)
+- Your code or wallet handles execution (signing, broadcasting)
+- Separation of concerns supports safer autonomous agents
+
+---
+
+## Troubleshooting
+
+### "VITE_GEMINI_API_KEY is missing" in the Playground
+
+- Set `VITE_GEMINI_API_KEY` in `.env.local` and restart `npm run dev`.
+
+### Error: "Invalid chain"
+
+- Verify the wallet is on Intuition Mainnet (**1155**).
+- Use the in-app network switch if prompted.
+
+### Error: "Insufficient funds"
+
+- You need TRUST on Intuition Mainnet for gas and deposits.
+
+### Skill not responding in Cursor
+
+- Run: `npx skills add 0xintuition/agent-skills --skill intuition`
+- Restart the editor.
+
+---
+
+## Next Steps
+
+1. **Explore GraphQL**: `https://mainnet.intuition.sh/v1/graphql`
+2. **Batch operations**: combine multiple atoms/triples where the protocol allows
+3. **Share feedback** as a Dev Ambassador
+
+---
+
+## Resources
+
+- **Intuition Protocol Docs**: https://docs.intuition.systems
+- **Intuition Skill Repo**: https://github.com/0xIntuition/agent-skills
+- **Intuition Explorer**: https://explorer.intuition.systems
+- **GraphQL Endpoint**: https://mainnet.intuition.sh/v1/graphql
+
+---
+
+**Built by Intuition Dev Ambassadors**

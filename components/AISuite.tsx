@@ -4,9 +4,9 @@ import { GoogleGenAI } from "@google/genai";
 import { Account, Triple, Transaction } from '../types';
 import { formatEther } from 'viem';
 import { formatDisplayedShares } from '../services/analytics';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
 
-const MODEL_NAME = 'gemini-3-flash-preview';
+const MODELS = [GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-1.5-flash'] as const;
 
 export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: Transaction[] }> = ({ agent, triples, history }) => {
     const [brief, setBrief] = useState<string>('');
@@ -18,9 +18,9 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
             
             setLoading(true);
             try {
-                const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+                const apiKey = getGeminiApiKey();
                 if (!apiKey) {
-                    setBrief('ERROR: Set VITE_GEMINI_API_KEY in .env.local for AI briefing.');
+                    setBrief('AI briefing unavailable. Set VITE_GEMINI_API_KEY in your environment.');
                     setLoading(false);
                     return;
                 }
@@ -45,14 +45,31 @@ export const AIBriefing: React.FC<{ agent: Account; triples: Triple[]; history: 
                     Style: Cypherpunk, objective, techno-financial, concise.
                 `;
 
-                const response = await ai.models.generateContent({
-                    model: MODEL_NAME,
-                    contents: [{ parts: [{ text: prompt }] }],
-                });
-                
-                setBrief(response.text || 'Synthesis incomplete. Core data stream fragmented.');
+                let lastError: unknown;
+                let success = false;
+                for (const model of MODELS) {
+                    try {
+                        const response = await ai.models.generateContent({
+                            model,
+                            contents: prompt,
+                        });
+                        const text = response.text ?? (response as any).candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            setBrief(text);
+                            success = true;
+                            break;
+                        }
+                    } catch (e) {
+                        lastError = e;
+                    }
+                }
+                if (!success) {
+                    setBrief('Neural uplink restricted. Satellite hand-off required.');
+                    if (import.meta.env.DEV && lastError) console.warn('[AIBriefing] Gemini:', lastError);
+                }
             } catch (e) {
                 setBrief('Neural uplink restricted. Satellite hand-off required.');
+                if (import.meta.env.DEV) console.warn('[AIBriefing] Gemini:', e);
             } finally {
                 setLoading(false);
             }

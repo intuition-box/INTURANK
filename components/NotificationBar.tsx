@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Bell, TrendingDown, TrendingUp, ExternalLink, Loader2, Mail, CheckCheck, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatEther } from 'viem';
-import { getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getCurveLabel, type PositionActivityNotification } from '../services/graphql';
+import { getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getCurveLabel, prepareQueryIds, type PositionActivityNotification } from '../services/graphql';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import { requestEmailNotification, requestFollowedActivityEmail } from '../services/emailNotifications';
 import { getFollowedIdentities } from '../services/follows';
+import { resolveENS, toAddress } from '../services/web3';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { EXPLORER_URL } from '../constants';
 import { CurrencySymbol } from './CurrencySymbol';
@@ -138,9 +139,22 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         const allFollows = getFollowedIdentities(walletAddress);
         let followActivity: PositionActivityNotification[] = [];
         if (allFollows.length > 0) {
-          const senderIds = allFollows.map((f) => f.identityId);
-          followActivity = await getActivityBySenderIds(senderIds, 30);
-          const bySender = new Map(allFollows.map((f) => [f.identityId.toLowerCase(), f]));
+          const resolved = await Promise.all(
+            allFollows.map(async (f) => {
+              const addr = toAddress(f.identityId) || (await resolveENS(f.identityId).then((r) => toAddress(r) || r)) || null;
+              return { follow: f, addr };
+            })
+          );
+          const validResolved = resolved.filter((r) => r.addr && !!toAddress(r.addr));
+          const senderIds = validResolved.map((r) => r.addr);
+          if (senderIds.length > 0) {
+            followActivity = await getActivityBySenderIds(senderIds, 30);
+          }
+          const bySender = new Map<string, (typeof allFollows)[0]>();
+          validResolved.forEach((r) => {
+            const variants = prepareQueryIds(r.addr);
+            variants.forEach((v) => bySender.set(v.toLowerCase(), r.follow));
+          });
           followActivity.forEach((n) => {
             const follow = bySender.get((n.senderId || '').toLowerCase());
             if (follow?.emailAlerts) {
@@ -219,42 +233,42 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         type="button"
         onClick={() => { playClick(); setOpen((o) => !o); }}
         onMouseEnter={playHover}
-        className={`flex items-center justify-center min-w-[44px] min-h-[44px] w-10 h-10 border-2 clip-path-slant transition-all ${
+        className={`flex items-center justify-center min-w-[44px] min-h-[44px] w-10 h-10 rounded-2xl border-2 transition-all duration-300 ${
           open
-            ? 'border-intuition-primary bg-intuition-primary/10 text-intuition-primary'
+            ? 'border-intuition-primary bg-intuition-primary/10 text-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.2)]'
             : 'border-slate-800 text-slate-400 hover:border-intuition-primary/50 hover:text-intuition-primary'
         }`}
-        aria-label="Activity and notifications"
+        aria-label="Activity on your holdings and people you follow"
       >
         <Bell size={18} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-black bg-intuition-secondary text-white rounded-none clip-path-slant">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-black bg-intuition-secondary text-white rounded-full">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-2 w-[400px] max-w-[calc(100vw-2rem)] max-h-[75vh] overflow-hidden bg-black border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1)] z-[60] clip-path-slant animate-notification-panel-in">
-          <div className="p-3 border-b border-white/10 bg-white/[0.02]">
+        <div className="absolute top-full right-0 mt-2 w-[400px] max-w-[calc(100vw-2rem)] max-h-[75vh] overflow-hidden bg-[#020308] border-2 border-intuition-primary/30 shadow-[0_0_50px_rgba(0,0,0,1),0_0_30px_rgba(0,243,255,0.08)] z-[60] rounded-2xl animate-notification-panel-in flex flex-col">
+          <div className="p-3 border-b border-white/10 bg-[#050a12] shrink-0">
             <h3 className="text-[12px] font-black font-mono text-white uppercase tracking-widest">
               Activity
             </h3>
             <p className="text-[10px] font-bold font-mono text-slate-300 mt-1">
-              Your claims and people you follow
+              Activity feed (loads on page load). Not real-time push — enable email alerts for notifications when you&apos;re away.
             </p>
             {items.length > 0 && (
               <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
-              <div className="flex gap-1.5">
+              <div className="flex gap-2">
                 {(['all', 'acquired', 'liquidated'] as const).map((f) => (
                   <button
                     key={f}
                     type="button"
                     onClick={() => { playClick(); setFilter(f); }}
                     onMouseEnter={playHover}
-                    className={`min-h-[44px] px-3 py-2.5 text-[9px] font-black font-mono uppercase tracking-widest border-2 clip-path-slant transition-all duration-200 ${
+                    className={`min-h-[40px] px-4 py-2.5 text-[9px] font-black font-mono uppercase tracking-widest rounded-xl border-2 transition-all duration-300 ${
                       filter === f
-                        ? 'border-intuition-primary bg-intuition-primary/25 text-white'
+                        ? 'border-intuition-primary bg-intuition-primary/25 text-white shadow-[0_0_15px_rgba(0,243,255,0.2)]'
                         : 'border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white hover:bg-white/5'
                     }`}
                   >
@@ -266,14 +280,14 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                 type="button"
                 onClick={markAllRead}
                 onMouseEnter={playHover}
-                className="flex items-center gap-1.5 px-2.5 py-2 text-[9px] font-black font-mono text-slate-400 hover:text-intuition-primary uppercase tracking-widest border border-slate-700 hover:border-intuition-primary/50 transition-all"
+                className="flex items-center gap-1.5 px-3 py-2 text-[9px] font-black font-mono text-slate-400 hover:text-intuition-primary uppercase tracking-widest rounded-xl border-2 border-slate-700 hover:border-intuition-primary/50 transition-all duration-300"
               >
                 <CheckCheck size={12} /> Clear all
               </button>
               </div>
             )}
           </div>
-          <div className="overflow-y-auto max-h-[calc(75vh-140px)] p-1 scroll-smooth" style={{ scrollBehavior: 'smooth' }}>
+          <div className="overflow-y-auto flex-1 min-h-0 p-1 scroll-smooth bg-[#020308]" style={{ scrollBehavior: 'smooth' }}>
             {loading && items.length === 0 ? (
               <div className="flex items-center justify-center py-12 text-slate-400">
                 <Loader2 size={24} className="animate-spin" />
@@ -295,7 +309,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                     if (!list.length) return null;
                     return (
                       <li key={groupKey}>
-                        <div className="text-[9px] font-black font-mono text-slate-400 uppercase tracking-widest px-2 py-1.5 sticky top-0 bg-black/98 backdrop-blur-sm z-10 border-b border-white/5">
+                        <div className="text-[9px] font-black font-mono text-slate-400 uppercase tracking-widest px-3 py-2 sticky top-0 bg-[#020308] z-10 border-b border-white/5 rounded-t-xl">
                           {TIME_GROUP_LABELS[groupKey]}
                         </div>
                         <ul className="space-y-0.5 mt-0.5">
@@ -310,7 +324,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                                 className="opacity-0 animate-notification-item-in"
                                 style={{ animationDelay: `${currentIndex * 40}ms` }}
                               >
-                              <div className="flex items-start gap-2 px-3 py-2.5 border border-transparent hover:border-intuition-primary/30 hover:bg-white/5 transition-all duration-200 group motion-hover-lift">
+                              <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-transparent hover:border-intuition-primary/30 hover:bg-white/5 transition-all duration-300 group motion-hover-lift">
                                 <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                   {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                                 </span>
@@ -350,7 +364,7 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
                                     <span className="text-[9px] font-bold font-mono text-slate-400">
                                       {formatTimeAgo(n.timestamp)}
                                     </span>
-                                    <span className="text-[9px] font-bold font-mono text-slate-400 border border-slate-600 px-2 py-0.5 clip-path-slant bg-white/[0.03]" title="Bonding curve type">
+                                    <span className="text-[9px] font-bold font-mono text-slate-400 border border-slate-600 px-2 py-0.5 rounded-lg bg-white/[0.03]" title="Bonding curve type">
                                       {getCurveLabel(n.curveId)}
                                     </span>
                                     {n.txHash && (
@@ -380,23 +394,24 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
               </ul>
             )}
           </div>
-          <div className="p-3 border-t border-white/10 bg-white/[0.02]">
+          <div className="p-3 border-t border-white/10 bg-[#050a12] shrink-0 relative z-10">
             <div className="flex flex-col sm:flex-row gap-2">
               <Link
                 to="/feed"
                 onClick={() => { playClick(); setOpen(false); }}
                 onMouseEnter={playHover}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-[10px] font-black font-mono uppercase tracking-widest border border-intuition-primary/60 text-intuition-primary hover:bg-intuition-primary/15 transition-colors clip-path-slant"
+                className="flex-1 flex items-center justify-center gap-2 min-h-[44px] py-3 text-[10px] font-black font-mono uppercase tracking-widest rounded-xl border-2 border-intuition-primary/60 text-intuition-primary hover:bg-intuition-primary/15 transition-all duration-300"
               >
-                <ExternalLink size={12} /> Expand view
+                <ExternalLink size={14} /> Expand view
               </Link>
               <button
                 type="button"
                 onClick={() => { playClick(); openEmailNotify(); }}
                 onMouseEnter={playHover}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-[10px] font-black font-mono text-slate-400 hover:text-intuition-primary uppercase tracking-widest border border-slate-700 hover:border-intuition-primary/60 transition-colors clip-path-slant"
+                className="flex-1 flex items-center justify-center gap-2 min-h-[44px] py-3 text-[10px] font-black font-mono text-slate-200 hover:text-intuition-primary uppercase tracking-widest rounded-xl border-2 border-slate-600 hover:border-intuition-primary/60 transition-all duration-300"
+                title="Email alerts when you're away"
               >
-                <Mail size={12} /> Get email alerts
+                <Mail size={14} /> Get email alerts
               </button>
             </div>
           </div>

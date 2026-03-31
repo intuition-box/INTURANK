@@ -77,7 +77,7 @@ const AgentProfile: React.FC = () => {
 
       const balance = await getWalletBalance(wallet);
       if (parseFloat(stakeAmount) >= parseFloat(balance)) {
-         setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus fees (0.1 ${CURRENCY_SYMBOL} + 5%).` });
+         setTxModal({ isOpen: true, status: 'error', title: 'INSUFFICIENT FUNDS', message: `You do not have enough ${CURRENCY_SYMBOL} to cover the deposit plus fees (0.5 ${CURRENCY_SYMBOL} + 5%).` });
          return;
       }
       

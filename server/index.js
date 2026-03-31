@@ -7,6 +7,7 @@
  *   ENSEND_SENDER_EMAIL   - sender address (e.g. yourproject@ensend.co or your domain)
  *   ENSEND_SENDER_NAME    - e.g. "IntuRank"
  *   PORT                  - default 3001
+ *   EMAIL_DATA_DIR        - optional; directory for email-subs.json / follows.json (e.g. /app/email-data with a Docker volume)
  *
  * Run: npm run email-server
  * In dev, Vite proxies /api to this server.
@@ -16,6 +17,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
+import { mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -30,7 +32,32 @@ const ENSEND_SEND_URL = 'https://api.ensend.co/send';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const SUBS_PATH = path.join(__dirname, 'email-subs.json');
+const DATA_DIR = process.env.EMAIL_DATA_DIR || __dirname;
+try {
+  mkdirSync(DATA_DIR, { recursive: true });
+} catch {
+  // ignore
+}
+const SUBS_PATH = path.join(DATA_DIR, 'email-subs.json');
+const FOLLOWS_PATH = path.join(DATA_DIR, 'follows.json');
+
+async function loadFollowsStore() {
+  try {
+    const raw = await fs.readFile(FOLLOWS_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveFollowsStore(store) {
+  try {
+    await fs.writeFile(FOLLOWS_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[email-api] Failed to persist follows', e);
+  }
+}
 
 async function loadSubscriptions() {
   try {
@@ -85,10 +112,14 @@ app.post('/api/email-subscribe', async (req, res) => {
       nickname: nickname?.trim() || undefined,
       alertFrequency: alertFrequency === 'daily' ? 'daily' : 'per_tx',
       subscribedAt: Date.now(),
+      follows: req.body?.follows && Array.isArray(req.body.follows) ? req.body.follows : (subs[idx]?.follows || []),
     };
     if (idx >= 0) subs[idx] = { ...subs[idx], ...next };
-    else subs.push(next);
+    else subs.push({ ...next, follows: next.follows || [] });
     await saveSubscriptions(subs);
+    const store = await loadFollowsStore();
+    store[normalizedWallet] = next.follows || [];
+    await saveFollowsStore(store);
     res.json({ ok: true });
   } catch (e) {
     console.error('[email-api] subscribe error', e);
@@ -108,6 +139,50 @@ app.post('/api/email-unsubscribe', async (req, res) => {
   } catch (e) {
     console.error('[email-api] unsubscribe error', e);
     res.status(500).json({ error: 'Failed to update subscriptions' });
+  }
+});
+
+// Get follows for a wallet (so frontend can restore after refresh/new device)
+app.get('/api/follows', async (req, res) => {
+  const wallet = (req.query.wallet || req.query.w || '').toString().trim();
+  if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
+  const normalizedWallet = String(wallet).toLowerCase();
+  try {
+    const store = await loadFollowsStore();
+    let list = Array.isArray(store[normalizedWallet]) ? store[normalizedWallet] : [];
+    if (list.length === 0) {
+      const subs = await loadSubscriptions();
+      const sub = subs.find((s) => s.wallet.toLowerCase() === normalizedWallet);
+      if (sub && Array.isArray(sub.follows)) list = sub.follows;
+    }
+    return res.json({ follows: list });
+  } catch (e) {
+    console.error('[email-api] get follows error', e);
+    return res.status(500).json({ error: 'Failed to load follows' });
+  }
+});
+
+// Sync follows so the email worker can send alerts when people you follow trade.
+// Persists for all wallets so we can restore on frontend after refresh/new device.
+app.post('/api/sync-follows', async (req, res) => {
+  const { wallet, follows } = req.body || {};
+  if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
+  const normalizedWallet = String(wallet).toLowerCase();
+  const list = Array.isArray(follows) ? follows : [];
+  try {
+    const subs = await loadSubscriptions();
+    const idx = subs.findIndex((s) => s.wallet.toLowerCase() === normalizedWallet);
+    if (idx >= 0) {
+      subs[idx] = { ...subs[idx], follows: list };
+      await saveSubscriptions(subs);
+    }
+    const store = await loadFollowsStore();
+    store[normalizedWallet] = list;
+    await saveFollowsStore(store);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[email-api] sync-follows error', e);
+    res.status(500).json({ error: 'Failed to sync follows' });
   }
 });
 
@@ -216,8 +291,8 @@ app.listen(PORT, () => {
 });
 
 // Optionally start the background email worker in the same process.
-// This is useful in production (e.g. Railway) so a single always-on service
-// can both serve the API and send alerts, without relying on the user's PC.
+// Useful in production (Coolify, Railway, etc.) so one always-on service
+// serves the API and sends alerts without relying on the user's browser.
 if (process.env.ENABLE_EMAIL_WORKER === 'true') {
   import('./email-worker.js')
     .then(() => {
