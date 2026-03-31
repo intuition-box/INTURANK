@@ -7,6 +7,7 @@ import { resolveENS, sendNativeTransfer } from '../services/web3';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { CHAIN_ID, EXPLORER_URL } from '../constants';
+import { CurrencySymbol } from '../components/CurrencySymbol';
 
 const SendTrust: React.FC = () => {
   const { address: walletAddress, chainId, isConnected } = useAccount();
@@ -20,6 +21,8 @@ const SendTrust: React.FC = () => {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [confirmedTxHash, setConfirmedTxHash] = useState<string | null>(null);
+  /** Amount sent in the tx that produced `confirmedTxHash` (shown in success modal). */
+  const [confirmedAmountTrust, setConfirmedAmountTrust] = useState<string | null>(null);
   const isPending = isSending; // alias for any legacy reference
 
   const balance = balanceData?.value ?? 0n;
@@ -107,6 +110,7 @@ const SendTrust: React.FC = () => {
         resolvedAddress as `0x${string}`,
         value
       );
+      setConfirmedAmountTrust(formatEther(value));
       setAmountInput('');
       refetchBalance();
       setConfirmedTxHash(hash);
@@ -154,9 +158,32 @@ const SendTrust: React.FC = () => {
               <h2 className="text-xl font-black font-mono text-white uppercase tracking-wide mb-1">
                 Transaction confirmed
               </h2>
-              <p className="text-slate-400 font-mono text-sm mb-5">
-                Your TRUST transfer was successful
-              </p>
+              <div className="mb-5">
+                <p className="text-slate-400 font-mono text-sm mb-2">
+                  Your TRUST transfer was successful
+                </p>
+                {confirmedAmountTrust && (
+                  <div className="flex items-center justify-center gap-2.5">
+                    <span
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#F0C14B]/45 bg-gradient-to-b from-[#F0C14B]/22 to-[#F0C14B]/08 shadow-[0_0_14px_rgba(240,193,75,0.12)]"
+                      aria-hidden
+                    >
+                      <CurrencySymbol
+                        size="md"
+                        className="!m-0 text-[#F0C14B] drop-shadow-[0_0_4px_rgba(240,193,75,0.35)]"
+                      />
+                    </span>
+                    <div
+                      className="flex items-center gap-2 whitespace-nowrap font-mono text-[#F0C14B] leading-none [&>span]:leading-none"
+                      role="status"
+                    >
+                      <span className="text-xl font-bold tabular-nums tracking-tight">{confirmedAmountTrust}</span>
+                      <span className="text-xl font-bold tracking-tight">TRUST</span>
+                      <span className="text-xl font-bold opacity-90">sent</span>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="w-full rounded-xl bg-[#080808] border border-[#F0C14B]/25 px-4 py-3 mb-4 flex items-center justify-between gap-3">
                 <span className="font-mono text-xs text-slate-300 truncate">
                   {confirmedTxHash.slice(0, 10)}...{confirmedTxHash.slice(-8)}
@@ -198,6 +225,7 @@ const SendTrust: React.FC = () => {
                 onClick={() => {
                   playClick();
                   setConfirmedTxHash(null);
+                  setConfirmedAmountTrust(null);
                 }}
                 onMouseEnter={playHover}
                 className="w-full py-3.5 rounded-xl bg-[#F0C14B] text-black font-black font-mono text-sm uppercase tracking-widest hover:bg-[#FFD54F] transition-colors"

@@ -1,492 +1,1318 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-/* Fixed: Added Coins, Layers and other missing icons to lucide-react imports */
-import { 
-  Terminal, Cpu, Network, TrendingUp, Shield, Target, 
-  Fingerprint, BookOpen, Ghost, Database, Zap, ArrowRight, 
-  ChevronRight, ChevronsRight, Activity, ShieldCheck, 
-  Sparkles, Command, Info, Globe, AlertCircle, BarChart2,
-  Coins, Layers
+import React, { useState, useEffect, useRef, useCallback, type LucideIcon } from 'react';
+import {
+  Terminal,
+  Cpu,
+  Network,
+  TrendingUp,
+  Target,
+  Fingerprint,
+  BookOpen,
+  Database,
+  Zap,
+  ArrowRight,
+  ChevronRight,
+  Activity,
+  Sparkles,
+  Command,
+  Layers,
+  ExternalLink,
+  Trophy,
+  PlusCircle,
+  Send,
+  Wallet,
+  UserCircle,
 } from 'lucide-react';
-/* Fixed: Added missing Link import from react-router-dom */
 import { Link } from 'react-router-dom';
 import { playClick, playHover } from '../services/audio';
+import {
+  APP_VERSION,
+  APP_VERSION_DISPLAY,
+  ARENA_ENABLED,
+  CHAIN_ID,
+  CURRENCY_SYMBOL,
+  EXPLORER_URL,
+  LINEAR_CURVE_ID,
+  MULTI_VAULT_ADDRESS,
+  FEE_PROXY_ADDRESS,
+  NETWORK_NAME,
+  OFFSET_PROGRESSIVE_CURVE_ID,
+} from '../constants';
 
-const SectionGlow = ({ color }: { color: string }) => (
-  <div className={`absolute -top-20 -left-20 w-64 h-64 blur-[120px] rounded-full pointer-events-none opacity-20 transition-all duration-1000 group-hover:opacity-40 group-hover:scale-125`} style={{ backgroundColor: color }}></div>
-);
-
-const DocSection = ({ id, title, icon: Icon, children, badge, color = "#00f3ff" }: any) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) setIsVisible(true);
-      },
-      { threshold: 0.1 }
-    );
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <section 
-      id={id} 
-      ref={sectionRef}
-      className={`py-32 border-b border-white/5 group scroll-mt-32 relative transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-    >
-      <SectionGlow color={color} />
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-20 relative z-10">
-        <div className="flex items-center gap-10">
-          <div 
-            className="w-20 h-20 bg-black border-2 flex items-center justify-center transition-all duration-700 clip-path-slant shadow-2xl group-hover:rotate-12 group-hover:scale-110"
-            style={{ color, borderColor: `${color}44`, boxShadow: `0 0 40px ${color}11` }}
-          >
-            <Icon size={38} className="group-hover:animate-pulse" />
-          </div>
-          <div>
-            <div className="text-[10px] font-black font-mono uppercase tracking-[0.8em] mb-4 opacity-40 group-hover:opacity-100 transition-opacity" style={{ color }}>{badge}</div>
-            <h2 className="text-4xl md:text-6xl font-black font-display text-white uppercase tracking-tighter leading-none group-hover:text-glow-white transition-all">
-              {title.split('_').join(' ')}
-            </h2>
-          </div>
-        </div>
-        <div className="hidden lg:flex items-center gap-4 text-slate-800 font-black text-[8px] tracking-[0.5em] uppercase">
-          <Activity size={12} /> Live_Telemetry_Active
-        </div>
-      </div>
-      <div className="pl-0 lg:pl-32 relative z-10">
-        <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-white/10 via-white/5 to-transparent hidden lg:block"></div>
-        <div className="max-w-4xl space-y-12">
-          {children}
-        </div>
-      </div>
-    </section>
-  );
+type SectionDef = {
+  id: string;
+  navLabel: string;
+  icon: LucideIcon;
 };
 
-const ArchitectureNode = ({ title, desc, icon: Icon, color }: any) => (
-  <div className="p-8 bg-black border-2 border-slate-900 clip-path-slant group/node hover:border-white/20 transition-all duration-500 relative overflow-hidden shadow-2xl h-full">
-    <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover/node:opacity-100 transition-opacity"></div>
-    <div className="flex items-center gap-5 mb-6">
-      <div className="p-3 bg-white/5 border border-white/10 rounded-xl group-hover/node:scale-110 transition-transform" style={{ color }}>
-        <Icon size={24} />
-      </div>
-      <h4 className="text-xl font-black text-white uppercase tracking-tighter">{title}</h4>
-    </div>
-    <p className="text-sm font-mono text-slate-500 uppercase tracking-widest leading-relaxed group-hover/node:text-slate-300 transition-colors">
-      {desc}
-    </p>
-  </div>
-);
+const SECTIONS: SectionDef[] = [
+  { id: 'intro', navLabel: 'Introduction', icon: Terminal },
+  { id: 'mission', navLabel: 'Mission', icon: Target },
+  { id: 'concepts', navLabel: 'Core concepts', icon: Fingerprint },
+  { id: 'markets', navLabel: 'Markets & curves', icon: TrendingUp },
+  { id: 'ares', navLabel: 'ARES layer', icon: Sparkles },
+  { id: 'skill', navLabel: 'Intuition Skill', icon: Cpu },
+  { id: 'leaderboards', navLabel: 'Leaderboards', icon: Trophy },
+  { id: 'create-flows', navLabel: 'Create & Send TRUST', icon: PlusCircle },
+  { id: 'portfolio-profile', navLabel: 'Portfolio & profile', icon: Wallet },
+  { id: 'guide', navLabel: 'How to use IntuRank', icon: Command },
+  { id: 'glossary', navLabel: 'Glossary', icon: BookOpen },
+];
 
-/* Fixed: Added missing GlossaryItem component to define terms in the Neural Index section */
-const GlossaryItem = ({ term, definition }: { term: string; definition: string }) => (
-  <div className="p-6 bg-white/[0.02] border border-white/5 clip-path-slant group hover:border-white/20 transition-all">
-    <h5 className="text-[10px] font-black text-intuition-primary uppercase tracking-[0.3em] mb-3 group-hover:text-white transition-colors">{term}</h5>
-    <p className="text-[11px] text-slate-500 uppercase font-mono tracking-wider leading-relaxed">{definition}</p>
-  </div>
-);
+function DocSection({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className="scroll-mt-24 md:scroll-mt-28 border-b border-white/[0.06] py-10 md:py-14 last:border-b-0">
+      <h2 className="text-xl sm:text-2xl font-semibold text-white tracking-tight mb-6">{title}</h2>
+      <div className="max-w-[52rem] space-y-4 text-[15px] leading-7 text-slate-300">{children}</div>
+    </section>
+  );
+}
+
+function ProseLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-intuition-primary hover:text-intuition-primary/90 underline underline-offset-4 decoration-intuition-primary/40"
+    >
+      {children}
+      <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
+    </a>
+  );
+}
+
+/** Match DocSection scroll-mt (24 = 6rem) + small buffer so the active TOC tracks the reading line. */
+const SECTION_ACTIVATION_OFFSET_PX = 120;
+
+/** Offset for TOC / in-page jumps: matches `md:scroll-mt-28` (7rem) on sections so headings align below the column top. */
+const DOC_ANCHOR_SCROLL_MARGIN_PX = 112;
+
+function sectionTopInScrollContainer(el: HTMLElement, scrollRoot: HTMLElement): number {
+  return el.getBoundingClientRect().top - scrollRoot.getBoundingClientRect().top + scrollRoot.scrollTop;
+}
 
 const Documentation: React.FC = () => {
-  const [activeSection, setActiveSection] = useState('intro');
-  const [scrollProgress, setScrollProgress] = useState(0);
+  const [activeSection, setActiveSection] = useState(SECTIONS[0].id);
+  const mainRef = useRef<HTMLDivElement>(null);
+  /** While set, scroll-based highlighting is frozen so TOC clicks are not overwritten mid-smooth-scroll. */
+  const pendingSectionRef = useRef<string | null>(null);
+  const scrollLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const progress = (window.scrollY / totalHeight) * 100;
-      setScrollProgress(progress);
+  const computeActiveFromScroll = useCallback((): string => {
+    const main = mainRef.current;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const scrollRoot: HTMLElement | null = mq.matches && main ? main : document.documentElement;
+    if (!scrollRoot) return SECTIONS[0].id;
 
-      const sections = navItems.map(item => document.getElementById(item.id));
-      const current = sections.findIndex(section => {
-        if (!section) return false;
-        const rect = section.getBoundingClientRect();
-        return rect.top >= 0 && rect.top <= 400;
-      });
-      if (current !== -1) setActiveSection(navItems[current].id);
-    };
+    const scrollTop =
+      mq.matches && main ? main.scrollTop : window.scrollY || document.documentElement.scrollTop;
+    const line = scrollTop + SECTION_ACTIVATION_OFFSET_PX;
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    let active = SECTIONS[0].id;
+    for (const s of SECTIONS) {
+      const el = document.getElementById(s.id);
+      if (!el) continue;
+      const top =
+        mq.matches && main
+          ? sectionTopInScrollContainer(el, main)
+          : el.getBoundingClientRect().top + window.scrollY;
+      if (line >= top) active = s.id;
+    }
+    return active;
   }, []);
 
-  const navItems = [
-    { id: 'intro', label: '00_INTRODUCTION', icon: Terminal, badge: 'RECON_OVERVIEW', color: '#00f3ff' },
-    { id: 'mission', label: '01_MISSION_MOTIVE', icon: Target, badge: 'CORE_PURPOSE', color: '#ff1e6d' },
-    { id: 'primitives', label: '02_CORE_PRIMITIVES', icon: Fingerprint, badge: 'BASE_LAYER', color: '#00ff9d' },
-    { id: 'economics', label: '03_MARKET_DYNAMICS', icon: TrendingUp, badge: 'VALUATION_MODEL', color: '#facc15' },
-    { id: 'ares', label: '04_INTELLIGENCE_LAYER', icon: Cpu, badge: 'AI_SYNTHESIS', color: '#a855f7' },
-    { id: 'guide', label: '05_OPERATOR_GUIDE', icon: Command, badge: 'EXECUTION_FLOW', color: '#ffffff' },
-    { id: 'glossary', label: '06_GLOSSARY', icon: BookOpen, badge: 'NEURAL_INDEX', color: '#475569' },
-  ];
+  const syncActiveFromScroll = useCallback(() => {
+    if (pendingSectionRef.current) return;
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const next = computeActiveFromScroll();
+      setActiveSection((prev) => (prev === next ? prev : next));
+    });
+  }, [computeActiveFromScroll]);
+
+  useEffect(() => {
+    const main = mainRef.current;
+    const onScroll = () => syncActiveFromScroll();
+    const mq = window.matchMedia('(min-width: 1024px)');
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    main?.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    mq.addEventListener('change', onScroll);
+
+    syncActiveFromScroll();
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      main?.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      mq.removeEventListener('change', onScroll);
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [syncActiveFromScroll]);
 
   const scrollTo = (id: string) => {
     playClick();
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const target = document.getElementById(id);
+    if (!target) return;
+
+    if (scrollLockTimerRef.current) clearTimeout(scrollLockTimerRef.current);
+    pendingSectionRef.current = id;
     setActiveSection(id);
+
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const main = mainRef.current;
+    // scrollIntoView scrolls every scrollable ancestor (including the window), which shifts the whole layout on desktop.
+    // Only the docs column should move: scroll the inner main explicitly.
+    // "Introduction" maps to #intro, but the hero (title + blurb) lives above that section — scroll to top of the column.
+    if (mq.matches && main) {
+      if (id === 'intro') {
+        main.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        const y = sectionTopInScrollContainer(target, main) - DOC_ANCHOR_SCROLL_MARGIN_PX;
+        main.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      }
+    } else if (id === 'intro') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    let released = false;
+    const releaseLock = () => {
+      if (released) return;
+      released = true;
+      scrollLockTimerRef.current = null;
+      pendingSectionRef.current = null;
+      setActiveSection(computeActiveFromScroll());
+    };
+
+    scrollLockTimerRef.current = setTimeout(releaseLock, 700);
+
+    const scrollEndTarget: HTMLElement | Window = mq.matches && main ? main : window;
+    const onScrollEnd = () => {
+      if (scrollLockTimerRef.current) clearTimeout(scrollLockTimerRef.current);
+      releaseLock();
+    };
+    scrollEndTarget.addEventListener('scrollend', onScrollEnd, { once: true });
   };
 
   return (
-    <div className="w-full bg-[#020308] min-h-screen selection:bg-intuition-primary selection:text-black">
-      
-      {/* HUD - READING PROGRESS */}
-      <div className="fixed top-20 left-0 w-full h-1 z-[60] pointer-events-none">
-        <div 
-          className="h-full bg-gradient-to-r from-intuition-primary via-intuition-secondary to-intuition-primary shadow-glow-blue transition-all duration-300 ease-out"
-          style={{ width: `${scrollProgress}%` }}
-        ></div>
-      </div>
-
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-12 py-12 md:py-24">
-        
-        {/* CINEMATIC HERO */}
-        <div className="mb-48 relative">
-          <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-intuition-primary/10 blur-[180px] rounded-full animate-pulse pointer-events-none"></div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-4 text-intuition-primary mb-12 animate-in slide-in-from-left duration-1000">
-              <Activity size={24} className="animate-pulse shadow-glow-blue" />
-              <span className="text-[12px] font-black tracking-[1.2em] uppercase opacity-70">Sector_04 // Compendium // v1.4.0</span>
-            </div>
-            
-            <h1 className="text-6xl md:text-[10rem] font-black text-white font-display tracking-tighter uppercase leading-[0.8] mb-16 animate-in slide-in-from-bottom duration-1000 fill-mode-both">
-              PROTOCOL<br />
-              <span className="text-intuition-primary text-glow-blue">BLUEPRINTS</span>
-            </h1>
-
-            <div className="max-w-3xl bg-white/[0.02] border-l-4 border-intuition-primary p-12 clip-path-slant backdrop-blur-xl relative group overflow-hidden animate-in fade-in duration-1000 delay-300">
-              <div className="absolute inset-0 bg-gradient-to-r from-intuition-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <p className="text-lg md:text-xl text-slate-300 font-mono leading-relaxed uppercase font-bold tracking-widest relative z-10">
-                // Official documentation for the <span className="text-white">IntuRank Intelligence Layer</span>. 
-                Establishing the global source of truth via capital-weighted semantic dynamics anchored natively on the 
-                <span className="text-intuition-primary underline decoration-2 underline-offset-8 ml-2">INTUITION NETWORK MAINNET</span>.
+    <div className="w-full min-h-screen bg-[#020308] selection:bg-intuition-primary selection:text-black lg:min-h-0 lg:h-[calc(100dvh-7rem)] lg:max-h-[calc(100dvh-7rem)] lg:overflow-hidden lg:flex lg:flex-col">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14 w-full lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+        {/*
+          Desktop: only <main> scrolls — TOC stays in the left column (no fixed/JS overlap).
+        */}
+        <div className="flex flex-col lg:flex-row lg:gap-10 xl:gap-14 lg:items-stretch lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+          <aside className="hidden lg:flex w-[240px] shrink-0 flex-col min-h-0">
+            <nav
+              className="flex flex-col flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.08] bg-[#0a0c12]/95 backdrop-blur-md p-4 shadow-[0_8px_40px_rgba(0,0,0,0.45)] overflow-x-hidden"
+              aria-label="Documentation sections"
+            >
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2">
+                On this page
               </p>
-            </div>
-          </div>
-
-          <div className="absolute right-0 bottom-0 hidden xl:flex flex-col items-end gap-10 animate-in fade-in slide-in-from-right duration-1000 delay-500">
-             <div className="text-right">
-                 <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-3 font-mono">Kernel_Sync_Status</div>
-                 <div className="text-2xl text-intuition-success font-black animate-pulse flex items-center justify-end gap-4 tracking-widest uppercase text-glow-success">
-                    <ShieldCheck size={32} /> L3_CONVERGENCE
-                 </div>
-             </div>
-             <div className="h-32 w-px bg-gradient-to-b from-white/20 to-transparent"></div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-20">
-          
-          {/* TACTICAL NAVIGATION */}
-          <aside className="lg:col-span-3 sticky top-32 h-fit hidden lg:block z-50">
-            <div className="bg-[#05060b]/80 border border-slate-900 p-8 clip-path-slant shadow-[0_0_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl group">
-              <div className="flex items-center gap-4 mb-10 border-b border-white/5 pb-6">
-                <div className="w-2.5 h-2.5 bg-intuition-primary rounded-full animate-ping shadow-glow-blue"></div>
-                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.6em]">System_Manifest</h4>
-              </div>
-              
-              <nav className="space-y-4">
-                {navItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => scrollTo(item.id)}
-                    onMouseEnter={playHover}
-                    className={`w-full flex items-center justify-between p-4 text-left transition-all border clip-path-slant group/item relative overflow-hidden ${
-                      activeSection === item.id 
-                        ? 'bg-white text-black border-white shadow-glow-white' 
-                        : 'bg-black/40 text-slate-500 border-slate-900 hover:border-white/20 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4 relative z-10">
-                      <item.icon size={16} className={activeSection === item.id ? 'animate-pulse' : 'opacity-30 group-hover/item:opacity-100 transition-opacity'} />
-                      <span className="text-[10px] font-black uppercase tracking-[0.3em]">{item.label}</span>
-                    </div>
-                    {activeSection === item.id && (
-                      <div className="absolute inset-0 bg-gradient-to-r from-white via-transparent to-transparent opacity-10"></div>
-                    )}
-                    <ChevronRight size={12} className={activeSection === item.id ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-3 transition-all'} />
-                  </button>
-                ))}
-              </nav>
-
-              <div className="mt-10 pt-8 border-t border-white/5">
-                <div className="flex flex-col gap-4">
-                  <div className="flex justify-between items-center text-[8px] font-black text-slate-700 uppercase tracking-widest">
-                    <span>Neural_Load</span>
-                    <span>68%</span>
-                  </div>
-                  <div className="h-1 w-full bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-intuition-primary w-[68%] animate-pulse shadow-glow-blue"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
+              <ul className="space-y-0.5">
+                {SECTIONS.map((s) => {
+                  const Icon = s.icon;
+                  const active = activeSection === s.id;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => scrollTo(s.id)}
+                        onMouseEnter={playHover}
+                        className={`w-full text-left flex items-start gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors ${
+                          active
+                            ? 'bg-white/10 text-white border-l-2 border-intuition-primary -ml-0.5 pl-[calc(0.5rem+2px)]'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] border-l-2 border-transparent'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 mt-0.5 shrink-0 opacity-70" aria-hidden />
+                        <span className="leading-snug">{s.navLabel}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
           </aside>
 
-          {/* DOCUMENTATION CONTENT */}
-          <main className="lg:col-span-9">
-            
-            {/* 00_INTRODUCTION */}
-            <DocSection id="intro" title="The_Intelligence_Layer" icon={Terminal} badge="00_INTRO" color="#00f3ff">
-              <div className="space-y-12">
-                <p className="text-2xl md:text-4xl text-slate-200 leading-tight uppercase font-black tracking-tight border-l-8 border-intuition-primary pl-10 py-4 group-hover:text-white transition-colors">
-                  IntuRank is the <span className="text-intuition-primary">Tactical Command Deck</span> for the Intuition Ecosystem. It turns protocol telemetry into actionable reputation alpha.
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                  <div className="p-4 sm:p-6 md:p-8 lg:p-10 bg-[#050508] border border-slate-900 clip-path-slant relative overflow-hidden group/card hover:border-intuition-primary/40 transition-all shadow-2xl">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] text-white"><Ghost size={120} /></div>
-                    <h4 className="text-xs font-black text-intuition-primary uppercase tracking-[0.4em] mb-6 flex items-center gap-3"><Activity size={14}/> Denoising Protocol</h4>
-                    <p className="text-sm font-mono text-slate-400 uppercase tracking-widest leading-relaxed group-hover/card:text-slate-200 transition-colors">
-                      Raw on-chain data is noisy. We utilize <span className="text-white">Heuristic Sifting</span> to identify high-conviction human signals versus bot-driven volume residuals.
-                    </p>
-                  </div>
-                  <div className="p-4 sm:p-6 md:p-8 lg:p-10 bg-[#050508] border border-slate-900 clip-path-slant relative overflow-hidden group/card hover:border-intuition-secondary/40 transition-all shadow-2xl">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] text-white"><Target size={120} /></div>
-                    <h4 className="text-xs font-black text-intuition-secondary uppercase tracking-[0.4em] mb-6 flex items-center gap-3"><Zap size={14}/> Market Verification</h4>
-                    <p className="text-sm font-mono text-slate-400 uppercase tracking-widest leading-relaxed group-hover/card:text-slate-200 transition-colors">
-                      Before you stake, we verify. Every market is audited for <span className="text-white">Semantic Consistency</span>—ensuring the "Reason" for a rank matches the on-chain metadata.
-                    </p>
-                  </div>
-                </div>
+          <div
+            ref={mainRef}
+            role="main"
+            className="min-w-0 flex-1 min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pr-1 scroll-smooth"
+          >
+            {/* Title + intro live only in the right column beside the TOC */}
+            <header className="mb-10 md:mb-14 max-w-[52rem]">
+              <p className="text-[11px] font-mono text-slate-500 uppercase tracking-[0.2em] mb-3">
+                Documentation · {APP_VERSION_DISPLAY} · {NETWORK_NAME}
+              </p>
+              <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight mb-4">
+                IntuRank
+              </h1>
+              <p className="text-base sm:text-lg text-slate-400 leading-relaxed">
+                A full-stack guide to IntuRank {APP_VERSION_DISPLAY}: the trust graph, how markets price conviction with
+                bonding curves, what each major screen is for, and how to operate safely on {NETWORK_NAME} (chain{' '}
+                {CHAIN_ID}). Use it alongside the{' '}
+                <ProseLink href="https://docs.intuition.systems">Intuition protocol docs</ProseLink> for deeper
+                contract-level detail.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3 text-sm">
+                <Link
+                  to="/markets"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 rounded-lg bg-intuition-primary/15 border border-intuition-primary/35 px-4 py-2 text-intuition-primary font-medium hover:bg-intuition-primary/25 transition-colors"
+                >
+                  Open markets <ArrowRight className="w-4 h-4" />
+                </Link>
+                <ProseLink href={EXPLORER_URL}>Block explorer</ProseLink>
               </div>
-            </DocSection>
+            </header>
 
-            {/* 01_MISSION_MOTIVE */}
-            <DocSection id="mission" title="Mission_&_Motive" icon={Target} badge="01_MISSION" color="#ff1e6d">
-              <div className="space-y-16">
-                <div className="p-12 bg-gradient-to-br from-intuition-secondary/10 via-black to-black border-2 border-intuition-secondary/20 clip-path-slant relative overflow-hidden shadow-2xl">
-                  <div className="absolute top-0 right-0 p-8 opacity-[0.02] text-white pointer-events-none group-hover:scale-110 transition-transform duration-1000"><Database size={240} /></div>
-                  <h3 className="text-3xl font-black text-white font-display uppercase tracking-tighter mb-10 flex items-center gap-4">
-                    <Zap size={28} className="text-intuition-secondary animate-pulse" /> The Core Motive
+            <div className="lg:hidden mb-8 rounded-xl border border-white/10 bg-[#0a0c12] p-4">
+              <label htmlFor="doc-section-jump" className="block text-xs font-medium text-slate-500 mb-2">
+                Jump to section
+              </label>
+              <select
+                id="doc-section-jump"
+                value={activeSection}
+                onChange={(e) => scrollTo(e.target.value)}
+                className="w-full rounded-lg bg-black/60 border border-white/10 text-slate-200 text-sm px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-intuition-primary/50"
+              >
+                {SECTIONS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.navLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <DocSection id="intro" title="Introduction">
+              <p>
+                <strong className="text-slate-100 font-semibold">IntuRank</strong> is a web client for the{' '}
+                <strong className="text-slate-100 font-semibold">Intuition</strong> trust graph: you browse and trade{' '}
+                <strong className="text-slate-100 font-semibold">reputation markets</strong> where each market is backed
+                by on-chain <strong className="text-slate-100 font-semibold">terms</strong> (atoms or triples), priced
+                shares, and live liquidity. The app reads indexed graph data, merges it with wallet state, and walks you
+                through deposits, redemptions, and claims without hiding that everything ultimately settles on-chain as{' '}
+                <strong className="text-slate-100 font-semibold">TRUST</strong> ({CURRENCY_SYMBOL}).
+              </p>
+              <p>
+                In practice you move between <strong className="text-slate-100 font-semibold">Markets</strong> (atoms,
+                triples, and lists), <strong className="text-slate-100 font-semibold">market detail</strong> pages for any
+                term,                 <strong className="text-slate-100 font-semibold">Portfolio</strong> for your positions, PnL, and
+                activity history, <strong className="text-slate-100 font-semibold">Profile</strong> (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/account</code>, public{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/profile/:address</code>) for your
+                wallet summary or any trader you look up, <strong className="text-slate-100 font-semibold">Feed</strong> for
+                network activity,{' '}
+                <strong className="text-slate-100 font-semibold">Stats</strong> for leaderboards and epoch-scoped
+                performance, <strong className="text-slate-100 font-semibold">Create atom or claim</strong> and{' '}
+                <strong className="text-slate-100 font-semibold">Send TRUST</strong> from the nav for direct creation and
+                transfers, <strong className="text-slate-100 font-semibold">Intel → Intuition Skill</strong> for
+                conversational transaction building, and (when enabled){' '}
+                <strong className="text-slate-100 font-semibold">The Arena</strong> for stance-based comparison.
+                Documentation (this page) and health views round out operator tooling.
+              </p>
+              <p>
+                Deployments target <strong className="text-slate-100 font-semibold">{NETWORK_NAME}</strong>, EVM chain ID{' '}
+                <strong className="text-slate-100 font-semibold">{CHAIN_ID}</strong>. Always confirm balances, contract
+                targets, and calldata in your wallet before signing. For hashes, events, and bytecode, use the official{' '}
+                <ProseLink href={EXPLORER_URL}>block explorer</ProseLink>.
+              </p>
+              <div className="not-prose grid sm:grid-cols-2 gap-4 mt-6">
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+                  <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-intuition-primary" />
+                    Signal quality
                   </h3>
-                  <div className="space-y-10 font-mono text-base uppercase tracking-widest leading-relaxed text-slate-400 font-bold">
-                    <p>
-                      In a world of generative noise and Sybil-driven consensus, <span className="text-white underline decoration-intuition-secondary decoration-4 underline-offset-8">Truth is a Scarce Asset</span>. 
-                    </p>
-                    <p>
-                      IntuRank was built to solve the <span className="text-intuition-primary">Epistemic Crisis</span> of the digital age. By turning belief into a tradeable commodity, we force financial accountability onto semantic claims.
-                    </p>
-                    <p className="text-slate-200">
-                      Our Mission: Establish a machine-readable, trust-less, and verifiable <span className="text-intuition-success">Reputation Infrastructure</span> for the entire on-chain economy.
-                    </p>
-                  </div>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Ranks and activity feeds blend vault economics with heuristics (for example denoising) so that raw
+                    volume alone does not tell the whole story. Treat rankings as one input: read the triples, curve, and
+                    liquidity on each term you care about.
+                  </p>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {[
-                        { title: "INCENTIVIZE_TRUTH", desc: "Rewarding early signalers on high-integrity nodes.", icon: ShieldCheck },
-                        { title: "TAX_DECEPTION", desc: "Protocol-level fees make spamming the graph a negative-EV operation.", icon: Coins },
-                        { title: "GLOBAL_CONSENSUS", desc: "Building the underlying trust primitive for AI agents and DAOs.", icon: Network }
-                    ].map((m, i) => (
-                        <div key={i} className="p-8 bg-black border border-white/5 clip-path-slant hover:border-white/20 transition-all">
-                            <m.icon size={24} className="text-intuition-primary mb-6" />
-                            <h5 className="text-[10px] font-black text-white uppercase tracking-[0.3em] mb-4">{m.title}</h5>
-                            <p className="text-[11px] text-slate-500 uppercase font-mono tracking-wider leading-relaxed">{m.desc}</p>
-                        </div>
-                    ))}
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+                  <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-intuition-secondary" />
+                    Markets you can verify
+                  </h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Every market page ties together metadata, linked claims, and curve parameters. Before sizing ingress or
+                    exit, verify the term ID, curve ID, and fee behavior match your intent, then cross-check large moves on
+                    the explorer.
+                  </p>
                 </div>
               </div>
             </DocSection>
 
-            {/* 02_PRIMITIVES */}
-            <DocSection id="primitives" title="Semantic_Primitives" icon={Fingerprint} badge="02_PRIMITIVES" color="#00ff9d">
-              <div className="space-y-16">
-                <p className="text-xl text-slate-300 uppercase tracking-widest leading-relaxed font-bold border-l-4 border-intuition-success pl-10">
-                  The Trust Graph is composed of two primary data objects. These are the building blocks of decentralized intelligence.
+            <DocSection id="mission" title="Mission">
+              <p>
+                Open networks struggle with spam, Sybil identities, and contradictory narratives that are cheap to
+                produce. Intuition treats{' '}
+                <strong className="text-slate-100 font-semibold">belief as something you express with capital</strong>:
+                staking, curves, and fees make conviction visible and expensive to fake at meaningful scale. The graph
+                stays permissionless: anyone can create atoms and triples, but sustaining a position in a live market
+                requires TRUST and attention to execution risk.
+              </p>
+              <p>
+                IntuRank&apos;s job is to make that economics legible: surfaces for discovery and comparison, transparent
+                previews of vault math (deposit, redeem, slippage), and tooling that points back to the same on-chain
+                objects developers and agents use elsewhere. It is a terminal for operators, not a black box.
+              </p>
+              <ul className="list-disc pl-5 space-y-2 marker:text-slate-500">
+                <li>
+                  <strong className="text-slate-200">Reward real signal.</strong> Early, consistent support on coherent
+                  terms can show up in price and rank, but nothing is guaranteed: markets are adversarial and liquidity can
+                  move quickly.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Raise the cost of noise.</strong> Creation fees, curve slope, and
+                  redemption paths reduce drive-by flooding of the graph relative to sustained conviction.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Composable reputation.</strong> Atoms and triples are stable IDs:
+                  dashboards, indexers, agents, and DAOs can all refer to the same term IDs and vault state.
+                </li>
+                <li>
+                  <strong className="text-slate-200">User sovereignty.</strong> You keep custody of keys; the app proposes
+                  transactions and you approve them in your wallet. There is no custodial bridge inside IntuRank itself.
+                </li>
+              </ul>
+            </DocSection>
+
+            <DocSection id="concepts" title="Core concepts">
+              <p>
+                Intuition&apos;s knowledge layer is a graph of <strong className="text-slate-100 font-semibold">terms</strong>.
+                An <strong className="text-slate-100 font-semibold">atom</strong> is a single term: a person, project,
+                tag, or concept identified on-chain. A <strong className="text-slate-100 font-semibold">triple</strong> is
+                another kind of term: a structured claim (subject atom, predicate atom, object atom) such as &quot;Alice →
+                works_at → Acme&quot;. Both atoms and triples can have vaults, shares, and markets attached. The
+                protocol also supports curated <strong className="text-slate-100 font-semibold">lists</strong> (for example
+                identities added under a list predicate) that you can browse under Markets.
+              </p>
+              <p>
+                On-chain creation flows (for example via FeeProxy) pay TRUST to register atoms and triples; deposits into
+                MultiVault-style vaults are separate actions that move TRUST into curve-backed liquidity for an existing
+                term. IntuRank surfaces term IDs, share balances, and curve choice so you always know which contract path
+                you are on.
+              </p>
+
+              <div className="not-prose grid md:grid-cols-2 gap-4 mt-2">
+                <div className="rounded-lg border border-white/10 p-5 bg-[#080a10]">
+                  <div className="flex items-center gap-2 mb-3 text-intuition-primary">
+                    <Database className="w-5 h-5" />
+                    <h3 className="text-base font-semibold text-white">Atoms</h3>
+                  </div>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Atoms are the atomic units of identity and meaning in the graph. Each has a stable bytes32 ID and can
+                    carry metadata (for example labels or URIs resolved by the indexer). In the UI, an atom detail page shows
+                    linked triples where it appears, vault metrics, and rank relative to other markets you compare.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 p-5 bg-[#080a10]">
+                  <div className="flex items-center gap-2 mb-3 text-intuition-secondary">
+                    <Network className="w-5 h-5" />
+                    <h3 className="text-base font-semibold text-white">Triples</h3>
+                  </div>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Triples encode semantic claims between atoms. They are first-class terms with their own IDs and vaults,
+                    so you can stake on a specific statement, not only on an entity. Conflicting triples can coexist; the
+                    market mechanism does not resolve truth, it prices attention and capital around competing claims.
+                  </p>
+                </div>
+              </div>
+
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-2">Vaults, shares, and curves</h3>
+              <p>
+                A <strong className="text-slate-100 font-semibold">vault</strong> holds TRUST against a term and a{' '}
+                <strong className="text-slate-100 font-semibold">curve ID</strong>. Depositing buys shares at the current
+                curve price; redeeming burns shares for TRUST back, subject to fees and slippage. Curve ID{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">{LINEAR_CURVE_ID}</code> is the
+                linear (stable-style) curve; curve ID{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">
+                  {OFFSET_PROGRESSIVE_CURVE_ID}
+                </code>{' '}
+                is the offset progressive (discovery-style) curve with steeper response to supply. The UI labels these
+                flavors in plain language; the exact parameters live in protocol configuration and on-chain storage.
+              </p>
+
+              <h3 className="text-base font-semibold text-slate-100 mt-6 mb-2">Typical flow</h3>
+              <ol className="list-decimal pl-5 space-y-3 marker:text-slate-500">
+                <li>
+                  <strong className="text-slate-200">Orient.</strong> Find a term in Markets or via search, open its detail
+                  page, and read triples, liquidity, curve type, and recent activity before you commit size.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Commit (ingress).</strong> Deposit TRUST into the vault for that term
+                  and curve. You receive shares representing your position on the bonding curve; the transaction may
+                  include min-shares and fee lines shown in the flow.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Signal.</strong> While you hold shares, your capital is tied to that
+                  term&apos;s market. Other participants can join or leave, which moves price along the curve.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Exit or rebalance.</strong> Redeem shares (fully or in batch where
+                  supported) to take TRUST out, or move to another term after comparing opportunity and fees.
+                </li>
+              </ol>
+            </DocSection>
+
+            <DocSection id="markets" title="Markets and bonding curves">
+              <p>
+                Each market is a <strong className="text-slate-100 font-semibold">bonding curve</strong> over outstanding
+                shares: as more TRUST is deposited, the marginal cost of the next share changes according to the curve
+                family. That yields continuous liquidity (you can usually buy or sell into the pool) while making early
+                conviction structurally different from late entry, especially on progressive curves.
+              </p>
+              <p>
+                IntuRank shows previews for deposits and redemptions: expected shares, fees, and slippage relative to pool
+                state. Always read those lines before signing. High volatility, thin liquidity, or MEV can still move the
+                realized price away from the preview; large trades warrant smaller clips or manual price checks on the{' '}
+                <ProseLink href={EXPLORER_URL}>explorer</ProseLink>.
+              </p>
+              <p className="text-xs font-mono text-slate-500 bg-black/40 border border-white/5 rounded-lg px-3 py-2">
+                App release {APP_VERSION} · curve IDs {LINEAR_CURVE_ID} (linear) and {OFFSET_PROGRESSIVE_CURVE_ID}{' '}
+                (offset progressive) match protocol constants in this build
+              </p>
+
+              <div className="not-prose grid md:grid-cols-2 gap-4 mt-4">
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.04] p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg bg-amber-500/15 text-amber-400">
+                      <TrendingUp className="w-5 h-5" />
+                    </div>
+                    <h3 className="text-base font-semibold text-white">Offset progressive (discovery)</h3>
+                  </div>
+                  <p className="text-sm text-slate-400 leading-relaxed mb-3">
+                    Curve ID {OFFSET_PROGRESSIVE_CURVE_ID}. Steeper response of price to supply changes, which rewards early
+                    positioning in newer or contested markets and can mean sharper moves as flow arrives.
+                  </p>
+                  <p className="text-xs font-mono text-slate-500">Often described as discovery or &quot;alpha&quot; style</p>
+                </div>
+                <div className="rounded-lg border border-intuition-primary/25 bg-intuition-primary/[0.05] p-5">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg bg-intuition-primary/15 text-intuition-primary">
+                      <Layers className="w-5 h-5" />
+                    </div>
+                    <h3 className="text-base font-semibold text-white">Linear (stable)</h3>
+                  </div>
+                  <p className="text-sm text-slate-400 leading-relaxed mb-3">
+                    Curve ID {LINEAR_CURVE_ID}. More predictable marginal pricing for incremental supply, often preferred
+                    when depth is high or when participants want smoother ingress over time.
+                  </p>
+                  <p className="text-xs font-mono text-slate-500">Utility or &quot;stable&quot; style in product copy</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-500 mt-4">
+                Fee routing (for example via FeeProxy) and exact math live in deployed contracts. If you integrate
+                programmatically, use the same ABIs and addresses as this app or the official Intuition SDKs, and verify
+                against the explorer for upgrades.
+              </p>
+            </DocSection>
+
+            <DocSection id="ares" title="ARES (intelligence layer)">
+              <p>
+                <strong className="text-slate-100 font-semibold">ARES</strong> is IntuRank&apos;s umbrella for
+                generative and heuristic overlays on top of chain and indexer data. In the product you will see it in
+                places like <strong className="text-slate-100 font-semibold">AI briefings</strong> on market detail pages
+                (short natural-language summaries of a term&apos;s claims and activity), pulsed summaries on the{' '}
+                <strong className="text-slate-100 font-semibold">Feed</strong>, and similar callouts where the UI needs a
+                quick narrative. None of that replaces the underlying triples, vault balances, or transaction history:
+                it is a lens, not a source of truth.
+              </p>
+              <p>
+                When the deployment has AI features turned on, those summaries use a hosted language model; if the
+                assistant is unavailable, you still get template or on-chain-only context so markets and portfolio keep
+                working.
+              </p>
+              <p>
+                <strong className="text-slate-100 font-semibold">Skill Playground</strong> (Intel menu) is related but
+                distinct: it uses Gemini to help craft and review <em>transactions</em> (atoms, triples, deposits) from
+                natural language, then you sign with your wallet. ARES-style copy on Feed or market pages does not execute
+                trades by itself.
+              </p>
+              <div className="not-prose flex items-start gap-3 rounded-lg border border-violet-500/20 bg-violet-500/[0.06] p-4 mt-2">
+                <Sparkles className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  Treat AI copy as a hint, not proof: verify important decisions against raw graph data and the explorer.
+                  Nothing here is investment or legal advice.
                 </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                  <ArchitectureNode 
-                    title="Atoms" 
-                    desc="Atomic identifiers for any unique entity. An Atom represents the 'Who' or 'What'. In the market, an Atom is a liquid pool of reputation capital." 
-                    icon={Database} 
-                    color="#00f3ff"
-                  />
-                  <ArchitectureNode 
-                    title="Logic Triples" 
-                    desc="Directed semantic linkages (Subject-Predicate-Object). Triples define relationships and claims, forming the 'Why' of the network." 
-                    icon={Network} 
-                    color="#ff1e6d"
-                  />
-                </div>
-
-                <div className="bg-[#080a12] p-12 border border-slate-800 clip-path-slant relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-gradient-to-r from-intuition-success/[0.03] to-transparent pointer-events-none"></div>
-                  <h4 className="text-xs font-black text-intuition-success uppercase tracking-[0.5em] mb-8 flex items-center gap-4"><Zap size={18} className="animate-pulse" /> The Ingress Flow</h4>
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 font-mono">
-                    <div className="space-y-3">
-                        <div className="text-[9px] font-black text-white flex items-center gap-2 uppercase tracking-widest"><div className="w-4 h-px bg-intuition-success"></div> 01_COMMIT</div>
-                        <p className="text-[11px] text-slate-500 uppercase leading-relaxed font-bold">Signalers deposit ₸ into an Atom's MultiVault to mint portal shares.</p>
-                    </div>
-                    <div className="space-y-3">
-                        <div className="text-[9px] font-black text-white flex items-center gap-2 uppercase tracking-widest"><div className="w-4 h-px bg-intuition-success"></div> 02_SIGNAL</div>
-                        <p className="text-[11px] text-slate-500 uppercase leading-relaxed font-bold">Holding shares signals high-conviction belief in that node's reputation.</p>
-                    </div>
-                    <div className="space-y-3">
-                        <div className="text-[9px] font-black text-white flex items-center gap-2 uppercase tracking-widest"><div className="w-4 h-px bg-intuition-success"></div> 03_HARVEST</div>
-                        <p className="text-[11px] text-slate-500 uppercase leading-relaxed font-bold">Signalers liquidate shares on the curve to reclaim assets + arbitrage gains.</p>
-                    </div>
-                  </div>
-                </div>
               </div>
             </DocSection>
 
-            {/* 03_ECONOMICS */}
-            <DocSection id="economics" title="Mathematical_Dynamics" icon={TrendingUp} badge="03_CURVES" color="#facc15">
-              <div className="space-y-16">
-                <div className="p-4 sm:p-6 md:p-10 bg-black border-l-8 border-intuition-warning clip-path-slant font-mono shadow-2xl">
-                    <p className="text-slate-400 text-sm leading-relaxed uppercase font-black tracking-widest">
-                        // CORE_SPECIFICATION_V1:<br />
-                        Pricing is governed by <span className="text-white">Deterministic Bonding Curves</span>. This ensures perpetual liquidity—you can always exit a position, but the cost of entry increases as consensus builds.
-                    </p>
-                </div>
+            <DocSection id="skill" title="Intuition Skill Playground">
+              <p>
+                The <strong className="text-slate-100 font-semibold">Intuition Skill Playground</strong> (
+                <strong className="text-slate-100 font-semibold">Intel → Intuition Skill</strong>, route{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/skill-playground</code>) is a
+                chat workspace where a Gemini-powered agent follows the same mental model as the official{' '}
+                <strong className="text-slate-100 font-semibold">Intuition Skill</strong> for coding agents. You describe
+                what you want in plain language; the UI builds calldata against{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">FeeProxy</code> and{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">MultiVault</code>, shows a human
+                summary, and you execute with <strong className="text-slate-100 font-semibold">Sign &amp; broadcast</strong>{' '}
+                in your wallet. Raw hex is not required for the default flows.
+              </p>
+              <p>
+                The chat needs the AI assistant to be enabled for this app (whoever runs IntuRank handles that on the server
+                or build). You can open the Playground and read replies without a wallet; connect on {NETWORK_NAME} (chain{' '}
+                {CHAIN_ID}) when you are ready to sign transactions and spend TRUST.
+              </p>
+              <p>
+                Typical actions include <strong className="text-slate-100 font-semibold">creating atoms</strong> (labels and
+                deposits), <strong className="text-slate-100 font-semibold">creating triples</strong> from subject, predicate,
+                and object labels (missing atoms can be created in the same flow), and{' '}
+                <strong className="text-slate-100 font-semibold">vault deposits</strong> into existing terms. The sidebar
+                shows approximate costs: on the order of <strong className="text-slate-100 font-semibold">~0.15 {CURRENCY_SYMBOL}</strong>{' '}
+                plus your chosen vault deposit for atom and triple creation in many configurations; deposit size for
+                staking varies with the curve and pool. First-time flows may ask for{' '}
+                <strong className="text-slate-100 font-semibold">FeeProxy approval</strong> before the protocol accepts your
+                transactions.
+              </p>
+              <p>
+                <strong className="text-slate-100 font-semibold">Minimum TRUST for creations via the Skill:</strong> Any atom
+                or triple the Intuition Skill agent proposes uses a vault deposit of at least{' '}
+                <strong className="text-slate-100 font-semibold">0.5 TRUST</strong> ({CURRENCY_SYMBOL}). The JSON field{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">depositTrust</code> must be{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">&quot;0.5&quot;</code> or higher (that
+                floor matches the bonding-curve minimum for claims in the app). Protocol creation fees are separate and still
+                apply on top of the deposit.
+              </p>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                    <div className="bg-[#0a0a0a] border border-slate-900 p-4 sm:p-6 md:p-10 clip-path-slant group hover:border-intuition-warning/40 transition-all shadow-xl">
-                        <div className="flex items-center gap-5 mb-8">
-                            <div className="w-16 h-16 bg-intuition-warning/10 border border-intuition-warning/30 flex items-center justify-center text-intuition-warning clip-path-slant shadow-glow-gold"><TrendingUp size={32}/></div>
-                            <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Offset Progressive</h4>
-                        </div>
-                        <p className="text-[12px] text-slate-500 leading-relaxed uppercase font-mono tracking-widest mb-10 group-hover:text-slate-300">
-                            The "Alpha" curve. Exponential price scaling rewards high-conviction early signalers. Designed for discovery phases.
-                        </p>
-                        <div className="bg-black p-6 border border-white/5 font-mono text-[9px] space-y-4">
-                            <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-slate-600 uppercase font-black">Curve_ID</span><span className="text-white">0x01_PROGRESSIVE</span></div>
-                            <div className="flex justify-between"><span className="text-slate-600 uppercase font-black">Velocity</span><span className="text-intuition-warning font-black uppercase">QUADRATIC_EXP</span></div>
-                        </div>
-                    </div>
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3">Language and multilingual use</h3>
+              <p>
+                The Playground is <strong className="text-slate-100 font-semibold">multilingual in practice</strong>: there
+                is no separate language selector in the UI. The assistant follows your{' '}
+                <strong className="text-slate-100 font-semibold">written language</strong> for explanations, protocol
+                teaching, and clarifying questions. The system prompt instructs the agent to mirror the user&apos;s language
+                when possible and to keep machine-readable JSON keys in English so the client can parse them. On-chain string
+                fields (atom labels, triple parts, descriptions) may use any Unicode text you intend to register as metadata.
+              </p>
+              <p>
+                <strong className="text-slate-100 font-semibold">What stays English:</strong> JSON property names in code
+                blocks (<code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">action</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">label</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">depositTrust</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">chainId</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">subject</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">predicate</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">object</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">description</code>).{' '}
+                <strong className="text-slate-100 font-semibold">Values</strong> inside those fields can be French, Spanish,
+                Japanese, and so on. Fixed chrome in the chat (for example &quot;Sign &amp; broadcast&quot;, &quot;Technical
+                details (JSON)&quot;) remains English because it is rendered by the app, not the model.
+              </p>
+              <p>
+                <strong className="text-slate-100 font-semibold">Quality and limits:</strong> Fluency varies by language and
+                model version. Rare languages or mixed scripts may get weaker answers. The agent may fall back to English if it
+                cannot follow safely. Always verify JSON, amounts, and network before signing. Nothing here is a guarantee of
+                regulatory or legal correctness in any jurisdiction.
+              </p>
 
-                    <div className="bg-[#0a0a0a] border border-slate-900 p-4 sm:p-6 md:p-10 clip-path-slant group hover:border-intuition-primary/40 transition-all shadow-xl">
-                        <div className="flex items-center gap-5 mb-8">
-                            <div className="w-16 h-16 bg-intuition-primary/10 border border-intuition-primary/30 flex items-center justify-center text-intuition-primary clip-path-slant shadow-glow-blue"><Layers size={32}/></div>
-                            <h4 className="text-2xl font-black text-white uppercase tracking-tighter">Linear Utility</h4>
-                        </div>
-                        <p className="text-[12px] text-slate-500 leading-relaxed uppercase font-mono tracking-widest mb-10 group-hover:text-slate-300">
-                            Designed for stable nodes and large-scale organizational clusters. Fixed price-to-supply ratio for predictable ingress.
-                        </p>
-                        <div className="bg-black p-6 border border-white/5 font-mono text-[9px] space-y-4">
-                            <div className="flex justify-between border-b border-white/5 pb-2"><span className="text-slate-600 uppercase font-black">Curve_ID</span><span className="text-white">0x02_STABLE</span></div>
-                            <div className="flex justify-between"><span className="text-slate-600 uppercase font-black">Velocity</span><span className="text-intuition-primary font-black uppercase">LINEAR_FIXED</span></div>
-                        </div>
-                    </div>
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3">Example prompts (copy into the chat)</h3>
+              <p className="text-slate-400 text-sm">
+                Below are realistic user messages. Expected behavior: replies in the same language; when a transaction is
+                proposed, a markdown <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">json</code>{' '}
+                fenced block with English keys; string values reflect your wording. Keep{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">depositTrust</code> at{' '}
+                <strong className="text-slate-200">0.5</strong> or above for atom and triple creation.
+              </p>
+
+              <div className="not-prose space-y-4 mt-4 text-[13px]">
+                <div className="rounded-xl border border-white/10 bg-[#080a10] p-4">
+                  <p className="text-xs font-semibold text-intuition-primary mb-2">French · create atom</p>
+                  <pre className="text-slate-300 font-mono whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">
+                    {`Crée un atome nommé « Réseau Nova » avec un dépôt de 0,5 TRUST. Description : communauté open-source autour de la réputation on-chain.`}
+                  </pre>
+                  <p className="text-slate-500 mt-2 leading-relaxed">
+                    Expect a French explanation and JSON with{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">"label": "Réseau Nova"</code> (or NFC-normalized
+                    form) and an English <code className="text-[11px] bg-white/5 px-1 rounded">"action": "createAtom"</code>.
+                  </p>
                 </div>
+                <div className="rounded-xl border border-white/10 bg-[#080a10] p-4">
+                  <p className="text-xs font-semibold text-intuition-primary mb-2">Spanish · triple / claim</p>
+                  <pre className="text-slate-300 font-mono whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">
+                    {`Quiero registrar la afirmación: el sujeto es "DAO Alpha", el predicado es "colabora_con", el objeto es "Estudio Beta". Depósito de bóveda 0.5 TRUST.`}
+                  </pre>
+                  <p className="text-slate-500 mt-2 leading-relaxed">
+                    Expect Spanish narrative plus{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">createTriple</code> JSON;{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">subject</code>,{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">predicate</code>,{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">object</code> values carry the Spanish labels you
+                    gave.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-[#080a10] p-4">
+                  <p className="text-xs font-semibold text-intuition-primary mb-2">German · question only (no tx)</p>
+                  <pre className="text-slate-300 font-mono whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">
+                    {`Was ist der Unterschied zwischen einem Atom und einem Triple im Intuition-Protokoll? Antworte kurz auf Deutsch.`}
+                  </pre>
+                  <p className="text-slate-500 mt-2 leading-relaxed">
+                    Expect a German answer with no mandatory transaction; the agent should not invent JSON unless you ask to
+                    create something.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-[#080a10] p-4">
+                  <p className="text-xs font-semibold text-intuition-primary mb-2">Japanese · explain + create</p>
+                  <pre className="text-slate-300 font-mono whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">
+                    {`TRUSTのデポジット最小値を日本語で一言で教えて。そのあと「オープン研究ラボ」という名前の原子を0.5 TRUSTで作るための手順を出して。`}
+                  </pre>
+                  <p className="text-slate-500 mt-2 leading-relaxed">
+                    Expect Japanese prose, then (if the model follows the flow) a{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">createAtom</code> block with{' '}
+                    <code className="text-[11px] bg-white/5 px-1 rounded">label</code> including the Japanese name.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-[#080a10] p-4">
+                  <p className="text-xs font-semibold text-intuition-primary mb-2">English · explicit triple (labels)</p>
+                  <pre className="text-slate-300 font-mono whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed">
+                    {`Create a triple: subject "Alice", predicate "endorses", object "Bob", depositTrust 0.5, chain 1155. One-line description: social trust edge.`}
+                  </pre>
+                  <p className="text-slate-500 mt-2 leading-relaxed">
+                    Baseline path most docs assume; JSON values stay Latin script here but could be any script in other
+                    sessions.
+                  </p>
+                </div>
+              </div>
+
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3">Example JSON shape (keys must stay English)</h3>
+              <p className="text-sm text-slate-400 mb-3">
+                The app parses only the English keys. Non-English content lives in the string values:
+              </p>
+              <pre className="not-prose rounded-xl border border-intuition-primary/25 bg-black/50 p-4 text-[11px] leading-relaxed text-slate-400 font-mono overflow-x-auto">
+                {`{
+  "action": "createTriple",
+  "subject": "DAO Alpha",
+  "predicate": "colabora_con",
+  "object": "Estudio Beta",
+  "depositTrust": "0.5",
+  "chainId": "1155",
+  "description": "Alianza entre DAO y estudio (ejemplo de documentación)."
+}`}
+              </pre>
+
+              <p>
+                Outside the browser, developers install the same skill with{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">
+                  npx skills add 0xintuition/agent-skills --skill intuition
+                </code>{' '}
+                so agents emit compatible transaction intents. The Playground is the interactive counterpart: same ABIs and
+                addresses (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">{FEE_PROXY_ADDRESS}</code>,{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">{MULTI_VAULT_ADDRESS}</code>), your
+                wallet as signer.
+              </p>
+              <div className="not-prose flex flex-wrap gap-3 mt-4">
+                <Link
+                  to="/skill-playground"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 rounded-lg bg-intuition-primary/15 border border-intuition-primary/35 px-4 py-2 text-intuition-primary font-medium hover:bg-intuition-primary/25 transition-colors text-sm"
+                >
+                  Open Skill Playground <ArrowRight className="w-4 h-4" />
+                </Link>
+                <ProseLink href="https://docs.intuition.systems">Protocol documentation</ProseLink>
               </div>
             </DocSection>
 
-            {/* 04_ARES */}
-            <DocSection id="ares" title="Intelligence_Synthesis" icon={Cpu} badge="04_ARES_CORE" color="#a855f7">
-              <div className="space-y-16">
-                <p className="text-2xl text-slate-300 leading-relaxed uppercase tracking-widest font-black font-mono text-center lg:text-left">
-                  The <span className="text-white underline decoration-intuition-primary/40">ARES Intelligence Engine</span> is our proprietary denoising layer.
+            <DocSection id="leaderboards" title="Leaderboards (Stats)">
+              <p>
+                The <strong className="text-slate-100 font-semibold">Leaderboards</strong> page (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/stats</code>, nav label{' '}
+                <strong className="text-slate-100 font-semibold">LEADERBOARD</strong>) ranks activity and performance from
+                the indexer. Use the tabs to switch views; data refreshes when you change tab or reload.
+              </p>
+              <ul className="list-disc pl-5 space-y-2 marker:text-slate-500">
+                <li>
+                  <strong className="text-slate-200">TOP STAKERS.</strong> Wallets ranked by staking-related weighting.
+                  Rows link to <strong className="text-slate-100 font-semibold">public profiles</strong> (
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/profile/:address</code>) when
+                  applicable. ENS names may resolve for display.
+                </li>
+                <li>
+                  <strong className="text-slate-200">TOP PNL.</strong> Period-based profit-and-loss leaderboard sourced from
+                  the protocol&apos;s PnL leaderboard API. Figures are cached briefly in the client for responsiveness; treat
+                  rankings as indicative and confirm large claims against your own accounting.
+                </li>
+                <li>
+                  <strong className="text-slate-200">MOST SUPPORTED.</strong> Agents (terms) with strong supportive flow
+                  under the indexer&apos;s &quot;support&quot; semantics. Deep links go to{' '}
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/markets/:id</code>.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Claim entropy.</strong> Highlights contested or high-entropy claims for
+                  discovery (naming in the UI: controversy-style framing).
+                </li>
+                <li>
+                  <strong className="text-slate-200">TOP CLAIMS.</strong> Semantic triples ranked for attention in the graph.
+                </li>
+              </ul>
+              <p>
+                For <strong className="text-slate-100 font-semibold">TOP STAKERS</strong> and{' '}
+                <strong className="text-slate-100 font-semibold">TOP PNL</strong>, a command-style search accepts{' '}
+                <strong className="text-slate-100 font-semibold">wallet address</strong> or{' '}
+                <strong className="text-slate-100 font-semibold">ENS</strong> with autocomplete suggestions. That helps you
+                jump to a profile or verify how an address appears on the board. Epoch windows for seasonal stats are defined
+                in app constants and rotate; read the in-app labels for the active range.
+              </p>
+              <div className="not-prose mt-4">
+                <Link
+                  to="/stats"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-sm font-medium text-intuition-primary hover:bg-white/10 transition-colors"
+                >
+                  Open Leaderboards <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </DocSection>
+
+            <DocSection id="create-flows" title="Create atom, Send TRUST, and Arena">
+              <h3 className="text-base font-semibold text-slate-100 mt-0 mb-3 flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-intuition-primary shrink-0" aria-hidden />
+                Create atom or claim
+              </h3>
+              <p>
+                <strong className="text-slate-100 font-semibold">Create atom or claim</strong> (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/create</code>) is a multi-path
+                wizard for on-chain creation without using the Skill chat. From the root menu you can start an{' '}
+                <strong className="text-slate-100 font-semibold">identity atom</strong> (guided or manual metadata, optional
+                imagery with IPFS upload when configured),                 compose a <strong className="text-slate-100 font-semibold">semantic claim</strong> (triple) with
+                search-backed atom pickers, use a <strong className="text-slate-100 font-semibold">quick SDK string</strong>{' '}
+                path to broadcast a simple atom from text and deposit, or open{' '}
+                <strong className="text-slate-100 font-semibold">advanced pathways</strong>{' '}
+                for <strong className="text-slate-100 font-semibold">CONSTRUCT_ATOM</strong> and{' '}
+                <strong className="text-slate-100 font-semibold">ESTABLISH_SYNAPSE</strong> (manual triple) flows with explicit
+                term IDs and deposits. Review screens estimate fees, enforce minimum deposits where the protocol requires
+                them, and may validate that referenced atoms exist before you confirm.
+              </p>
+              <p>
+                Creation always costs TRUST: protocol fees plus vault deposits depend on the path and current fee schedule.
+                Ensure <strong className="text-slate-100 font-semibold">FeeProxy approval</strong> is granted when the UI asks,
+                then confirm each transaction in your wallet. Successful runs show term IDs and links to the explorer.
+              </p>
+
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3 flex items-center gap-2">
+                <Send className="w-5 h-5 text-amber-400 shrink-0" aria-hidden />
+                Send TRUST
+              </h3>
+              <p>
+                <strong className="text-slate-100 font-semibold">Send TRUST</strong> (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/send-trust</code>) is a simple{' '}
+                <strong className="text-slate-100 font-semibold">native TRUST transfer</strong> to another wallet. Enter a{' '}
+                <strong className="text-slate-100 font-semibold">0x address</strong> or an{' '}
+                <strong className="text-slate-100 font-semibold">ENS name</strong> (for example{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">name.eth</code>); the page resolves ENS
+                on-chain and shows validation errors for bad input. Choose an amount; the{' '}
+                <strong className="text-slate-100 font-semibold">Max</strong> control leaves a small
+                TRUST reserve for future gas on {NETWORK_NAME}. Sending to yourself is blocked. After broadcast,
+                you get a confirmation with a link to the transaction on the explorer. This is{' '}
+                <strong className="text-slate-100 font-semibold">not</strong> a MultiVault deposit: it does not open or close
+                a market position by itself.
+              </p>
+
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-intuition-secondary shrink-0" aria-hidden />
+                Arena (Climb)
+              </h3>
+              {ARENA_ENABLED ? (
+                <p>
+                  <strong className="text-slate-100 font-semibold">The Arena</strong> (
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>, nav{' '}
+                  <strong className="text-slate-100 font-semibold">THE ARENA</strong>) is a stance and comparison surface:
+                  you vote on claims and narratives in a fast UI, earn{' '}
+                  <strong className="text-slate-100 font-semibold">arena XP</strong> stored locally, and can compete on
+                  player leaderboards fed by the app&apos;s arena service.
+                  Optional stakes send <strong className="text-slate-100 font-semibold">native TRUST</strong> to a configured
+                  treasury address as part of the arena flow (not a vault deposit). Vault-based trading remains on{' '}
+                  <Link to="/markets/atoms" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                    Markets
+                  </Link>
+                  .
                 </p>
+              ) : (
+                <p>
+                  <strong className="text-slate-100 font-semibold">The Arena</strong> route (
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>) is only fully live
+                  when this deployment has turned the feature on. Otherwise the nav may still show{' '}
+                  <strong className="text-slate-100 font-semibold">THE ARENA</strong>, but you may see a coming-soon screen
+                  until the operator enables it.
+                </p>
+              )}
 
-                <div className="bg-[#05050a] border border-white/5 p-12 clip-path-slant relative overflow-hidden group shadow-[0_0_120px_rgba(0,0,0,0.8)]">
-                  <div className="absolute top-0 right-0 p-12 opacity-[0.02] text-white pointer-events-none group-hover:scale-125 transition-transform duration-1000"><Cpu size={300} /></div>
-                  
-                  <div className="flex items-center gap-8 mb-12 relative z-10">
-                    <Sparkles size={24} className="text-[#a855f7] animate-pulse" />
-                    <h4 className="text-sm font-black text-white uppercase tracking-[0.6em]">NEURAL_RECON_PIPELINE</h4>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 relative z-10">
-                    <div className="space-y-10">
-                        <div className="group/item">
-                            <div className="text-[10px] font-black text-intuition-primary uppercase tracking-widest mb-4 border-b border-white/5 pb-2 group-hover/item:text-white transition-colors">Semantic Audit</div>
-                            <p className="text-[11px] text-slate-500 leading-relaxed uppercase font-mono tracking-widest font-bold group-hover/item:text-slate-300 transition-colors">ARES processes triples through the <span className="text-white">Gemini-3-Pro</span> LLM to identify semantic inconsistencies and project reputation risk vectors.</p>
-                        </div>
-                        <div className="group/item">
-                            <div className="text-[10px] font-black text-intuition-secondary uppercase tracking-widest mb-4 border-b border-white/5 pb-2 group-hover/item:text-white transition-colors">Arbitrage Scoring</div>
-                            <p className="text-[11px] text-slate-500 leading-relaxed uppercase font-mono tracking-widest font-bold group-hover/item:text-slate-300 transition-colors">By comparing sentiment bias vs. capital depth, ARES predicts node stabilization points and identifies arbitrage opportunities for signalers.</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-black/60 border border-white/10 p-10 clip-path-slant flex flex-col justify-center items-center text-center shadow-inner relative overflow-hidden">
-                        <div className="absolute inset-0 bg-[#a855f7]/[0.03] animate-pulse"></div>
-                        <div className="text-xs font-black text-white uppercase tracking-[0.5em] mb-10 font-display">ARES_CORE_L3_ACTIVE</div>
-                        <div className="flex gap-3 mb-10">
-                            {[...Array(8)].map((_, i) => (
-                                <div key={i} className="w-2 h-10 bg-[#a855f7] shadow-[0_0_15px_#a855f7] animate-pulse" style={{ animationDelay: `${i * 150}ms` }}></div>
-                            ))}
-                        </div>
-                        <p className="text-[10px] text-slate-600 font-mono italic uppercase tracking-tighter max-w-[220px]">"Analyzing global graph for consensus collision probability. Sector_04 stable."</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="not-prose flex flex-wrap gap-3 mt-6">
+                <Link
+                  to="/create"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-intuition-primary hover:underline"
+                >
+                  Create atom or claim <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/send-trust"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Send TRUST <ChevronRight className="w-4 h-4" />
+                </Link>
+                {ARENA_ENABLED && (
+                  <Link
+                    to="/climb"
+                    onClick={playClick}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                  >
+                    Arena <ChevronRight className="w-4 h-4" />
+                  </Link>
+                )}
               </div>
             </DocSection>
 
-            {/* 05_OPERATOR_GUIDE */}
-            <DocSection id="guide" title="Operator_Guide" icon={Command} badge="05_GUIDE" color="#ffffff">
-              <div className="space-y-12">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    {[
-                        { step: "01", title: "Establish Link", desc: "Connect an Ethereum-compatible wallet to the Intuition Network." },
-                        { step: "02", title: "Identify Signal", desc: "Select a high-signal Identity or Claim node from the Terminal." },
-                        { step: "03", title: "Acquire Shares", desc: "Commit ₸ to ingress. Your conviction is now on-chain." }
-                    ].map((step, i) => (
-                        <div key={i} className="p-10 bg-[#05060b] border-2 border-slate-900 clip-path-slant hover:border-white transition-all shadow-xl group">
-                            <div className="text-4xl font-black text-white font-display mb-6 opacity-10 group-hover:opacity-100 group-hover:text-intuition-primary transition-all">{step.step}</div>
-                            <h4 className="text-xs font-black text-white uppercase tracking-[0.3em] mb-4 group-hover:translate-x-2 transition-transform">{step.title}</h4>
-                            <p className="text-[11px] text-slate-500 uppercase tracking-widest leading-relaxed group-hover:text-slate-300 transition-colors">{step.desc}</p>
-                        </div>
-                    ))}
-                </div>
+            <DocSection id="portfolio-profile" title="Portfolio and profile">
+              <h3 className="text-base font-semibold text-slate-100 mt-0 mb-3 flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-intuition-primary shrink-0" aria-hidden />
+                Portfolio
+              </h3>
+              <p>
+                <strong className="text-slate-100 font-semibold">Portfolio</strong> (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/portfolio</code>, nav{' '}
+                <strong className="text-slate-100 font-semibold">PORTFOLIO</strong>) is your command center after you connect
+                a wallet. It pulls indexed positions and history for the connected address and surfaces{' '}
+                <strong className="text-slate-100 font-semibold">wallet TRUST balance</strong>,{' '}
+                <strong className="text-slate-100 font-semibold">aggregate portfolio value</strong>,{' '}
+                <strong className="text-slate-100 font-semibold">net PnL</strong>, and (when data is available) an{' '}
+                <strong className="text-slate-100 font-semibold">equity curve</strong> over time. You get category exposure
+                and sentiment-style breakdowns, a sortable and paginated <strong className="text-slate-100 font-semibold">
+                  holdings
+                </strong>{' '}
+                table with links back to each term, <strong className="text-slate-100 font-semibold">transaction history</strong>
+                , and a <strong className="text-slate-100 font-semibold">My created</strong> area split into identities and
+                claims you originated. Use it to reconcile what you think you own with vault state after each trade. The old{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/dashboard</code> path redirects
+                here.
+              </p>
+              <div className="not-prose mt-4">
+                <Link
+                  to="/portfolio"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-sm font-medium text-intuition-primary hover:bg-white/10 transition-colors"
+                >
+                  Open Portfolio <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+
+              <h3 className="text-base font-semibold text-slate-100 mt-10 mb-3 flex items-center gap-2">
+                <UserCircle className="w-5 h-5 text-intuition-primary shrink-0" aria-hidden />
+                Profile (your wallet and public profiles)
+              </h3>
+              <p>
+                <strong className="text-slate-100 font-semibold">Profile</strong> in the nav (
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/account</code>) is the entry point:
+                if you are not connected, you see a short screen asking you to connect; once a wallet is active, the app
+                sends you to <strong className="text-slate-100 font-semibold">your public profile</strong> at{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/profile/&lt;your-address&gt;</code>
+                .
+              </p>
+              <p>
+                <strong className="text-slate-100 font-semibold">Public profile pages</strong> work for{' '}
+                <strong className="text-slate-100 font-semibold">any</strong> checksummed address: paste or navigate to{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/profile/0x…</code> (for example from
+                leaderboards or shared links). The view shows that wallet&apos;s <strong className="text-slate-100 font-semibold">
+                  TRUST balance
+                </strong>
+                , <strong className="text-slate-100 font-semibold">portfolio value</strong>,{' '}
+                <strong className="text-slate-100 font-semibold">holdings and history</strong>, exposure and activity
+                summaries, and <strong className="text-slate-100 font-semibold">ENS</strong> resolution when a name exists.
+                When you view someone else while connected, you can <strong className="text-slate-100 font-semibold">follow</strong>{' '}
+                them; on your own profile you can manage optional <strong className="text-slate-100 font-semibold">email</strong>{' '}
+                notification settings where the app supports them. Nothing on a profile page moves funds by itself: trading
+                still happens from Markets or other flows that open transactions in your wallet.
+              </p>
+              <div className="not-prose flex flex-wrap gap-3 mt-4">
+                <Link
+                  to="/account"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-4 py-2 text-sm font-medium text-intuition-primary hover:bg-white/10 transition-colors"
+                >
+                  Profile (Account) <ArrowRight className="w-4 h-4" />
+                </Link>
               </div>
             </DocSection>
 
-            {/* 06_GLOSSARY */}
-            <DocSection id="glossary" title="Neural_Index" icon={BookOpen} badge="06_GLOSSARY" color="#475569">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <GlossaryItem term="Rank" definition="Reputation-weighted score of an atom, derived from total assets and supply deltas." />
-                    <GlossaryItem term="MultiVault" definition="The core contract managing identity liquidity pools and portal shares." />
-                    <GlossaryItem term="Ingress" definition="The act of committing capital to acquire support or opposition shares in a node." />
-                    <GlossaryItem term="Handshake" definition="The smart-contract interaction sequence required to commit or withdraw capital." />
-                    <GlossaryItem term="Arbitrage" definition="Extracting value by correcting overvalued or deceptive reputation claims natively." />
-                    <GlossaryItem term="Sector_04" definition="Current tactical operating zone for the ARES engine and IntuRank interface." />
-                    <GlossaryItem term="Provenance" definition="Verified logical history of a node, tracing creators and primary signalers." />
-                    <GlossaryItem term="Synapse" definition="A verified logical link between two discrete semantic primitives." />
-                    <GlossaryItem term="Denoising" definition="Algorithmic filtering of sybil volume from high-conviction signals." />
-                </div>
+            <DocSection id="guide" title="How to use IntuRank">
+              <ol className="list-decimal pl-5 space-y-4 marker:text-intuition-primary/80">
+                <li>
+                  <strong className="text-slate-200">Connect a wallet.</strong> Use any EVM wallet the app supports
+                  (browser extension or WalletConnect). Switch to {NETWORK_NAME} (chain {CHAIN_ID}) when prompted; fund the
+                  wallet with TRUST for gas and positions. If the network is wrong, transactions will fail or target the
+                  wrong chain.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Browse Markets.</strong> Open{' '}
+                  <Link
+                    to="/markets/atoms"
+                    onClick={playClick}
+                    className="text-intuition-primary hover:underline font-medium"
+                  >
+                    Markets
+                  </Link>{' '}
+                  and switch between atoms, triples, and lists. Use search and sort to narrow the set, then open any row
+                  to reach that term&apos;s full detail view (claims, vault stats, activity, and ingress or exit controls).
+                </li>
+                <li>
+                  <strong className="text-slate-200">Read before you size.</strong> On a term page, review linked triples,
+                  curve type, liquidity, and rank in context. Expand history and compare against similar terms if you are
+                  deciding between competing claims.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Commit TRUST (ingress).</strong> Start a deposit flow, enter an
+                  amount, and inspect the preview (shares out, fees, min bounds). Confirm only if the calldata and value
+                  match your intent. For withdrawals, use redeem flows and the same discipline.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Portfolio and profile.</strong>{' '}
+                  <Link
+                    to="/portfolio"
+                    onClick={playClick}
+                    className="text-intuition-primary hover:underline font-medium"
+                  >
+                    Portfolio
+                  </Link>{' '}
+                  shows your holdings, PnL, history, and what you created.{' '}
+                  <Link to="/account" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                    Profile
+                  </Link>{' '}
+                  opens your wallet&apos;s public page (or connect first); any address can be viewed at{' '}
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/profile/0x…</code>. See{' '}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => scrollTo('portfolio-profile')}
+                    className="text-intuition-primary hover:underline font-medium"
+                  >
+                    Portfolio and profile
+                  </button>{' '}
+                  above for detail.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Watch the network.</strong>{' '}
+                  <Link to="/feed" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                    Feed
+                  </Link>{' '}
+                  streams recent protocol activity; useful for context and for spotting large flows. Optional ARES copy on
+                  Feed is decorative: verify anything material on-chain.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Leaderboards and epochs.</strong> Open{' '}
+                  <Link to="/stats" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                    Stats
+                  </Link>{' '}
+                  for tabbed rankings (stakers, PnL, agents, claims). Full behavior is documented under{' '}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => scrollTo('leaderboards')}
+                    className="text-intuition-primary hover:underline font-medium"
+                  >
+                    Leaderboards
+                  </button>{' '}
+                  above. Epoch windows shift over time; read the labels in-app.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Create, send, skill, arena.</strong> Use{' '}
+                  <Link to="/create" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                    Create atom or claim
+                  </Link>{' '}
+                  for guided creation flows,{' '}
+                  <Link to="/send-trust" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                    Send TRUST
+                  </Link>{' '}
+                  for native transfers,{' '}
+                  <Link
+                    to="/skill-playground"
+                    onClick={playClick}
+                    className="text-intuition-primary hover:underline font-medium"
+                  >
+                    Intuition Skill Playground
+                  </Link>{' '}
+                  under Intel for Gemini-assisted transactions
+                  {ARENA_ENABLED ? (
+                    <>
+                      {', and '}
+                      <Link to="/climb" onClick={playClick} className="text-intuition-primary hover:underline font-medium">
+                        The Arena
+                      </Link>{' '}
+                      for stance comparison.
+                    </>
+                  ) : (
+                    <>
+                      . The Arena route exists but may show a placeholder unless the deployment enables it (see{' '}
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => scrollTo('create-flows')}
+                        className="text-intuition-primary hover:underline font-medium"
+                      >
+                        Create &amp; Send TRUST
+                      </button>
+                      ).
+                    </>
+                  )}{' '}
+                  See the dedicated sections on this page for full detail.
+                </li>
+              </ol>
+              <div className="not-prose flex flex-wrap gap-3 mt-6">
+                <Link
+                  to="/markets/atoms"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-intuition-primary hover:underline"
+                >
+                  Markets <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/portfolio"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Portfolio <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/account"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Profile <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/feed"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Feed <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/stats"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Stats <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/create"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Create <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/send-trust"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Send TRUST <ChevronRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/skill-playground"
+                  onClick={playClick}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                >
+                  Skill Playground <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
             </DocSection>
 
-            {/* FINAL CALL TO ACTION */}
-            <div className="mt-48 p-16 md:p-32 bg-black border-2 border-intuition-primary/40 flex flex-col items-center text-center clip-path-slant relative overflow-hidden group shadow-[0_0_150px_rgba(0,243,255,0.2)]">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,243,255,0.06),transparent_70%)]"></div>
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-intuition-primary to-transparent animate-pulse"></div>
-                
-                <div className="relative z-10 space-y-12">
-                    <h3 className="text-4xl md:text-7xl font-black font-display text-white uppercase tracking-tighter leading-[0.9] max-w-4xl text-glow-white">
-                        THE_FUTURE_OF_TRUTH<br /><span className="text-intuition-primary">IS_A_MARKET.</span>
-                    </h3>
-                    <p className="text-xs md:text-base text-slate-500 uppercase tracking-[0.5em] font-mono font-bold max-w-2xl leading-relaxed">
-                        Signal intelligence is power. Initialize your transmission sequence to acquire shares in truth.
-                    </p>
-                    
-                    <div className="flex flex-col md:flex-row gap-6 justify-center w-full max-w-xl mx-auto">
-                        <Link to="/markets" onClick={playClick} className="flex-1 py-6 bg-white text-black font-black uppercase text-xs tracking-[0.5em] clip-path-slant hover:bg-intuition-primary transition-all shadow-[0_20px_50px_rgba(255,255,255,0.1)] active:scale-95 group/btn flex items-center justify-center gap-3">
-                            ENTER_TERMINAL <ArrowRight size={18} className="group-hover/btn:translate-x-3 transition-transform" />
-                        </Link>
-                        <Link to="/portfolio" onClick={playClick} className="flex-1 py-6 bg-black border border-white/20 text-white font-black uppercase text-xs tracking-[0.5em] clip-path-slant hover:border-white transition-all active:scale-95 flex items-center justify-center gap-3">
-                            MY_PORTFOLIO <Activity size={18} />
-                        </Link>
-                    </div>
+            <DocSection id="glossary" title="Glossary">
+              <dl className="not-prose grid gap-6 sm:grid-cols-2">
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">TRUST ({CURRENCY_SYMBOL})</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Native gas and staking asset on {NETWORK_NAME}. Used for atom and triple creation fees, vault deposits,
+                    redemptions, and other payable protocol calls.
+                  </dd>
                 </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Term</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Generic name for an on-chain object that can hold a vault: an atom, a triple, or another supported term
+                    type. Identified by a bytes32 term ID.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Atom</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    A single node in the graph (entity, concept, tag). Has its own ID and can back a market and vault.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Triple</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    A subject–predicate–object claim built from three atom IDs. Triples are first-class terms with their own
+                    IDs and markets.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Rank</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    A reputation-weighted ordering signal for atoms in the UI, derived from vault state, assets, and
+                    protocol heuristics. Not a standalone investment metric.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Curve ID</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Selects which bonding curve implementation prices shares for a vault. In this build, ID{' '}
+                    {LINEAR_CURVE_ID} is linear and ID {OFFSET_PROGRESSIVE_CURVE_ID} is offset progressive. Confirm live
+                    parameters on-chain before integrating.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">MultiVault</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Core contract family for pooled TRUST, share accounting, and redemptions around terms. IntuRank
+                    interacts with MultiVault-compatible entry points for deposits and batch redeems where enabled.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">FeeProxy</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Router used for payable flows such as creating atoms and triples with bundled deposits. Address and ABI
+                    match the deployment referenced by this client build.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Ingress</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Depositing TRUST to mint shares on a bonding curve (enter a position). Opposite of redeem / exit.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Handshake</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    The ordered set of contract calls the UI batches to complete a user intent (approve, deposit, create,
+                    redeem), as implemented in the app and wallet flow.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Epoch</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    A time-bounded window used for seasonal leaderboards and stats. Current ranges are labeled in Stats;
+                    they rotate on a schedule published in-app.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Arbitrage</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Capturing value when on-chain price or semantics diverge from your model of fair value. Requires
+                    execution discipline; fees and latency can dominate small edges.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Provenance</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Who created or last moved a term or position, as visible from events and indexer history.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Denoising</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Heuristic or model-based down-weighting of activity that looks automated or spam-like in ranking and
+                    feed surfaces.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Intuition Skill Playground</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    Chat UI at /skill-playground: same transaction patterns as the Intuition Skill CLI package. You sign and
+                    broadcast; the agent does not custody keys. Minimum vault deposit for atom or triple creation via the
+                    Skill is <strong className="text-slate-300">0.5 TRUST</strong> (<code className="text-[11px] bg-white/5 px-1 rounded text-slate-400">depositTrust</code>). Explanations can follow your chat language; JSON keys stay English for parsing.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Portfolio</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    /portfolio: connected-wallet view of balances, portfolio value, PnL, equity chart, exposure, sortable
+                    holdings, history, and &quot;My created&quot; identities and claims. /dashboard redirects here.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Profile</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    /account connects then routes to /profile/&lt;address&gt;. Public /profile/:address shows any
+                    wallet&apos;s positions, history, ENS, and follow/email options where available.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Leaderboards (Stats)</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    /stats: tabbed rankings (TOP STAKERS, TOP PNL, MOST SUPPORTED, Claim entropy, TOP CLAIMS) backed by the
+                    indexer and PnL APIs. Search supports addresses and ENS on staker and PnL tabs.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Create atom or claim</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    /create: multi-step wizard for identity atoms, semantic triples, SDK string atoms, and manual construct
+                    or synapse flows. Requires TRUST for fees and deposits and may use IPFS for images when configured.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Send TRUST</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    /send-trust: wallet-to-wallet native TRUST transfer with ENS or 0x resolution. Not a vault deposit.
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-semibold text-intuition-primary">Arena (Climb)</dt>
+                  <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                    /climb when enabled: stance UI, arena XP, optional TRUST stakes to treasury. Some deployments show a
+                    placeholder until the feature is turned on.
+                  </dd>
+                </div>
+              </dl>
+            </DocSection>
+
+            {/* Footer CTA */}
+            <div className="mt-12 rounded-xl border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.08] to-transparent p-8 text-center">
+              <h2 className="text-lg font-semibold text-white mb-2">Ready to trade conviction?</h2>
+              <p className="text-sm text-slate-400 max-w-md mx-auto mb-6">
+                Browse live markets by atom or triple, track exposure in portfolio, and use Feed and Stats when you need
+                network-level context.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Link
+                  to="/markets"
+                  onClick={playClick}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-white text-black font-semibold text-sm px-6 py-3 hover:bg-intuition-primary transition-colors"
+                >
+                  Go to markets <ArrowRight className="w-4 h-4" />
+                </Link>
+                <Link
+                  to="/portfolio"
+                  onClick={playClick}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 text-white font-medium text-sm px-6 py-3 hover:bg-white/5 transition-colors"
+                >
+                  Portfolio
+                </Link>
+              </div>
             </div>
 
-            <div className="mt-24 flex items-center justify-between opacity-10 font-mono text-[8px] font-black uppercase tracking-[2em] pb-24">
-                <span>© 2025 IntuRank_Technical_Corps</span>
-                <div className="flex items-center gap-4">
-                  <div className="w-1.5 h-1.5 rounded-full bg-intuition-primary animate-ping"></div>
-                  <span>Sector_04_Secured</span>
-                </div>
-                <span>END_OF_TRANSMISSION</span>
-            </div>
-
-          </main>
+            <footer className="mt-12 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <span>© 2026 IntuRank · {APP_VERSION_DISPLAY}</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider">{NETWORK_NAME}</span>
+            </footer>
+          </div>
         </div>
       </div>
     </div>

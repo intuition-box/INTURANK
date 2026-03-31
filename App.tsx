@@ -1,6 +1,6 @@
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { MAINTENANCE_MODE } from './constants';
+import { ARENA_ENABLED, MAINTENANCE_MODE } from './constants';
 import Maintenance from './pages/Maintenance';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -71,10 +71,20 @@ import CreateSignal from './pages/CreateSignal';
 import SendTrust from './pages/SendTrust';
 import SkillPlayground from './pages/SkillPlayground';
 import RankedList from './pages/RankedList';
+import ArenaPlaceholder from './pages/ArenaPlaceholder';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      gcTime: 10 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const App: React.FC = () => {
   if (MAINTENANCE_MODE) {
@@ -89,7 +99,7 @@ const App: React.FC = () => {
           <RainbowKitProvider
             theme={rainbowKitTheme}
             modalSize="compact"
-            coolMode
+            coolMode={false}
           >
             <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <EmailNotifyProvider>
@@ -121,7 +131,10 @@ const App: React.FC = () => {
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
           <Route path="/send-trust" element={<SendTrust />} />
-          <Route path="/climb" element={<RankedList />} />
+          <Route
+            path="/climb"
+            element={ARENA_ENABLED ? <RankedList /> : <ArenaPlaceholder />}
+          />
           </Routes>
                 </Layout>
                 <EmailNotifyModal />

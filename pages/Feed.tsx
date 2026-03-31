@@ -14,6 +14,7 @@ import { formatMarketValue, formatDisplayedShares } from '../services/analytics'
 import { EXPLORER_URL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
 import { Transaction } from '../types';
 import { getLocalTransactions } from '../services/web3';
+import { subscribeVisibilityAwareInterval } from '../services/visibility';
 
 type SortOption = 'Newest' | 'Oldest' | 'Highest Volume';
 
@@ -40,7 +41,6 @@ const Feed: React.FC = () => {
     
     const PAGE_SIZE = 40;
     const observerTarget = useRef<HTMLDivElement>(null);
-    const syncIntervalRef = useRef<any>(null);
 
     const generateAresPulse = async (currentEvents: any[]) => {
         if (isAresLoading) return;
@@ -120,8 +120,7 @@ const Feed: React.FC = () => {
 
     useEffect(() => {
         fetchActivity(true, true);
-        syncIntervalRef.current = setInterval(() => fetchActivity(false, false), 30000);
-        return () => clearInterval(syncIntervalRef.current);
+        return subscribeVisibilityAwareInterval(() => fetchActivity(false, false), 30000);
     }, []);
 
     useEffect(() => {
@@ -251,8 +250,7 @@ const Feed: React.FC = () => {
 
     useEffect(() => {
         fetchPersonal();
-        const t = setInterval(fetchPersonal, 60_000);
-        return () => clearInterval(t);
+        return subscribeVisibilityAwareInterval(fetchPersonal, 60_000);
     }, [fetchPersonal]);
 
     return (

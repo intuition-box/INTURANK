@@ -10,7 +10,7 @@ import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { formatEther } from 'viem';
-import { CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
+import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue } from '../services/analytics';
 
@@ -1380,7 +1380,7 @@ const CreateSignal: React.FC = () => {
           )}
         </div>
         <div className="mt-6 flex items-center justify-center gap-3 text-slate-700 text-[8px] font-black uppercase tracking-[0.4em] opacity-40">
-          <Terminal size={10} /> HANDSHAKE_SECURE // V1.5.0 — INTURANK_PROTOCOL_ACTIVE
+          <Terminal size={10} /> HANDSHAKE_SECURE // {APP_VERSION_DISPLAY} INTURANK_PROTOCOL_ACTIVE
         </div>
       </div>
     </div>

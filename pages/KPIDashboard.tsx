@@ -27,7 +27,7 @@ const KPIStatCard = ({ label, value, sub, icon: Icon, color = "primary", animate
             
             <div className="flex justify-between items-start mb-4 relative z-10">
                 <div className="flex flex-col gap-1">
-                    <span className={`text-[9px] font-mono uppercase tracking-[0.3em] font-black text-slate-400 group-hover:text-white ${isPrimary ? 'group-hover:text-glow-blue' : 'group-hover:text-glow-red'} transition-all duration-300`}>{label}</span>
+                    <span className={`text-xs font-sans font-semibold tracking-wide text-slate-400 group-hover:text-white ${isPrimary ? 'group-hover:text-glow-blue' : 'group-hover:text-glow-red'} transition-all duration-300`}>{label}</span>
                     <div className={`h-px w-8 ${isPrimary ? 'bg-intuition-primary' : 'bg-intuition-secondary'} opacity-60 group-hover:w-full group-hover:opacity-100 transition-all duration-700 shadow-[0_0_8px_currentColor]`}></div>
                 </div>
                 <div className={`p-2 bg-black border border-white/10 clip-path-slant ${accentColor} ${iconBgGlow} ${animate ? 'animate-pulse' : ''} group-hover:scale-110 transition-transform duration-300`}>
@@ -39,11 +39,11 @@ const KPIStatCard = ({ label, value, sub, icon: Icon, color = "primary", animate
                 <div className={`text-2xl md:text-3xl font-black text-white font-display tracking-tight leading-none group-hover:text-glow-white transition-all duration-300 ${isZero ? 'opacity-30' : ''}`}>
                     {value}
                 </div>
-                <span className={`text-[10px] font-black uppercase tracking-widest ${accentColor} ${accentGlow} inline-flex items-baseline`}>{sub}</span>
+                <span className={`text-xs font-sans font-medium tracking-wide ${accentColor} ${accentGlow} inline-flex items-baseline`}>{sub}</span>
             </div>
             {isZero && (
-                <div className="absolute bottom-3 left-5 text-[7px] font-black text-slate-500 uppercase tracking-widest animate-pulse font-mono">
-                    // Recon_Pending_Signal
+                <div className="absolute bottom-3 left-5 text-[10px] font-medium text-slate-500 animate-pulse font-sans">
+                    No protocol activity yet
                 </div>
             )}
         </div>
@@ -65,23 +65,23 @@ const KPIDashboard: React.FC = () => {
     const fetchData = async () => {
         setLoading(true);
         setReconLog([]);
-        addLog("INITIALIZING_ARES_RECON_SEQUENCE...");
+        addLog("Loading network metrics…");
         
         try {
             await new Promise(r => setTimeout(r, 1200)); 
-            addLog("SCANNING_CONTRACT_HASH_VARIANTS...");
-            addLog("QUERYING_INTUITION_L3_SUBGRAPH_BUFFERS...");
+            addLog("Reading subgraph…");
+            addLog("Fetching fee proxy stats…");
             const data = await getNetworkKPIs();
             
             if (data.txCount > 0) {
-                addLog(`SUCCESS: ${data.txCount} proxy transactions reconciled.`);
-                addLog(`IDENTITY_MAP: ${data.userCount} citizens verified.`);
-                addLog(`VALUATION: ${parseFloat(formatEther(BigInt(data.proxyTVL))).toFixed(4)} ${CURRENCY_SYMBOL}.`);
-                toast.success("TELEMETRY_SYNCED");
+                addLog(`Found ${data.txCount} fee proxy transactions.`);
+                addLog(`${data.userCount} accounts in the leaderboard.`);
+                addLog(`Fee proxy TVL: ${parseFloat(formatEther(BigInt(data.proxyTVL))).toFixed(4)} ${CURRENCY_SYMBOL}.`);
+                toast.success("Stats updated");
 
                 // Fetching top user balances asynchronously for the "Fun" part
                 const topUsers = data.userLedger.slice(0, 15);
-                addLog("POLLING_WALLET_BALANCES_VIA_RPC...");
+                addLog("Loading wallet balances…");
                 const balanceMap: Record<string, string> = {};
                 for(const user of topUsers) {
                     try {
@@ -91,14 +91,14 @@ const KPIDashboard: React.FC = () => {
                 }
                 setUserBalances(balanceMap);
             } else {
-                addLog("WARNING: NULL_SET recovered.");
-                addLog("ACTION: PERSISTING_MONITOR_THREAD...");
+                addLog("No fee proxy transactions in this window.");
+                addLog("Try again later or check your connection.");
             }
             
             setStats(data);
         } catch (e) {
-            addLog("CRITICAL: UPLINK_TIMEOUT.");
-            toast.error("RECON_FAILURE");
+            addLog("Could not load data (timeout or network error).");
+            toast.error("Failed to load stats");
         } finally {
             setLoading(false);
         }
@@ -112,7 +112,7 @@ const KPIDashboard: React.FC = () => {
         if (!reportRef.current) return;
         playClick();
         setIsExporting(true);
-        toast.info("ENCRYPTING_REPORT...");
+        toast.info("Saving image…");
 
         try {
             const canvas = await html2canvas(reportRef.current, {
@@ -126,9 +126,9 @@ const KPIDashboard: React.FC = () => {
             link.href = canvas.toDataURL('image/png');
             link.download = `inturank-ares-audit-${new Date().getTime()}.png`;
             link.click();
-            toast.success("REPORT_SECURED");
+            toast.success("Image downloaded");
         } catch (e) {
-            toast.error("EXPORT_FAILURE");
+            toast.error("Export failed");
         } finally {
             setIsExporting(false);
         }
@@ -136,7 +136,7 @@ const KPIDashboard: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center gap-10 text-intuition-primary font-mono bg-black">
+            <div className="min-h-screen flex flex-col items-center justify-center gap-10 text-intuition-primary font-sans bg-black">
                 <div className="relative">
                     <div className="w-20 h-20 border-4 border-intuition-primary/10 border-t-intuition-primary rounded-full animate-spin"></div>
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -144,7 +144,7 @@ const KPIDashboard: React.FC = () => {
                     </div>
                 </div>
                 <div className="space-y-4 text-center">
-                    <span className="text-[10px] font-black tracking-[0.8em] uppercase animate-pulse">Establishing_Link...</span>
+                    <span className="text-sm font-semibold tracking-wide animate-pulse">Loading system health…</span>
                     <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
                         <div className="h-full bg-intuition-primary animate-marquee w-1/3"></div>
                     </div>
@@ -164,33 +164,33 @@ const KPIDashboard: React.FC = () => {
         : marketShareVal.toFixed(2);
 
     return (
-        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-mono min-w-0">
+        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-sans min-w-0">
             {/* Header */}
             <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between mb-12 gap-6 border-b border-slate-900 pb-8">
                 <div>
                     <div className="flex items-center gap-3 text-intuition-secondary mb-2">
                         <ShieldCheck size={16} className="animate-pulse shadow-glow-red" />
-                        <span className="text-[10px] font-black tracking-[0.5em] uppercase">Sector_04_ARES_Audit</span>
+                        <span className="text-xs font-semibold tracking-wide text-slate-400">Intuition mainnet</span>
                     </div>
-                    <h1 className="text-4xl md:text-6xl font-black text-white font-display tracking-tighter uppercase text-glow-red leading-tight mobile-break min-w-0">
-                        INTERNAL_KPI_DECK
+                    <h1 className="text-4xl md:text-5xl font-bold text-white font-display tracking-tight text-glow-red leading-tight mobile-break min-w-0">
+                        System health
                     </h1>
                 </div>
                 
                 <div className="flex flex-wrap gap-3">
                     <button 
                         onClick={fetchData}
-                        className="px-6 py-3 bg-black border border-slate-800 text-slate-500 hover:text-white hover:border-white transition-all clip-path-slant flex items-center gap-3 uppercase text-[9px] font-black tracking-widest group"
+                        className="px-6 py-3 bg-black border border-slate-800 text-slate-400 hover:text-white hover:border-white transition-all clip-path-slant flex items-center gap-3 text-xs font-semibold tracking-wide group"
                     >
-                        <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-700" /> RE-SYNC
+                        <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-700" /> Refresh
                     </button>
                     <button 
                         onClick={handleExport}
                         disabled={isExporting}
-                        className="px-8 py-3 bg-intuition-secondary text-white font-black uppercase text-[9px] tracking-widest clip-path-slant hover:bg-white hover:text-black shadow-glow-red transition-all flex items-center gap-3 disabled:opacity-50"
+                        className="px-8 py-3 bg-intuition-secondary text-white font-semibold text-xs tracking-wide clip-path-slant hover:bg-white hover:text-black shadow-glow-red transition-all flex items-center gap-3 disabled:opacity-50"
                     >
                         {isExporting ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                        EXPORT_REPORT
+                        Export screenshot
                     </button>
                 </div>
             </div>
@@ -199,16 +199,16 @@ const KPIDashboard: React.FC = () => {
             <div ref={reportRef} className="space-y-8 bg-transparent relative">
                 {/* Watermark */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-[0.02] pointer-events-none z-0 overflow-hidden select-none">
-                    <span className="text-[18rem] font-black rotate-[-20deg] whitespace-nowrap">SOVEREIGN</span>
+                    <span className="text-[18rem] font-black rotate-[-20deg] whitespace-nowrap">Intuition</span>
                 </div>
 
                 {/* KPI Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
-                    <KPIStatCard label="Ingress Volume" value={formattedProxyTVL} sub={<CurrencySymbol size="md" />} icon={Coins} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
-                    <KPIStatCard label="Verified Citizens" value={stats?.userCount || 0} sub="WALLETS" icon={Users} color="primary" isZero={isProxyEmpty} />
-                    <KPIStatCard label="Protocol Transactions" value={stats?.txCount || 0} sub="ALL_TIME" icon={Box} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
-                    <KPIStatCard label="Market Power" value={`${formattedMarketShare}%`} sub="MAGNITUDE" icon={PieChart} color="primary" isZero={isProxyEmpty} />
-                    <KPIStatCard label="Semantic Nodes" value={stats?.atomCount || 0} sub="ATOMS" icon={Database} color="secondary" isZero={isProxyEmpty} />
+                    <KPIStatCard label="Fee proxy TVL" value={formattedProxyTVL} sub={<CurrencySymbol size="md" />} icon={Coins} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
+                    <KPIStatCard label="Accounts tracked" value={stats?.userCount || 0} sub="wallets" icon={Users} color="primary" isZero={isProxyEmpty} />
+                    <KPIStatCard label="Fee proxy transactions" value={stats?.txCount || 0} sub="all time" icon={Box} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
+                    <KPIStatCard label="Market share" value={`${formattedMarketShare}%`} sub="of activity" icon={PieChart} color="primary" isZero={isProxyEmpty} />
+                    <KPIStatCard label="Atoms on graph" value={stats?.atomCount || 0} sub="nodes" icon={Database} color="secondary" isZero={isProxyEmpty} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-8 relative z-10">
@@ -218,13 +218,13 @@ const KPIDashboard: React.FC = () => {
                             <div className="p-6 border-b border-slate-900 bg-white/[0.02] flex justify-between items-center">
                                 <div className="flex items-center gap-4">
                                     <Activity size={24} className="text-intuition-secondary animate-pulse" />
-                                    <h3 className="font-black text-white font-display tracking-[0.3em] uppercase text-lg">Citizen_Ledger</h3>
+                                    <h3 className="font-bold text-white font-display tracking-tight text-lg">Account leaderboard</h3>
                                 </div>
-                                <div className="text-[8px] text-slate-700 font-black uppercase tracking-[0.3em] hidden sm:block">IDENT_HASH: 0xCBFE...</div>
+                                <div className="text-[10px] text-slate-600 font-medium hidden sm:block">By volume through the fee proxy</div>
                             </div>
                             <div className="overflow-x-auto min-h-[400px]">
                                 {stats?.userLedger?.length > 0 ? (
-                                    <table className="w-full text-left font-mono table-fixed">
+                                    <table className="w-full text-left font-sans table-fixed">
                                         <colgroup>
                                             <col style={{ width: '4%' }} />
                                             <col style={{ width: '28%' }} />
@@ -233,14 +233,14 @@ const KPIDashboard: React.FC = () => {
                                             <col style={{ width: '22%' }} />
                                             <col style={{ width: '18%' }} />
                                         </colgroup>
-                                        <thead className="bg-[#080808] text-slate-400 text-[10px] sm:text-xs font-black uppercase tracking-[0.3em] border-b border-slate-800">
+                                        <thead className="bg-[#080808] text-slate-400 text-xs sm:text-sm font-semibold border-b border-slate-800">
                                             <tr>
                                                 <th className="px-3 sm:px-4 py-4 w-12 text-center">#</th>
-                                                <th className="px-3 sm:px-4 py-4">RECON_ID</th>
-                                                <th className="px-3 sm:px-4 py-4 text-center">TOTAL_TXS</th>
-                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">VOLUME_SIGNALED</th>
-                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">{`${CURRENCY_SYMBOL}_BAL`}</th>
-                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">RANK</th>
+                                                <th className="px-3 sm:px-4 py-4">Account</th>
+                                                <th className="px-3 sm:px-4 py-4 text-center">Transactions</th>
+                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">Volume</th>
+                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">{`${CURRENCY_SYMBOL} balance`}</th>
+                                                <th className="px-3 sm:px-4 py-4 text-right whitespace-nowrap">Tier</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5">
@@ -255,8 +255,8 @@ const KPIDashboard: React.FC = () => {
                                                                 {user.image ? <img src={user.image} className="w-full h-full object-cover" alt="" /> : <UserCircle size={20} className="text-slate-600" />}
                                                             </div>
                                                             <div className="min-w-0 flex-1">
-                                                                <div className="text-sm font-black text-white uppercase group-hover:text-intuition-secondary transition-colors truncate">{user.label || user.id.slice(0, 14)}</div>
-                                                                <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{user.id}</div>
+                                                                <div className="text-sm font-semibold text-white group-hover:text-intuition-secondary transition-colors truncate">{user.label || user.id.slice(0, 14)}</div>
+                                                                <div className="text-[11px] text-slate-500 font-mono truncate mt-0.5">{user.id}</div>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -272,11 +272,11 @@ const KPIDashboard: React.FC = () => {
                                                         <div className="text-sm font-black text-intuition-primary font-mono group-hover:text-glow-blue leading-none tabular-nums">
                                                             {userBalances[user.id] || "0.00"}
                                                         </div>
-                                                        <div className="text-[9px] text-slate-500 uppercase mt-1 font-black tracking-wider">WALLET_BALANCE</div>
+                                                        <div className="text-[10px] text-slate-500 mt-1 font-medium">Wallet balance</div>
                                                     </td>
                                                     <td className="px-3 sm:px-4 py-5 text-right whitespace-nowrap">
-                                                        <span className={`inline-block px-3 py-1.5 border text-[9px] font-black uppercase clip-path-slant ${i < 3 ? 'border-intuition-secondary text-intuition-secondary bg-intuition-secondary/10 shadow-glow-red' : 'border-slate-600 text-slate-400'}`}>
-                                                            {i < 3 ? 'ELITE' : 'CORE'}
+                                                        <span className={`inline-block px-3 py-1.5 border text-xs font-semibold clip-path-slant ${i < 3 ? 'border-intuition-secondary text-intuition-secondary bg-intuition-secondary/10 shadow-glow-red' : 'border-slate-600 text-slate-400'}`}>
+                                                            {i < 3 ? 'Top 3' : 'Standard'}
                                                         </span>
                                                     </td>
                                                 </tr>
@@ -286,7 +286,7 @@ const KPIDashboard: React.FC = () => {
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-[400px] space-y-6">
                                         <Shield size={60} className="text-slate-900 animate-pulse" />
-                                        <p className="text-slate-700 text-[10px] font-black uppercase tracking-[1em]">Awaiting_Signal</p>
+                                        <p className="text-slate-500 text-sm font-medium">No ledger data yet.</p>
                                     </div>
                                 )}
                             </div>
@@ -294,41 +294,41 @@ const KPIDashboard: React.FC = () => {
                     </div>
 
                     {/* Sidebar: full-width grid below ledger so table gets all horizontal space */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
-                        {/* Terminal */}
-                        <div className="bg-black border border-intuition-primary/20 p-6 clip-path-slant shadow-2xl group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full lg:items-stretch">
+                        {/* Activity log */}
+                        <div className="bg-black border border-intuition-primary/20 p-6 clip-path-slant shadow-2xl group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500 h-full flex flex-col min-h-[220px]">
                             <div className="flex items-center gap-3 mb-6 border-b border-intuition-primary/20 pb-3">
                                 <Terminal size={14} className="text-intuition-primary animate-pulse text-glow-blue" />
-                                <h4 className="text-[10px] font-black text-intuition-primary uppercase tracking-[0.4em] text-glow-blue">Protocol_Log</h4>
+                                <h4 className="text-sm font-semibold text-intuition-primary text-glow-blue">Activity log</h4>
                             </div>
-                            <div className="space-y-3 font-mono text-[10px] min-h-[160px]">
+                            <div className="space-y-3 font-sans text-xs sm:text-sm min-h-[160px] flex-1">
                                 {reconLog.map((log, i) => (
-                                    <div key={i} className="text-slate-400 group-hover:text-intuition-primary transition-colors duration-300 uppercase leading-relaxed font-bold border-l-2 border-intuition-primary/30 pl-3 group-hover:border-intuition-primary/60">
-                                        <span className="text-intuition-primary font-black">{">_"}</span> <span className="group-hover:text-glow-blue">{log}</span>
+                                    <div key={i} className="text-slate-400 group-hover:text-intuition-primary transition-colors duration-300 leading-relaxed border-l-2 border-intuition-primary/30 pl-3 group-hover:border-intuition-primary/60">
+                                        <span className="group-hover:text-glow-blue">{log}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
                         {/* Gauges */}
-                        <div className="bg-[#020308] border border-intuition-primary/20 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500">
-                            <h4 className="text-[11px] font-black text-intuition-primary uppercase tracking-[0.5em] mb-8 flex items-center gap-3 text-glow-blue">
-                                <Cpu size={16} className="animate-pulse" /> System_Flux
+                        <div className="bg-[#020308] border border-intuition-primary/20 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500 h-full flex flex-col min-h-[220px]">
+                            <h4 className="text-sm font-semibold text-intuition-primary mb-8 flex items-center gap-3 text-glow-blue">
+                                <Cpu size={16} className="animate-pulse shrink-0" /> Network snapshot
                             </h4>
-                            <div className="space-y-8">
+                            <div className="space-y-8 flex-1 flex flex-col justify-center">
                                 <div className="group/diag">
-                                    <div className="flex justify-between items-end mb-2">
-                                        <span className="text-[10px] text-slate-400 uppercase font-black group-hover/diag:text-intuition-primary group-hover/diag:text-glow-blue transition-all tracking-widest">Global_TVL</span>
-                                        <span className="text-sm font-black text-white text-glow-white inline-flex items-baseline gap-1">{formattedGlobalTVL} <CurrencySymbol size="md" /></span>
+                                    <div className="flex justify-between items-end mb-2 gap-2">
+                                        <span className="text-xs text-slate-400 font-medium group-hover/diag:text-intuition-primary group-hover/diag:text-glow-blue transition-all">Network TVL</span>
+                                        <span className="text-sm font-bold text-white text-glow-white inline-flex items-baseline gap-1 tabular-nums">{formattedGlobalTVL} <CurrencySymbol size="md" /></span>
                                     </div>
                                     <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none">
                                         <div className="h-full bg-intuition-primary/40 group-hover/diag:bg-intuition-primary group-hover/diag:shadow-glow-blue transition-all duration-500" style={{ width: '100%' }}></div>
                                     </div>
                                 </div>
                                 <div className="group/diag">
-                                    <div className="flex justify-between items-end mb-2">
-                                        <span className="text-[10px] text-slate-400 uppercase font-black group-hover/diag:text-intuition-secondary group-hover/diag:text-glow-red transition-all tracking-widest">Avg_Handshake</span>
-                                        <span className={`text-sm font-black ${isProxyEmpty ? 'text-slate-600' : 'text-intuition-secondary text-glow-red'}`}>
+                                    <div className="flex justify-between items-end mb-2 gap-2">
+                                        <span className="text-xs text-slate-400 font-medium group-hover/diag:text-intuition-secondary group-hover/diag:text-glow-red transition-all">Avg. TVL per transaction</span>
+                                        <span className={`text-sm font-bold tabular-nums shrink-0 ${isProxyEmpty ? 'text-slate-600' : 'text-intuition-secondary text-glow-red'}`}>
                                             {stats?.txCount > 0 ? (parseFloat(formatEther(BigInt(stats.proxyTVL))) / stats.txCount).toFixed(4) : "0.0000"}
                                         </span>
                                     </div>
@@ -337,9 +337,9 @@ const KPIDashboard: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="group/diag">
-                                    <div className="flex justify-between items-end mb-2">
-                                        <span className="text-[10px] text-slate-400 uppercase font-black group-hover/diag:text-intuition-primary tracking-widest transition-colors">Sync_Buffer</span>
-                                        <span className="text-[10px] font-black text-intuition-primary text-glow-blue animate-pulse uppercase">LOCKED</span>
+                                    <div className="flex justify-between items-end mb-2 gap-2">
+                                        <span className="text-xs text-slate-400 font-medium group-hover/diag:text-intuition-primary transition-colors">Indexer sync</span>
+                                        <span className="text-xs font-semibold text-intuition-primary text-glow-blue animate-pulse">Live</span>
                                     </div>
                                     <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none relative">
                                         <div className="h-full bg-intuition-primary shadow-glow-blue animate-buffer-fill"></div>
@@ -348,16 +348,16 @@ const KPIDashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Audit Log Box */}
-                        <div className="bg-[#050505] border-2 border-intuition-secondary/30 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-secondary/60 hover:shadow-[0_0_30px_rgba(255,30,109,0.12)] transition-all duration-500">
-                             <div className="relative z-10">
+                        {/* Fee proxy */}
+                        <div className="bg-[#050505] border-2 border-intuition-secondary/30 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-secondary/60 hover:shadow-[0_0_30px_rgba(255,30,109,0.12)] transition-all duration-500 h-full flex flex-col min-h-[220px]">
+                             <div className="relative z-10 flex flex-col flex-1">
                                 <div className="flex items-center gap-4 mb-6">
-                                    <Lock size={18} className="text-intuition-secondary animate-pulse text-glow-red" />
-                                    <h4 className="text-[11px] font-black text-intuition-secondary uppercase tracking-[0.5em] text-glow-red">Isolated_Protocol</h4>
+                                    <Lock size={18} className="text-intuition-secondary animate-pulse text-glow-red shrink-0" />
+                                    <h4 className="text-sm font-semibold text-intuition-secondary text-glow-red">Fee proxy contract</h4>
                                 </div>
-                                <p className="text-[10px] text-slate-400 leading-relaxed uppercase font-mono font-bold group-hover:text-slate-300 transition-colors">
-                                    // Target_Identifier:<br/>
-                                    <span className="text-intuition-primary/90 font-black select-all break-all mt-3 block py-3 px-4 bg-white/5 border border-intuition-primary/20 clip-path-slant text-[10px] text-glow-blue group-hover:border-intuition-primary/40 transition-all">{FEE_PROXY_ADDRESS}</span>
+                                <p className="text-xs text-slate-400 leading-relaxed font-medium group-hover:text-slate-300 transition-colors flex-1 flex flex-col">
+                                    <span className="mb-2">Address (read-only)</span>
+                                    <span className="text-intuition-primary/90 font-mono font-semibold select-all break-all py-3 px-4 bg-white/5 border border-intuition-primary/20 clip-path-slant text-xs sm:text-sm text-glow-blue group-hover:border-intuition-primary/40 transition-all">{FEE_PROXY_ADDRESS}</span>
                                 </p>
                              </div>
                         </div>
@@ -365,19 +365,19 @@ const KPIDashboard: React.FC = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="pt-16 border-t border-white/5 flex items-center justify-between opacity-30 group-hover:opacity-60 transition-all duration-1000">
+                <div className="pt-16 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 opacity-40 group-hover:opacity-70 transition-all duration-1000">
                     <div className="flex items-center gap-6">
                          <div className="w-12 h-12 bg-black border border-white/10 flex items-center justify-center text-white clip-path-slant group-hover:border-intuition-primary transition-colors">
                              <Shield size={24} strokeWidth={1.5} />
                          </div>
                          <div>
-                             <div className="text-xs font-black font-display text-white uppercase tracking-[0.2em] mb-1">ARES_Audit_v1.4.0</div>
-                             <div className="text-[8px] font-black font-mono text-slate-500 uppercase tracking-[0.4em]">Sector_04 // RECON_LAYER</div>
+                             <div className="text-xs font-semibold font-display text-white mb-1">IntuRank health report</div>
+                             <div className="text-[10px] font-medium text-slate-500">On-chain metrics · subgraph + fee proxy</div>
                          </div>
                     </div>
-                    <div className="text-right flex flex-col items-end gap-1">
-                         <div className="text-[10px] font-black font-mono text-white uppercase tracking-widest">{new Date().toLocaleDateString().toUpperCase()}</div>
-                         <div className="text-[8px] font-black font-mono text-slate-600 uppercase tracking-[0.3em]">SECURE_FRAMEWORK</div>
+                    <div className="text-left sm:text-right flex flex-col items-start sm:items-end gap-1">
+                         <div className="text-xs font-medium text-slate-300">{new Date().toLocaleDateString(undefined, { dateStyle: 'medium' })}</div>
+                         <div className="text-[10px] font-medium text-slate-600">Exported view · not financial advice</div>
                     </div>
                 </div>
             </div>

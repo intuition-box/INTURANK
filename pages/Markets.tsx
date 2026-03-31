@@ -10,7 +10,7 @@ import { Account } from '../types';
 import { getWatchlist, getConnectedAccount } from '../services/web3';
 import { toast } from '../components/Toast';
 import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber, isSystemVerified } from '../services/analytics';
-import { CURRENCY_SYMBOL } from '../constants';
+import { APP_VERSION, CURRENCY_SYMBOL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
@@ -371,7 +371,7 @@ const Markets: React.FC = () => {
         <div className="relative z-10 space-y-1 min-w-0">
           <div className="flex items-center gap-2 text-intuition-primary/80 mobile-break">
             <span className="text-[11px] font-black font-mono tracking-widest uppercase">
-              {">_"} SECTOR_ANALYSIS_SYSTEM_V1.5.0_ARES
+              {">_"} SECTOR_ANALYSIS_SYSTEM_V{APP_VERSION.replace(/\./g, '_')}_ARES
             </span>
           </div>
           <h1 className="text-4xl sm:text-6xl md:text-[5rem] font-black text-white font-display tracking-tighter uppercase text-glow-blue leading-tight py-2 mobile-break min-w-0">

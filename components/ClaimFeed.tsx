@@ -5,6 +5,7 @@ import { getGlobalClaims } from '../services/graphql';
 import { Claim } from '../types';
 import ClaimCard from './ClaimCard';
 import { playClick, playHover } from '../services/audio';
+import { subscribeVisibilityAwareInterval } from '../services/visibility';
 
 const ClaimFeed: React.FC = () => {
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -19,7 +20,6 @@ const ClaimFeed: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 40;
 
-  const intervalRef = useRef<any>(null);
   const searchTimeoutRef = useRef<any>(null);
   const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -98,8 +98,7 @@ const ClaimFeed: React.FC = () => {
 
   useEffect(() => {
     fetchClaims(false, true);
-    intervalRef.current = setInterval(() => fetchClaims(true, false), 25000); 
-    return () => clearInterval(intervalRef.current);
+    return subscribeVisibilityAwareInterval(() => fetchClaims(true, false), 25000);
   }, []);
 
   // Infinite Scroll Observer

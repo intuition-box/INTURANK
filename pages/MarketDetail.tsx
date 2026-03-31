@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Terminal, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
+import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
 import { getAgentById, getAgentTriples, getAgentTriplesWithVaults, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalanceEffective, toggleWatchlist, isInWatchlist, parseProtocolError, checkProxyApproval, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
@@ -13,7 +13,7 @@ import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
 import { AIBriefing } from '../components/AISuite';
 import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, safeWeiToEther, calculatePositionPnL, calculateRealizedPnL, isSystemVerified, getSharesFromHolderRowsForCurve, mergeTrustBalanceDisplay } from '../services/analytics';
-import { LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
+import { APP_VERSION_DISPLAY, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
 
 function isProtocolRouterAddress(addr: string | undefined): boolean {
   if (!addr) return false;
@@ -95,11 +95,11 @@ const generateAnchoredHistory = (assetsWei: string, sharesWei: string, currentSh
 };
 
 const getTierTheme = (strength: number) => {
-    if (strength >= 90) return { label: 'SOVEREIGN', color: '#facc15', glow: 'rgba(250, 204, 21, 0.6)', bgGlow: 'rgba(250, 204, 21, 0.15)' };
-    if (strength >= 75) return { label: 'AUTHENTIC', color: '#00f3ff', glow: 'rgba(0, 243, 255, 0.6)', bgGlow: 'rgba(0, 243, 255, 0.15)' };
-    if (strength >= 60) return { label: 'RELIABLE', color: '#a855f7', glow: 'rgba(168, 85, 247, 0.6)', bgGlow: 'rgba(168, 85, 247, 0.15)' };
-    if (strength >= 45) return { label: 'CREDIBLE', color: '#00ff9d', glow: 'rgba(0, 255, 157, 0.6)', bgGlow: 'rgba(0, 255, 157, 0.15)' };
-    return { label: 'EMERGING', color: '#94a3b8', glow: 'rgba(148, 163, 184, 0.4)', bgGlow: 'rgba(148, 163, 184, 0.08)' };
+    if (strength >= 90) return { label: 'Sovereign', color: '#facc15', glow: 'rgba(250, 204, 21, 0.6)', bgGlow: 'rgba(250, 204, 21, 0.15)' };
+    if (strength >= 75) return { label: 'Authentic', color: '#00f3ff', glow: 'rgba(0, 243, 255, 0.6)', bgGlow: 'rgba(0, 243, 255, 0.15)' };
+    if (strength >= 60) return { label: 'Reliable', color: '#a855f7', glow: 'rgba(168, 85, 247, 0.6)', bgGlow: 'rgba(168, 85, 247, 0.15)' };
+    if (strength >= 45) return { label: 'Credible', color: '#00ff9d', glow: 'rgba(0, 255, 157, 0.6)', bgGlow: 'rgba(0, 255, 157, 0.15)' };
+    return { label: 'Emerging', color: '#94a3b8', glow: 'rgba(148, 163, 184, 0.4)', bgGlow: 'rgba(148, 163, 184, 0.08)' };
 };
 
 const AgentShareModal: React.FC<{ 
@@ -255,7 +255,7 @@ const AgentShareModal: React.FC<{
                     </div>
 
                     <div className="flex items-center justify-between pt-5 border-t border-white/10 opacity-80 relative z-10 font-mono">
-                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">CERTIFIED_BY_INTURANK_PROTOCOL // V.1.5.0</div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">CERTIFIED_BY_INTURANK_PROTOCOL // {APP_VERSION_DISPLAY}</div>
                         <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString()} // NEURAL_SYNC_S04</div>
                     </div>
                 </div>
@@ -750,9 +750,9 @@ const MarketDetail: React.FC = () => {
     const ts = parseFloat(formatEther(BigInt(agent?.totalShares || '1')));
     const pct = ts > 0 ? (s / ts) * 100 : 0;
     
-    if (pct >= 5) return { label: 'MAX_CONVICTION', color: 'text-intuition-primary border-intuition-primary/40 bg-intuition-primary/10 shadow-glow-blue' };
-    if (pct >= 1) return { label: 'HIGH_CONVICTION', color: 'text-white border-white/20 bg-white/5' };
-    if (pct >= 0.1) return { label: 'MID_CONVICTION', color: 'text-slate-400 border-slate-800' };
+    if (pct >= 5) return { label: 'Very high', color: 'text-intuition-primary border-intuition-primary/40 bg-intuition-primary/10 shadow-glow-blue' };
+    if (pct >= 1) return { label: 'High', color: 'text-white border-white/20 bg-white/5' };
+    if (pct >= 0.1) return { label: 'Medium', color: 'text-slate-400 border-slate-800' };
     return { label: 'Acquire / Redeem', color: 'text-slate-600 border-slate-900 opacity-60' };
   };
 
@@ -1078,11 +1078,11 @@ const MarketDetail: React.FC = () => {
                         <div className="w-2 h-2 rounded-full bg-intuition-success animate-pulse shadow-[0_0_10px_#00ff9d]"></div>
                         {verified ? (
                             <span className="flex items-center gap-1.5 px-2 sm:px-3 py-1 bg-intuition-primary/10 border border-intuition-primary/40 text-intuition-primary text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-glow-blue">
-                                <BadgeCheck size={12} className="sm:w-[14px] sm:h-[14px]" /> System_Verified_Node
+                                <BadgeCheck size={12} className="sm:w-[14px] sm:h-[14px]" /> Verified by Intuition
                             </span>
                         ) : (
                             <span className="flex items-center gap-1.5 px-2 sm:px-3 py-1 bg-slate-900 border border-slate-700 text-slate-500 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
-                                <UserCog size={12} className="sm:w-[14px] sm:h-[14px]" /> Custom_User_Node
+                                <UserCog size={12} className="sm:w-[14px] sm:h-[14px]" /> Community node
                             </span>
                         )}
                     </div>
@@ -1092,7 +1092,7 @@ const MarketDetail: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[9px] font-black text-slate-600 uppercase tracking-widest">
                       <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
                         <Hash size={13} className="text-slate-700 shrink-0" />
-                        <span className="shrink-0">TERM ID</span>
+                        <span className="shrink-0">Term ID</span>
                         <span
                           className="text-slate-300 font-mono normal-case text-[10px] sm:text-[11px] tracking-normal break-all select-all"
                           title={termIdNormalized || undefined}
@@ -1114,20 +1114,20 @@ const MarketDetail: React.FC = () => {
                         </button>
                       </div>
                       <div className="w-1 h-1 rounded-full bg-slate-800 shrink-0 hidden sm:block" />
-                      <span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em] shrink-0" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>LINEAR_CURVE_UTILITY</span>
+                      <span className="px-2.5 py-1 border font-black text-[8px] tracking-[0.2em] shrink-0" style={{ color: theme.color, borderColor: `${theme.color}44`, backgroundColor: `${theme.color}11` }}>Linear curve</span>
                     </div>
                 </div>
             </div>
             
             <div className="mt-10 md:mt-0 flex flex-col items-end gap-3 relative z-10 text-right">
-                <div className="text-[9px] font-black text-slate-600 uppercase tracking-[0.3em] mb-2">Network_Conviction_Score</div>
+                <div className="text-[9px] font-black text-slate-600 uppercase tracking-[0.3em] mb-2">Trust score</div>
                 <div className="flex items-end gap-8 mb-2">
                     <div className="flex flex-col items-center group/prob">
                         <div className="text-4xl font-black text-intuition-success text-glow-success transition-all group-hover/prob:scale-110">{currentStrength.toFixed(1)}%</div>
                         <div className="mt-1 flex items-center justify-center"><CurrencySymbol size="sm" className="text-slate-500" /></div>
                     </div>
                 </div>
-                <div className="text-sm font-black text-slate-700 font-mono uppercase tracking-[0.4em]">Convergence_L3_Confirmed</div>
+                <div className="text-sm font-black text-slate-700 font-mono uppercase tracking-[0.4em]">Score confirmed</div>
             </div>
         </div>
 
@@ -1136,15 +1136,17 @@ const MarketDetail: React.FC = () => {
             <div className="lg:col-span-8 space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div className="bg-black border p-8 rounded-3xl relative overflow-hidden group shadow-2xl h-full flex flex-col justify-center hover:border-white/40 transition-colors duration-700" style={{ borderColor: `${theme.color}44` }}>
-                        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-125 transition-transform duration-1000"><Shield size={100} /></div>
-                        <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-8 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full animate-pulse shadow-[0_0_12px_currentColor]" style={{ backgroundColor: theme.color }}></div> REPUTATION CLASS</div>
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.06]" aria-hidden>
+                          <Shield size={100} className="text-slate-500" strokeWidth={1} />
+                        </div>
+                        <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.4em] mb-6">Reputation</div>
                         <div
-                          className="font-black font-display text-white text-glow-white mb-2 leading-tight uppercase tracking-tight transition-all duration-700 text-lg sm:text-xl md:text-2xl lg:text-3xl max-w-full"
+                          className="font-black font-display text-white text-glow-white mb-2 leading-tight tracking-tight transition-all duration-700 text-lg sm:text-xl md:text-2xl lg:text-3xl max-w-full"
                           style={{ color: theme.color, textShadow: `0 0 20px ${theme.color}66` }}
                         >
                           {theme.label}
                         </div>
-                        <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest font-mono">NEURAL_CONVERGENCE: <span style={{ color: theme.color }}>{currentStrength.toFixed(1)}%</span></div>
+                        <div className="text-[9px] font-black text-slate-500 tracking-wide font-sans">Trust score: <span style={{ color: theme.color }}>{currentStrength.toFixed(1)}%</span></div>
                     </div>
                     <div className="md:col-span-2"><AIBriefing agent={agent} triples={triples} history={activityLog} /></div>
                 </div>
@@ -1159,14 +1161,14 @@ const MarketDetail: React.FC = () => {
                                 <span className="break-words max-w-full">{formatMarketValue(displayPrice)}</span>
                               </div>
                               <div className="text-[10px] sm:text-[12px] text-slate-500 font-mono tracking-widest uppercase font-black">
-                                / PORTAL_SHARE
+                                per share
                               </div>
                             </div>
                             <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.4em] mt-3 text-glow" style={{ color: theme.color }}><Activity size={12} className="animate-pulse shadow-[0_0_15px_currentColor]" /> Live</div>
                         </div>
                         <div className="flex gap-12 font-black text-right pb-1">
-                             <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">24H_VOLATILITY</span><span className="text-2xl text-white font-display tracking-tight text-glow-white">0.82%</span></div>
-                             <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">LINEAR_MARKET_RATE</span><span className="text-2xl font-display tracking-tight uppercase text-glow" style={{ color: theme.color }}>STABLE</span></div>
+                             <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">24h volatility</span><span className="text-2xl text-white font-display tracking-tight text-glow-white">0.82%</span></div>
+                             <div className="flex flex-col items-end group/item"><span className="text-[9px] text-slate-600 uppercase tracking-widest mb-2 group-hover/item:text-white transition-colors">Curve status</span><span className="text-2xl font-display tracking-tight uppercase text-glow" style={{ color: theme.color }}>Stable</span></div>
                         </div>
                     </div>
                     <div className="px-3 sm:px-6 md:px-10 py-3 bg-white/5 border-b border-white/5 flex flex-wrap items-center justify-between gap-3 z-20 overflow-x-auto">
@@ -1202,8 +1204,8 @@ const MarketDetail: React.FC = () => {
                 <div className="bg-black border border-slate-900 p-8 rounded-[2rem] shadow-2xl relative overflow-hidden group hover:border-white/20 transition-all duration-500">
                     <div className="absolute inset-0 bg-white/[0.02] opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     <div className="flex justify-between items-center mb-6">
-                        <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.5em]">CIRCULATING_SHARES</h4>
-                        <span className="text-[11px] font-black text-glow" style={{ color: theme.color }}>{formatDisplayedShares(selectedVault?.total_shares ?? (agent.totalShares || '0'))} UNITS</span>
+                        <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.5em]">Circulating shares</h4>
+                        <span className="text-[11px] font-black text-glow" style={{ color: theme.color }}>{formatDisplayedShares(selectedVault?.total_shares ?? (agent.totalShares || '0'))} shares</span>
                     </div>
                     <div className="flex gap-2.5 h-4 px-1">
                         {[...Array(12)].map((_, i) => {
@@ -1212,7 +1214,9 @@ const MarketDetail: React.FC = () => {
                             return <div key={i} className={`flex-1 h-full rounded-full transition-all duration-1000 ${i < fill ? 'shadow-glow' : 'bg-slate-900 opacity-20'}`} style={{ backgroundColor: i < fill ? theme.color : '' }}></div>;
                         })}
                     </div>
-                    <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">{getCurveLabel(selectedCurveId)}_Curve_Active</div>
+                    <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">
+                      {getCurveLabel(selectedCurveId) === 'LINEAR' ? 'Linear' : 'Exponential'} curve active
+                    </div>
                 </div>
 
                 <div className={`bg-[#050505] border-2 rounded-[2rem] shadow-[0_0_60px_rgba(0,0,0,0.6)] group transition-all duration-500 ${sentiment === 'DISTRUST' ? 'border-intuition-danger/40' : 'border-slate-900/80'}`} style={{ borderColor: sentiment === 'TRUST' ? `${theme.color}55` : undefined }}>
@@ -1510,8 +1514,8 @@ const MarketDetail: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-20 animate-in fade-in duration-700">
                         <div className="space-y-12">
                             <div>
-                                <h4 className="text-[11px] font-black uppercase tracking-[0.6em] mb-6 flex items-center gap-3 text-glow" style={{ color: theme.color }}><Terminal size={14}/> Core_Alignment_Matrix</h4>
-                                <p className="text-slate-400 text-base leading-relaxed font-mono font-bold uppercase tracking-tight group-hover:text-white transition-colors">Node <strong className="text-white text-glow-white">{agent.label}</strong> stabilized in Sector_04. Semantic weight currently projected at {triples.length} unique synapses. Linear Curve Utility (ID: 1) engaged.</p>
+                                <h4 className="text-[11px] font-black uppercase tracking-[0.35em] mb-6 flex items-center gap-3 text-glow" style={{ color: theme.color }}><Activity size={14}/> At a glance</h4>
+                                <p className="text-slate-400 text-base leading-relaxed font-sans font-medium tracking-tight group-hover:text-slate-200 transition-colors"><strong className="text-white text-glow-white">{agent.label}</strong> has {triples.length} related claims on the graph. This market uses a linear bonding curve.</p>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                               <div className="p-4 md:p-6 bg-white/5 border border-white/10 rounded-2xl group hover:border-white/40 transition-all duration-300">
@@ -1525,7 +1529,7 @@ const MarketDetail: React.FC = () => {
                               </div>
                               <div className="p-4 md:p-6 bg-white/5 border border-white/10 rounded-2xl group hover:border-white/40 transition-all duration-300">
                                 <div className="text-[9px] text-slate-600 uppercase mb-2 font-black tracking-widest group-hover:text-white">
-                                  TOTAL_SHARES
+                                  Total shares
                                 </div>
                                 <div className="text-xl md:text-2xl font-black text-white font-display tracking-tight group-hover:text-glow-white">
                                   {formatLargeNumber(formatDisplayedShares(agent.totalShares || '0'))}
@@ -1536,8 +1540,8 @@ const MarketDetail: React.FC = () => {
                             {/* NEW: PROVENANCE LINKS SECTION */}
                             {agent.links && agent.links.length > 0 && (
                                 <div className="pt-4">
-                                    <h4 className="text-[11px] font-black uppercase tracking-[0.6em] mb-6 flex items-center gap-3 text-white">
-                                        <LinkIcon size={14} className="text-intuition-primary" /> Node_Provenance_Uplinks
+                                    <h4 className="text-[11px] font-black uppercase tracking-[0.35em] mb-6 flex items-center gap-3 text-white">
+                                        <LinkIcon size={14} className="text-intuition-primary" /> Links
                                     </h4>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         {agent.links.map((link, idx) => {
@@ -1553,7 +1557,7 @@ const MarketDetail: React.FC = () => {
                                                     onMouseEnter={playHover}
                                                     className="flex items-center justify-between gap-3 p-4 bg-white/5 border border-white/10 rounded-2xl hover:border-intuition-primary hover:bg-intuition-primary/5 transition-all duration-300 group/link"
                                                 >
-                                                    <span className="text-[10px] font-black text-slate-400 group-hover/link:text-white uppercase tracking-widest truncate shrink-0">{link.label || 'UPLINK_SOURCE'}</span>
+                                                    <span className="text-[10px] font-bold text-slate-400 group-hover/link:text-white truncate shrink-0">{link.label || 'Link'}</span>
                                                     <span className="px-2.5 py-1 rounded-md bg-[#7c3aed]/90 text-white text-[10px] font-bold truncate min-w-0 flex-1 text-center shadow-[0_0_10px_rgba(124,58,237,0.3)]" title={href}>{displayUrl}</span>
                                                     <ExternalLink size={12} className="text-slate-600 group-hover/link:text-intuition-primary shrink-0" />
                                                 </a>
@@ -1564,16 +1568,16 @@ const MarketDetail: React.FC = () => {
                             )}
                         </div>
                         <div className="space-y-6">
-                            <h4 className="text-[11px] font-black text-white uppercase tracking-[0.6em] mb-6 text-glow-white">Protocol_Parameters</h4>
-                            <div className="p-8 border border-white/5 bg-white/5 rounded-2xl font-mono text-xs space-y-5 transition-all duration-300">
-                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Bonding_Curve</span><span className="font-bold text-glow" style={{ color: theme.color }}>Linear_Utility_1</span></div>
-                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Creator</span><span className="text-white font-bold group-hover:text-glow-white">{agent.creator?.id && !isProtocolRouterAddress(agent.creator.id) ? (agent.creator?.label || agent.creator.id.slice(0, 18)) : (agent.creator?.label || '—')}</span></div>
+                            <h4 className="text-[11px] font-black text-white uppercase tracking-[0.35em] mb-6 text-glow-white">Market details</h4>
+                            <div className="p-8 border border-white/5 bg-white/5 rounded-2xl font-sans text-xs space-y-5 transition-all duration-300">
+                                <div className="flex justify-between items-center group gap-4"><span className="text-slate-500 font-semibold group-hover:text-slate-300 transition-colors shrink-0">Bonding curve</span><span className="font-bold text-glow text-right" style={{ color: theme.color }}>Linear (utility)</span></div>
+                                <div className="flex justify-between items-center group gap-4"><span className="text-slate-500 font-semibold group-hover:text-slate-300 transition-colors shrink-0">Creator</span><span className="text-white font-bold group-hover:text-glow-white text-right break-all">{agent.creator?.id && !isProtocolRouterAddress(agent.creator.id) ? (agent.creator?.label || agent.creator.id.slice(0, 18)) : (agent.creator?.label || '—')}</span></div>
                                 {(() => {
                                     const primaryLink = agent.links?.[0];
                                     const linkUrl = primaryLink?.url ? (primaryLink.url.startsWith('http') ? primaryLink.url : `https://${primaryLink.url}`) : null;
                                     return (
                                         <div className="flex justify-between items-center group gap-3">
-                                            <span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors shrink-0">Link</span>
+                                            <span className="text-slate-500 font-semibold group-hover:text-slate-300 transition-colors shrink-0">Primary link</span>
                                             {linkUrl ? (
                                                 <a href={linkUrl} target="_blank" rel="noreferrer" onClick={playClick} onMouseEnter={playHover} className="px-3 py-1.5 rounded-md bg-[#7c3aed]/90 hover:bg-[#7c3aed] text-white text-[10px] font-bold truncate max-w-full shadow-[0_0_12px_rgba(124,58,237,0.4)] hover:shadow-[0_0_20px_rgba(124,58,237,0.5)] transition-all flex items-center gap-2" title={linkUrl}>
                                                     <span className="truncate">{linkUrl.replace(/^https?:\/\//, '')}</span>
@@ -1585,8 +1589,8 @@ const MarketDetail: React.FC = () => {
                                         </div>
                                     );
                                 })()}
-                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Last_Interaction</span><span className="text-white font-bold group-hover:text-glow-white">{activityLog[0] ? new Date(activityLog[0].timestamp).toLocaleDateString() : 'Syncing...'}</span></div>
-                                <div className="flex justify-between items-center group"><span className="text-slate-600 uppercase font-black tracking-widest group-hover:text-white transition-colors">Protocol_Tier</span><span className="px-3 py-0.5 text-black font-black uppercase text-[10px] shadow-glow" style={{ backgroundColor: theme.color }}>{theme.label}</span></div>
+                                <div className="flex justify-between items-center group gap-4"><span className="text-slate-500 font-semibold group-hover:text-slate-300 transition-colors shrink-0">Last activity</span><span className="text-white font-bold group-hover:text-glow-white">{activityLog[0] ? new Date(activityLog[0].timestamp).toLocaleDateString() : 'Loading…'}</span></div>
+                                <div className="flex justify-between items-center group gap-4"><span className="text-slate-500 font-semibold group-hover:text-slate-300 transition-colors shrink-0">Reputation tier</span><span className="px-3 py-0.5 text-black font-bold text-[10px] shadow-glow rounded-sm" style={{ backgroundColor: theme.color }}>{theme.label}</span></div>
                             </div>
                         </div>
                     </div>)}
@@ -1844,7 +1848,7 @@ const MarketDetail: React.FC = () => {
                                         </td>
                                     </tr>
                                 )) : (
-                                    <tr><td colSpan={5} className="p-20 text-center text-slate-700 uppercase font-black tracking-widest text-[10px]">NULL_ACTIVITY_LOGGED</td></tr>
+                                    <tr><td colSpan={5} className="p-20 text-center text-slate-600 font-medium text-sm">No activity yet</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -1852,8 +1856,14 @@ const MarketDetail: React.FC = () => {
                 )}
                 {activeTab === 'CONNECTIONS' && (
                     <div className="animate-in fade-in duration-700">
-                        <div className="flex items-center gap-8 mb-12 bg-white/[0.02] p-10 border-2 border-slate-900 rounded-2xl group hover:border-white/20 transition-all shadow-2xl backdrop-blur-md"><div className="w-20 h-20 rounded-xl border-2 flex items-center justify-center bg-black shadow-2xl group-hover:scale-105 duration-500" style={{ borderColor: theme.color, boxShadow: `0 0 30px ${theme.bgGlow}` }}><Activity size={40} className="animate-pulse" style={{ color: theme.color }} /></div><div><h4 className="text-2xl font-black font-display text-white uppercase tracking-[0.4em] mb-2 text-glow-white">NEURAL_TOPOLOGY</h4><p className="text-[11px] text-slate-500 uppercase tracking-widest font-black group-hover:text-slate-300 transition-colors">Mapping semantic adjacency and synapse neighbors within Sector_04.</p></div></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (<Link key={i} to={`/markets/${peer.term_id}`} className="group p-8 bg-black border-2 border-slate-900 hover:border-white transition-all rounded-2xl flex items-center gap-8 relative overflow-hidden shadow-2xl"><div className="absolute inset-0 bg-gradient-to-tr from-white/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div><div className="w-16 h-16 bg-slate-950 border-2 border-slate-800 flex items-center justify-center rounded-2xl shrink-0 group-hover:border-white transition-all shadow-2xl overflow-hidden">{peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}</div><div className="min-w-0"><div className="text-lg font-black text-white group-hover:text-glow-white transition-colors truncate uppercase leading-none mb-2 tracking-tight">{peer.label}</div><div className="text-[8px] font-black font-mono text-slate-600 tracking-widest uppercase">SYMMETRIC_NEIGHBOR</div></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-700 uppercase font-black tracking-[0.6em] text-[10px] border-2 border-dashed border-slate-900 rounded-2xl">NULL_NETWORK_ADJACENCY</div>)}</div>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-6 sm:gap-8 mb-12 bg-white/[0.02] p-10 border-2 border-slate-900 rounded-2xl group hover:border-white/20 transition-all shadow-2xl backdrop-blur-md">
+                          <div className="w-20 h-20 rounded-xl border-2 flex items-center justify-center bg-black shadow-2xl group-hover:scale-105 duration-500 shrink-0 mx-auto sm:mx-0" style={{ borderColor: theme.color, boxShadow: `0 0 30px ${theme.bgGlow}` }}><Activity size={40} className="animate-pulse" style={{ color: theme.color }} /></div>
+                          <div className="min-w-0 text-center sm:text-left">
+                            <h4 className="text-xl sm:text-2xl font-black font-display text-white tracking-tight mb-2 text-glow-white">Connected markets</h4>
+                            <p className="text-sm text-slate-500 font-medium group-hover:text-slate-400 transition-colors">Other markets linked through this graph.</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{engagedIdentities.length > 0 ? engagedIdentities.map((peer, i) => (<Link key={i} to={`/markets/${peer.term_id}`} className="group p-8 bg-black border-2 border-slate-900 hover:border-white transition-all rounded-2xl flex items-center gap-8 relative overflow-hidden shadow-2xl"><div className="absolute inset-0 bg-gradient-to-tr from-white/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div><div className="w-16 h-16 bg-slate-950 border-2 border-slate-800 flex items-center justify-center rounded-2xl shrink-0 group-hover:border-white transition-all shadow-2xl overflow-hidden">{peer.image ? <img src={peer.image} className="w-full h-full object-cover" /> : <User size={24} className="text-slate-700" />}</div><div className="min-w-0"><div className="text-lg font-black text-white group-hover:text-glow-white transition-colors truncate leading-none mb-2 tracking-tight">{peer.label}</div><div className="text-[8px] font-semibold text-slate-600 tracking-wide">Related market</div></div></Link>)) : (<div className="col-span-full py-32 text-center text-slate-600 font-medium text-sm border-2 border-dashed border-slate-900 rounded-2xl">No related markets yet</div>)}</div>
                     </div>
                 )}
             </div>

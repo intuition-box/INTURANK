@@ -51,15 +51,15 @@ const ProfileBadgeWidget: React.FC<ProfileBadgeWidgetProps> = ({
   const tier = badges?.bestTier ?? 'scout';
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative z-[1] overflow-visible" ref={dropdownRef}>
       <button
         onClick={onToggleDropdown}
         onMouseEnter={playHover}
-        className="flex items-center gap-3 px-3 py-2 rounded-xl border bg-black/80 border-slate-700 hover:border-intuition-primary/60 hover:bg-intuition-primary/5 transition-all group"
+        className="flex items-center gap-3 pl-2 pr-2.5 py-2 rounded-xl border border-slate-600/70 bg-slate-950/60 hover:border-intuition-primary/55 hover:bg-intuition-primary/[0.06] transition-all duration-200 group shadow-sm"
       >
         {/* Avatar with badge overlay */}
         <div className="relative shrink-0">
-          <div className={`w-9 h-9 rounded-xl overflow-hidden border-2 ${
+          <div className={`w-10 h-10 rounded-xl overflow-hidden border-2 ${
             tier === 'apex' ? 'border-amber-400/60' :
             tier === 'elite' ? 'border-slate-400/50' :
             tier === 'rising' ? 'border-amber-600/50' : 'border-slate-600'
@@ -71,13 +71,13 @@ const ProfileBadgeWidget: React.FC<ProfileBadgeWidgetProps> = ({
           </div>
         </div>
         {/* Name + badge label */}
-        <div className="hidden sm:flex flex-col items-start min-w-0">
-          <span className="text-white font-bold text-sm truncate max-w-[120px]">{displayName}</span>
-          <span className={`text-[9px] font-black uppercase tracking-wider ${tier === 'apex' ? 'text-amber-400' : tier === 'elite' ? 'text-slate-300' : tier === 'rising' ? 'text-amber-500' : 'text-slate-500'}`}>
+        <div className="hidden sm:flex flex-col items-start justify-center min-w-0 gap-0.5">
+          <span className="text-white font-semibold text-[0.9375rem] leading-tight truncate max-w-[132px] font-sans tracking-tight">{displayName}</span>
+          <span className={`text-xs font-semibold font-sans tracking-wide ${tier === 'apex' ? 'text-amber-400' : tier === 'elite' ? 'text-slate-300' : tier === 'rising' ? 'text-amber-500' : 'text-slate-400'}`}>
             {BADGE_NAMES[tier]}
           </span>
         </div>
-        <ChevronDown size={14} className={`text-slate-500 shrink-0 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown size={16} className={`text-slate-500 shrink-0 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isDropdownOpen && children}
