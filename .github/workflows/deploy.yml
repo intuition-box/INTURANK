@@ -48,6 +48,12 @@ jobs:
           if [ -z "${{ secrets.VITE_GEMINI_API_KEY }}" ]; then
             echo "::warning::VITE_GEMINI_API_KEY is not set. AI briefing/summary will not work. Add it in repo Settings → Secrets → Actions (single key or comma-separated: key1,key2,key3)."
           fi
+          if [ -z "${{ secrets.VITE_OPENAI_API_KEY }}" ]; then
+            echo "::notice::VITE_OPENAI_API_KEY is not set. OpenAI fallback (Intuition Skill) will be unavailable. Optional: add secret in Settings → Secrets → Actions."
+          fi
+          if [ -z "${{ secrets.VITE_GROQ_API_KEY }}" ]; then
+            echo "::notice::VITE_GROQ_API_KEY is not set. Groq fallback (before OpenAI) will be unavailable. Optional: https://console.groq.com"
+          fi
           npm run build
         env:
           API_KEY: ${{ secrets.API_KEY }}
@@ -57,6 +63,10 @@ jobs:
           VITE_GRAPHQL_URL: ${{ vars.VITE_GRAPHQL_URL }}
           VITE_MAINTENANCE_MODE: ${{ vars.VITE_MAINTENANCE_MODE || 'false' }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
+          VITE_OPENAI_MODEL: ${{ vars.VITE_OPENAI_MODEL }}
+          VITE_GROQ_API_KEY: ${{ secrets.VITE_GROQ_API_KEY }}
+          VITE_GROQ_MODEL: ${{ vars.VITE_GROQ_MODEL }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
