@@ -19,6 +19,34 @@ export const getGeminiApiKey = (): string => {
 export const GEMINI_MODEL =
   (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim() || 'gemini-2.5-flash';
 
+/** OpenAI API key for Skill chat fallback (platform.openai.com — ChatGPT Plus does not include API access). */
+export const getOpenAiApiKey = (): string => {
+  const raw = String(import.meta.env.VITE_OPENAI_API_KEY ?? '').trim();
+  if (!raw) return '';
+  const keys = raw.split(',').map((k) => k.trim()).filter(Boolean);
+  if (keys.length === 0) return '';
+  return keys[Math.floor(Math.random() * keys.length)];
+};
+
+/** Model for OpenAI fallback (`gpt-4o-mini` is cost-effective). */
+export const OPENAI_MODEL =
+  (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-4o-mini';
+
+/** Groq (console.groq.com) — OpenAI-compatible API; fast inference, good free tier. */
+export const getGroqApiKey = (): string => {
+  const raw = String(import.meta.env.VITE_GROQ_API_KEY ?? '').trim();
+  if (!raw) return '';
+  const keys = raw.split(',').map((k) => k.trim()).filter(Boolean);
+  if (keys.length === 0) return '';
+  return keys[Math.floor(Math.random() * keys.length)];
+};
+
+/** Groq chat model id (see https://console.groq.com/docs/models). */
+export const GROQ_MODEL =
+  (import.meta.env.VITE_GROQ_MODEL as string | undefined)?.trim() || 'llama-3.3-70b-versatile';
+
+export const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+
 export const CHAIN_ID = 1155;
 export const NETWORK_NAME = "Intuition Mainnet";
 export const RPC_URL = "https://rpc.intuition.systems/http";

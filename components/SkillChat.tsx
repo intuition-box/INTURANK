@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Terminal, Send, Loader2, CheckCircle2, Zap, User, Bot, XCircle, ExternalLink, ShieldCheck, Layers } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { useAccount } from 'wagmi';
 import { isAddress, isHex } from 'viem';
 import {
@@ -19,7 +18,9 @@ import {
   getTripleTermIdFromTxHash,
   createTripleFromLabels,
 } from '../services/web3';
-import { MULTI_VAULT_ADDRESS, FEE_PROXY_ADDRESS, CURRENCY_SYMBOL, getGeminiApiKey, GEMINI_MODEL, CHAIN_ID } from '../constants';
+import { MULTI_VAULT_ADDRESS, FEE_PROXY_ADDRESS, CURRENCY_SYMBOL, getGeminiApiKey, getGroqApiKey, getOpenAiApiKey, CHAIN_ID } from '../constants';
+import { generateSkillChatCompletion, formatSkillLlmError } from '../services/skillLlm';
+import { parseSkillTxJsonBlock } from '../services/skillTxJson';
 import { toast } from './Toast';
 import { playClick, playHover } from '../services/audio';
 
@@ -121,37 +122,6 @@ function extractErrorText(error: unknown): string {
         }
     }
     return String(error ?? '');
-}
-
-function formatGeminiError(error: unknown): string {
-    const raw = extractErrorText(error);
-    const lower = raw.toLowerCase();
-    try {
-        const parsed = JSON.parse(raw) as { error?: { code?: number; message?: string } };
-        const m = parsed?.error?.message;
-        if (m && typeof m === 'string') {
-            if (parsed.error?.code === 403 || /leaked|invalid|revoked|permission/i.test(m)) {
-                return (
-                    'API access denied (403). Google flagged this key. Often because it was exposed in git, a screenshot, or a public repo. ' +
-                    'Create a new key at https://aistudio.google.com/apikey , put it in `.env.local` as `VITE_GEMINI_API_KEY=...`, restart `npm run dev`, and never commit keys.'
-                );
-            }
-            return `Gemini: ${m.slice(0, 280)}${m.length > 280 ? '…' : ''}`;
-        }
-    } catch {
-        /* not JSON */
-    }
-    if (raw.includes('403') || lower.includes('leaked') || lower.includes('api key was reported')) {
-        return (
-            'API access denied. Your Gemini key may be revoked or flagged as leaked. ' +
-            'Create a new key at https://aistudio.google.com/apikey , set `VITE_GEMINI_API_KEY` in `.env.local`, restart the dev server, and keep keys out of git.'
-        );
-    }
-    if (lower.includes('429') || lower.includes('resource exhausted') || lower.includes('quota')) {
-        return 'Gemini rate limit or quota exceeded. Wait a few minutes or check billing/quotas in Google AI Studio.';
-    }
-    const short = raw.length > 320 ? raw.slice(0, 317) + '…' : raw;
-    return `Request failed: ${short}`;
 }
 
 type SkillChatProps = {
@@ -295,37 +265,36 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         setLoading(true);
 
         try {
-            const apiKey = getGeminiApiKey();
-            if (!apiKey) {
-                setMessages(prev => [...prev, { role: 'assistant', content: 'Add VITE_GEMINI_API_KEY to your .env.local file to use the agent.' }]);
+            if (!getGeminiApiKey() && !getGroqApiKey() && !getOpenAiApiKey()) {
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        role: 'assistant',
+                        content:
+                            'Add `VITE_GEMINI_API_KEY` and/or `VITE_GROQ_API_KEY` and/or `VITE_OPENAI_API_KEY` to `.env.local` to use the agent (Groq/OpenAI are backups when Gemini is unavailable).',
+                    },
+                ]);
                 return;
             }
 
-            const ai = new GoogleGenAI({ apiKey });
-            
-            // Format history for the models.generateContent API
-            const contents = [
-                { role: 'user', parts: [{ text: SYSTEM_PROMPT }] },
-                { role: 'model', parts: [{ text: 'Understood. Ready when you are.' }] },
-                ...messages.slice(1).map(m => ({
-                    role: m.role === 'user' ? 'user' : 'model',
-                    parts: [{ text: m.content }],
-                })),
-                { role: 'user', parts: [{ text: userMsg }] }
-            ];
-
-            const result = await ai.models.generateContent({
-                model: GEMINI_MODEL,
-                contents,
+            const { text: responseText, provider } = await generateSkillChatCompletion({
+                systemPrompt: SYSTEM_PROMPT,
+                history: messages.slice(1).map((m) => ({ role: m.role, content: m.content })),
+                userMsg,
             });
-            const responseText = (result.text ?? (result as any).candidates?.[0]?.content?.parts?.[0]?.text) || 'No response from the model.';
+            const fallbackNote =
+                provider === 'groq'
+                    ? '\n\n_(This reply used Groq — Gemini was unavailable.)_'
+                    : provider === 'openai'
+                      ? '\n\n_(This reply used your OpenAI backup key — Gemini was unavailable.)_'
+                      : '';
 
             const jsonMatch = responseText.match(/```json\s*([\s\S]*?)```/);
             let txIntent: any = null;
             let contentAppend = '';
             if (jsonMatch) {
                 try {
-                    const parsed = JSON.parse(jsonMatch[1]) as Record<string, unknown>;
+                    const parsed = parseSkillTxJsonBlock(jsonMatch[1]);
                     if (parsed.action === 'createAtom') {
                         if (!address) {
                             contentAppend =
@@ -388,11 +357,11 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
 
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: responseText + contentAppend, txIntent },
+                { role: 'assistant', content: responseText + fallbackNote + contentAppend, txIntent },
             ]);
         } catch (error: unknown) {
-            console.error("Gemini Error:", error);
-            setMessages(prev => [...prev, { role: 'assistant', content: formatGeminiError(error) }]);
+            console.error('Skill LLM error:', error);
+            setMessages((prev) => [...prev, { role: 'assistant', content: formatSkillLlmError(error) }]);
         } finally {
             setLoading(false);
         }
