@@ -93,6 +93,9 @@ const Portfolio: React.FC = () => {
   const [myCreatedLoading, setMyCreatedLoading] = useState(false);
   const [holdingsPage, setHoldingsPage] = useState(1);
   const isRefreshingRef = useRef(false);
+  /** Last successful positions — never replace with [] when GraphQL errors (rate limit / indexer lag). */
+  const lastPositionsRef = useRef<any[]>([]);
+  const portfolioAddressRef = useRef<string | null>(null);
   const [sharePosition, setSharePosition] = useState<any | null>(null);
   const shareCardRef = useRef<HTMLDivElement | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -131,6 +134,10 @@ const Portfolio: React.FC = () => {
   const fetchUserData = useCallback(async (address: string) => {
     if (isRefreshingRef.current) return;
     isRefreshingRef.current = true;
+    if (portfolioAddressRef.current !== address) {
+      portfolioAddressRef.current = address;
+      lastPositionsRef.current = [];
+    }
     setLoading(true);
     setBalanceLoaded(false);
     setEquityLoaded(false);
@@ -144,12 +151,16 @@ const Portfolio: React.FC = () => {
 
     try {
       // 2. Fetch main data in parallel (skip balance - already fired above)
-      const [chainHistory, positionsWithValue, graphPositionsRaw, pnlSnapshot] = await Promise.all([
+      const [chainHistory, positionsWithValueResult, graphPositionsRawResult, pnlSnapshot] = await Promise.all([
           getUserHistory(address),
-          getPortfolioPositionsWithValue(address).catch(() => []),
-          getUserPositions(address).catch(() => []),
+          getPortfolioPositionsWithValue(address).catch(() => null as any),
+          getUserPositions(address).catch(() => null as any),
           getAccountPnlCurrent(address)
       ]);
+      const positionsWithValue = positionsWithValueResult === null ? [] : positionsWithValueResult;
+      const graphPositionsRaw = graphPositionsRawResult === null ? [] : graphPositionsRawResult;
+      const positionGraphFetchFailed =
+        positionsWithValueResult === null && graphPositionsRawResult === null;
 
       let equitySetFromPnl = false;
       let pnlSetFromPnl = false;
@@ -380,11 +391,37 @@ const Portfolio: React.FC = () => {
       }
       }
 
-      setPositions(activePositions);
-      setExposureData(calculateCategoryExposure(activePositions));
+      if (positionGraphFetchFailed) {
+        if (lastPositionsRef.current.length > 0) {
+          setPositions(lastPositionsRef.current);
+          setExposureData(calculateCategoryExposure(lastPositionsRef.current));
+        } else {
+          setPositions(activePositions);
+          setExposureData(calculateCategoryExposure(activePositions));
+        }
+      } else {
+        setPositions(activePositions);
+        lastPositionsRef.current = activePositions;
+        setExposureData(calculateCategoryExposure(activePositions));
+      }
+
+      // When holdings come from positions_with_value, hero totals must match the table (sum of row
+      // net valuation / PnL). getAccountPnlCurrent uses a separate aggregate and can disagree.
+      const equityFromPositionsTable =
+        positionsWithValue.length > 0 && activePositions.length > 0;
+      if (equityFromPositionsTable) {
+        const sumVal = activePositions.reduce((s, x) => s + (Number(x.value) || 0), 0);
+        const sumProfit = activePositions.reduce((s, x) => s + (Number(x.profit) || 0), 0);
+        setPortfolioValue(
+          sumVal.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }),
+        );
+        setNetPnL(sumProfit);
+        setEquityLoaded(true);
+        setPnLLoaded(true);
+      }
 
       // Only set equity/PNL from aggregated if not already set from pnlSnapshot
-      if (!equitySetFromPnl) {
+      if (!equitySetFromPnl && !equityFromPositionsTable) {
         if (pnlSnapshot?.equity_value) {
           try {
             const eq = Number(formatEther(BigInt(pnlSnapshot.equity_value)));
@@ -397,7 +434,7 @@ const Portfolio: React.FC = () => {
         }
         setEquityLoaded(true);
       }
-      if (!pnlSetFromPnl) {
+      if (!pnlSetFromPnl && !equityFromPositionsTable) {
         if (pnlSnapshot?.total_pnl != null) {
           try {
             const totalPnl = Number(formatEther(BigInt(pnlSnapshot.total_pnl)));

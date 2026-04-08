@@ -35,15 +35,15 @@ const PNL_CACHE_MS = 5 * 60 * 1000; // 5 minutes (memory + sessionStorage)
 const PNL_STORAGE_KEY = 'inturank_stats_pnl_lb_v1';
 const PNL_FETCH_LIMIT = 20;
 
-const VALID_LB_TABS: LeaderboardType[] = ['STAKERS', 'SEASON_2', 'PNL', 'AGENTS_SUPPORT', 'AGENTS_CONTROVERSY', 'CLAIMS'];
+const VALID_LB_TABS: LeaderboardType[] = ['SEASON_2', 'STAKERS', 'PNL', 'AGENTS_SUPPORT', 'AGENTS_CONTROVERSY', 'CLAIMS'];
 
 function parseTabParam(searchParams: URLSearchParams): LeaderboardType {
   const raw = searchParams.get('tab');
-  if (!raw) return 'STAKERS';
+  if (!raw) return 'SEASON_2';
   if (raw.toLowerCase() === 'season2') return 'SEASON_2';
   const u = raw.toUpperCase() as LeaderboardType;
   if (VALID_LB_TABS.includes(u)) return u;
-  return 'STAKERS';
+  return 'SEASON_2';
 }
 
 function tabParamForLeaderboard(tab: LeaderboardType): string {
@@ -553,30 +553,46 @@ const Stats: React.FC = () => {
           <p className={PAGE_HERO_EYEBROW}>Rankings &amp; reputation</p>
           <h1 className={PAGE_HERO_TITLE}>Leaderboards</h1>
           <p className={PAGE_HERO_BODY}>
-            Explore top stakers, PnL, supported atoms, and active claims across the network.
+            <span className="text-amber-200/95 font-sans font-semibold normal-case tracking-tight">
+              Season 2 is the featured competition right now
+            </span>
+            {' — '}
+            explore epochs and champions, then browse classic network rankings below.
           </p>
           <div className="flex items-center justify-center gap-2 pt-2 text-intuition-primary">
             <Trophy size={18} className="shrink-0" aria-hidden />
-            <span className="text-sm font-sans text-slate-400">Seasonal competition and epochs update over time.</span>
+            <span className="text-sm font-sans text-slate-400">Other tabs: stakers, PnL, support, claims.</span>
           </div>
         </div>
 
-        {/* Navigation Tabs - ARES HUD DECK */}
+        {/* Navigation Tabs — Season 2 featured first (default tab) */}
         <div className="flex flex-wrap justify-center gap-3 mb-16 bg-black/40 p-2 border-2 border-slate-900 clip-path-slant backdrop-blur-xl relative z-20 shadow-2xl">
-            {[
+            {(
+              [
+                {
+                  id: 'SEASON_2',
+                  icon: Trophy,
+                  label: 'SEASON 2',
+                  color: 'bg-amber-400',
+                  text: 'text-black',
+                  glow: 'shadow-[0_0_28px_rgba(251,191,36,0.55)]',
+                  featured: true,
+                },
                 { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-glow-blue' },
-                { id: 'SEASON_2', icon: Trophy, label: 'SEASON 2', color: 'bg-amber-400', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(251,191,36,0.45)]' },
                 { id: 'PNL', icon: TrendingUp, label: 'TOP PNL', color: 'bg-amber-500', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(245,158,11,0.4)]' },
                 { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_25px_#00ff9d]' },
                 { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'Claim entropy', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
-                { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-glow-purple' }
-            ].map((tab) => {
+                { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-glow-purple' },
+              ] as const
+            ).map((tab) => {
                 const isActive = activeTab === tab.id;
                 const Icon = tab.icon;
+                const featured = 'featured' in tab && tab.featured;
 
                 return (
                     <button 
                         key={tab.id}
+                        type="button"
                         onClick={() => {
                           playClick();
                           const id = tab.id as LeaderboardType;
@@ -592,12 +608,22 @@ const Stats: React.FC = () => {
                           );
                         }}
                         onMouseEnter={playHover}
-                        className={`min-h-[44px] px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
+                        className={`relative min-h-[44px] px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
                             isActive 
                             ? `${tab.color} ${tab.text} ${tab.glow} border-transparent`
-                            : 'bg-black/40 border-slate-800 text-slate-500 hover:text-white hover:border-white/40'
+                            : featured
+                              ? 'bg-black/50 border-amber-500/45 text-amber-100/90 hover:text-white hover:border-amber-400/70 ring-1 ring-amber-500/20'
+                              : 'bg-black/40 border-slate-800 text-slate-500 hover:text-white hover:border-white/40'
                         }`}
                     >
+                        {featured && (
+                          <span
+                            className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-sm bg-gradient-to-r from-orange-500 to-amber-400 text-[9px] font-black uppercase tracking-[0.2em] text-black shadow-[0_0_12px_rgba(251,146,60,0.6)] pointer-events-none"
+                            aria-hidden
+                          >
+                            Hot
+                          </span>
+                        )}
                         <Icon size={16} className={isActive ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} /> 
                         {tab.label}
                     </button>

@@ -11,7 +11,7 @@ import Logo from './Logo';
 import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
-import { restoreFollowsFromServerIfEmpty } from '../services/follows';
+import { mergeFollowsFromServer } from '../services/follows';
 import ProfileBadgeWidget from './ProfileBadgeWidget';
 
 interface LayoutProps {
@@ -231,9 +231,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     if (walletAddress) maybeSendDailyDigest(walletAddress).catch(() => {});
   }, [walletAddress]);
 
-  // Restore follows from backend when local is empty (e.g. after hard refresh or new device)
+  // Merge follows from backend on connect (fills gaps when local was non-empty but server had more)
   useEffect(() => {
-    if (walletAddress) restoreFollowsFromServerIfEmpty(walletAddress).catch(() => {});
+    if (walletAddress) mergeFollowsFromServer(walletAddress).catch(() => {});
   }, [walletAddress]);
 
   const openModal = () => {

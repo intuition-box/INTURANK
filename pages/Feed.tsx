@@ -8,7 +8,7 @@ import { playClick, playHover } from '../services/audio';
 import { GoogleGenAI } from "@google/genai";
 import { formatEther } from 'viem';
 import { getFollowedIdentities } from '../services/follows';
-import { resolveENS, toAddress } from '../services/web3';
+import { resolveENS, toAddress, isGraphResolvableAddress } from '../services/web3';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import {
@@ -215,10 +215,11 @@ const Feed: React.FC = () => {
                                 const addr = toAddress(f.identityId);
                                 if (addr) return addr;
                                 const resolved = await resolveENS(f.identityId);
-                                return resolved ? (toAddress(resolved) || resolved) : null;
+                                if (!resolved) return null;
+                                return toAddress(resolved) || (isGraphResolvableAddress(resolved) ? resolved : null);
                             })
                         );
-                        const validIds = senderIds.filter((id): id is string => !!id && !!toAddress(id));
+                        const validIds = senderIds.filter((id): id is string => isGraphResolvableAddress(id));
                         return validIds.length > 0 ? getActivityBySenderIds(validIds, 30) : [];
                     })(),
                 ]);

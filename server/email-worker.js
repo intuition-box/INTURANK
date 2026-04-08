@@ -12,6 +12,8 @@
  *   ENSEND_SENDER_NAME    - From name (optional, default "IntuRank")
  *   INTUITION_GRAPH_URL   - (optional) override GraphQL URL, defaults to API_URL_PROD
  *   EMAIL_DATA_DIR        - (optional) same directory as email API uses for email-subs.json
+ *   FEE_PROXY_ADDRESS     - (optional) must match app constants; default mainnet FeeProxy
+ *   MULTI_VAULT_ADDRESS   - (optional) must match app; used with FeeProxy to resolve deposit sender
  *
  * Run locally:
  *   npm run email-worker
@@ -30,6 +32,16 @@ dotenv.config({ path: '.env.local' });
 
 const GRAPH_URL = process.env.INTUITION_GRAPH_URL || API_URL_PROD;
 const ENSEND_SEND_URL = 'https://api.ensend.co/send';
+
+/** Must match IntuRank `constants.ts` — deposits often show sender as proxy; override via env if redeployed. */
+const FEE_PROXY_ADDRESS = (process.env.FEE_PROXY_ADDRESS || '0x1a13606A0a3C392214527c896b4cD0E9C0af82E8').toLowerCase();
+const MULTI_VAULT_ADDRESS = (process.env.MULTI_VAULT_ADDRESS || '0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e').toLowerCase();
+
+function isDepositSenderProxy(senderIdNorm) {
+  if (!senderIdNorm) return false;
+  const s = senderIdNorm.toLowerCase();
+  return s === FEE_PROXY_ADDRESS || s === MULTI_VAULT_ADDRESS;
+}
 
 const ENSEND_PROJECT_SECRET = process.env.ENSEND_PROJECT_SECRET;
 const ENSEND_SENDER_EMAIL = process.env.ENSEND_SENDER_EMAIL;
@@ -287,8 +299,7 @@ async function pollFollowActivity(sub) {
       const receiver = deposit?.receiver || redemption?.receiver;
       const senderIdNorm = sender ? String(sender.id).toLowerCase() : '';
       const receiverIdNorm = receiver ? String(receiver.id).toLowerCase() : '';
-      const FEE_PROXY = '0xcbfe767e67d04fbd58f8e3b721b8d07a73d16c93';
-      const isSenderProxy = senderIdNorm === FEE_PROXY;
+      const isSenderProxy = isDepositSenderProxy(senderIdNorm);
       const isReceiverInIds = receiverIdNorm && idsSet.has(receiverIdNorm);
       const isSenderInIds = senderIdNorm && idsSet.has(senderIdNorm);
       const accountToShow =

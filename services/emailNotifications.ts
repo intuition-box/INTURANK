@@ -59,14 +59,14 @@ export function getEmailSubscription(walletAddress: string): EmailSubscription |
   return sub?.email ? sub : null;
 }
 
-/** Register or update email subscription for a wallet. */
-export function setEmailSubscription(
+/** Register or update email subscription for a wallet. Returns true if the email API saved (welcome is sent server-side when configured). */
+export async function setEmailSubscription(
   walletAddress: string,
   email: string,
   nickname?: string,
   alertFrequency?: EmailAlertFrequency,
   follows?: Array<{ identityId: string; label?: string; emailAlerts: boolean }>
-): void {
+): Promise<boolean> {
   const key = normalizeWallet(walletAddress);
   const subs = loadSubscriptions();
   const existing = subs[key];
@@ -80,9 +80,8 @@ export function setEmailSubscription(
   saveSubscriptions(subs);
 
   const followList = Array.isArray(follows) ? follows : [];
-  // Also persist subscription on the backend so the email worker can send alerts when the app is closed
   try {
-    fetch(getEmailSubscribeUrl(), {
+    const res = await fetch(getEmailSubscribeUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -92,9 +91,10 @@ export function setEmailSubscription(
         alertFrequency: alertFrequency ?? existing?.alertFrequency ?? 'per_tx',
         follows: followList,
       }),
-    }).catch(() => {});
+    });
+    return res.ok;
   } catch {
-    // best-effort; frontend still works with local subscription even if this fails
+    return false;
   }
 }
 
@@ -474,7 +474,8 @@ export function setEmailFailureHandler(handler: ((message: string) => void) | nu
  * Send the welcome email as full HTML (logo, card, CTA) so it displays correctly in clients.
  * No-op on failure so the UI still shows success.
  */
-export async function sendWelcomeEmail(to: string, _nickname?: string): Promise<void> {
+/** Fallback when /api/email-subscribe could not be reached; same payload as server welcome. */
+export async function sendWelcomeEmail(to: string, _nickname?: string): Promise<boolean> {
   const { getWelcomeEmailHtml } = await import('./emailTemplates');
   const subject = 'Welcome to IntuRank';
   const plainMessage = "You're subscribed to IntuRank. We'll email you about activity on your holdings, app updates, and campaigns to earn TRUST (₸) tokens.";
@@ -489,9 +490,12 @@ export async function sendWelcomeEmail(to: string, _nickname?: string): Promise<
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       console.warn('[Welcome email send failed]', res.status, url, err);
+      return false;
     }
+    return true;
   } catch (e) {
     console.warn('[Welcome email error]', getEmailApiUrl(), e);
+    return false;
   }
 }
 
