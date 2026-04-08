@@ -93,6 +93,50 @@ export async function restoreFollowsFromServerIfEmpty(walletAddress: string): Pr
   return true;
 }
 
+/**
+ * Merge server follows into local: adds any identity the API has that localStorage lacks.
+ * Local entries win on conflict (same canonical id). Use on wallet connect so new-device / API sync is not blocked when local already has data.
+ */
+export async function mergeFollowsFromServer(walletAddress: string): Promise<boolean> {
+  if (!walletAddress) return false;
+  const base = getFollowsApiBase();
+  if (!base) {
+    await restoreFollowsFromServerIfEmpty(walletAddress);
+    return false;
+  }
+  const local = loadFollows(walletAddress);
+  const fromServer = await fetchFollowsFromServer(walletAddress);
+  if (fromServer.length === 0) return false;
+  const byCanon = new Map<string, FollowEntry>();
+  for (const e of local) {
+    const k = canonicalId(e.identityId);
+    if (k) byCanon.set(k, e);
+  }
+  let added = 0;
+  for (const e of fromServer) {
+    const k = canonicalId(e.identityId);
+    if (!k || byCanon.has(k)) continue;
+    byCanon.set(k, {
+      identityId: k,
+      label: e.label,
+      emailAlerts: e.emailAlerts !== false,
+      followedAt: e.followedAt || 0,
+    });
+    added += 1;
+  }
+  if (added === 0) return false;
+  saveFollows(walletAddress, Array.from(byCanon.values()));
+  syncFollowsToServer(
+    walletAddress,
+    Array.from(byCanon.values()).map((f) => ({
+      identityId: f.identityId,
+      label: f.label,
+      emailAlerts: f.emailAlerts ?? true,
+    }))
+  );
+  return true;
+}
+
 /** Follow an identity. emailAlerts: send email when they buy/create. */
 export function addFollow(
   walletAddress: string,

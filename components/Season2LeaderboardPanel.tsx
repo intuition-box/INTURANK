@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Loader2, Trophy } from 'lucide-react';
 import { formatEther } from 'viem';
 import {
-  getPnlLeaderboard,
   getPnlLeaderboardPeriod,
   getPnlLeaderboardPeriodAccount,
   buildPnlLeaderboardPeriodArgs,
@@ -28,6 +27,8 @@ const HREF_SEASON2_PANEL = '/stats?tab=season2#season2-panel';
 
 const PAGE_ROWS_PER_PAGE = 10;
 const PAGE_FETCH_CAP = 500;
+/** Period RPCs return a capped list; account lookup must scan enough rows or “your rank” stays empty even when you have epoch PnL. */
+const EPOCH_QUERY_LIMIT = 2500;
 
 function epochIsCurrent(e: (typeof SEASON_2_EPOCHS)[number]): boolean {
   return 'isCurrent' in e && !!(e as { isCurrent?: boolean }).isCurrent;
@@ -63,6 +64,20 @@ export const Season2LeaderboardPanel: React.FC<{
   const [epochMenuOpen, setEpochMenuOpen] = useState(false);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const epochMenuRef = useRef<HTMLDivElement>(null);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!epochMenuOpen && !sortMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (epochMenuRef.current?.contains(t) || sortMenuRef.current?.contains(t)) return;
+      setEpochMenuOpen(false);
+      setSortMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [epochMenuOpen, sortMenuOpen]);
 
   const selectedEpoch =
     SEASON_2_EPOCHS.find((e) => e.id === selectedEpochId) ||
@@ -112,10 +127,11 @@ export const Season2LeaderboardPanel: React.FC<{
           const pnlPeriod = await getPnlLeaderboardPeriod(periodArgs, fetchCap);
           raw = pnlPeriod.length > 0 ? pnlPeriod : [];
         } else {
-          const minThresholdArgs = buildPnlLeaderboardPeriodMinThresholdArgs(startIso, endIso, { limit: fetchCap });
+          const qLimit = Math.min(fetchCap, EPOCH_QUERY_LIMIT);
+          const minThresholdArgs = buildPnlLeaderboardPeriodMinThresholdArgs(startIso, endIso, { limit: qLimit });
           const [pnlMin, pnlPeriod] = await Promise.all([
-            getPnlLeaderboardPeriodMinThreshold(minThresholdArgs, fetchCap),
-            getPnlLeaderboardPeriod(periodArgs, fetchCap),
+            getPnlLeaderboardPeriodMinThreshold(minThresholdArgs, qLimit),
+            getPnlLeaderboardPeriod(periodArgs, qLimit),
           ]);
           raw = pnlMin.length > 0 ? pnlMin : pnlPeriod.length > 0 ? pnlPeriod : [];
         }
@@ -123,18 +139,12 @@ export const Season2LeaderboardPanel: React.FC<{
         if (raw.length > 0) {
           setPnlTop(sortRows(raw).slice(0, fetchCap));
         } else {
-          const fallback = await getPnlLeaderboard(0, fetchCap);
-          setPnlTop((fallback || []).slice(0, fetchCap));
-        }
-      } catch (e) {
-        console.warn('Season 2 PnL period fetch failed, using fallback:', e);
-        try {
-          const fallback = await getPnlLeaderboard(0, fetchCap);
-          setPnlTop((fallback || []).slice(0, fetchCap));
-        } catch (e2) {
-          console.error('PnL leaderboard fetch failed:', e2);
+          /** Do not substitute all-time PnL here — it looked like epoch data and confused “no rank” messaging. */
           setPnlTop([]);
         }
+      } catch (e) {
+        console.warn('Season 2 PnL period fetch failed:', e);
+        setPnlTop([]);
       } finally {
         setPnlLoading(false);
       }
@@ -175,6 +185,14 @@ export const Season2LeaderboardPanel: React.FC<{
     return idx >= 0 ? idx + 1 : null;
   }, [walletAddress, pnlTop]);
 
+  /** Row we already fetched for the table — use for “your position” when API rank lookup missed a wide list. */
+  const userRowOnBoard = useMemo(() => {
+    if (userRankInSortedBoard == null || userRankInSortedBoard < 1) return null;
+    return pnlTop[userRankInSortedBoard - 1] ?? null;
+  }, [pnlTop, userRankInSortedBoard]);
+
+  const userHasEpochRow = userPnlPosition != null || userRankInSortedBoard != null;
+
   useEffect(() => {
     setPage((p) => Math.min(p, totalPages));
   }, [totalPages, pnlTop.length]);
@@ -195,7 +213,7 @@ export const Season2LeaderboardPanel: React.FC<{
         const args = buildPnlLeaderboardPeriodArgs(
           normalizeGraphqlIsoDate(String(epoch.start)),
           normalizeGraphqlIsoDate(String(epoch.end)),
-          { limit: 250 }
+          { limit: EPOCH_QUERY_LIMIT }
         );
         const pos = await getPnlLeaderboardPeriodAccount(walletAddress, args);
         if (pos) {
@@ -207,7 +225,7 @@ export const Season2LeaderboardPanel: React.FC<{
           });
           return;
         }
-        const all = await getPnlLeaderboardPeriod(args, 250);
+        const all = await getPnlLeaderboardPeriod(args, EPOCH_QUERY_LIMIT);
         if (all && all.length > 0) {
           const variants = prepareQueryIds(walletAddress);
           const found = all.find((e: any) => {
@@ -226,43 +244,9 @@ export const Season2LeaderboardPanel: React.FC<{
           );
           return;
         }
-        const fallback = await getPnlLeaderboard(0, 250);
-        const variants = prepareQueryIds(walletAddress);
-        const found = fallback?.find((e: any) => {
-          const id = (e.account_id || '').trim();
-          return variants.some((v) => v.toLowerCase() === id.toLowerCase());
-        });
-        setUserPnlPosition(
-          found
-            ? {
-                rank: found.rank,
-                account_label: found.account_label,
-                total_pnl_raw: found.total_pnl_raw,
-                pnl_pct: found.pnl_pct,
-              }
-            : null
-        );
+        setUserPnlPosition(null);
       } catch {
-        try {
-          const fallback = await getPnlLeaderboard(0, 250);
-          const variants = prepareQueryIds(walletAddress);
-          const found = fallback?.find((e: any) => {
-            const id = (e.account_id || '').trim();
-            return variants.some((v) => v.toLowerCase() === id.toLowerCase());
-          });
-          setUserPnlPosition(
-            found
-              ? {
-                  rank: found.rank,
-                  account_label: found.account_label,
-                  total_pnl_raw: found.total_pnl_raw,
-                  pnl_pct: found.pnl_pct,
-                }
-              : null
-          );
-        } catch {
-          setUserPnlPosition(null);
-        }
+        setUserPnlPosition(null);
       }
     };
     fetchUserPosition();
@@ -296,90 +280,92 @@ export const Season2LeaderboardPanel: React.FC<{
           isHome ? 'p-5 sm:p-6' : 'p-5 sm:p-8'
         }`}
       >
-        <div className="flex flex-col gap-5 sm:gap-6">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="space-y-3 min-w-0">
-              <div className="inline-flex items-center gap-2.5 rounded-xl border border-amber-400/35 bg-amber-400/[0.07] px-3.5 py-2 text-amber-200/95">
-                <Trophy size={18} className="shrink-0 text-amber-400" aria-hidden />
-                <span className="font-display font-black uppercase tracking-[0.2em] text-[11px] sm:text-xs">
-                  Season 2 leaderboard
-                </span>
-              </div>
-              <div>
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-black font-display text-white tracking-tight">
-                  Wanna rank up?
-                </h2>
-                {!isHome && (
-                  <p className="mt-1.5 text-[13px] text-slate-500 font-sans leading-snug max-w-xl">
-                    Epoch realized PnL · {PAGE_ROWS_PER_PAGE} rows per page · Network-wide rankings are under{' '}
-                    <span className="text-slate-400">TOP PnL</span>.
-                  </p>
-                )}
-              </div>
+        <div className="flex flex-col gap-4">
+          <header className="border-b border-white/[0.07] pb-4 space-y-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-flex items-center gap-2 rounded-md border border-amber-400/30 bg-amber-400/[0.06] px-2.5 py-1 text-amber-100/95">
+                <Trophy size={15} className="shrink-0 text-amber-400" aria-hidden />
+                <span className="text-[11px] font-semibold uppercase tracking-wide font-sans">Season 2</span>
+              </span>
             </div>
-            <div className="shrink-0 text-left sm:text-right">
-              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-600 mb-1">Active window</p>
-              <p className="text-xs text-slate-400 font-mono leading-relaxed max-w-[280px] sm:ml-auto">
-                {selectedEpoch.range}
+            <div className="min-w-0">
+              <h2 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">
+                Wanna rank up?
+              </h2>
+              {!isHome && (
+                <p className="mt-1.5 text-sm text-slate-400 font-sans leading-relaxed max-w-2xl">
+                  Realized PnL for the selected epoch ({PAGE_ROWS_PER_PAGE} rows per page). All-time rankings live under{' '}
+                  <span className="text-slate-300 font-medium">TOP PnL</span>.
+                </p>
+              )}
+              <p className={`${!isHome ? 'mt-2' : 'mt-1.5'} text-sm text-slate-400 font-sans leading-relaxed max-w-2xl`}>
+                Stake and trade on{' '}
+                {isHome ? (
+                  <a
+                    href="#trending-atoms"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      playClick();
+                      document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className="font-medium text-intuition-primary hover:text-cyan-200 transition-colors"
+                  >
+                    Trending Atoms
+                  </a>
+                ) : (
+                  <Link
+                    to="/#trending-atoms"
+                    onClick={playClick}
+                    className="font-medium text-intuition-primary hover:text-cyan-200 transition-colors"
+                  >
+                    Trending Atoms
+                  </Link>
+                )}{' '}
+                to move up the board.
               </p>
             </div>
-          </div>
+          </header>
 
-          <p className="text-[13px] sm:text-sm text-slate-400 font-sans leading-relaxed max-w-2xl">
-            Stake and trade on{' '}
-            {isHome ? (
-              <a
-                href="#trending-atoms"
-                onClick={(e) => {
-                  e.preventDefault();
-                  playClick();
-                  document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                className="font-semibold text-intuition-primary hover:text-white transition-colors underline-offset-2 decoration-intuition-primary/40 hover:decoration-intuition-primary"
-              >
-                Trending Atoms
-              </a>
-            ) : (
-              <Link
-                to="/#trending-atoms"
-                onClick={playClick}
-                className="font-semibold text-intuition-primary hover:text-white transition-colors underline-offset-2 decoration-intuition-primary/40 hover:decoration-intuition-primary"
-              >
-                Trending Atoms
-              </Link>
-            )}{' '}
-            to climb the board.
-          </p>
-
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4 lg:gap-6 pt-1 border-t border-white/[0.06]">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-4">
             <div className="flex flex-wrap gap-3 sm:gap-4 flex-1 min-w-0">
-              <div className="flex flex-col gap-1.5 min-w-[160px]">
-                <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-500">Epoch</span>
+              <div ref={epochMenuRef} className="relative z-20 flex flex-col gap-1.5 min-w-[160px] w-full sm:w-[min(100%,260px)]">
+                <label className="text-xs font-medium text-slate-400 font-sans" htmlFor="season2-epoch-trigger">
+                  Epoch
+                </label>
                 <button
+                  id="season2-epoch-trigger"
                   type="button"
+                  aria-expanded={epochMenuOpen}
+                  aria-haspopup="listbox"
                   onClick={() => {
                     playClick();
+                    setSortMenuOpen(false);
                     setEpochMenuOpen((open) => !open);
                   }}
-                  className="inline-flex items-center justify-between gap-3 rounded-lg border border-white/[0.12] bg-black/50 px-3 py-2.5 text-left text-xs font-mono text-slate-100 hover:border-amber-400/40 hover:bg-white/[0.03] transition-colors w-full sm:min-w-[200px]"
+                  className="inline-flex items-center justify-between gap-3 rounded-md border border-white/[0.1] bg-[#0c1016] px-3 py-2 text-left text-sm text-slate-100 shadow-sm hover:border-white/20 hover:bg-[#0e141c] transition-colors w-full"
                 >
-                  <span className="flex flex-col min-w-0">
-                    <span className="font-semibold text-[13px] truncate">
+                  <span className="flex flex-col items-start min-w-0 text-left">
+                    <span className="font-medium text-slate-100 truncate w-full">
                       {selectedEpoch.label}
                       {epochIsLiveNow(selectedEpoch) || epochIsCurrent(selectedEpoch) ? (
                         <span className="text-amber-400/90 font-normal"> · Current</span>
                       ) : null}
                     </span>
-                    <span className="text-[10px] text-slate-500 truncate">{selectedEpoch.range}</span>
+                    <span className="text-[11px] text-slate-500 truncate w-full mt-0.5">{selectedEpoch.range}</span>
                   </span>
                   <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
                 </button>
                 {epochMenuOpen && (
-                  <div className="relative z-30 w-full sm:max-w-xs rounded-lg border border-white/[0.1] bg-[#0a0f14] shadow-2xl text-xs font-mono">
+                  <div
+                    role="listbox"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[min(70vh,22rem)] overflow-y-auto rounded-lg border border-white/[0.12] bg-[#0a0f14] shadow-[0_12px_40px_rgba(0,0,0,0.65)] text-xs font-mono"
+                  >
                     {SEASON_2_EPOCHS.map((epoch) => (
                       <button
                         key={epoch.id}
                         type="button"
+                        role="option"
+                        aria-selected={epoch.id === selectedEpoch.id}
                         onClick={() => {
                           playClick();
                           setSelectedEpochId(epoch.id);
@@ -401,23 +387,33 @@ export const Season2LeaderboardPanel: React.FC<{
                   </div>
                 )}
               </div>
-              <div className="flex flex-col gap-1.5 min-w-[160px]">
-                <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-500">Sort</span>
+              <div ref={sortMenuRef} className="relative z-20 flex flex-col gap-1.5 min-w-[160px] w-full sm:w-[200px]">
+                <label className="text-xs font-medium text-slate-400 font-sans" htmlFor="season2-sort-trigger">
+                  Sort by
+                </label>
                 <button
+                  id="season2-sort-trigger"
                   type="button"
+                  aria-expanded={sortMenuOpen}
+                  aria-haspopup="listbox"
                   onClick={() => {
                     playClick();
+                    setEpochMenuOpen(false);
                     setSortMenuOpen((open) => !open);
                   }}
-                  className="inline-flex items-center justify-between gap-3 rounded-lg border border-white/[0.12] bg-black/50 px-3 py-2.5 text-xs font-mono text-slate-100 hover:border-amber-400/40 hover:bg-white/[0.03] transition-colors w-full sm:min-w-[200px]"
+                  className="inline-flex items-center justify-between gap-3 rounded-md border border-white/[0.1] bg-[#0c1016] px-3 py-2 text-sm text-slate-100 shadow-sm hover:border-white/20 hover:bg-[#0e141c] transition-colors w-full"
                 >
-                  <span className="text-[13px]">{sortMetric === 'REALIZED_PNL' ? 'Realized PnL' : 'Realized ROI%'}</span>
+                  <span>{sortMetric === 'REALIZED_PNL' ? 'Realized PnL' : 'Realized ROI %'}</span>
                   <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
                 </button>
                 {sortMenuOpen && (
-                  <div className="relative z-30 w-full sm:max-w-xs rounded-lg border border-white/[0.1] bg-[#0a0f14] shadow-2xl text-xs font-mono">
+                  <div
+                    role="listbox"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-white/[0.12] bg-[#0a0f14] shadow-[0_12px_40px_rgba(0,0,0,0.65)] text-xs font-mono"
+                  >
                     <button
                       type="button"
+                      role="option"
                       onClick={() => {
                         playClick();
                         setSortMetric('REALIZED_PNL');
@@ -431,6 +427,7 @@ export const Season2LeaderboardPanel: React.FC<{
                     </button>
                     <button
                       type="button"
+                      role="option"
                       onClick={() => {
                         playClick();
                         setSortMetric('REALIZED_ROI_PCT');
@@ -448,77 +445,104 @@ export const Season2LeaderboardPanel: React.FC<{
             </div>
           </div>
 
-          {walletAddress && userPnlPosition && (
-            <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+          {walletAddress && userHasEpochRow && !pnlLoading && (
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-intuition-primary font-display font-black text-lg tabular-nums">
-                    #{userRankInSortedBoard ?? userPnlPosition.rank}
+                    #{userRankInSortedBoard ?? userPnlPosition?.rank ?? '—'}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-slate-500">Your position</p>
+                    <p className="text-[10px] font-mono uppercase tracking-wider text-slate-500">Your wallet</p>
                     <p className="text-sm font-semibold text-white truncate max-w-[220px]">
-                      {userPnlPosition.account_label ||
+                      {(userRowOnBoard as any)?.account_label ||
+                        userPnlPosition?.account_label ||
                         `${(walletAddress || '').slice(0, 8)}...${(walletAddress || '').slice(-4)}`}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-sm font-mono">
-                  {userPnlPosition.pnl_pct != null && (
-                    <span className="text-intuition-success font-semibold">
-                      +
-                      {(Math.abs(Number(userPnlPosition.pnl_pct)) <= 1
-                        ? Number(userPnlPosition.pnl_pct) * 100
-                        : Number(userPnlPosition.pnl_pct)
-                      ).toFixed(1)}
-                      % ROI
-                    </span>
-                  )}
-                  {userPnlPosition.total_pnl_raw && (
-                    <span className="text-slate-300">
-                      +
-                      {parseFloat(formatEther(BigInt(userPnlPosition.total_pnl_raw))).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{' '}
-                      {CURRENCY_SYMBOL}
-                    </span>
-                  )}
+                  {(() => {
+                    const row = userRowOnBoard as any;
+                    const pctRaw =
+                      row?.realized_pnl_pct != null
+                        ? Number(row.realized_pnl_pct)
+                        : row?.pnl_pct != null
+                          ? Number(row.pnl_pct)
+                          : userPnlPosition?.pnl_pct != null
+                            ? Number(userPnlPosition.pnl_pct)
+                            : null;
+                    if (pctRaw == null || !Number.isFinite(pctRaw)) return null;
+                    const pct = Math.abs(pctRaw) <= 1 ? pctRaw * 100 : pctRaw;
+                    return (
+                      <span className="text-intuition-success font-semibold">
+                        +{pct.toFixed(1)}% ROI
+                      </span>
+                    );
+                  })()}
+                  {(() => {
+                    const row = userRowOnBoard as any;
+                    const raw = row?.total_pnl_raw ?? userPnlPosition?.total_pnl_raw;
+                    if (!raw) return null;
+                    try {
+                      return (
+                        <span className="text-slate-300">
+                          +
+                          {parseFloat(formatEther(BigInt(raw))).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          {CURRENCY_SYMBOL}
+                        </span>
+                      );
+                    } catch {
+                      return null;
+                    }
+                  })()}
                 </div>
               </div>
             </div>
           )}
-          {walletAddress && !userPnlPosition && !pnlLoading && (
-            <div className="rounded-xl border border-dashed border-white/10 px-4 py-3 bg-black/20">
-              <p className="text-[12px] text-slate-500 font-sans">
-                No rank for this epoch yet — trade during this window to appear on the board.
+          {walletAddress && !userHasEpochRow && !pnlLoading && (
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-5 sm:px-6 mx-auto max-w-lg text-center space-y-2">
+              <p className="text-sm text-slate-300 font-sans leading-relaxed font-medium">
+                {pnlTop.length > 0
+                  ? 'Your wallet isn’t on this epoch’s board in the data we loaded.'
+                  : 'No epoch leaderboard rows from the index for this window yet.'}
+              </p>
+              <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                {pnlTop.length > 0
+                  ? 'That usually means no realized PnL in this period yet, or your rank is below the fetched set. Trade during the epoch window to climb the list.'
+                  : 'The epoch may have just started, or on-chain PnL for this range hasn’t been indexed yet.'}
               </p>
             </div>
           )}
           {!walletAddress && (
-            <div className="rounded-xl border border-white/[0.06] px-4 py-2.5 bg-black/25">
-              <p className="text-[12px] text-slate-500 font-sans">
+            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-5 sm:px-6 mx-auto max-w-lg text-center">
+              <p className="text-sm text-slate-400 font-sans leading-relaxed">
                 Connect a wallet to see your rank for this epoch.
               </p>
             </div>
           )}
 
-          <div className="rounded-xl border border-white/[0.08] bg-black/30 overflow-hidden min-w-0">
+          <div className="rounded-lg border border-white/[0.08] bg-[#080b10] overflow-hidden min-w-0">
         <div className="overflow-x-auto overflow-y-visible">
           <table className="w-full text-left font-mono border-collapse min-w-[520px] text-xs sm:text-sm">
-            <thead className="bg-black/60 border-b border-white/10">
+            <thead className="bg-black/50 border-b border-white/[0.07]">
               <tr>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 w-16 sm:w-20 text-center text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-                  RANK
+                <th className="px-3 sm:px-6 py-3 sm:py-3.5 w-16 sm:w-20 text-center text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
+                  Rank
                 </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">USER</th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-                  PNL
+                <th className="px-3 sm:px-6 py-3 sm:py-3.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
+                  User
                 </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 text-right text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-                  ROI%
+                <th className="px-3 sm:px-6 py-3 sm:py-3.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
+                  PnL
                 </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-4 w-16 sm:w-24"></th>
+                <th className="px-3 sm:px-6 py-3 sm:py-3.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
+                  ROI %
+                </th>
+                <th className="px-3 sm:px-6 py-3 sm:py-3.5 w-16 sm:w-24" aria-hidden />
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">

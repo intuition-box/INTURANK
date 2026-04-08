@@ -992,11 +992,26 @@ function truncateUtf8ToMaxBytes(s: string, maxBytes: number): string {
     return out || 'Atom';
 }
 
+/** Remove **bold** / *italic* markers models often put in JSON labels so on-chain names stay clean. */
+export function stripMarkdownInlineDecorators(raw: string): string {
+    let s = (raw || '').trim();
+    for (let i = 0; i < 6; i++) {
+        const next = s
+            .replace(/\*\*([^*]+)\*\*/g, '$1')
+            .replace(/\*([^*]+)\*/g, '$1')
+            .replace(/__([^_]+)__/g, '$1');
+        if (next === s) break;
+        s = next;
+    }
+    s = s.replace(/\*\*/g, '');
+    return s.trim();
+}
+
 /**
  * Turn pasted prompts ("Create an atom called \"Foo\" with …") or overlong titles into a short on-chain label.
  */
 export function normalizeAtomLabel(raw: string): string {
-    let s = (raw || '').trim();
+    let s = stripMarkdownInlineDecorators(raw || '');
     if (!s) return 'Atom';
 
     const q1 = s.match(/\bcalled\s+["']([^"']+)["']/i);
@@ -1625,6 +1640,12 @@ export const toAddress = (id: string | null | undefined): string | null => {
   }
   return null;
 };
+
+/** True if the id can be used with the subgraph account id / prepareQueryIds (42-char hex or padded form). */
+export function isGraphResolvableAddress(id: string | null | undefined): boolean {
+  if (!id) return false;
+  return toAddress(id) !== null || isAddress(id as `0x${string}`);
+}
 
 /**
  * Resolves an ENS name to an Ethereum address using Mainnet.

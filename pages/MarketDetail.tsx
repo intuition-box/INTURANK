@@ -354,6 +354,10 @@ const MarketDetail: React.FC = () => {
   const swipeTrackRef = useRef<HTMLDivElement | null>(null);
   /** Bumps on each fetch so late async batches don't apply after navigation. */
   const fetchGenRef = useRef(0);
+  /** Last successfully loaded agent for this route — avoid wiping UI on transient GraphQL errors during refresh. */
+  const lastAgentRef = useRef<Account | null>(null);
+  /** Previous fetch route id — same id ⇒ soft refresh (no full-page wipe). */
+  const lastStartedFetchIdRef = useRef<string | undefined>(undefined);
 
   // Determine if sentiment toggle should be available (Strictly Claims and Lists)
   const isPolarityAvailable = useMemo(() => {
@@ -380,16 +384,23 @@ const MarketDetail: React.FC = () => {
     }
     const gen = ++fetchGenRef.current;
     setMarketLoadError(null);
-    setLoading(true);
-    setTriples([]);
-    setClaimsWithVaults([]);
-    setActivityLog([]);
-    setHolders([]);
-    setTotalHoldersCount(0);
-    setLists([]);
-    setEngagedIdentities([]);
-    setFollowersCount(0);
-    setVaultsByCurve([]);
+    const isRefresh = lastStartedFetchIdRef.current === id;
+    lastStartedFetchIdRef.current = id;
+    if (!isRefresh) {
+      setLoading(true);
+      setAgent(null);
+      setOppositionAgent(null);
+      lastAgentRef.current = null;
+      setTriples([]);
+      setClaimsWithVaults([]);
+      setActivityLog([]);
+      setHolders([]);
+      setTotalHoldersCount(0);
+      setLists([]);
+      setEngagedIdentities([]);
+      setFollowersCount(0);
+      setVaultsByCurve([]);
+    }
     try {
       // Phase 1 — only what we need to render the hero, chart shell, and labels (fast).
       const [acc, agentData, oppoData] = await Promise.all([
@@ -411,6 +422,7 @@ const MarketDetail: React.FC = () => {
       }
 
       setAgent(agentData);
+      lastAgentRef.current = agentData;
       setOppositionAgent(oppoData);
       setChartData(
         generateAnchoredHistory(
@@ -515,9 +527,15 @@ const MarketDetail: React.FC = () => {
     } catch (e) {
       console.error(e);
       if (gen !== fetchGenRef.current) return;
-      setMarketLoadError('failed');
-      setAgent(null);
       setLoading(false);
+      // Transient GraphQL / rate-limit during post-tx refresh: keep showing last good market data.
+      if (lastAgentRef.current && String(lastAgentRef.current.id).toLowerCase() === String(id).toLowerCase()) {
+        setAgent(lastAgentRef.current);
+        setMarketLoadError(null);
+      } else {
+        setMarketLoadError('failed');
+        setAgent(null);
+      }
     }
   };
 

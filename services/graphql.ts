@@ -17,7 +17,7 @@ const fetchGraphQL = async (query: string, variables: any = {}, retries = 2): Pr
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, variables }),
     });
-    if (response.status === 429 && retries > 0) {
+    if ((response.status === 429 || response.status >= 500) && retries > 0) {
       await new Promise((r) => setTimeout(r, 1500 * (3 - retries)));
       return fetchGraphQL(query, variables, retries - 1);
     }
@@ -33,6 +33,23 @@ const fetchGraphQL = async (query: string, variables: any = {}, retries = 2): Pr
 };
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
+
+/**
+ * IntuRank routes deposits/redemptions through FeeProxy; the subgraph often sets `sender` to the proxy.
+ * The EOA user is typically on `receiver` for deposits (and similarly when sender is proxy on redemptions).
+ */
+function resolveProxyActivityAccount(dep: {
+  sender?: { id?: string; label?: string; image?: string } | null;
+  receiver?: { id?: string; label?: string; image?: string } | null;
+} | null | undefined): { id: string; label?: string; image?: string } | null {
+  if (!dep) return null;
+  const sender = dep.sender;
+  const receiver = dep.receiver;
+  const sId = sender?.id ? normalize(sender.id) : '';
+  const isProxy = sId === normalize(FEE_PROXY_ADDRESS) || sId === normalize(MULTI_VAULT_ADDRESS);
+  if (isProxy && receiver?.id) return receiver as { id: string; label?: string; image?: string };
+  return (sender ?? receiver) ?? null;
+}
 
 export const prepareQueryIds = (id: string) => {
     if (!id) return [];
@@ -132,8 +149,23 @@ const aggregateVaultData = (allVaults: any[]) => {
   return Array.from(atomGroups.values());
 };
 
-export const getAllAgents = async (limit = 40, offset = 0) => {
-  const query = `query GetAgents($limit: Int!, $offset: Int!) { vaults(limit: $limit, offset: $offset, order_by: { total_assets: desc }) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
+export type GetAllAgentsOptions = {
+  /** When set, only vaults with total_assets ≥ this (wei) are returned — use with ascending order for “smallest non-dust” lists. */
+  minTotalAssetsWei?: bigint;
+};
+
+export const getAllAgents = async (
+  limit = 40,
+  offset = 0,
+  order: 'asc' | 'desc' = 'desc',
+  options?: GetAllAgentsOptions
+) => {
+  const minWei = options?.minTotalAssetsWei;
+  const wherePart =
+    minWei !== undefined && minWei > 0n
+      ? `where: { total_assets: { _gte: "${minWei.toString()}" } }, `
+      : '';
+  const query = `query GetAgents($limit: Int!, $offset: Int!) { vaults(${wherePart}order_by: { total_assets: ${order} }, limit: $limit, offset: $offset) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
   try {
     const vaultData = await fetchGraphQL(query, { limit, offset });
     const allVaults = vaultData?.vaults ?? [];
@@ -394,19 +426,19 @@ async function resolveCreatorIfProxyRouter(
       type: {_eq: "Deposited"},
       deposit: { vault: { term_id: { _in: $ids } } }
     }) {
-      deposit { sender { id label image } }
+      deposit { sender { id label image } receiver { id label image } }
     }
   }`;
   try {
     const res = await fetchGraphQL(q, { ids });
     for (const ev of res?.events ?? []) {
-      const s = ev?.deposit?.sender;
+      const s = resolveProxyActivityAccount(ev?.deposit);
       const sid = (s?.id || '').toLowerCase();
       if (sid && !PROTOCOL_ROUTER_ADDRESSES.has(sid) && isAddress(sid)) {
         try {
-          return { id: getAddress(sid), label: s.label || undefined, image: s.image || undefined };
+          return { id: getAddress(sid), label: s?.label || undefined, image: s?.image || undefined };
         } catch {
-          return { id: s.id, label: s.label, image: s.image };
+          return { id: s!.id, label: s?.label, image: s?.image };
         }
       }
     }
@@ -804,8 +836,8 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
       id created_at type transaction_hash 
       atom { term_id label data image type creator { id label image } }
       triple { term_id counter_term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } creator { id label image } }
-      deposit { assets_after_fees shares sender { id label image } vault { curve_id } } 
-      redemption { assets shares sender { id label image } vault { curve_id } }
+      deposit { assets_after_fees shares sender { id label image } receiver { id label image } vault { curve_id } } 
+      redemption { assets shares sender { id label image } receiver { id label image } vault { curve_id } }
     }
   }`;
   try {
@@ -834,7 +866,7 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
                 assets = ev.deposit.assets_after_fees || '0'; 
                 shares = ev.deposit.shares || '0'; 
                 curveId = ev.deposit.vault?.curve_id;
-                sender = ev.deposit.sender;
+                sender = resolveProxyActivityAccount(ev.deposit);
                 if (ev.atom) { 
                     const meta = resolveMetadata(ev.atom);
                     label = meta.label; vaultId = ev.atom.term_id; 
@@ -850,7 +882,7 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
                 assets = ev.redemption.assets || '0'; 
                 shares = ev.redemption.shares || '0'; 
                 curveId = ev.redemption.vault?.curve_id;
-                sender = ev.redemption.sender;
+                sender = resolveProxyActivityAccount(ev.redemption);
                 if (ev.atom) { 
                     const meta = resolveMetadata(ev.atom);
                     label = meta.label; vaultId = ev.atom.term_id; 
@@ -2051,8 +2083,8 @@ export const getActivityOnMyMarkets = async (
       id created_at type transaction_hash
       atom { term_id label data image type }
       triple { term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } }
-      deposit { shares assets_after_fees sender { id label image } vault { term_id curve_id } }
-      redemption { shares assets sender { id label image } vault { term_id curve_id } }
+      deposit { shares assets_after_fees sender { id label image } receiver { id label image } vault { term_id curve_id } }
+      redemption { shares assets sender { id label image } receiver { id label image } vault { term_id curve_id } }
     }
   }`;
   try {
@@ -2068,7 +2100,8 @@ export const getActivityOnMyMarkets = async (
     });
     const out: PositionActivityNotification[] = [];
     for (const ev of events) {
-      const sender = ev.deposit?.sender || ev.redemption?.sender;
+      const dep = ev.deposit || ev.redemption;
+      const sender = resolveProxyActivityAccount(dep);
       if (!sender || normalize(sender.id) === userAddr) continue;
       let label = 'Unknown';
       const vaultId = ev.atom?.term_id || ev.triple?.term_id || '';

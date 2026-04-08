@@ -6,7 +6,7 @@ import { getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getCu
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import { requestEmailNotification, requestFollowedActivityEmail } from '../services/emailNotifications';
 import { getFollowedIdentities } from '../services/follows';
-import { resolveENS, toAddress } from '../services/web3';
+import { resolveENS, toAddress, isGraphResolvableAddress } from '../services/web3';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { EXPLORER_URL } from '../constants';
 import { CurrencySymbol } from './CurrencySymbol';
@@ -142,11 +142,14 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         if (allFollows.length > 0) {
           const resolved = await Promise.all(
             allFollows.map(async (f) => {
-              const addr = toAddress(f.identityId) || (await resolveENS(f.identityId).then((r) => toAddress(r) || r)) || null;
+              const direct = toAddress(f.identityId);
+              if (direct) return { follow: f, addr: direct as string };
+              const r = await resolveENS(f.identityId);
+              const addr = r ? (toAddress(r) || (isGraphResolvableAddress(r) ? r : null)) : null;
               return { follow: f, addr };
             })
           );
-          const validResolved = resolved.filter((r) => r.addr && !!toAddress(r.addr));
+          const validResolved = resolved.filter((r): r is typeof r & { addr: string } => !!r.addr && isGraphResolvableAddress(r.addr));
           const senderIds = validResolved.map((r) => r.addr);
           if (senderIds.length > 0) {
             followActivity = await getActivityBySenderIds(senderIds, 30);

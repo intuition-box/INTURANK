@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Cpu, Zap, Info, Terminal, BookOpen, ExternalLink, ShieldCheck, History } from 'lucide-react';
 import SkillChat from '../components/SkillChat';
+import { SkillErrorBoundary } from '../components/SkillErrorBoundary';
 import { playClick, playHover } from '../services/audio';
 import { CURRENCY_SYMBOL, PAGE_HERO_TITLE } from '../constants';
 
@@ -15,6 +16,8 @@ const CHAT_SHELL =
     'xl:h-[min(82dvh,calc(100dvh-9rem))] xl:max-h-[min(82dvh,calc(100dvh-9rem))]';
 
 const SkillPlayground: React.FC = () => {
+    const [skillChatKey, setSkillChatKey] = useState(0);
+
     return (
         <div className="min-h-[calc(100dvh-4rem)] flex flex-col bg-[#020308] pt-6 sm:pt-8 pb-8 sm:pb-12 px-3 sm:px-5 lg:px-8 xl:px-10 2xl:px-14 relative overflow-x-hidden">
             <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]" />
@@ -77,7 +80,12 @@ const SkillPlayground: React.FC = () => {
                 {/* Chat left; reference + tips on the right (xl+) */}
                 <div className="flex flex-col xl:flex-row xl:items-stretch gap-5 lg:gap-6 xl:gap-8 flex-1 min-h-0">
                     <div className={`${CHAT_SHELL} flex-1 min-w-0 min-h-0 shrink`}>
-                        <SkillChat />
+                        <SkillErrorBoundary
+                            resetKey={skillChatKey}
+                            onReset={() => setSkillChatKey((k) => k + 1)}
+                        >
+                            <SkillChat key={skillChatKey} />
+                        </SkillErrorBoundary>
                     </div>
 
                     <aside className="w-full xl:w-[min(100%,300px)] 2xl:w-[320px] shrink-0 xl:sticky xl:top-20 xl:self-start xl:max-h-[min(calc(100dvh-6rem),920px)] overflow-y-auto custom-scrollbar space-y-4">

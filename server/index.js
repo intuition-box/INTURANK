@@ -20,6 +20,7 @@ import fs from 'fs/promises';
 import { mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getWelcomeEmailHtml } from './welcomeEmailHtml.mjs';
 
 // Load .env and .env.local from project root (when run as node server/index.js)
 dotenv.config();
@@ -77,6 +78,37 @@ async function saveSubscriptions(subs) {
   }
 }
 
+/** Ensend send for HTML/plain (same shape as browser /api/send-email non-template path). */
+async function sendEnsendHtmlEmail({ to, subject, message, html }) {
+  const secret = process.env.ENSEND_PROJECT_SECRET;
+  const senderEmail = process.env.ENSEND_SENDER_EMAIL;
+  const senderName = process.env.ENSEND_SENDER_NAME || 'IntuRank';
+  if (!secret || !senderEmail) return { ok: false, error: 'not_configured' };
+  const payload = {
+    subject,
+    message: html || message || subject,
+    sender: { name: senderName, email: senderEmail },
+    recipients: to,
+  };
+  if (html) {
+    payload.html = html;
+    payload.body = html;
+  }
+  const response = await fetch(ENSEND_SEND_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { ok: false, error: data?.message || data?.error || response.statusText, status: response.status };
+  }
+  return { ok: true };
+}
+
 app.use(cors({ origin: true }));
 app.use(express.json());
 
@@ -106,6 +138,7 @@ app.post('/api/email-subscribe', async (req, res) => {
   try {
     const subs = await loadSubscriptions();
     const idx = subs.findIndex((s) => s.wallet.toLowerCase() === normalizedWallet);
+    const prevEmail = idx >= 0 ? String(subs[idx].email || '').trim().toLowerCase() : null;
     const next = {
       wallet: normalizedWallet,
       email: normalizedEmail,
@@ -120,6 +153,31 @@ app.post('/api/email-subscribe', async (req, res) => {
     const store = await loadFollowsStore();
     store[normalizedWallet] = next.follows || [];
     await saveFollowsStore(store);
+
+    const shouldSendWelcome = !prevEmail || prevEmail !== normalizedEmail;
+    if (shouldSendWelcome && process.env.ENSEND_PROJECT_SECRET && process.env.ENSEND_SENDER_EMAIL) {
+      try {
+        const html = getWelcomeEmailHtml({ email: normalizedEmail, nickname: next.nickname });
+        const plain =
+          "You're subscribed to IntuRank. We'll email you about activity on your holdings, app updates, and campaigns to earn TRUST (₸) tokens.";
+        const result = await sendEnsendHtmlEmail({
+          to: normalizedEmail,
+          subject: 'Welcome to IntuRank',
+          message: plain,
+          html,
+        });
+        if (result.ok) {
+          console.log('[email-api] Welcome email sent →', normalizedEmail);
+        } else {
+          console.warn('[email-api] Welcome email failed:', result.error);
+        }
+      } catch (we) {
+        console.error('[email-api] Welcome email exception', we);
+      }
+    } else if (shouldSendWelcome) {
+      console.warn('[email-api] Welcome skipped: ENSEND_PROJECT_SECRET / ENSEND_SENDER_EMAIL not set');
+    }
+
     res.json({ ok: true });
   } catch (e) {
     console.error('[email-api] subscribe error', e);
@@ -247,35 +305,21 @@ app.post('/api/send-email', async (req, res) => {
     return res.status(400).json({ error: 'Missing subject (required when not using templateId)' });
   }
 
-  const payload = {
-    subject,
-    message: html || message || subject,
-    sender: { name: senderName, email: senderEmail },
-    recipients: to,
-  };
-  if (html) {
-    payload.html = html;
-    payload.body = html;
-  }
-
   console.log('[send-email] Sending to', to, 'subject:', subject);
 
   try {
-    const response = await fetch(ENSEND_SEND_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${secret}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.error('[send-email] Ensend error', response.status, data);
-      return res.status(response.status).json({
+    const result = await sendEnsendHtmlEmail({ to, subject, message, html });
+    if (!result.ok) {
+      if (result.error === 'not_configured') {
+        return res.status(503).json({
+          error: 'Email not configured',
+          message: 'Set ENSEND_PROJECT_SECRET and ENSEND_SENDER_EMAIL in .env or .env.local.',
+        });
+      }
+      console.error('[send-email] Ensend error', result.status, result.error);
+      return res.status(result.status || 502).json({
         error: 'Send failed',
-        details: data?.message || data?.error || response.statusText,
+        details: result.error,
       });
     }
     console.log('[send-email] OK for', to);

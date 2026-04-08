@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router-dom';
 import { Terminal, Send, Loader2, CheckCircle2, Zap, User, Bot, XCircle, ExternalLink, ShieldCheck, Layers } from 'lucide-react';
 import { useAccount } from 'wagmi';
@@ -14,13 +15,24 @@ import {
   preflightSkillBroadcast,
   buildCreateAtomTxIntent,
   normalizeAtomLabel,
+  stripMarkdownInlineDecorators,
   getAtomTermIdFromTxHash,
   getTripleTermIdFromTxHash,
   createTripleFromLabels,
 } from '../services/web3';
-import { MULTI_VAULT_ADDRESS, FEE_PROXY_ADDRESS, CURRENCY_SYMBOL, getGeminiApiKey, getGroqApiKey, getOpenAiApiKey, CHAIN_ID } from '../constants';
+import {
+    CURRENCY_SYMBOL,
+    FEE_PROXY_ADDRESS,
+    getGeminiApiKey,
+    getGroqApiKey,
+    getOpenAiApiKey,
+    CHAIN_ID,
+} from '../constants';
+import { INTUITION_SKILL_FULL_SYSTEM_PROMPT } from '../services/intuitionSkillPrompt';
 import { generateSkillChatCompletion, formatSkillLlmError } from '../services/skillLlm';
 import { parseSkillTxJsonBlock } from '../services/skillTxJson';
+import { maybeFetchSkillLiveContext } from '../services/skillLiveContext';
+import { logSkillEvent } from '../services/skillTelemetry';
 import { toast } from './Toast';
 import { playClick, playHover } from '../services/audio';
 
@@ -47,69 +59,42 @@ function isUserRejectionError(err: unknown): boolean {
     return /user reject|rejected|denied|cancel|cancelled|4001|action_rejected|user denied|request rejected|wallet.*reject|rejected the request/i.test(s);
 }
 
-const SYSTEM_PROMPT = `
-You are the Intuition Skill Agent. You teach the Intuition Protocol in plain language and help users decide what to do on-chain. The app builds real transactions for them (atoms and triples → IntuRank FeeProxy + MultiVault); users should never have to paste raw hex.
-
-PROTOCOL KNOWLEDGE:
-- Atoms: identities/concepts. Creation uses a protocol fee plus a vault deposit in TRUST.
-- Triples: claims linking three atoms (subject, predicate, object). Same fee + deposit idea.
-- Vaults: atoms and triples have vaults; users stake TRUST.
-- MultiVault: ${MULTI_VAULT_ADDRESS}
-- FeeProxy: ${FEE_PROXY_ADDRESS}
-- Chain ID: ${CHAIN_ID} (Intuition Mainnet)
-
-CREATING A SINGLE ATOM (primary path, simple for everyone):
-When the user wants to create one atom, explain briefly, then output EXACTLY one JSON block in this shape (no "data", no "to", no "value". The app fills those in):
-\`\`\`json
-{
-  "action": "createAtom",
-  "label": "Human-readable name for the atom",
-  "depositTrust": "0.5",
-  "chainId": "1155",
-  "description": "One line: what this atom is for"
+/** GraphQL or prose was fenced as ```json — do not run JSON5 tx parser (avoids false "Could not build transaction" on read-only answers). */
+function looksLikeGraphQLFencedAsJson(raw: string): boolean {
+    const s = raw.trim();
+    if (s.startsWith('{')) return false;
+    return /^(query|mutation|subscription)\b/i.test(s) || /^query\s+\w/i.test(s);
 }
-\`\`\`
-- depositTrust is the vault deposit in TRUST as a decimal string. Minimum is **0.5** (same bonding-curve floor as claims); use "0.5" or higher.
-- If the user's wallet is not connected, say they must connect it first, then ask again.
 
-CREATING A TRIPLE (CLAIM) FROM LABELS. App creates missing atoms automatically:
-When the user wants a semantic claim (subject → predicate → object), use EXACTLY one JSON block:
-\`\`\`json
-{
-  "action": "createTriple",
-  "subject": "Alice",
-  "predicate": "trusts",
-  "object": "Bob",
-  "depositTrust": "0.5",
-  "chainId": "1155",
-  "description": "One line: what this claim means"
+/** Only show parse/build errors to the user when the block was meant as a Sign & broadcast intent. */
+function looksLikeIntuRankTxIntentJson(raw: string): boolean {
+    const s = raw.trim();
+    if (!s.startsWith('{')) return false;
+    return (
+        /"action"\s*:\s*"(createAtom|createTriple)"/.test(s) ||
+        (/"to"\s*:/.test(s) && /"data"\s*:/.test(s) && /"(0x)?[0-9a-fA-F]{40}"/.test(s))
+    );
 }
-\`\`\`
-- **subject**, **predicate**, **object** are human-readable atom names OR existing \`0x\` term ids (66 hex chars). For text labels, the app creates any atom that does not exist yet, then submits the triple. **Multiple wallet signatures** may be required (up to one per missing atom + one for the triple); this is normal.
-- **depositTrust** minimum is **0.5** TRUST (vault deposit for the triple leg).
-- Alternatively, users may pass three term ids if all atoms already exist.
 
-ADVANCED / OTHER ACTIONS:
-Only if the user explicitly needs deposits or other operations not covered above, you may describe what is needed; do not invent long hex strings.
-
-GUIDELINES:
-1. Default tone: helpful and clear. Not everyone is a developer.
-2. Answer questions about the protocol without forcing a transaction.
-3. For "make an atom" / "create X", use the createAtom JSON block above.
-4. For "link X to Y via Z" / "claim that…" / triple / synapse / claim, use the createTriple JSON block above.
-
-LANGUAGE (MULTILINGUAL):
-- Write your explanations and conversational replies in the **same language** the user is using (e.g. French, Spanish, Japanese, Arabic). If they switch language, follow their latest message. If the message is ambiguous, default to English.
-- JSON blocks must use **English keys only** (\`action\`, \`label\`, \`depositTrust\`, \`chainId\`, \`description\`, \`subject\`, \`predicate\`, \`object\`) so the app can parse and execute. **Values** inside JSON may be in any language (Unicode): atom names, triple parts, and descriptions can match the user's locale and will be processed as protocol metadata.
-- Do not translate JSON keys. Keep \`chainId\` as "1155" unless the app context changes.
-
-CURRENT CONTEXT:
-- MultiVault: ${MULTI_VAULT_ADDRESS}
-- FeeProxy: ${FEE_PROXY_ADDRESS}
-- Currency: ${CURRENCY_SYMBOL} (TRUST)
-
-Always use markdown. Put the machine-readable JSON in a single \`\`\`json code block when the user should get a Sign & Broadcast button.
-`;
+/** If the model echoed template text instead of a real atom name, do not offer Sign & broadcast. */
+function isPlaceholderAtomLabel(label: string): boolean {
+    const s = label.trim().toLowerCase();
+    if (!s) return true;
+    if (s.includes('placeholder')) return true;
+    const bad = new Set([
+        'your atom name',
+        'human-readable name for the atom',
+        'human-readable name',
+        'use the user\'s exact chosen name here, not a placeholder',
+        'example',
+        'tbd',
+        'my atom',
+        'test',
+        'atom name',
+        'label',
+    ]);
+    return bad.has(s);
+}
 
 function extractErrorText(error: unknown): string {
     if (typeof error === 'string') return error;
@@ -137,9 +122,69 @@ const DEFAULT_SKILL_MESSAGES: Message[] = [
     {
         role: 'assistant',
         content:
-            "Hi. I explain Intuition in plain language and help you create atoms or triples when you are ready. Ask anything, or describe what to create (for example: create an atom called My Project with a 0.5 TRUST deposit). You can write in English or another language—I will reply in the same language when possible. When the chain is involved, you will see a short summary and a Sign & broadcast button.",
+            "Hi. I run on the full upstream Intuition skill package (SKILL.md, GraphQL reference, schemas, workflows, deposit/redeem batch ops, simulation, fees) plus IntuRank-specific routing. Ask deep protocol questions or tell me what to create (atom or a claim like “Alice / trusts / Bob” with a 0.5 TRUST deposit). I reply in your language when I can. Connect your wallet when you are ready to Sign & broadcast.",
     },
 ];
+
+const SKILL_MD_COMPONENTS = {
+    p: ({ children }: { children?: React.ReactNode }) => (
+        <p className="mb-2 last:mb-0 text-slate-300 leading-relaxed">{children}</p>
+    ),
+    strong: ({ children }: { children?: React.ReactNode }) => (
+        <strong className="font-semibold text-white">{children}</strong>
+    ),
+    em: ({ children }: { children?: React.ReactNode }) => <em className="italic text-slate-200">{children}</em>,
+    ul: ({ children }: { children?: React.ReactNode }) => (
+        <ul className="my-2 pl-4 list-disc space-y-1 [overflow-wrap:anywhere]">{children}</ul>
+    ),
+    ol: ({ children }: { children?: React.ReactNode }) => (
+        <ol className="my-2 pl-4 list-decimal space-y-1 [overflow-wrap:anywhere]">{children}</ol>
+    ),
+    li: ({ children }: { children?: React.ReactNode }) => <li className="leading-relaxed">{children}</li>,
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+        <a
+            href={href}
+            className="text-intuition-primary hover:underline break-all"
+            target="_blank"
+            rel="noreferrer"
+        >
+            {children}
+        </a>
+    ),
+    pre: ({ children }: { children?: React.ReactNode }) => (
+        <pre className="overflow-x-auto rounded-lg bg-black/40 p-2 my-2 text-[11px] font-mono text-slate-200 border border-white/10">
+            {children}
+        </pre>
+    ),
+    code: ({ className, children }: { className?: string; children?: React.ReactNode }) => {
+        const block = Boolean(className?.includes('language-'));
+        if (block) {
+            return <code className={className}>{children}</code>;
+        }
+        return (
+            <code className="rounded bg-black/40 px-1 py-0.5 text-[11px] font-mono text-cyan-200/90">{children}</code>
+        );
+    },
+    h1: ({ children }: { children?: React.ReactNode }) => (
+        <h3 className="text-sm font-bold text-white mt-3 mb-1 first:mt-0">{children}</h3>
+    ),
+    h2: ({ children }: { children?: React.ReactNode }) => (
+        <h3 className="text-sm font-bold text-white mt-3 mb-1 first:mt-0">{children}</h3>
+    ),
+    h3: ({ children }: { children?: React.ReactNode }) => (
+        <h3 className="text-sm font-bold text-white mt-3 mb-1 first:mt-0">{children}</h3>
+    ),
+};
+
+function MarkdownSegment({ text }: { text: string }) {
+    const t = text.trim();
+    if (!t) return null;
+    return (
+        <div className="[overflow-wrap:anywhere]">
+            <ReactMarkdown components={SKILL_MD_COMPONENTS as any}>{text}</ReactMarkdown>
+        </div>
+    );
+}
 
 /** Keeps chat readable: raw JSON from the model lives in a disclosure instead of inline. */
 function AssistantMessageBody({ content }: { content: string }) {
@@ -150,11 +195,7 @@ function AssistantMessageBody({ content }: { content: string }) {
     let key = 0;
     while ((m = re.exec(content)) !== null) {
         if (m.index > last) {
-            parts.push(
-                <span key={key++} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                    {content.slice(last, m.index)}
-                </span>
-            );
+            parts.push(<MarkdownSegment key={key++} text={content.slice(last, m.index)} />);
         }
         parts.push(
             <details key={key++} className="mt-3 rounded-xl border border-white/10 bg-black/30 text-left">
@@ -167,14 +208,10 @@ function AssistantMessageBody({ content }: { content: string }) {
         last = m.index + m[0].length;
     }
     if (last === 0) {
-        return <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{content}</div>;
+        return <MarkdownSegment text={content} />;
     }
     if (last < content.length) {
-        parts.push(
-            <span key={key++} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {content.slice(last)}
-            </span>
-        );
+        parts.push(<MarkdownSegment key={key++} text={content.slice(last)} />);
     }
     return <div className="space-y-1">{parts}</div>;
 }
@@ -194,7 +231,10 @@ function loadSkillChatMessages(): Message[] {
                 typeof (m as Message).content === 'string'
         ) as Message[];
         if (cleaned.length === 0) return DEFAULT_SKILL_MESSAGES;
-        return cleaned.slice(-SKILL_CHAT_MAX_MESSAGES);
+        return cleaned.slice(-SKILL_CHAT_MAX_MESSAGES).map((m) =>
+            /* A stale "pending" from a previous session disables Sign & broadcast; clear it. */
+            m.txOutcome === 'pending' ? { ...m, txOutcome: undefined, txError: undefined } : m
+        );
     } catch {
         return DEFAULT_SKILL_MESSAGES;
     }
@@ -209,8 +249,6 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
     const [enablingProtocol, setEnablingProtocol] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
-
-    const txBusy = messages.some((m) => m.txOutcome === 'pending');
 
     /** Grow textarea with content; cap height so long prompts scroll inside the box. */
     useEffect(() => {
@@ -277,31 +315,49 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 return;
             }
 
+            let promptUserMsg = userMsg;
+            try {
+                const live = await maybeFetchSkillLiveContext(userMsg);
+                if (live) {
+                    promptUserMsg = `${userMsg}\n\n---\n${live}\n---`;
+                    logSkillEvent({ level: 'debug', event: 'skill.chat.live_context_attached' });
+                }
+            } catch (e) {
+                logSkillEvent({ level: 'warn', event: 'skill.chat.live_context_error', error: e });
+            }
+
             const { text: responseText, provider } = await generateSkillChatCompletion({
-                systemPrompt: SYSTEM_PROMPT,
+                systemPrompt: INTUITION_SKILL_FULL_SYSTEM_PROMPT,
                 history: messages.slice(1).map((m) => ({ role: m.role, content: m.content })),
-                userMsg,
+                userMsg: promptUserMsg,
             });
-            const fallbackNote =
-                provider === 'groq'
-                    ? '\n\n_(This reply used Groq — Gemini was unavailable.)_'
-                    : provider === 'openai'
-                      ? '\n\n_(This reply used your OpenAI backup key — Gemini was unavailable.)_'
-                      : '';
+
+            logSkillEvent({
+                level: 'info',
+                event: 'skill.chat.reply',
+                detail: { provider, chars: responseText.length },
+            });
 
             const jsonMatch = responseText.match(/```json\s*([\s\S]*?)```/);
             let txIntent: any = null;
             let contentAppend = '';
             if (jsonMatch) {
-                try {
-                    const parsed = parseSkillTxJsonBlock(jsonMatch[1]);
+                const jsonBlockBody = jsonMatch[1];
+                if (looksLikeGraphQLFencedAsJson(jsonBlockBody)) {
+                    /* Model put GraphQL in a json fence; skip tx pipeline — answer text is still shown. */
+                } else try {
+                    const parsed = parseSkillTxJsonBlock(jsonBlockBody);
                     if (parsed.action === 'createAtom') {
                         if (!address) {
                             contentAppend =
                                 '\n\n_(Connect your wallet and send the same message again to build the transaction.)_';
                         } else {
-                            const label = String(parsed.label ?? '').trim();
+                            const label = stripMarkdownInlineDecorators(String(parsed.label ?? '').trim());
                             const depositTrust = String(parsed.depositTrust ?? '0').trim();
+                            if (isPlaceholderAtomLabel(label)) {
+                                contentAppend =
+                                    '\n\n_(No on-chain preview: use a specific atom name in your message if you want to create one.)_';
+                            } else {
                             const built = await buildCreateAtomTxIntent(address, label, depositTrust);
                             const onChainName = normalizeAtomLabel(label);
                             txIntent = {
@@ -319,15 +375,16 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                 builtinDepositTrust: depositTrust,
                                 builtinDataHex: built.dataHex,
                             };
+                            }
                         }
                     } else if (parsed.action === 'createTriple') {
                         if (!address) {
                             contentAppend =
                                 '\n\n_(Connect your wallet and send the same message again to continue.)_';
                         } else {
-                            const subject = String(parsed.subject ?? '').trim();
-                            const predicate = String(parsed.predicate ?? '').trim();
-                            const object = String(parsed.object ?? '').trim();
+                            const subject = stripMarkdownInlineDecorators(String(parsed.subject ?? '').trim());
+                            const predicate = stripMarkdownInlineDecorators(String(parsed.predicate ?? '').trim());
+                            const object = stripMarkdownInlineDecorators(String(parsed.object ?? '').trim());
                             const depositTrust = String(parsed.depositTrust ?? '0').trim();
                             if (!subject || !predicate || !object) {
                                 contentAppend = '\n\n_(createTriple JSON needs subject, predicate, and object.)_';
@@ -351,16 +408,24 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     }
                 } catch (e) {
                     console.error('Failed to parse or build tx intent', e);
-                    contentAppend = `\n\n_(Could not build transaction: ${extractErrorText(e)})_`;
+                    if (looksLikeIntuRankTxIntentJson(jsonBlockBody)) {
+                        contentAppend = `\n\n_(Could not build transaction: ${extractErrorText(e)})_`;
+                    }
                 }
             }
 
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: responseText + fallbackNote + contentAppend, txIntent },
+                { role: 'assistant', content: responseText + contentAppend, txIntent },
             ]);
+            logSkillEvent({
+                level: 'info',
+                event: 'skill.chat.message_saved',
+                detail: { has_tx_intent: Boolean(txIntent) },
+            });
         } catch (error: unknown) {
             console.error('Skill LLM error:', error);
+            logSkillEvent({ level: 'error', event: 'skill.chat.llm_failed', error });
             setMessages((prev) => [...prev, { role: 'assistant', content: formatSkillLlmError(error) }]);
         } finally {
             setLoading(false);
@@ -368,11 +433,18 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
     };
 
     const executeTx = async (intent: any, messageIndex: number) => {
+        try {
         playClick();
         if (!address) {
             toast.error("Connect wallet first");
             return;
         }
+
+        logSkillEvent({
+            level: 'info',
+            event: 'skill.tx.start',
+            detail: { action: String(intent?.action ?? ''), message_index: messageIndex },
+        });
 
         const cid = parseInt(String(intent.chainId ?? CHAIN_ID), 10);
         if (cid !== CHAIN_ID) {
@@ -424,6 +496,11 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     (msg) => toast.info(msg)
                 );
                 toast.success("Triple broadcast confirmed.");
+                logSkillEvent({
+                    level: 'info',
+                    event: 'skill.tx.success',
+                    detail: { action: 'tripleFromLabels', tx_hash_prefix: String(result.tripleHash).slice(0, 12) },
+                });
                 window.dispatchEvent(new Event('local-tx-updated'));
                 setMessages((prev) =>
                     prev.map((msgItem, idx) =>
@@ -456,6 +533,11 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 );
                 if (userRejected) toast.error("Transaction cancelled in wallet");
                 else toast.error(shortErr.length > 140 ? shortErr.slice(0, 137) + "…" : shortErr);
+                logSkillEvent({
+                    level: userRejected ? 'info' : 'warn',
+                    event: userRejected ? 'skill.tx.rejected' : 'skill.tx.failed',
+                    detail: { action: 'tripleFromLabels', message: shortErr.slice(0, 200) },
+                });
             }
             return;
         }
@@ -540,6 +622,11 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         try {
             const hash = await broadcastTransaction(address, to as `0x${string}`, valueWei, dataRaw as `0x${string}`);
             toast.success("Transaction broadcasted!");
+            logSkillEvent({
+                level: 'info',
+                event: 'skill.tx.success',
+                detail: { action, tx_hash_prefix: String(hash).slice(0, 12) },
+            });
             let txTermId: string | undefined;
             try {
                 if (intent.txBuiltIn && intent.builtinDataHex) {
@@ -585,6 +672,31 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
             } else {
                 toast.error(shortErr.length > 140 ? shortErr.slice(0, 137) + "…" : shortErr);
             }
+            logSkillEvent({
+                level: userRejected ? 'info' : 'warn',
+                event: userRejected ? 'skill.tx.rejected' : 'skill.tx.failed',
+                detail: { action, message: shortErr.slice(0, 200) },
+            });
+        }
+        } catch (unexpected: unknown) {
+            logSkillEvent({
+                level: 'error',
+                event: 'skill.tx.unexpected',
+                error: unexpected,
+                detail: { message_index: messageIndex },
+            });
+            toast.error('Unexpected error. Try again.');
+            setMessages((prev) =>
+                prev.map((msgItem, idx) =>
+                    idx === messageIndex
+                        ? {
+                              ...msgItem,
+                              txOutcome: 'failed' as const,
+                              txError: extractErrorText(unexpected),
+                          }
+                        : msgItem
+                )
+            );
         }
     };
 
@@ -671,7 +783,9 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 ref={scrollRef}
                 className="min-h-0 flex-1 min-w-0 overflow-y-auto overflow-x-clip overscroll-y-contain p-4 sm:p-6 space-y-6 custom-scrollbar"
             >
-                {messages.map((m, i) => (
+                {messages.map((m, i) => {
+                    const otherTxPending = messages.some((mm, idx) => mm.txOutcome === 'pending' && idx !== i);
+                    return (
                     <div key={i} className={`flex w-full min-w-0 ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                         <div className={`flex gap-4 w-full min-w-0 max-w-[min(100%,56rem)] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                             <div className={`w-8 h-8 shrink-0 flex items-center justify-center border-2 ${m.role === 'user' ? 'border-intuition-primary text-intuition-primary' : 'border-[#ff1e6d] text-[#ff1e6d]'} rounded-xl bg-black/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]`}>
@@ -906,9 +1020,24 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                         {!m.txOutcome && (
                                             <button
                                                 type="button"
-                                                onClick={() => executeTx(m.txIntent, i)}
-                                                disabled={txBusy}
-                                                className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-all rounded-lg border border-amber-300/90 hover:border-white disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_24px_rgba(245,158,11,0.3)] font-sans"
+                                                onClick={() => {
+                                                    if (otherTxPending) {
+                                                        toast.info(
+                                                            'Another transaction is still waiting for your wallet. Approve or reject it first.'
+                                                        );
+                                                        return;
+                                                    }
+                                                    void executeTx(m.txIntent, i);
+                                                }}
+                                                disabled={!address}
+                                                title={
+                                                    !address
+                                                        ? 'Connect your wallet'
+                                                        : otherTxPending
+                                                          ? 'Another wallet request is pending'
+                                                          : 'Sign and broadcast'
+                                                }
+                                                className={`w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold text-sm transition-all rounded-lg border border-amber-300/90 hover:border-white disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_24px_rgba(245,158,11,0.3)] font-sans ${!address || otherTxPending ? 'opacity-60' : ''}`}
                                             >
                                                 <CheckCircle2 size={20} /> Sign &amp; broadcast
                                             </button>
@@ -918,7 +1047,8 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                             </div>
                         </div>
                     </div>
-                ))}
+                    );
+                })}
                 {loading && (
                     <div className="flex justify-start w-full min-w-0">
                         <div className="flex gap-4 items-center min-w-0 max-w-[min(100%,56rem)] text-slate-500 text-sm font-sans animate-pulse">

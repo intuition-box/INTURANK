@@ -92,8 +92,20 @@ const EmailNotifyModal: React.FC = () => {
         label: f.label,
         emailAlerts: f.emailAlerts ?? true,
       }));
-      setEmailSubscription(wallet, trimmedEmail, nickname.trim() || undefined, alertFrequency, follows);
-      await sendWelcomeEmail(trimmedEmail, nickname.trim() || undefined);
+      const subscribedOk = await setEmailSubscription(
+        wallet,
+        trimmedEmail,
+        nickname.trim() || undefined,
+        alertFrequency,
+        follows
+      );
+      // Welcome is sent by the email API on subscribe when Ensend is configured; only call client send if API failed.
+      if (!subscribedOk) {
+        const welcomeOk = await sendWelcomeEmail(trimmedEmail, nickname.trim() || undefined);
+        if (!welcomeOk) {
+          toast.error('Saved locally, but email API is unreachable — check npm run email-server or VITE_EMAIL_API_URL.');
+        }
+      }
       setShowSuccess(true);
       if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
       successTimeoutRef.current = setTimeout(() => {
