@@ -45,14 +45,18 @@ jobs:
           if [ -z "${{ secrets.VITE_EMAIL_API_URL }}" ]; then
             echo "::warning::VITE_EMAIL_API_URL is not set. Emails on production will not work. Add it in repo Settings → Secrets → Actions."
           fi
-          if [ -z "${{ secrets.VITE_GEMINI_API_KEY }}" ]; then
-            echo "::warning::VITE_GEMINI_API_KEY is not set. AI briefing/summary will not work. Add it in repo Settings → Secrets → Actions (single key or comma-separated: key1,key2,key3)."
-          fi
-          if [ -z "${{ secrets.VITE_OPENAI_API_KEY }}" ]; then
-            echo "::notice::VITE_OPENAI_API_KEY is not set. OpenAI fallback (Intuition Skill) will be unavailable. Optional: add secret in Settings → Secrets → Actions."
+          # App order: Groq → Gemini → OpenAI. At least one key is required for AI (market summary, Skill, Feed pulse, Compare).
+          if [ -z "${{ secrets.VITE_GROQ_API_KEY }}" ] && [ -z "${{ secrets.VITE_GEMINI_API_KEY }}" ] && [ -z "${{ secrets.VITE_OPENAI_API_KEY }}" ]; then
+            echo "::warning::No LLM keys set. Add VITE_GROQ_API_KEY (recommended) and/or VITE_GEMINI_API_KEY / VITE_OPENAI_API_KEY in Settings → Secrets → Actions — Vite bakes VITE_* in at build time."
           fi
           if [ -z "${{ secrets.VITE_GROQ_API_KEY }}" ]; then
-            echo "::notice::VITE_GROQ_API_KEY is not set. Groq fallback (before OpenAI) will be unavailable. Optional: https://console.groq.com"
+            echo "::notice::VITE_GROQ_API_KEY is not set — production will use Gemini/OpenAI only if those secrets exist (https://console.groq.com)."
+          fi
+          if [ -z "${{ secrets.VITE_GEMINI_API_KEY }}" ]; then
+            echo "::notice::VITE_GEMINI_API_KEY is not set — Gemini fallback unavailable unless you add it."
+          fi
+          if [ -z "${{ secrets.VITE_OPENAI_API_KEY }}" ]; then
+            echo "::notice::VITE_OPENAI_API_KEY is not set — OpenAI last-resort fallback unavailable."
           fi
           npm run build
         env:
@@ -63,6 +67,7 @@ jobs:
           VITE_GRAPHQL_URL: ${{ vars.VITE_GRAPHQL_URL }}
           VITE_MAINTENANCE_MODE: ${{ vars.VITE_MAINTENANCE_MODE || 'false' }}
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_GEMINI_MODEL: ${{ vars.VITE_GEMINI_MODEL }}
           VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
           VITE_OPENAI_MODEL: ${{ vars.VITE_OPENAI_MODEL }}
           VITE_GROQ_API_KEY: ${{ secrets.VITE_GROQ_API_KEY }}

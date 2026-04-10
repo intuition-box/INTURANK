@@ -13,13 +13,13 @@ export const getGeminiApiKey = (): string => {
 };
 
 /**
- * Default model for `@google/genai` generateContent across the app.
+ * Gemini model when Groq fails and Gemini fallback runs (`generateContent`).
  * Set `VITE_GEMINI_MODEL` in `.env.local` to pin a model ID (e.g. `gemini-2.0-flash`) if the default is unavailable for your key.
  */
 export const GEMINI_MODEL =
   (import.meta.env.VITE_GEMINI_MODEL as string | undefined)?.trim() || 'gemini-2.5-flash';
 
-/** OpenAI API key for Skill chat fallback (platform.openai.com — ChatGPT Plus does not include API access). */
+/** OpenAI API key — fallback after Groq/Gemini (platform.openai.com — ChatGPT Plus does not include API access). */
 export const getOpenAiApiKey = (): string => {
   const raw = String(import.meta.env.VITE_OPENAI_API_KEY ?? '').trim();
   if (!raw) return '';
@@ -32,7 +32,7 @@ export const getOpenAiApiKey = (): string => {
 export const OPENAI_MODEL =
   (import.meta.env.VITE_OPENAI_MODEL as string | undefined)?.trim() || 'gpt-4o-mini';
 
-/** Groq (console.groq.com) — OpenAI-compatible API; fast inference, good free tier. */
+/** Groq (console.groq.com) — primary LLM for Skill + in-app AI; OpenAI-compatible, fast free tier. */
 export const getGroqApiKey = (): string => {
   const raw = String(import.meta.env.VITE_GROQ_API_KEY ?? '').trim();
   if (!raw) return '';

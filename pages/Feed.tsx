@@ -5,7 +5,6 @@ import { useAccount } from 'wagmi';
 import { getGlobalActivity, getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getUserHistory, getCurveLabel, type PositionActivityNotification } from '../services/graphql';
 import ActivityRow from '../components/ActivityRow';
 import { playClick, playHover } from '../services/audio';
-import { GoogleGenAI } from "@google/genai";
 import { formatEther } from 'viem';
 import { getFollowedIdentities } from '../services/follows';
 import { resolveENS, toAddress, isGraphResolvableAddress } from '../services/web3';
@@ -14,11 +13,13 @@ import { formatMarketValue, formatDisplayedShares } from '../services/analytics'
 import {
   EXPLORER_URL,
   getGeminiApiKey,
-  GEMINI_MODEL,
+  getGroqApiKey,
+  getOpenAiApiKey,
   PAGE_HERO_EYEBROW,
   PAGE_HERO_TITLE,
   PAGE_HERO_BODY,
 } from '../constants';
+import { generateSimpleLlmCompletion } from '../services/skillLlm';
 import { Transaction } from '../types';
 import { getLocalTransactions } from '../services/web3';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
@@ -54,8 +55,7 @@ const Feed: React.FC = () => {
         if (isAresLoading) return;
         setIsAresLoading(true);
         try {
-            const apiKey = getGeminiApiKey();
-            if (!apiKey) {
+            if (!getGroqApiKey() && !getGeminiApiKey() && !getOpenAiApiKey()) {
                 setAresPulse("NEURAL_UPLINK_FRAGMENTED_STANDBY");
                 setIsAresLoading(false);
                 return;
@@ -66,7 +66,6 @@ const Feed: React.FC = () => {
                 ).join('; ')
                 : 'No recent activity detected.';
 
-            const ai = new GoogleGenAI({ apiKey });
             const prompt = `
                 Analyze these recent semantic graph activities: [${summary}]
                 Role: Tactical Graph Architect.
@@ -75,11 +74,8 @@ const Feed: React.FC = () => {
                 Format: ALL CAPS, Max 20 words. No emojis.
             `;
 
-            const response = await ai.models.generateContent({
-                model: GEMINI_MODEL,
-                contents: prompt,
-            });
-            setAresPulse(response.text?.trim() || "EQUILIBRIUM_MAINTAINED_IN_SECTOR_04");
+            const { text } = await generateSimpleLlmCompletion(prompt);
+            setAresPulse(text.trim() || "EQUILIBRIUM_MAINTAINED_IN_SECTOR_04");
         } catch (e) {
             setAresPulse("NEURAL_UPLINK_FRAGMENTED_STANDBY");
         } finally {

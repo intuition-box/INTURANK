@@ -7,9 +7,9 @@ import { formatEther } from 'viem';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { playClick, playHover } from '../services/audio';
 import { Link } from 'react-router-dom';
-import { CURRENCY_SYMBOL, getGeminiApiKey, GEMINI_MODEL } from '../constants';
+import { CURRENCY_SYMBOL, getGeminiApiKey, getGroqApiKey, getOpenAiApiKey } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
-import { GoogleGenAI } from "@google/genai";
+import { generateSimpleLlmCompletion } from '../services/skillLlm';
 
 // --- TACTICAL CONFLICT SIMULATION COMPONENT (Updated to V3 Inspo) ---
 export const RivalryAnalysis: React.FC<{
@@ -40,13 +40,11 @@ export const RivalryAnalysis: React.FC<{
     const generateAnalysis = async () => {
         setLoading(true);
         try {
-            const apiKey = getGeminiApiKey();
-            if (!apiKey) {
-                setAnalysis('AI summary is disabled. Set VITE_GEMINI_API_KEY in your environment to enable it.');
+            if (!getGroqApiKey() && !getGeminiApiKey() && !getOpenAiApiKey()) {
+                setAnalysis('AI summary is disabled. Set VITE_GROQ_API_KEY (preferred) or VITE_GEMINI_API_KEY / VITE_OPENAI_API_KEY in your environment to enable it.');
                 setLoading(false);
                 return;
             }
-            const ai = new GoogleGenAI({ apiKey });
             const prompt = `
                 Compare two reputation-based assets for a normal (non-expert) user.
 
@@ -60,11 +58,8 @@ export const RivalryAnalysis: React.FC<{
                 - Avoids jargon. Use everyday words: "ahead", "stronger", "more activity", "more support", "higher score". Do NOT use: protocol incursion, liquidity bleed, semantic fragging, neural arbitrage, consensus overload, or military/combat metaphors.
             `;
 
-            const response = await ai.models.generateContent({
-                model: GEMINI_MODEL,
-                contents: prompt,
-            });
-            setAnalysis(response.text || 'Could not generate summary. Try again.');
+            const { text } = await generateSimpleLlmCompletion(prompt);
+            setAnalysis(text || 'Could not generate summary. Try again.');
         } catch (e) {
             setAnalysis('Summary unavailable. Check your API key or connection.');
         } finally {

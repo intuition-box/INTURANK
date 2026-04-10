@@ -41,6 +41,8 @@ type TxBroadcastOutcome = 'pending' | 'success' | 'rejected' | 'failed';
 interface Message {
     role: 'user' | 'assistant';
     content: string;
+    /** Which backend answered this assistant message (Skill: Groq → Gemini → OpenAI). */
+    llmProvider?: 'gemini' | 'groq' | 'openai';
     txIntent?: any;
     txOutcome?: TxBroadcastOutcome;
     txHash?: string;
@@ -309,7 +311,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     {
                         role: 'assistant',
                         content:
-                            'Add `VITE_GEMINI_API_KEY` and/or `VITE_GROQ_API_KEY` and/or `VITE_OPENAI_API_KEY` to `.env.local` to use the agent (Groq/OpenAI are backups when Gemini is unavailable).',
+                            'Add `VITE_GROQ_API_KEY` (preferred) and/or `VITE_GEMINI_API_KEY` and/or `VITE_OPENAI_API_KEY` to `.env.local` to use the agent.',
                     },
                 ]);
                 return;
@@ -331,6 +333,10 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 history: messages.slice(1).map((m) => ({ role: m.role, content: m.content })),
                 userMsg: promptUserMsg,
             });
+
+            if (import.meta.env.DEV) {
+                console.info(`[Intuition Skill] Reply via: ${provider}`);
+            }
 
             logSkillEvent({
                 level: 'info',
@@ -416,7 +422,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
 
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: responseText + contentAppend, txIntent },
+                { role: 'assistant', content: responseText + contentAppend, txIntent, llmProvider: provider },
             ]);
             logSkillEvent({
                 level: 'info',
@@ -796,6 +802,21 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                     {m.role === 'assistant' ? (
                                         <div className="text-xs leading-relaxed text-slate-300 font-sans">
                                             <AssistantMessageBody content={m.content} />
+                                            {m.llmProvider && (
+                                                <p
+                                                    className="mt-3 pt-2 border-t border-white/10 text-[10px] text-slate-500 font-mono tracking-wide"
+                                                    title="Which API served this reply (Groq first; Gemini/OpenAI if fallback ran)."
+                                                >
+                                                    Reply via:{' '}
+                                                    <span className="text-slate-400">
+                                                        {m.llmProvider === 'gemini'
+                                                            ? 'Google Gemini'
+                                                            : m.llmProvider === 'groq'
+                                                              ? 'Groq'
+                                                              : 'OpenAI'}
+                                                    </span>
+                                                </p>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="text-xs leading-relaxed font-mono text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
