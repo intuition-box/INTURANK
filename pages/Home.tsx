@@ -92,7 +92,7 @@ const Reveal: React.FC<{ children: React.ReactNode; delay?: number; className?: 
 };
 
 const TickerItem: React.FC<{ symbol: string, price: string, isUp: boolean }> = ({ symbol, price, isUp }) => (
-  <div className="flex items-center gap-2 sm:gap-4 px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-r border-white/10 text-[9px] sm:text-[10px] font-black font-mono whitespace-nowrap bg-black/40 hover:bg-intuition-secondary/10 transition-all group">
+  <div className="group flex items-center gap-2 whitespace-nowrap border-r border-white/10 bg-black/35 px-4 py-3 font-mono text-[9px] font-black backdrop-blur-sm transition-all hover:bg-intuition-secondary/10 sm:gap-4 sm:px-6 sm:py-4 md:px-8 sm:text-[10px]">
     <span className="text-slate-300 tracking-[0.2em] group-hover:text-white transition-colors uppercase font-black">{symbol}</span>
     <span className="text-white tracking-tighter text-sm font-black">{price}</span>
     <span className={`px-1.5 py-0.5 rounded-sm font-black shadow-sm ${isUp ? 'text-intuition-success bg-intuition-success/10 text-glow-success' : 'text-intuition-secondary bg-intuition-secondary/20 shadow-[0_0_10px_rgba(255,0,85,0.2)] text-glow-red'}`}>
@@ -103,48 +103,68 @@ const TickerItem: React.FC<{ symbol: string, price: string, isUp: boolean }> = (
 
 const MissionTerminal: React.FC = () => {
   return (
-    <div className="w-full max-w-5xl mx-auto px-6 py-32 relative">
-      <Reveal delay={200}>
-        <div className="bg-[#05080f] border-2 border-intuition-primary/40 rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(0,243,255,0.15)] group transition-all duration-500">
-          <div className="flex items-center justify-between px-6 py-4 bg-black/60 border-b border-white/5">
+    <div className="relative mx-auto w-full max-w-3xl px-4 py-20 sm:py-28">
+      {/*
+        Do not use Tailwind CDN `animate-in` / `fade-in` / `slide-in-*` here: those utilities
+        (tailwindcss-animate-style) can leave content at opacity 0 with fill-mode, and they
+        conflict with the custom `.animate-in` rule in index.html. Mission copy must always render.
+      */}
+      <div className="animate-fade-in">
+        <div className="group relative overflow-hidden rounded-[1.75rem] border border-intuition-primary/25 bg-[#03050d]/[0.96] shadow-[0_24px_80px_rgba(0,0,0,0.55),0_0_40px_rgba(0,243,255,0.1),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-intuition-primary/15 backdrop-blur-2xl backdrop-saturate-150">
+          <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(0,243,255,0.12),transparent_55%)]" />
+          <div className="relative z-[2] flex items-center justify-between border-b border-white/[0.07] bg-[#03050d]/40 px-5 py-3.5 sm:px-6">
             <div className="flex gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
-              <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
-              <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+              <div className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]/90" />
+              <div className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]/90" />
+              <div className="h-2.5 w-2.5 rounded-full bg-[#27c93f]/90" />
             </div>
-            <div className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.4em] font-black">mission_log.txt</div>
-            <div className="w-12"></div>
+            <div className="text-[9px] font-mono font-semibold uppercase tracking-[0.28em] text-slate-400 sm:text-[10px] sm:tracking-[0.35em]">
+              MISSION_LOG.TXT
+            </div>
+            <div className="w-10" />
           </div>
-          
-          <div className="p-8 md:p-16 font-mono space-y-10 relative">
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.01)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none opacity-20"></div>
-            
-            <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-3">
-              <span className="animate-pulse">{">>"}</span> SYSTEM BOOT SEQUENCE INITIATED ...
-            </div>
-            
-            <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
-              The internet is broken. Information is abundant, but <span className="inline-block px-2 py-0.5 bg-intuition-primary/10 border border-intuition-primary/30 text-white text-glow-blue rounded-sm">trust</span> is scarce. We are drowning in noise, deepfakes, and sybil attacks.
-            </p>
-            
-            <p className="text-slate-300 text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
-              IntuRank is how we act on that. Rank markets, follow leaders, and trade conviction on Intuition. Leaderboards, arenas, and live prices turn belief into positions you can size.
-            </p>
-            
-            <p className="text-lg md:text-xl leading-relaxed font-black uppercase tracking-tight">
-              <span className="text-intuition-success text-glow-success">We are building the credit score for everything.</span>{' '}
-              <span className="text-slate-300">Not controlled by a bank, but by you. The market decides what is true when you rank and trade in IntuRank.</span>
-            </p>
-            
-            <div className="text-intuition-primary text-sm md:text-base font-black tracking-widest flex items-center gap-2 pt-4 text-glow-blue">
-              <span>{">>"}</span> AWAITING INPUT<span className="w-2.5 h-6 bg-intuition-primary animate-[pulse_0.8s_infinite] shadow-glow-blue"></span>
+
+          <div className="relative z-[2] p-6 sm:p-8 md:p-10">
+            <div className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-25" />
+
+            <div className="relative z-[3] space-y-4 text-left font-mono text-[11px] uppercase leading-relaxed tracking-[0.12em] text-slate-300 sm:space-y-5 sm:text-xs sm:tracking-[0.14em]">
+              <p className="text-intuition-primary">
+                <span className="select-none">&gt;&gt; </span>
+                SYSTEM BOOT SEQUENCE INITIATED ...
+              </p>
+
+              <p>
+                THE INTERNET IS BROKEN. INFORMATION IS ABUNDANT, BUT{' '}
+                <span className="inline-block rounded border border-intuition-primary/70 bg-intuition-primary/10 px-1.5 py-0.5 font-bold text-intuition-primary">
+                  TRUST
+                </span>{' '}
+                IS SCARCE. WE ARE DROWNING IN NOISE, DEEPFAKES, AND SYBIL ATTACKS.
+              </p>
+
+              <p className="text-slate-200">
+                INTURANK IS HOW WE ACT ON THAT. RANK MARKETS, FOLLOW LEADERS, AND TRADE CONVICTION ON INTUITION.
+                LEADERBOARDS, ARENAS, AND LIVE PRICES TURN BELIEF INTO POSITIONS YOU CAN SIZE.
+              </p>
+
+              <p className="font-bold text-intuition-success" style={{ textShadow: '0 0 20px rgba(0,255,157,0.4)' }}>
+                WE ARE BUILDING THE CREDIT SCORE FOR EVERYTHING. NOT CONTROLLED BY A BANK, BUT BY YOU. THE MARKET
+                DECIDES WHAT IS TRUE WHEN YOU RANK AND TRADE IN INTURANK.
+              </p>
+
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-intuition-primary">
+                <span className="select-none">&gt;&gt; </span>
+                <span>AWAITING INPUT</span>
+                <span className="inline-block min-w-[0.55em] animate-pulse bg-intuition-primary text-[#03050d] shadow-[0_0_12px_rgba(0,243,255,0.9)]" aria-hidden>
+                  █
+                </span>
+              </p>
             </div>
           </div>
         </div>
-      </Reveal>
-      
-      <div className="absolute -top-10 -right-10 w-40 h-40 bg-intuition-primary/5 rounded-full blur-[80px] -z-10 animate-pulse"></div>
-      <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-intuition-secondary/5 rounded-full blur-[80px] -z-10 animate-pulse delay-1000"></div>
+      </div>
+
+      <div className="absolute -right-8 -top-8 -z-10 h-40 w-40 animate-pulse rounded-full bg-intuition-primary/10 blur-[70px]" />
+      <div className="absolute -bottom-8 -left-8 -z-10 h-40 w-40 animate-pulse rounded-full bg-intuition-secondary/10 blur-[70px]" style={{ animationDelay: '1s' }} />
     </div>
   );
 };
@@ -428,13 +448,15 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
   };
   const marketCapDisplay = formatCompact(marketCapRaw);
 
-  // Classic Pokémon card: fixed size — all cards same height regardless of image
-  const cardClass = 'relative w-full max-w-[280px] h-[420px] rounded-[12px] overflow-hidden select-none touch-none flex-shrink-0 flex flex-col';
+  // Glass trading card — fixed size, generous radius
+  const cardClass =
+    'relative w-full max-w-[280px] h-[400px] rounded-3xl overflow-hidden select-none touch-none flex-shrink-0 flex flex-col ' +
+    'border border-white/10 bg-[#060a12]/85 shadow-[0_20px_50px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md backdrop-saturate-150';
   const isFront = !isBackCard;
 
   const cardInner = (
     <div className={`${cardClass} atom-card ${isFront ? 'atom-card-front' : ''}`}>
-      {isFront && <div className="atom-card-glitter rounded-[12px]" />}
+      {isFront && <div className="atom-card-glitter rounded-3xl" />}
       {/* Swipe hints — only on front when dragging */}
       {isFront && (
       <div className="absolute left-2 right-2 top-20 flex items-center justify-between pointer-events-none z-10">
@@ -487,18 +509,18 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
 
       {/* ARTWORK — holographic foil area + rainbow strip at bottom (Pokémon-style) */}
       <div className={`relative flex flex-col items-center p-4 pt-3 pb-2 h-[160px] flex-shrink-0 ${agent.image ? 'atom-card-artwork-image' : 'atom-card-artwork'}`}>
-        <div className="relative w-full h-[118px] rounded-lg overflow-hidden flex items-center justify-center">
+        <div className="relative flex h-[118px] w-full items-center justify-center overflow-hidden rounded-2xl">
           {agent.image ? (
-            <img src={agent.image} alt={agent.label} className="w-full h-full object-cover object-center" />
+            <img src={agent.image} alt={agent.label} className="h-full w-full object-cover object-center" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#1a1520] to-[#0a0f1a] rounded-lg border border-amber-500/20">
+            <div className="flex h-full w-full items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#1a1520]/90 to-[#0a0f1a]/90">
               <span className="text-4xl font-black text-amber-400/80">{agent.label?.slice(0, 2) ?? '—'}</span>
             </div>
           )}
         </div>
         {/* Holographic rainbow strip — like premium Pokémon foil cards */}
         <div
-          className="w-full h-2.5 rounded-b-lg mt-1.5 opacity-90 shrink-0"
+          className="mt-1.5 h-2.5 w-full shrink-0 rounded-full opacity-90"
           style={{
             background: 'linear-gradient(90deg, #ff1e6d, #facc15, #00f3ff, #a855f7, #ff1e6d)',
             backgroundSize: '200% 100%',
@@ -509,16 +531,16 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
       </div>
 
       {/* ATTACKS — energy symbols + attack names */}
-      <div className="px-3 py-2 space-y-2 bg-gradient-to-b from-[#0a0f1a] to-[#06090f] flex-shrink-0">
-        <div className="atom-card-attack flex items-center gap-2 px-3 py-2">
+      <div className="flex-shrink-0 space-y-2 bg-gradient-to-b from-[#0a0f1a]/95 to-[#06090f]/95 px-3 py-2">
+        <div className="atom-card-attack flex items-center gap-2 rounded-xl px-3 py-2">
           <span className="w-7 h-7 rounded-full energy-fire flex items-center justify-center flex-shrink-0">
             <span className="text-xs font-black text-white">$</span>
           </span>
           <span className="text-[10px] font-black text-amber-200/90 uppercase flex-1">Market Cap</span>
           <span className="text-sm font-black text-red-400 tabular-nums">{marketCapDisplay} {CURRENCY_SYMBOL}</span>
         </div>
-        <div className="atom-card-attack flex items-center gap-2 px-3 py-2">
-          <span className="w-7 h-7 rounded-full energy-electric flex items-center justify-center flex-shrink-0">
+        <div className="atom-card-attack flex items-center gap-2 rounded-xl px-3 py-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full energy-electric">
             <span className="text-xs font-black text-amber-950">P</span>
           </span>
           <span className="text-[10px] font-black text-amber-200/90 uppercase flex-1">Spot Price</span>
@@ -540,7 +562,7 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
         </div>
 
         {/* MINTED — always reserve space so all cards same height (IntuRank blue when active) */}
-        <div className={`px-3 py-2 h-[44px] flex flex-col justify-center rounded-lg ${showCreatedAgo ? 'atom-card-ex-rule' : 'bg-transparent border border-transparent'}`}>
+        <div className={`flex h-[44px] flex-col justify-center rounded-xl px-3 py-2 ${showCreatedAgo ? 'atom-card-ex-rule' : 'border border-transparent bg-transparent'}`}>
           {showCreatedAgo && (
             <>
               <p className="text-[9px] font-black text-[#38bdf8] uppercase mb-0.5">◆ Minted ◆</p>
@@ -571,7 +593,8 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
 
 interface AtomSectionCarouselProps {
   title: string;
-  subtitle: string;
+  /** Omit or pass "" to hide subtext under the title */
+  subtitle?: string;
   agents: any[];
   walletAddress: string | undefined;
   onSwipeRight: (agent: any) => void;
@@ -583,7 +606,7 @@ interface AtomSectionCarouselProps {
   sectionColor?: string;
 }
 
-const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtitle, agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi, showCreatedAgo, sectionColor = '#00f3ff' }) => {
+const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtitle = '', agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi, showCreatedAgo, sectionColor = '#00f3ff' }) => {
   const [index, setIndex] = useState(0);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -688,7 +711,7 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
             }}
           />
         </div>
-        <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-4">{subtitle}</p>
+        {subtitle ? <p className="mb-4 text-[9px] font-mono uppercase tracking-[0.2em] text-slate-500">{subtitle}</p> : null}
         <div className="w-full max-w-[280px] min-h-[320px] flex flex-col items-center justify-center">
           <div
             className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
@@ -704,17 +727,19 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
 
   return (
     <MuiBox sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-      <div className="w-full text-center mb-2">
-        <h3 className="text-xs sm:text-sm font-black font-display text-white tracking-[0.2em] mb-1 uppercase drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">{title}</h3>
+      <div className="mb-2 w-full text-center">
+        <h3 className="mb-1 text-xs font-black uppercase tracking-[0.15em] text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)] font-display sm:text-sm">{title}</h3>
         <div
-          className="h-0.5 w-12 mx-auto rounded-full"
+          className="mx-auto h-0.5 w-14 rounded-full"
           style={{
             background: `linear-gradient(90deg, transparent, ${sectionColor}, transparent)`,
-            boxShadow: `0 0 8px ${sectionColor}50`,
+            boxShadow: `0 0 10px ${sectionColor}40`,
           }}
         />
       </div>
-      <p className="text-[9px] font-mono text-slate-500 tracking-[0.2em] uppercase mb-3">{subtitle}</p>
+      {subtitle ? (
+        <p className="mb-3 text-[9px] font-mono uppercase tracking-[0.2em] text-slate-500">{subtitle}</p>
+      ) : null}
 
       <MuiBox
         onMouseDown={handleStart}
@@ -725,9 +750,9 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
         sx={{
           position: 'relative',
           width: '100%',
-          minHeight: 520,
-          pt: 3,
-          pb: 3,
+          minHeight: 440,
+          pt: 2,
+          pb: 2,
           overflow: 'visible',
           display: 'flex',
           flexDirection: 'column',
@@ -773,7 +798,7 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
         </div>
       </MuiBox>
 
-      <p className="text-[10px] font-mono mt-2 tabular-nums tracking-[0.25em] px-3 py-1.5 rounded-lg bg-black/50 border border-white/10" style={{ boxShadow: `0 0 8px ${sectionColor}20` }}>
+      <p className="mt-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 font-mono text-[10px] tabular-nums tracking-[0.2em] backdrop-blur-sm" style={{ boxShadow: `0 0 12px ${sectionColor}18` }}>
         <span className="font-semibold" style={{ color: sectionColor, textShadow: `0 0 4px ${sectionColor}40` }}>{String(index + 1).padStart(2, '0')}</span>
         <span className="text-slate-500 mx-1">/</span>
         <span className="text-slate-400">{String(total).padStart(2, '0')}</span>
@@ -1192,7 +1217,7 @@ const Home: React.FC = () => {
     : "0.0";
 
   return (
-    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white w-full min-w-0 max-w-[100vw] overflow-x-hidden">
+    <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white w-full min-w-0 max-w-[100vw] overflow-x-clip">
       {/* Success popup: portaled to body so it stays viewport-centered */}
       {acquisitionSuccess && typeof document !== 'undefined' && createPortal(
         <div
@@ -1245,7 +1270,7 @@ const Home: React.FC = () => {
       )}
 
       {/* 1. TRENDING ATOMS — gamified arena */}
-      <section id="trending-atoms" className="relative overflow-x-hidden overflow-y-visible min-w-0 py-12 sm:py-20 border-b border-white/5 scroll-mt-6" style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}>
+      <section id="trending-atoms" className="relative overflow-x-clip overflow-y-visible min-w-0 py-12 sm:py-20 border-b border-white/5 scroll-mt-6" style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}>
         {/* Arena background: grid + gradients */}
         <div className="absolute inset-0 bg-[#030508]" />
         <div className="absolute inset-0 opacity-[0.4]" style={{ backgroundImage: 'linear-gradient(rgba(0,243,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,243,255,0.03) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
@@ -1255,64 +1280,60 @@ const Home: React.FC = () => {
         <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.5)_100%)] pointer-events-none" />
         <div className="relative mx-auto z-10 min-w-0 w-full" style={{ maxWidth: 1280 }}>
           <Reveal delay={80}>
-            <div className="text-center mb-10">
-              {/* Arcade-style tagline */}
-              <p className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.4em] text-intuition-primary/90 mb-3 animate-neon-flicker">
-                ◆ PICK YOUR NEXT PLAY ◆
-              </p>
-              <h2 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-display tracking-tighter uppercase leading-[0.9] mb-3">
-                <span className="block text-white text-glow-white drop-shadow-[0_0_16px_rgba(255,255,255,0.2)]">TRENDING</span>
-                <span className="block text-intuition-secondary text-glow-red mt-1 drop-shadow-[0_0_20px_rgba(255,30,109,0.25)]">ATOMS</span>
+            <div className="mb-8 text-center sm:mb-10">
+              <h2 className="mb-4 font-display text-4xl font-black uppercase leading-[0.92] tracking-tighter sm:text-6xl md:text-7xl lg:text-8xl">
+                <span className="block text-glow-white text-white drop-shadow-[0_0_16px_rgba(255,255,255,0.2)]">TRENDING</span>
+                <span className="mt-1 block text-glow-red text-intuition-secondary drop-shadow-[0_0_20px_rgba(255,30,109,0.25)]">ATOMS</span>
               </h2>
-              <p className="text-sm sm:text-base max-w-2xl mx-auto leading-relaxed mb-8 font-display text-[13px] sm:text-[15px] tracking-wide">
-                <span className="text-slate-400">The arena is open. </span>
-                <span className="font-black text-intuition-primary text-glow-blue">Stake. Swipe. Climb.</span>
-                <span className="text-white font-semibold"> Dominate.</span>
+              <p className="mx-auto mb-6 max-w-lg font-display text-sm tracking-wide text-slate-400 sm:text-base">
+                <span className="font-semibold text-intuition-primary text-glow-blue">Swipe</span> to buy or watchlist ·{' '}
+                <span className="text-slate-300">scroll cards vertically</span>
               </p>
-              {/* Arcade control hints — soft glow, easy on the eyes */}
               <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-                <div className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-[#00f3ff] shadow-[0_0_16px_rgba(0,243,255,0.25)] hover:shadow-[0_0_24px_rgba(0,243,255,0.35)] transition-all duration-300">
-                  <ArrowRight size={18} className="text-[#00f3ff]" />
-                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-[#00f3ff]">→ BUY</span>
+                <div className="group flex items-center gap-2 rounded-full border border-[#00f3ff]/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_20px_rgba(0,243,255,0.2)] backdrop-blur-md transition-all duration-300 hover:border-[#00f3ff] hover:shadow-[0_0_28px_rgba(0,243,255,0.35)]">
+                  <ArrowRight size={17} className="text-[#00f3ff]" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#00f3ff] font-display sm:text-[11px]">Buy</span>
                 </div>
-                <div className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-[#ff1e6d] shadow-[0_0_16px_rgba(255,30,109,0.25)] hover:shadow-[0_0_24px_rgba(255,30,109,0.35)] transition-all duration-300">
-                  <Heart size={18} className="text-[#ff1e6d]" />
-                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-[#ff1e6d]">← WATCHLIST</span>
+                <div className="group flex items-center gap-2 rounded-full border border-[#ff1e6d]/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_20px_rgba(255,30,109,0.18)] backdrop-blur-md transition-all duration-300 hover:border-[#ff1e6d] hover:shadow-[0_0_28px_rgba(255,30,109,0.32)]">
+                  <Heart size={17} className="text-[#ff1e6d]" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#ff1e6d] font-display sm:text-[11px]">Watchlist</span>
                 </div>
-                <div className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-[#facc15] shadow-[0_0_16px_rgba(250,204,21,0.25)] hover:shadow-[0_0_24px_rgba(250,204,21,0.35)] transition-all duration-300">
-                  <ChevronsUpDown size={18} className="text-[#facc15]" />
-                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-[#facc15]">⇅ BROWSE</span>
+                <div className="group flex items-center gap-2 rounded-full border border-[#facc15]/45 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(250,204,21,0.15)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(250,204,21,0.28)]">
+                  <ChevronsUpDown size={17} className="text-[#facc15]" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#facc15] font-display sm:text-[11px]">Browse</span>
                 </div>
                 <Link
                   to="/climb"
                   onClick={playClick}
                   onMouseEnter={playHover}
-                  className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/70 border-2 border-amber-400/70 shadow-[0_0_16px_rgba(251,191,36,0.25)] hover:shadow-[0_0_24px_rgba(251,191,36,0.35)] transition-all duration-300"
+                  className="group flex items-center gap-2 rounded-full border border-amber-400/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(251,191,36,0.18)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(251,191,36,0.3)]"
                 >
-                  <Trophy size={18} className="text-amber-400" />
-                  <span className="text-[11px] font-black font-display uppercase tracking-widest text-amber-400">Climb the ranks</span>
+                  <Trophy size={17} className="text-amber-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 font-display sm:text-[11px]">Climb</span>
                 </Link>
               </div>
             </div>
           </Reveal>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6 md:gap-8 min-w-0">
+          <div className="grid min-w-0 grid-cols-1 gap-5 sm:gap-6 md:grid-cols-3 md:gap-7">
             <Reveal delay={150}>
-              <div className="group relative rounded-2xl p-4 sm:p-5 flex flex-col items-center min-w-0 w-full max-w-full overflow-visible transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
+              <div
+                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.65rem] p-3 transition-all duration-500 sm:p-4 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
                 style={{
-                  background: 'linear-gradient(145deg, rgba(255,30,109,0.08) 0%, rgba(5,8,20,0.98) 50%, rgba(0,243,255,0.03) 100%)',
-                  border: '2px solid rgba(255,30,109,0.6)',
-                  boxShadow: '0 0 24px rgba(255,30,109,0.15), 0 20px 50px rgba(0,0,0,0.5)',
+                  background: 'linear-gradient(155deg, rgba(255,30,109,0.1) 0%, rgba(5,8,20,0.92) 45%, rgba(0,243,255,0.04) 100%)',
+                  border: '1px solid rgba(255,30,109,0.45)',
+                  boxShadow: '0 0 32px rgba(255,30,109,0.12), 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
+                  backdropFilter: 'blur(16px)',
                 }}
               >
-                <div className="absolute inset-0 animate-slot-shimmer pointer-events-none" />
-                <div className="absolute top-3 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#ff1e6d]/20 border border-[#ff1e6d]/70 shadow-[0_0_12px_rgba(255,30,109,0.2)] animate-badge-bounce">
-                  <Flame size={14} className="text-[#ff1e6d]" />
-                  <span className="text-[10px] font-black font-display uppercase tracking-wider text-[#ff1e6d]">HOT</span>
+                <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
+                <div className="absolute right-3 top-3 z-[2] flex animate-badge-bounce items-center gap-1.5 rounded-full border border-[#ff1e6d]/50 bg-[#ff1e6d]/15 px-2.5 py-1 shadow-[0_0_14px_rgba(255,30,109,0.25)] backdrop-blur-sm">
+                  <Flame size={13} className="text-[#ff1e6d]" />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-[#ff1e6d] font-display">Hot</span>
                 </div>
                 <AtomSectionCarousel
                   title="Top by ROI (daily)"
-                  subtitle="Updates daily · most activity"
+                  subtitle=""
                   agents={atomSections.roiDaily}
                   walletAddress={walletAddress}
                   onSwipeRight={(a) => setBuyPanelAgent(a)}
@@ -1328,21 +1349,23 @@ const Home: React.FC = () => {
               </div>
             </Reveal>
             <Reveal delay={280}>
-              <div className="group relative rounded-2xl p-4 sm:p-5 flex flex-col items-center min-w-0 w-full max-w-full overflow-visible transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
+              <div
+                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.65rem] p-3 transition-all duration-500 sm:p-4 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
                 style={{
-                  background: 'linear-gradient(145deg, rgba(0,243,255,0.08) 0%, rgba(5,8,20,0.98) 50%, rgba(168,85,247,0.03) 100%)',
-                  border: '2px solid rgba(0,243,255,0.6)',
-                  boxShadow: '0 0 24px rgba(0,243,255,0.15), 0 20px 50px rgba(0,0,0,0.5)',
+                  background: 'linear-gradient(155deg, rgba(0,243,255,0.1) 0%, rgba(5,8,20,0.92) 45%, rgba(168,85,247,0.04) 100%)',
+                  border: '1px solid rgba(0,243,255,0.45)',
+                  boxShadow: '0 0 32px rgba(0,243,255,0.12), 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
+                  backdropFilter: 'blur(16px)',
                 }}
               >
-                <div className="absolute inset-0 animate-slot-shimmer pointer-events-none" />
-                <div className="absolute top-3 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#00f3ff]/20 border border-[#00f3ff]/70 shadow-[0_0_12px_rgba(0,243,255,0.2)] animate-badge-bounce" style={{ animationDelay: '0.3s' }}>
-                  <Zap size={14} className="text-[#00f3ff]" />
-                  <span className="text-[10px] font-black font-display uppercase tracking-wider text-[#00f3ff]">MOON</span>
+                <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
+                <div className="absolute right-3 top-3 z-[2] flex animate-badge-bounce items-center gap-1.5 rounded-full border border-[#00f3ff]/50 bg-[#00f3ff]/12 px-2.5 py-1 shadow-[0_0_14px_rgba(0,243,255,0.22)] backdrop-blur-sm" style={{ animationDelay: '0.3s' }}>
+                  <Zap size={13} className="text-[#00f3ff]" />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-[#00f3ff] font-display">Cap</span>
                 </div>
                 <AtomSectionCarousel
                   title="Top by market cap"
-                  subtitle="Largest reputation markets"
+                  subtitle=""
                   agents={atomSections.byMarketcap}
                   walletAddress={walletAddress}
                   onSwipeRight={(a) => setBuyPanelAgent(a)}
@@ -1357,21 +1380,23 @@ const Home: React.FC = () => {
               </div>
             </Reveal>
             <Reveal delay={410}>
-              <div className="group relative rounded-2xl p-4 sm:p-5 flex flex-col items-center min-w-0 w-full max-w-full overflow-visible transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1"
+              <div
+                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.65rem] p-3 transition-all duration-500 sm:p-4 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
                 style={{
-                  background: 'linear-gradient(145deg, rgba(250,204,21,0.06) 0%, rgba(5,8,20,0.98) 50%, rgba(34,197,94,0.03) 100%)',
-                  border: '2px solid rgba(250,204,21,0.6)',
-                  boxShadow: '0 0 24px rgba(250,204,21,0.15), 0 20px 50px rgba(0,0,0,0.5)',
+                  background: 'linear-gradient(155deg, rgba(250,204,21,0.08) 0%, rgba(5,8,20,0.92) 45%, rgba(34,197,94,0.04) 100%)',
+                  border: '1px solid rgba(250,204,21,0.45)',
+                  boxShadow: '0 0 28px rgba(250,204,21,0.12), 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
+                  backdropFilter: 'blur(16px)',
                 }}
               >
-                <div className="absolute inset-0 animate-slot-shimmer pointer-events-none" />
-                <div className="absolute top-3 right-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#facc15]/20 border border-[#facc15]/70 shadow-[0_0_12px_rgba(250,204,21,0.2)] animate-badge-bounce" style={{ animationDelay: '0.6s' }}>
-                  <Sparkles size={14} className="text-[#facc15]" />
-                  <span className="text-[10px] font-black font-display uppercase tracking-wider text-[#facc15]">NEW</span>
+                <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
+                <div className="absolute right-3 top-3 z-[2] flex animate-badge-bounce items-center gap-1.5 rounded-full border border-[#facc15]/50 bg-[#facc15]/12 px-2.5 py-1 shadow-[0_0_14px_rgba(250,204,21,0.2)] backdrop-blur-sm" style={{ animationDelay: '0.6s' }}>
+                  <Sparkles size={13} className="text-[#facc15]" />
+                  <span className="text-[9px] font-black uppercase tracking-wider text-[#facc15] font-display">New</span>
                 </div>
                 <AtomSectionCarousel
                   title="Newly created"
-                  subtitle="Fresh atoms as they appear"
+                  subtitle=""
                   agents={atomSections.newlyCreated}
                   walletAddress={walletAddress}
                   onSwipeRight={(a) => setBuyPanelAgent(a)}
@@ -1488,9 +1513,9 @@ const Home: React.FC = () => {
                   { num: "03", icon: <Activity size={40}/>, color: "text-white text-glow-white", border: "border-white/20", glow: "hover:border-white hover:shadow-2xl", title: "STAKE_CONSENSUS", desc: "Conviction is quantified through capital allocation, making deception economically irrational." }
               ].map((item, i) => (
                   <Reveal key={i} delay={200 + (i * 150)}>
-                      <div className={`min-w-0 p-6 sm:p-8 md:p-10 bg-black border-2 ${item.border} ${item.glow} motion-hover-lift clip-path-slant group relative overflow-hidden h-full flex flex-col hover:shadow-[0_0_40px_rgba(255,0,85,0.25)]`}>
-                          <div className="absolute top-0 right-0 p-2 sm:p-4 text-[4rem] sm:text-[5rem] md:text-[7rem] font-black text-white/5 font-display italic pointer-events-none group-hover:text-intuition-secondary/10 transition-colors">{item.num}</div>
-                          <div className={`w-16 h-16 sm:w-20 sm:h-20 bg-white/5 border-2 ${item.border} flex items-center justify-center ${item.color} group-hover:scale-110 transition-all duration-700 mb-6 sm:mb-10 clip-path-slant shadow-2xl shrink-0`}>
+                      <div className={`group relative flex h-full min-w-0 flex-col overflow-hidden rounded-[1.5rem] border ${item.border} bg-[#05070c]/80 p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl motion-hover-lift sm:p-8 md:p-10 ${item.glow} hover:shadow-[0_0_40px_rgba(255,0,85,0.2)]`}>
+                          <div className="pointer-events-none absolute right-0 top-0 p-2 font-display text-[4rem] font-black italic text-white/5 transition-colors group-hover:text-intuition-secondary/10 sm:p-4 sm:text-[5rem] md:text-[7rem]">{item.num}</div>
+                          <div className={`mb-6 flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 ${item.border} bg-white/5 shadow-2xl transition-all duration-700 group-hover:scale-105 sm:mb-10 sm:h-20 sm:w-20 ${item.color}`}>
                               {item.icon}
                           </div>
                           <h4 className={`text-lg sm:text-xl md:text-2xl font-black font-display text-white mb-4 md:mb-6 uppercase group-hover:text-intuition-secondary transition-all break-words ${item.num === '02' ? 'text-glow-red' : 'group-hover:text-glow-white'}`}>{item.title}</h4>
@@ -1505,7 +1530,7 @@ const Home: React.FC = () => {
       <div className="py-40 bg-intuition-dark relative border-y-2 border-white/10">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-10">
           <Reveal className="mb-20 flex items-center gap-6">
-            <div className="w-12 h-12 bg-intuition-secondary/10 border border-intuition-secondary flex items-center justify-center clip-path-slant shadow-glow-red">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-intuition-secondary bg-intuition-secondary/10 shadow-glow-red">
                 <Activity className="text-intuition-secondary animate-pulse" size={24} />
             </div>
             <h2 className="text-4xl md:text-5xl font-black font-display text-white tracking-tight uppercase text-glow-red">The network in numbers</h2>
@@ -1526,7 +1551,7 @@ const Home: React.FC = () => {
         <div className="absolute inset-0 opacity-[0.04] retro-grid pointer-events-none" />
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center">
           <Reveal delay={100}>
-            <div className="inline-flex items-center gap-3 px-4 py-2 mb-6 bg-black/60 border-2 border-amber-400/70 text-amber-300 font-mono uppercase tracking-[0.5em] text-[10px] font-black clip-path-slant shadow-[0_0_28px_rgba(251,191,36,0.3)]">
+            <div className="mb-6 inline-flex items-center gap-3 rounded-full border-2 border-amber-400/60 bg-black/50 px-4 py-2 font-mono text-[10px] font-black uppercase tracking-[0.35em] text-amber-300 shadow-[0_0_28px_rgba(251,191,36,0.25)] backdrop-blur-md">
               <Mail size={20} className="shrink-0" />
               EMAIL ALERTS
             </div>
@@ -1574,8 +1599,8 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
     };
 
     return (
-      <div className={`relative p-8 bg-[#02040a] group motion-hover-lift flex flex-col h-72 overflow-hidden border-2 ${borderClass} shadow-2xl clip-path-slant select-none hover:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] min-w-0`}>
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-10 pointer-events-none"></div>
+      <div className={`group relative flex h-72 min-w-0 select-none flex-col overflow-hidden rounded-[1.5rem] border-2 ${borderClass} bg-[#03050d]/90 p-7 shadow-2xl backdrop-blur-md motion-hover-lift hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.55)] sm:p-8`}>
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-10" />
         
         <div className={`absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
         <div className={`absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 ${isRed ? 'border-intuition-secondary/60' : 'border-intuition-primary/60'} opacity-40 group-hover:opacity-100 transition-opacity duration-500`}></div>
@@ -1587,7 +1612,7 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
                 <span className="text-slate-300 font-mono text-[10px] sm:text-[11px] uppercase tracking-[0.2em] font-bold text-balance group-hover:text-white transition-colors [text-shadow:0_0_24px_rgba(255,255,255,0.12)]">{label}</span>
                 <div className={`h-[2px] w-12 ${isRed ? 'bg-intuition-secondary' : 'bg-intuition-primary'} opacity-70 group-hover:w-full transition-all duration-1000`}></div>
             </div>
-            <div className={`p-3 bg-black border border-white/10 rounded-none clip-path-slant transition-all duration-500 group-hover:scale-110 group-hover:border-current shadow-inner shrink-0 ${textClass}`}>
+            <div className={`shrink-0 rounded-xl border border-white/10 bg-black/50 p-3 shadow-inner transition-all duration-500 group-hover:scale-105 group-hover:border-current ${textClass}`}>
                 {icon}
             </div>
         </div>
@@ -1600,7 +1625,7 @@ const StatBox = ({ label, value, sub, icon, color }: any) => {
 
         <div className="mt-auto relative z-10 pt-4 flex items-center justify-between gap-3 border-t border-white/10">
             <div className="text-slate-300 font-mono text-[9px] sm:text-[10px] uppercase tracking-[0.12em] font-semibold leading-snug text-balance group-hover:text-white transition-colors flex items-start gap-2 min-w-0">
-                <div className={`w-2 h-2 mt-0.5 shrink-0 ${bgClass.split(' ')[0]} animate-pulse shadow-[0_0_10px_currentColor] clip-path-slant`}></div>
+                <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${bgClass.split(' ')[0]} animate-pulse shadow-[0_0_10px_currentColor]`} />
                 <span>{sub}</span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0 text-slate-400">

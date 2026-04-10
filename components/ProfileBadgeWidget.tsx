@@ -19,10 +19,10 @@ interface ProfileBadgeWidgetProps {
 }
 
 const BADGE_ICONS: Record<BadgeTier, React.ReactNode> = {
-  apex: <Crown size={14} />,
-  elite: <Medal size={14} />,
-  rising: <Medal size={14} />,
-  scout: <Award size={14} />,
+  apex: <Crown size={10} strokeWidth={2} />,
+  elite: <Medal size={10} strokeWidth={2} />,
+  rising: <Medal size={10} strokeWidth={2} />,
+  scout: <Award size={10} strokeWidth={2} />,
 };
 
 const BADGE_STYLES: Record<BadgeTier, string> = {
@@ -53,31 +53,53 @@ const ProfileBadgeWidget: React.FC<ProfileBadgeWidgetProps> = ({
   return (
     <div className="relative z-[1] overflow-visible" ref={dropdownRef}>
       <button
+        type="button"
         onClick={onToggleDropdown}
         onMouseEnter={playHover}
-        className="flex items-center gap-3 pl-2 pr-2.5 py-2 rounded-xl border border-slate-600/70 bg-slate-950/60 hover:border-intuition-primary/55 hover:bg-intuition-primary/[0.06] transition-all duration-200 group shadow-sm"
+        className="flex items-center gap-2.5 pl-1.5 pr-2.5 py-1 rounded-full border border-intuition-primary/20 bg-black/35 hover:bg-intuition-primary/[0.06] hover:border-intuition-primary/40 hover:shadow-[0_0_18px_rgba(0,243,255,0.12)] transition-all group"
       >
-        {/* Avatar with badge overlay */}
         <div className="relative shrink-0">
-          <div className={`w-10 h-10 rounded-xl overflow-hidden border-2 ${
-            tier === 'apex' ? 'border-amber-400/60' :
-            tier === 'elite' ? 'border-slate-400/50' :
-            tier === 'rising' ? 'border-amber-600/50' : 'border-slate-600'
-          }`}>
+          <div
+            className={`w-9 h-9 rounded-full overflow-hidden ring-2 ring-inset ${
+              tier === 'apex'
+                ? 'ring-amber-400/50'
+                : tier === 'elite'
+                  ? 'ring-slate-400/45'
+                  : tier === 'rising'
+                    ? 'ring-amber-600/45'
+                    : 'ring-intuition-primary/25'
+            }`}
+          >
             <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
           </div>
-          <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-lg border flex items-center justify-center bg-gradient-to-br ${BADGE_STYLES[tier]}`}>
+          <div
+            className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-black/40 flex items-center justify-center bg-gradient-to-br shadow-md ${BADGE_STYLES[tier]}`}
+          >
             {BADGE_ICONS[tier]}
           </div>
         </div>
-        {/* Name + badge label */}
-        <div className="hidden sm:flex flex-col items-start justify-center min-w-0 gap-0.5">
-          <span className="text-white font-semibold text-[0.9375rem] leading-tight truncate max-w-[132px] font-sans tracking-tight">{displayName}</span>
-          <span className={`text-xs font-semibold font-sans tracking-wide ${tier === 'apex' ? 'text-amber-400' : tier === 'elite' ? 'text-slate-300' : tier === 'rising' ? 'text-amber-500' : 'text-slate-400'}`}>
+        <div className="hidden sm:flex flex-col items-start justify-center min-w-0 gap-0.5 max-w-[150px]">
+          <span className="text-white font-semibold text-xs leading-tight truncate font-sans tabular-nums">{displayName}</span>
+          <span
+            className={`text-[10px] font-medium font-sans leading-tight truncate ${
+              tier === 'apex'
+                ? 'text-amber-400/90'
+                : tier === 'elite'
+                  ? 'text-slate-400'
+                  : tier === 'rising'
+                    ? 'text-amber-500/90'
+                    : 'text-slate-500'
+            }`}
+          >
             {BADGE_NAMES[tier]}
           </span>
         </div>
-        <ChevronDown size={16} className={`text-slate-500 shrink-0 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={14}
+          strokeWidth={2}
+          className={`text-intuition-primary/60 shrink-0 transition-transform duration-200 group-hover:text-intuition-primary ${isDropdownOpen ? 'rotate-180 text-intuition-primary' : ''}`}
+          aria-hidden
+        />
       </button>
 
       {isDropdownOpen && children}

@@ -135,7 +135,8 @@
         }
       }
 
-      html { scroll-behavior: smooth; overflow-x: hidden; }
+      /* overflow-x: clip avoids pairing overflow-y with auto (nested scrollbars next to body). */
+      html { scroll-behavior: smooth; overflow-x: clip; }
       @media (prefers-reduced-motion: reduce) {
         html { scroll-behavior: auto; }
       }
@@ -143,14 +144,14 @@
         background-color: #020308;
         color: #e2e8f0;
         font-family: 'Inter', sans-serif;
-        overflow-x: hidden;
+        overflow-x: clip;
         min-width: 0;
         -webkit-overflow-scrolling: touch;
       }
       /* Mobile: prevent horizontal overflow and clip-off text */
       @media (max-width: 768px) {
         body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-        .mobile-contain { min-width: 0; overflow-x: hidden; }
+        .mobile-contain { min-width: 0; overflow-x: clip; }
         .mobile-break { word-break: break-word; overflow-wrap: break-word; }
       }
 

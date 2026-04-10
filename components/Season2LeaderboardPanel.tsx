@@ -276,60 +276,64 @@ export const Season2LeaderboardPanel: React.FC<{
       className={`min-w-0 ${isHome ? '' : 'scroll-mt-28'}`}
     >
       <div
-        className={`min-w-0 rounded-2xl border border-white/[0.08] bg-[#05080c]/90 shadow-[0_0_0_1px_rgba(255,255,255,0.04)] ${
-          isHome ? 'p-5 sm:p-6' : 'p-5 sm:p-8'
+        className={`min-w-0 rounded-[1.65rem] border border-intuition-primary/20 bg-[#03050d]/[0.94] shadow-[0_20px_60px_rgba(0,0,0,0.45),0_0_36px_rgba(0,243,255,0.08),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/[0.04] backdrop-blur-xl backdrop-saturate-150 ${
+          isHome ? 'p-4 sm:p-5' : 'p-5 sm:p-8'
         }`}
       >
         <div className="flex flex-col gap-4">
-          <header className="border-b border-white/[0.07] pb-4 space-y-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-2 rounded-md border border-amber-400/30 bg-amber-400/[0.06] px-2.5 py-1 text-amber-100/95">
+          <header className={`space-y-3 border-b border-white/[0.07] ${isHome ? 'pb-3' : 'pb-4'}`}>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/35 bg-amber-400/10 px-3 py-1.5 text-amber-100/95 shadow-[0_0_20px_rgba(251,191,36,0.12)] backdrop-blur-sm">
                 <Trophy size={15} className="shrink-0 text-amber-400" aria-hidden />
-                <span className="text-[11px] font-semibold uppercase tracking-wide font-sans">Season 2</span>
+                <span className="font-sans text-[11px] font-semibold uppercase tracking-wide">Season 2</span>
               </span>
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">
-                Wanna rank up?
-              </h2>
-              {!isHome && (
-                <p className="mt-1.5 text-sm text-slate-400 font-sans leading-relaxed max-w-2xl">
-                  Realized PnL for the selected epoch ({PAGE_ROWS_PER_PAGE} rows per page). All-time rankings live under{' '}
-                  <span className="text-slate-300 font-medium">TOP PnL</span>.
-                </p>
+              {isHome ? (
+                <h2 className="font-display text-lg font-bold tracking-tight text-white sm:text-xl">Leaderboard</h2>
+              ) : (
+                <h2 className="font-display text-xl font-bold tracking-tight text-white sm:text-2xl">Wanna rank up?</h2>
               )}
-              <p className={`${!isHome ? 'mt-2' : 'mt-1.5'} text-sm text-slate-400 font-sans leading-relaxed max-w-2xl`}>
+            </div>
+            {!isHome && (
+              <p className="max-w-2xl font-sans text-sm leading-relaxed text-slate-400">
+                Realized PnL for the selected epoch ({PAGE_ROWS_PER_PAGE} rows per page). All-time rankings live under{' '}
+                <span className="font-medium text-slate-300">TOP PnL</span>.
+              </p>
+            )}
+            {!isHome && (
+              <p className="max-w-2xl font-sans text-sm leading-relaxed text-slate-400">
                 Stake and trade on{' '}
-                {isHome ? (
-                  <a
-                    href="#trending-atoms"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      playClick();
-                      document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }}
-                    className="font-medium text-intuition-primary hover:text-cyan-200 transition-colors"
-                  >
-                    Trending Atoms
-                  </a>
-                ) : (
-                  <Link
-                    to="/#trending-atoms"
-                    onClick={playClick}
-                    className="font-medium text-intuition-primary hover:text-cyan-200 transition-colors"
-                  >
-                    Trending Atoms
-                  </Link>
-                )}{' '}
+                <Link
+                  to="/#trending-atoms"
+                  onClick={playClick}
+                  className="font-medium text-intuition-primary transition-colors hover:text-cyan-200"
+                >
+                  Trending Atoms
+                </Link>{' '}
                 to move up the board.
               </p>
-            </div>
+            )}
+            {isHome && (
+              <p className="font-sans text-xs text-slate-500">
+                Trade during the epoch to climb ·{' '}
+                <a
+                  href="#trending-atoms"
+                  className="font-medium text-intuition-primary/90 hover:text-intuition-primary"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    playClick();
+                    document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  Trending atoms
+                </a>
+              </p>
+            )}
           </header>
 
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-4">
             <div className="flex flex-wrap gap-3 sm:gap-4 flex-1 min-w-0">
               <div ref={epochMenuRef} className="relative z-20 flex flex-col gap-1.5 min-w-[160px] w-full sm:w-[min(100%,260px)]">
-                <label className="text-xs font-medium text-slate-400 font-sans" htmlFor="season2-epoch-trigger">
+                <label className="font-sans text-xs font-medium text-slate-400" htmlFor="season2-epoch-trigger">
                   Epoch
                 </label>
                 <button
@@ -342,7 +346,7 @@ export const Season2LeaderboardPanel: React.FC<{
                     setSortMenuOpen(false);
                     setEpochMenuOpen((open) => !open);
                   }}
-                  className="inline-flex items-center justify-between gap-3 rounded-md border border-white/[0.1] bg-[#0c1016] px-3 py-2 text-left text-sm text-slate-100 shadow-sm hover:border-white/20 hover:bg-[#0e141c] transition-colors w-full"
+                  className="inline-flex w-full items-center justify-between gap-3 rounded-2xl border border-white/12 bg-[#080b12]/90 px-3 py-2.5 text-left text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm transition-colors hover:border-intuition-primary/35 hover:bg-[#0a1018]/95"
                 >
                   <span className="flex flex-col items-start min-w-0 text-left">
                     <span className="font-medium text-slate-100 truncate w-full">
@@ -358,7 +362,7 @@ export const Season2LeaderboardPanel: React.FC<{
                 {epochMenuOpen && (
                   <div
                     role="listbox"
-                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[min(70vh,22rem)] overflow-y-auto rounded-lg border border-white/[0.12] bg-[#0a0f14] shadow-[0_12px_40px_rgba(0,0,0,0.65)] text-xs font-mono"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[min(70vh,22rem)] overflow-y-auto rounded-2xl border border-white/[0.12] bg-[#060910]/95 shadow-[0_16px_48px_rgba(0,0,0,0.65)] backdrop-blur-xl text-xs font-mono"
                   >
                     {SEASON_2_EPOCHS.map((epoch) => (
                       <button
@@ -388,7 +392,7 @@ export const Season2LeaderboardPanel: React.FC<{
                 )}
               </div>
               <div ref={sortMenuRef} className="relative z-20 flex flex-col gap-1.5 min-w-[160px] w-full sm:w-[200px]">
-                <label className="text-xs font-medium text-slate-400 font-sans" htmlFor="season2-sort-trigger">
+                <label className="font-sans text-xs font-medium text-slate-400" htmlFor="season2-sort-trigger">
                   Sort by
                 </label>
                 <button
@@ -401,7 +405,7 @@ export const Season2LeaderboardPanel: React.FC<{
                     setEpochMenuOpen(false);
                     setSortMenuOpen((open) => !open);
                   }}
-                  className="inline-flex items-center justify-between gap-3 rounded-md border border-white/[0.1] bg-[#0c1016] px-3 py-2 text-sm text-slate-100 shadow-sm hover:border-white/20 hover:bg-[#0e141c] transition-colors w-full"
+                  className="inline-flex w-full items-center justify-between gap-3 rounded-2xl border border-white/12 bg-[#080b12]/90 px-3 py-2.5 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm transition-colors hover:border-intuition-primary/35 hover:bg-[#0a1018]/95"
                 >
                   <span>{sortMetric === 'REALIZED_PNL' ? 'Realized PnL' : 'Realized ROI %'}</span>
                   <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
@@ -409,7 +413,7 @@ export const Season2LeaderboardPanel: React.FC<{
                 {sortMenuOpen && (
                   <div
                     role="listbox"
-                    className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-white/[0.12] bg-[#0a0f14] shadow-[0_12px_40px_rgba(0,0,0,0.65)] text-xs font-mono"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 rounded-2xl border border-white/[0.12] bg-[#060910]/95 shadow-[0_16px_48px_rgba(0,0,0,0.65)] backdrop-blur-xl text-xs font-mono"
                   >
                     <button
                       type="button"
@@ -446,7 +450,7 @@ export const Season2LeaderboardPanel: React.FC<{
           </div>
 
           {walletAddress && userHasEpochRow && !pnlLoading && (
-            <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-3">
+            <div className="rounded-2xl border border-intuition-primary/20 bg-intuition-primary/[0.06] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-intuition-primary font-display font-black text-lg tabular-nums">
@@ -504,28 +508,24 @@ export const Season2LeaderboardPanel: React.FC<{
             </div>
           )}
           {walletAddress && !userHasEpochRow && !pnlLoading && (
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-5 sm:px-6 mx-auto max-w-lg text-center space-y-2">
-              <p className="text-sm text-slate-300 font-sans leading-relaxed font-medium">
-                {pnlTop.length > 0
-                  ? 'Your wallet isn’t on this epoch’s board in the data we loaded.'
-                  : 'No epoch leaderboard rows from the index for this window yet.'}
+            <div className="mx-auto max-w-lg space-y-1 rounded-2xl border border-white/[0.08] bg-[#05070c]/80 px-4 py-4 text-center backdrop-blur-sm sm:px-5">
+              <p className="font-sans text-sm font-medium leading-relaxed text-slate-300">
+                {pnlTop.length > 0 ? 'No row for your wallet in this snapshot.' : 'No leaderboard rows for this window yet.'}
               </p>
-              <p className="text-xs text-slate-500 font-sans leading-relaxed">
-                {pnlTop.length > 0
-                  ? 'That usually means no realized PnL in this period yet, or your rank is below the fetched set. Trade during the epoch window to climb the list.'
-                  : 'The epoch may have just started, or on-chain PnL for this range hasn’t been indexed yet.'}
-              </p>
+              {pnlTop.length > 0 ? (
+                <p className="font-sans text-xs text-slate-500">Trade during the epoch or check the full board.</p>
+              ) : (
+                <p className="font-sans text-xs text-slate-500">Indexing may still be catching up.</p>
+              )}
             </div>
           )}
           {!walletAddress && (
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-5 sm:px-6 mx-auto max-w-lg text-center">
-              <p className="text-sm text-slate-400 font-sans leading-relaxed">
-                Connect a wallet to see your rank for this epoch.
-              </p>
+            <div className="mx-auto max-w-lg rounded-2xl border border-white/[0.08] bg-[#05070c]/70 px-4 py-4 text-center backdrop-blur-sm">
+              <p className="font-sans text-sm text-slate-400">Connect a wallet to see your epoch rank.</p>
             </div>
           )}
 
-          <div className="rounded-lg border border-white/[0.08] bg-[#080b10] overflow-hidden min-w-0">
+          <div className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#060910]/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md">
         <div className="overflow-x-auto overflow-y-visible">
           <table className="w-full text-left font-mono border-collapse min-w-[520px] text-xs sm:text-sm">
             <thead className="bg-black/50 border-b border-white/[0.07]">
@@ -613,7 +613,7 @@ export const Season2LeaderboardPanel: React.FC<{
                         </td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <div className="flex items-center gap-2 sm:gap-3">
-                            <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-slate-800 overflow-hidden flex-shrink-0 border border-white/10">
+                            <div className="flex h-8 w-8 shrink-0 overflow-hidden rounded-full border border-white/10 bg-slate-800 sm:h-12 sm:w-12">
                               <img
                                 src={e.account_image || `https://effigy.im/a/${e.account_id}.png`}
                                 alt=""
@@ -641,7 +641,7 @@ export const Season2LeaderboardPanel: React.FC<{
                           <Link
                             to={`/profile/${e.account_id}`}
                             onClick={playClick}
-                            className="inline-flex px-3 py-1.5 rounded-lg bg-intuition-primary/20 border border-intuition-primary/50 text-intuition-primary font-mono text-[10px] font-bold uppercase tracking-wider hover:bg-intuition-primary hover:text-black transition-colors"
+                            className="inline-flex rounded-full border border-intuition-primary/45 bg-intuition-primary/15 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-intuition-primary transition-colors hover:bg-intuition-primary hover:text-black"
                           >
                             Profile
                           </Link>
@@ -690,22 +690,22 @@ export const Season2LeaderboardPanel: React.FC<{
       )}
 
       {isHome && (
-        <div className="flex flex-wrap gap-4 items-center">
+        <div className="flex flex-wrap items-center gap-3">
           <Link
             to={HREF_SEASON2_PANEL}
             onClick={playClick}
-            className="group inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-gradient-to-r from-intuition-primary/20 to-intuition-secondary/20 border-2 border-intuition-primary/50 text-intuition-primary font-black font-mono text-sm uppercase tracking-[0.2em] hover:from-intuition-primary/30 hover:to-intuition-secondary/30 hover:border-intuition-primary hover:text-white hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300"
+            className="group inline-flex items-center gap-2 rounded-full border border-intuition-primary/45 bg-intuition-primary/10 px-5 py-3 font-mono text-xs font-black uppercase tracking-[0.15em] text-intuition-primary shadow-[0_0_24px_rgba(0,243,255,0.15)] backdrop-blur-sm transition-all hover:border-intuition-primary hover:bg-intuition-primary/20 hover:text-white hover:shadow-[0_0_32px_rgba(0,243,255,0.25)] sm:text-sm"
           >
-            Open Season 2 board
-            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+            Full board
+            <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />
           </Link>
           <Link
             to={HREF_NETWORK_PNL}
             onClick={playClick}
-            className="group inline-flex items-center gap-3 px-6 py-4 rounded-xl bg-amber-400/10 border-2 border-amber-400/50 text-amber-300 font-black font-mono text-sm uppercase tracking-[0.2em] hover:bg-amber-400/20 hover:border-amber-400 hover:text-amber-200 hover:shadow-[0_0_30px_rgba(251,191,36,0.2)] transition-all duration-300"
+            className="group inline-flex items-center gap-2 rounded-full border border-amber-400/45 bg-amber-400/10 px-5 py-3 font-mono text-xs font-black uppercase tracking-[0.15em] text-amber-200 shadow-[0_0_20px_rgba(251,191,36,0.12)] backdrop-blur-sm transition-all hover:bg-amber-400/18 hover:shadow-[0_0_28px_rgba(251,191,36,0.2)] sm:text-sm"
           >
-            <Trophy size={18} className="group-hover:scale-110 transition-transform" />
-            Network PnL top list
+            <Trophy size={17} className="transition-transform group-hover:scale-105" />
+            Network PnL
           </Link>
         </div>
       )}

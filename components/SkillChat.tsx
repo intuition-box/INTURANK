@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router-dom';
-import { Terminal, Send, Loader2, CheckCircle2, Zap, User, Bot, XCircle, ExternalLink, ShieldCheck, Layers } from 'lucide-react';
+import { Terminal, Send, Loader2, CheckCircle2, Zap, User, Bot, XCircle, ExternalLink, ShieldCheck, Layers, ChevronsDown } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { isAddress, isHex } from 'viem';
 import {
@@ -130,7 +130,7 @@ const DEFAULT_SKILL_MESSAGES: Message[] = [
 
 const SKILL_MD_COMPONENTS = {
     p: ({ children }: { children?: React.ReactNode }) => (
-        <p className="mb-2 last:mb-0 text-slate-300 leading-relaxed">{children}</p>
+        <p className="mb-2 last:mb-0 text-[13px] text-slate-300 leading-[1.65]">{children}</p>
     ),
     strong: ({ children }: { children?: React.ReactNode }) => (
         <strong className="font-semibold text-white">{children}</strong>
@@ -250,7 +250,31 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
     const [protocolReady, setProtocolReady] = useState<boolean | null>(null);
     const [enablingProtocol, setEnablingProtocol] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+    /** When true, new messages keep the view pinned to the bottom; false if user scrolled up to read. */
+    const stickToBottomRef = useRef(true);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+
+    const checkScrollPosition = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const nearBottom = gap < 100;
+        stickToBottomRef.current = nearBottom;
+        const scrollable = el.scrollHeight > el.clientHeight + 40;
+        setShowJumpToLatest(!nearBottom && scrollable);
+    }, []);
+
+    const jumpToLatest = useCallback(() => {
+        playClick();
+        const el = scrollRef.current;
+        if (!el) return;
+        stickToBottomRef.current = true;
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        requestAnimationFrame(() => {
+            checkScrollPosition();
+        });
+    }, [checkScrollPosition]);
 
     /** Grow textarea with content; cap height so long prompts scroll inside the box. */
     useEffect(() => {
@@ -291,13 +315,21 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
     }, [address]);
 
     useEffect(() => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-    }, [messages]);
+        if (!stickToBottomRef.current) return;
+        const el = scrollRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        requestAnimationFrame(() => checkScrollPosition());
+    }, [messages, loading, checkScrollPosition]);
+
+    useEffect(() => {
+        requestAnimationFrame(() => checkScrollPosition());
+    }, [checkScrollPosition]);
 
     const handleSend = async () => {
         if (!input.trim() || loading) return;
+
+        stickToBottomRef.current = true;
 
         const userMsg = input.trim();
         setInput('');
@@ -708,40 +740,41 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
 
     return (
         <div
-            className={`flex flex-col h-full min-h-0 max-h-full w-full min-w-0 bg-gradient-to-b from-[#080a10] to-[#050505] border-2 border-intuition-primary/25 rounded-3xl shadow-[0_0_48px_rgba(0,243,255,0.1),inset_0_1px_0_rgba(255,255,255,0.05)] overflow-hidden ${className}`}
+            className={`flex flex-col h-full min-h-0 max-h-full w-full min-w-0 bg-[#0b0d12] border border-white/[0.08] rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.45)] overflow-hidden ring-1 ring-white/[0.04] ${className}`}
         >
-            {/* Header */}
-            <div className="shrink-0 rounded-t-3xl bg-intuition-primary/10 border-b border-intuition-primary/30 p-3 sm:p-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                    <Terminal size={18} className="text-intuition-primary shrink-0" />
+            {/* Header — standard chat toolbar */}
+            <header className="shrink-0 flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4 border-b border-white/[0.06] bg-[#0f1117]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-intuition-primary/15 text-intuition-primary border border-intuition-primary/25">
+                        <Terminal size={17} strokeWidth={2} aria-hidden />
+                    </div>
                     <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-semibold text-white font-sans tracking-tight">Skill agent</span>
-                        <span className="text-xs text-slate-500 font-sans">Intuition Mainnet</span>
+                        <span className="text-sm font-semibold text-white font-sans tracking-tight leading-tight">Skill agent</span>
+                        <span className="text-[11px] text-slate-500 font-sans leading-tight mt-0.5">Intuition Mainnet · chain {CHAIN_ID}</span>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            playClick();
-                            try {
-                                localStorage.removeItem(SKILL_CHAT_STORAGE_KEY);
-                            } catch {
-                                /* ignore */
-                            }
-                            setMessages(DEFAULT_SKILL_MESSAGES);
-                            toast.info('Chat cleared');
-                        }}
-                        onMouseEnter={playHover}
-                        className="text-xs font-medium text-slate-500 hover:text-intuition-primary transition-colors px-2 py-1 font-sans"
-                    >
-                        Clear
-                    </button>
-                </div>
-            </div>
+                <button
+                    type="button"
+                    onClick={() => {
+                        playClick();
+                        try {
+                            localStorage.removeItem(SKILL_CHAT_STORAGE_KEY);
+                        } catch {
+                            /* ignore */
+                        }
+                        stickToBottomRef.current = true;
+                        setMessages(DEFAULT_SKILL_MESSAGES);
+                        toast.info('Chat cleared');
+                    }}
+                    onMouseEnter={playHover}
+                    className="shrink-0 text-xs font-medium text-slate-400 hover:text-white font-sans rounded-lg px-2.5 py-1.5 border border-transparent hover:border-white/10 hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/40"
+                >
+                    Clear chat
+                </button>
+            </header>
 
             {address && (
-                <div className="shrink-0 border-b border-white/10 px-4 py-2.5 sm:px-6 bg-black/60">
+                <div className="shrink-0 border-b border-white/[0.06] px-3 py-2 sm:px-4 bg-[#08090c]">
                     {protocolReady === null ? (
                         <p className="text-xs text-slate-500 font-sans">Checking permissions…</p>
                     ) : protocolReady ? (
@@ -784,27 +817,39 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 </div>
             )}
 
-            {/* Scroll only here: flex-1 + min-h-0 so the panel height stays fixed and old messages scroll up */}
-            <div 
-                ref={scrollRef}
-                className="min-h-0 flex-1 min-w-0 overflow-y-auto overflow-x-clip overscroll-y-contain p-4 sm:p-6 space-y-6 custom-scrollbar"
-            >
+            {/* Message list — scroll container; aria-live for screen readers */}
+            <div className="relative flex flex-1 min-h-0 min-w-0 flex-col">
+                <div
+                    ref={scrollRef}
+                    onScroll={checkScrollPosition}
+                    role="log"
+                    aria-relevant="additions"
+                    aria-label="Skill conversation"
+                    className="min-h-0 flex-1 min-w-0 overflow-y-auto overflow-x-clip overscroll-y-contain px-3 py-4 sm:px-4 sm:py-5 space-y-4 bg-[#060708] scroll-smooth [scrollbar-width:thin] [scrollbar-color:rgba(100,116,139,0.35)_transparent]"
+                >
                 {messages.map((m, i) => {
                     const otherTxPending = messages.some((mm, idx) => mm.txOutcome === 'pending' && idx !== i);
                     return (
-                    <div key={i} className={`flex w-full min-w-0 ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                        <div className={`flex gap-4 w-full min-w-0 max-w-[min(100%,56rem)] ${m.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                            <div className={`w-8 h-8 shrink-0 flex items-center justify-center border-2 ${m.role === 'user' ? 'border-intuition-primary text-intuition-primary' : 'border-[#ff1e6d] text-[#ff1e6d]'} rounded-xl bg-black/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]`}>
-                                {m.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+                    <div key={i} className={`flex w-full min-w-0 ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in duration-200`}>
+                        <div
+                            className={`flex gap-2.5 sm:gap-3 w-full min-w-0 ${m.role === 'user' ? 'flex-row-reverse max-w-[min(100%,28rem)] ml-auto' : 'max-w-[min(100%,40rem)]'}`}
+                        >
+                            <div
+                                className={`w-8 h-8 shrink-0 flex items-center justify-center rounded-full ${m.role === 'user' ? 'bg-intuition-primary/20 text-intuition-primary' : 'bg-white/[0.06] text-slate-300 border border-white/[0.08]'}`}
+                                aria-hidden
+                            >
+                                {m.role === 'user' ? <User size={15} strokeWidth={2} /> : <Bot size={15} strokeWidth={2} />}
                             </div>
                             <div className="min-w-0 flex-1 space-y-4">
-                                <div className={`p-4 max-w-full min-w-0 rounded-2xl ${m.role === 'user' ? 'bg-intuition-primary/10 border-intuition-primary/30' : 'bg-white/5 border-white/10'} border shadow-[0_8px_24px_rgba(0,0,0,0.35)]`}>
+                                <div
+                                    className={`px-3.5 py-3 sm:px-4 sm:py-3.5 max-w-full min-w-0 rounded-2xl ${m.role === 'user' ? 'rounded-br-md bg-intuition-primary/[0.14] border border-intuition-primary/25 text-white' : 'rounded-bl-md bg-[#12151c] border border-white/[0.07] text-slate-200'} shadow-sm`}
+                                >
                                     {m.role === 'assistant' ? (
-                                        <div className="text-xs leading-relaxed text-slate-300 font-sans">
+                                        <div className="text-[13px] leading-[1.65] text-slate-300 font-sans">
                                             <AssistantMessageBody content={m.content} />
                                             {m.llmProvider && (
                                                 <p
-                                                    className="mt-3 pt-2 border-t border-white/10 text-[10px] text-slate-500 font-mono tracking-wide"
+                                                    className="mt-3 pt-2.5 border-t border-white/[0.06] text-[10px] text-slate-500 font-mono tracking-wide"
                                                     title="Which API served this reply (Groq first; Gemini/OpenAI if fallback ran)."
                                                 >
                                                     Reply via:{' '}
@@ -819,7 +864,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                                             )}
                                         </div>
                                     ) : (
-                                        <div className="text-xs leading-relaxed font-mono text-white whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                                        <div className="text-[13px] leading-[1.65] font-sans text-white/95 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                                             {m.content}
                                         </div>
                                     )}
@@ -1071,21 +1116,50 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     );
                 })}
                 {loading && (
-                    <div className="flex justify-start w-full min-w-0">
-                        <div className="flex gap-4 items-center min-w-0 max-w-[min(100%,56rem)] text-slate-500 text-sm font-sans animate-pulse">
-                            <div className="w-8 h-8 flex items-center justify-center border-2 border-slate-700 rounded-xl bg-black/80">
-                                <Bot size={16} />
+                    <div className="flex justify-start w-full min-w-0" aria-live="polite" aria-busy="true">
+                        <div className="flex gap-2.5 sm:gap-3 items-center min-w-0 max-w-[min(100%,40rem)] text-slate-400 text-sm font-sans">
+                            <div className="w-8 h-8 flex items-center justify-center rounded-full bg-white/[0.06] border border-white/[0.08] text-slate-400" aria-hidden>
+                                <Bot size={15} strokeWidth={2} />
                             </div>
-                            <span>Thinking…</span>
+                            <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-white/[0.07] bg-[#12151c] px-4 py-2.5 shadow-sm">
+                                <span className="text-[13px] text-slate-400">Thinking</span>
+                                <span className="flex gap-1" aria-hidden>
+                                    {[0, 1, 2].map((dot) => (
+                                        <span
+                                            key={dot}
+                                            className="inline-block h-1.5 w-1.5 rounded-full bg-slate-500 animate-bounce"
+                                            style={{ animationDelay: `${dot * 0.12}s` }}
+                                        />
+                                    ))}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 )}
+                </div>
+
+                {showJumpToLatest && (
+                    <button
+                        type="button"
+                        onClick={jumpToLatest}
+                        onMouseEnter={playHover}
+                        className="pointer-events-auto absolute bottom-3 right-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-white/[0.12] bg-[#14161f]/95 px-3 py-1.5 text-[11px] font-semibold font-sans text-slate-200 shadow-lg backdrop-blur-md hover:bg-[#1a1d28] hover:border-intuition-primary/35 hover:text-intuition-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/45"
+                        aria-label="Jump to latest message"
+                    >
+                        <ChevronsDown size={14} className="shrink-0 opacity-90" aria-hidden />
+                        Jump to latest
+                    </button>
+                )}
             </div>
 
-            {/* Input Area */}
-            <div className="shrink-0 rounded-b-3xl p-4 bg-black/90 border-t border-white/10 backdrop-blur-sm">
-                <div className="relative flex items-end">
+            {/* Composer — fixed footer, standard enter-to-send */}
+            <div className="shrink-0 px-3 pt-2 pb-3 sm:px-4 sm:pb-4 bg-[#0a0c10] border-t border-white/[0.08]">
+                <div className="relative flex items-end gap-2">
+                    <label htmlFor="skill-chat-input" className="sr-only">
+                        Message to Skill agent
+                    </label>
                     <textarea
+                        id="skill-chat-input"
                         ref={inputRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
@@ -1097,19 +1171,31 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                             void handleSend();
                         }}
                         rows={1}
-                        placeholder="Ask anything, or describe an atom or triple to create…"
-                        className="w-full bg-white/5 border border-white/20 py-3 pl-4 pr-14 text-sm text-white font-sans focus:border-intuition-primary outline-none rounded-2xl placeholder:text-slate-600 min-h-[52px] max-h-[200px] resize-none overflow-y-auto leading-relaxed shadow-[inset_0_2px_8px_rgba(0,0,0,0.35)]"
+                        placeholder="Message…"
+                        autoComplete="off"
+                        className="w-full min-h-[48px] max-h-[200px] resize-none rounded-xl border border-white/[0.1] bg-[#12151c] py-3 pl-3.5 pr-[3.25rem] text-sm text-white font-sans leading-relaxed placeholder:text-slate-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)] transition-shadow focus:border-intuition-primary/45 focus:outline-none focus:ring-2 focus:ring-intuition-primary/25"
                     />
                     <button
                         type="button"
                         onClick={() => void handleSend()}
                         disabled={!input.trim() || loading}
-                        className="absolute right-2 bottom-2 p-2 text-intuition-primary hover:text-white disabled:opacity-40 transition-colors"
+                        aria-label="Send message"
+                        className="absolute right-1.5 bottom-1.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-intuition-primary/25 text-intuition-primary hover:bg-intuition-primary/40 disabled:pointer-events-none disabled:opacity-35 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/50"
                     >
-                        <Send size={18} />
+                        <Send size={17} strokeWidth={2} aria-hidden />
                     </button>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2 overflow-x-auto pb-1 scrollbar-none">
+                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 px-0.5">
+                    <p className="text-[10px] text-slate-600 font-sans select-none">
+                        <kbd className="rounded border border-white/10 bg-white/[0.04] px-1 py-px font-mono text-[9px] text-slate-500">Enter</kbd>
+                        {' '}to send ·{' '}
+                        <kbd className="rounded border border-white/10 bg-white/[0.04] px-1 py-px font-mono text-[9px] text-slate-500">Shift</kbd>
+                        +
+                        <kbd className="rounded border border-white/10 bg-white/[0.04] px-1 py-px font-mono text-[9px] text-slate-500">Enter</kbd>
+                        {' '}new line
+                    </p>
+                </div>
+                <div className="mt-2.5 flex flex-wrap gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
                     {[
                         { short: 'Create an atom', full: 'Create an atom called IntuRank Sandbox with 0.5 TRUST deposit' },
                         { short: 'Alice trusts Bob', full: 'Create a triple: subject Alice, predicate trusts, object Bob, deposit 0.5 TRUST' },
@@ -1121,7 +1207,7 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                             type="button"
                             title={suggestion.full}
                             onClick={() => setInput(suggestion.full)}
-                            className="shrink-0 px-3 py-2 bg-white/5 hover:bg-intuition-primary/15 border border-white/10 hover:border-intuition-primary/40 text-xs font-medium text-slate-400 hover:text-intuition-primary transition-all rounded-full font-sans max-w-[200px] truncate"
+                            className="shrink-0 px-2.5 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.14] text-[11px] font-medium text-slate-400 hover:text-slate-200 transition-colors rounded-lg font-sans max-w-[220px] truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/35"
                         >
                             {suggestion.short}
                         </button>

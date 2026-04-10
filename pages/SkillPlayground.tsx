@@ -9,7 +9,7 @@ import { CURRENCY_SYMBOL, PAGE_HERO_TITLE } from '../constants';
 /** Fixed-height shell: inner message list scrolls; outer height does not grow with message count. */
 const CHAT_SHELL =
     'flex flex-col min-h-0 rounded-3xl sm:rounded-[1.75rem] ' +
-    'border-2 border-intuition-primary/30 bg-[#06080f]/95 backdrop-blur-md p-1.5 sm:p-2 shadow-[0_0_72px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.04)] ' +
+    'border-2 border-intuition-primary/30 bg-[#05070d]/[0.97] backdrop-blur-xl backdrop-saturate-150 p-1.5 sm:p-2 shadow-[0_0_72px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-black/30 ' +
     'overflow-hidden ' +
     'h-[min(88dvh,calc(100dvh-7.5rem))] max-h-[min(88dvh,calc(100dvh-7.5rem))] ' +
     'sm:h-[min(86dvh,calc(100dvh-8.5rem))] sm:max-h-[min(86dvh,calc(100dvh-8.5rem))] ' +
@@ -89,7 +89,7 @@ const SkillPlayground: React.FC = () => {
                     </div>
 
                     <aside className="w-full xl:w-[min(100%,300px)] 2xl:w-[320px] shrink-0 xl:sticky xl:top-20 xl:self-start xl:max-h-[min(calc(100dvh-6rem),920px)] overflow-y-auto custom-scrollbar space-y-4">
-                        <div className="bg-black/80 border border-white/10 p-5 sm:p-6 rounded-2xl lg:rounded-3xl relative overflow-hidden group shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+                        <div className="bg-[#03050d]/[0.96] backdrop-blur-xl backdrop-saturate-150 border border-white/12 p-5 sm:p-6 rounded-2xl lg:rounded-3xl relative overflow-hidden group shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-black/35">
                             <div className="absolute -right-4 -top-4 opacity-[0.06] pointer-events-none group-hover:opacity-[0.1] transition-opacity">
                                 <Terminal size={88} className="text-intuition-primary" />
                             </div>
@@ -134,7 +134,7 @@ const SkillPlayground: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="bg-black/40 border border-white/10 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-intuition-primary/30 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                        <div className="bg-[#04060c]/[0.94] backdrop-blur-lg border border-white/12 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-intuition-primary/35 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                             <div className="flex items-center gap-3 mb-2">
                                 <div className="p-1.5 bg-intuition-primary/15 rounded-lg border border-intuition-primary/25">
                                     <Zap size={16} className="text-intuition-primary" />
@@ -146,7 +146,7 @@ const SkillPlayground: React.FC = () => {
                             </p>
                         </div>
 
-                        <div className="bg-black/40 border border-white/10 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-[#ff1e6d]/30 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                        <div className="bg-[#04060c]/[0.94] backdrop-blur-lg border border-white/12 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-[#ff1e6d]/35 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
                             <div className="flex items-center gap-3 mb-2">
                                 <div className="p-1.5 bg-[#ff1e6d]/10 rounded-lg border border-[#ff1e6d]/25">
                                     <ShieldCheck size={16} className="text-[#ff1e6d]" />
