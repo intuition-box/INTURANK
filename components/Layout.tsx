@@ -323,7 +323,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </Link>
 
-        <div className="flex-1 flex flex-col px-3 py-3 gap-4 overflow-y-auto overflow-x-hidden min-h-0 overscroll-contain">
+        <div className="flex-1 flex flex-col px-3 py-3 gap-4 overflow-y-auto overflow-x-clip min-h-0 overscroll-contain">
           <nav
             className="rounded-2xl border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.08] to-transparent p-2.5 space-y-2 shadow-[inset_0_1px_0_0_rgba(0,243,255,0.15)]"
             aria-label="Primary navigation"
@@ -455,7 +455,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 className="lg:hidden fixed inset-0 top-[4rem] z-[99] bg-black/80 backdrop-blur-sm animate-in fade-in duration-300"
                 aria-hidden
               />
-              <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_25px_80px_rgba(0,0,0,1)] animate-in slide-in-from-top-2 fade-in duration-500">
+              <div className="lg:hidden absolute w-full left-0 top-full z-[100] bg-black border-b-2 border-intuition-primary/20 max-h-[85vh] overflow-y-auto overflow-x-clip shadow-[0_25px_80px_rgba(0,0,0,1)] animate-in slide-in-from-top-2 fade-in duration-500">
                 <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
                   {ALL_MOBILE_NAV_ITEMS.map((item, index) => {
                     const ext = 'external' in item && item.external;
@@ -597,23 +597,22 @@ style={{
           )}
         </nav>
 
-        {/* Desktop top bar: actions only; z above main so dropdowns paint over content */}
-        <div className="hidden lg:flex h-16 shrink-0 items-center w-full border-b border-slate-800/60 bg-[#020308]/95 backdrop-blur-sm supports-[backdrop-filter]:bg-[#020308]/88 relative z-[100] overflow-visible">
-          {/* Full width (no max-w container) so actions sit flush to the main column’s right edge on wide screens */}
-          <div className="flex w-full min-w-0 items-center justify-end gap-2 sm:gap-3 pl-4 pr-[max(1rem,env(safe-area-inset-right))] lg:pr-8">
+        {/* Desktop top bar — IntuRank pill cluster: cyan rim + pink CTA, matches sidebar / mobile */}
+        <div className="hidden lg:flex h-14 shrink-0 items-center w-full border-b border-intuition-primary/10 bg-[#020308]/90 backdrop-blur-md supports-[backdrop-filter]:bg-[#020308]/82 relative z-[100] overflow-visible">
+          <div className="flex w-full min-w-0 items-center justify-end gap-3 pl-4 pr-[max(1rem,env(safe-area-inset-right))] lg:pr-8">
             {walletAddress && chainId !== CHAIN_ID && (
               <button
                 onClick={async () => {
                   playClick();
                   await switchNetwork();
                 }}
-                className="flex items-center gap-2 px-4 py-2.5 bg-intuition-danger text-white font-semibold font-sans text-xs rounded-full animate-pulse shadow-[0_0_15px_#ff1e6d] shrink-0"
+                className="flex items-center gap-2 px-4 py-2 bg-intuition-danger text-white text-[11px] font-semibold font-sans rounded-full shrink-0 shadow-[0_0_18px_rgba(255,30,109,0.35)] ring-1 ring-white/10 transition-transform active:scale-[0.98]"
               >
-                <AlertTriangle size={14} /> Wrong network
+                <AlertTriangle size={14} strokeWidth={2} /> Wrong network
               </button>
             )}
 
-            <div className="flex items-center gap-2 sm:gap-2.5 rounded-2xl border border-white/[0.07] bg-black/35 pl-2 pr-1.5 py-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] overflow-visible">
+            <div className="flex items-center gap-2 rounded-full border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.09] to-black/50 pl-2 pr-2 py-1.5 shadow-[inset_0_1px_0_0_rgba(0,243,255,0.18)] overflow-visible ring-1 ring-intuition-primary/15">
             <NotificationBar walletAddress={walletAddress ?? null} />
 
             <button
@@ -621,9 +620,12 @@ style={{
               onClick={handleNewSignal}
               onMouseEnter={playHover}
               aria-label="Create a new atom or claim"
-              className="group relative hidden lg:inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 min-h-[40px] text-xs font-semibold font-sans tracking-wide rounded-full bg-intuition-secondary text-white shadow-[0_0_24px_rgba(255,30,109,0.45)] hover:bg-white hover:text-intuition-secondary hover:shadow-[0_0_28px_rgba(255,255,255,0.15)] active:scale-[0.98] border border-transparent transition-all duration-200"
+              title="Create atom or claim"
+              className="hidden lg:inline-flex items-center gap-2 px-4 sm:px-5 py-2 min-h-0 text-xs font-semibold font-sans text-white rounded-full bg-intuition-secondary hover:brightness-110 active:scale-[0.98] border border-white/15 shadow-[0_0_22px_rgba(255,30,109,0.45)] hover:shadow-[0_0_32px_rgba(255,30,109,0.55)] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-intuition-secondary/50"
             >
-              <Plus size={17} className="shrink-0" aria-hidden /> Create atom or claim
+              <Plus size={16} strokeWidth={2.5} className="shrink-0" aria-hidden />
+              <span className="hidden xl:inline whitespace-nowrap">Create atom or claim</span>
+              <span className="xl:hidden">Create</span>
             </button>
 
             <div className="relative flex items-center">
@@ -634,8 +636,8 @@ style={{
                   onToggleDropdown={toggleDropdown}
                   dropdownRef={dropdownRef}
                 >
-                  <div className="absolute right-0 mt-3 w-72 bg-black/95 border border-intuition-primary/40 shadow-[0_16px_40px_rgba(0,0,0,0.75)] z-[110] rounded-3xl animate-dropdown-panel-in backdrop-blur-md">
-                      <div className="p-1 space-y-0.5 bg-[#080a12]/95 rounded-2xl">
+                  <div className="absolute right-0 mt-3 w-72 z-[110] rounded-3xl animate-dropdown-panel-in border border-intuition-primary/35 bg-[#03050d]/[0.97] shadow-[0_24px_60px_rgba(0,0,0,0.85),0_0_28px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl backdrop-saturate-150 ring-1 ring-black/40">
+                      <div className="p-1.5 space-y-0.5 rounded-[1.35rem] bg-gradient-to-b from-white/[0.07] to-[#03050d]">
                         <div className="px-4 py-3 border-b border-white/5 text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] mb-1">
                           Terminal Access
                         </div>
@@ -702,9 +704,9 @@ style={{
                 <button
                   onClick={openModal}
                   onMouseEnter={playHover}
-                  className="flex items-center gap-2 px-4 py-2.5 font-sans text-xs font-semibold tracking-wide rounded-full border bg-slate-950/80 border-slate-600/70 text-white hover:border-intuition-primary/70 hover:text-intuition-primary hover:bg-intuition-primary/5 transition-all duration-200"
+                  className="flex items-center gap-2 px-4 py-2 font-sans text-xs font-semibold rounded-full border border-intuition-primary/40 bg-intuition-primary/10 text-intuition-primary hover:bg-intuition-primary/20 hover:shadow-[0_0_20px_rgba(0,243,255,0.2)] transition-all"
                 >
-                  <Wallet size={16} className="text-intuition-primary shrink-0" />
+                  <Wallet size={16} className="shrink-0" strokeWidth={2} />
                   Connect wallet
                 </button>
               )}
@@ -715,13 +717,13 @@ style={{
 
         <main
           className={`flex-grow pt-16 lg:pt-0 retro-grid relative z-0 mobile-contain min-w-0 w-full max-w-full ${
-            pathname === '/documentation' ? 'overflow-x-visible' : 'overflow-x-hidden'
+            pathname === '/documentation' ? 'overflow-x-visible' : 'overflow-x-clip'
           }`}
         >
           <div
             key={location.pathname}
             className={`animate-page-enter min-h-full min-w-0 w-full ${
-              pathname === '/documentation' ? 'overflow-x-visible' : 'overflow-x-hidden'
+              pathname === '/documentation' ? 'overflow-x-visible' : 'overflow-x-clip'
             }`}
           >
             {children}

@@ -236,16 +236,16 @@ const NotificationBar: React.FC<NotificationBarProps> = ({ walletAddress }) => {
         type="button"
         onClick={() => { playClick(); setOpen((o) => !o); }}
         onMouseEnter={playHover}
-        className={`relative flex items-center justify-center min-w-[44px] min-h-[44px] w-10 h-10 rounded-2xl border-2 transition-all duration-300 ${
+        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
           open
-            ? 'border-intuition-primary bg-intuition-primary/10 text-intuition-primary shadow-[0_0_20px_rgba(0,243,255,0.2)]'
-            : 'border-slate-700/90 text-slate-400 hover:border-intuition-primary/50 hover:text-intuition-primary'
+            ? 'border-intuition-primary/60 bg-intuition-primary/15 text-intuition-primary shadow-[0_0_18px_rgba(0,243,255,0.25)]'
+            : 'border-intuition-primary/25 bg-black/35 text-slate-300 hover:border-intuition-primary/45 hover:text-white hover:bg-intuition-primary/5 hover:shadow-[0_0_16px_rgba(0,243,255,0.12)]'
         }`}
         aria-label="Activity on your holdings and people you follow"
       >
-        <Bell size={18} strokeWidth={2} />
+        <Bell size={16} strokeWidth={2} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center text-[10px] font-bold font-sans leading-none bg-intuition-secondary text-white rounded-full ring-2 ring-[#020308]">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center text-[9px] font-bold font-sans leading-none bg-intuition-secondary text-white rounded-full ring-2 ring-[#020308] shadow-[0_0_10px_rgba(255,30,109,0.5)]">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
