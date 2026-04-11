@@ -10,8 +10,48 @@ let isGlobalClaimsFetching = false;
 
 const LIST_PREDICATE_ID = "0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908fb1b0a7d067c3c3cc1f5";
 
-const fetchGraphQL = async (query: string, variables: any = {}, retries = 2): Promise<any> => {
-  const doFetch = async () => {
+/** In-flight dedupe + optional TTL cache to cut duplicate requests (React strict mode, LB panels, navigation). */
+const gqlInflight = new Map<string, Promise<any>>();
+const gqlResponseCache = new Map<string, { exp: number; data: any }>();
+const GQL_CACHE_MAX_ENTRIES = 96;
+
+function gqlRequestKey(query: string, variables: any): string {
+  let vs: string;
+  try {
+    vs = JSON.stringify(variables ?? {});
+  } catch {
+    vs = String(variables);
+  }
+  return `${query}\n${vs}`;
+}
+
+function gqlCacheSet(key: string, data: any, ttlMs: number) {
+  if (ttlMs <= 0) return;
+  while (gqlResponseCache.size >= GQL_CACHE_MAX_ENTRIES) {
+    const first = gqlResponseCache.keys().next().value;
+    if (first === undefined) break;
+    gqlResponseCache.delete(first);
+  }
+  gqlResponseCache.set(key, { exp: Date.now() + ttlMs, data });
+}
+
+/**
+ * @param ttlMs Optional cache TTL for successful responses (same query+variables). Skipped on retries.
+ */
+const fetchGraphQL = async (query: string, variables: any = {}, retries = 2, ttlMs?: number): Promise<any> => {
+  const key = gqlRequestKey(query, variables);
+
+  if (retries === 2 && ttlMs != null && ttlMs > 0) {
+    const hit = gqlResponseCache.get(key);
+    if (hit && hit.exp > Date.now()) return hit.data;
+  }
+
+  if (retries === 2) {
+    const pending = gqlInflight.get(key);
+    if (pending) return pending;
+  }
+
+  const exec = (async (): Promise<any> => {
     const response = await fetch(GRAPHQL_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -19,7 +59,7 @@ const fetchGraphQL = async (query: string, variables: any = {}, retries = 2): Pr
     });
     if ((response.status === 429 || response.status >= 500) && retries > 0) {
       await new Promise((r) => setTimeout(r, 1500 * (3 - retries)));
-      return fetchGraphQL(query, variables, retries - 1);
+      return fetchGraphQL(query, variables, retries - 1, undefined);
     }
     const result = await response.json();
     if (result.errors) {
@@ -27,9 +67,19 @@ const fetchGraphQL = async (query: string, variables: any = {}, retries = 2): Pr
       console.warn("GraphQL Query Error:", msg, result.errors);
       throw new Error(msg || "GraphQL error");
     }
-    return result.data;
-  };
-  return doFetch();
+    const data = result.data;
+    if (retries === 2 && ttlMs != null && ttlMs > 0) {
+      gqlCacheSet(key, data, ttlMs);
+    }
+    return data;
+  })();
+
+  if (retries === 2) {
+    gqlInflight.set(key, exec);
+    exec.finally(() => gqlInflight.delete(key));
+  }
+
+  return exec;
 };
 
 const normalize = (x: string) => x ? x.toLowerCase() : '';
@@ -167,7 +217,7 @@ export const getAllAgents = async (
       : '';
   const query = `query GetAgents($limit: Int!, $offset: Int!) { vaults(${wherePart}order_by: { total_assets: ${order} }, limit: $limit, offset: $offset) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
   try {
-    const vaultData = await fetchGraphQL(query, { limit, offset });
+    const vaultData = await fetchGraphQL(query, { limit, offset }, 2, 28_000);
     const allVaults = vaultData?.vaults ?? [];
     if (allVaults.length === 0) return { items: [], hasMore: false };
 
@@ -178,7 +228,7 @@ export const getAllAgents = async (
         triples(where: { term_id: { _in: $ids } }) { term_id counter_term_id creator { id label image } subject { label term_id data image type } predicate { label } object { label term_id data image type } }
     }`;
 
-    const res = await fetchGraphQL(dataQuery, { ids: termIds });
+    const res = await fetchGraphQL(dataQuery, { ids: termIds }, 2, 28_000);
     const atoms = res?.atoms || [];
     const triples = res?.triples || [];
 
@@ -225,7 +275,7 @@ export async function getAccountsByTermIds(ids: string[]): Promise<(Account | nu
 
   const vaultQ = `query ArenaPairVaults($ids: [String!]!) { vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count } }`;
   try {
-    const vaultData = await fetchGraphQL(vaultQ, { ids: unique });
+    const vaultData = await fetchGraphQL(vaultQ, { ids: unique }, 2, 22_000);
     const allVaults = vaultData?.vaults ?? [];
     if (allVaults.length === 0) return ids.map(() => null);
 
@@ -235,7 +285,7 @@ export async function getAccountsByTermIds(ids: string[]): Promise<(Account | nu
         triples(where: { term_id: { _in: $ids } }) { term_id counter_term_id creator { id label image } subject { label term_id data image type } predicate { label } object { label term_id data image type } }
     }`;
 
-    const res = await fetchGraphQL(dataQuery, { ids: unique });
+    const res = await fetchGraphQL(dataQuery, { ids: unique }, 2, 22_000);
     const atoms = res?.atoms || [];
     const triples = res?.triples || [];
 
@@ -296,7 +346,7 @@ export const getNewlyCreatedAtoms = async (limit = 20) => {
     }
   }`;
   try {
-    const res = await fetchGraphQL(q, { limit });
+    const res = await fetchGraphQL(q, { limit }, 2, 4_000);
     const events = res?.events ?? [];
     const seen = new Set<string>();
     const items: { id: string; termId: string; label: string; type: string; image?: string; creator?: any; createdAt: number }[] = [];
@@ -342,7 +392,7 @@ export const getNewlyCreatedAtoms = async (limit = 20) => {
       const vq = `query GetNewlyCreatedVaults($ids: [String!]!) {
         vaults(where: { term_id: { _in: $ids } }) { term_id total_assets total_shares current_share_price curve_id position_count }
       }`;
-      const vRes = await fetchGraphQL(vq, { ids });
+      const vRes = await fetchGraphQL(vq, { ids }, 2, 12_000);
       vaults = aggregateVaultData(vRes?.vaults ?? []);
     }
 
@@ -1155,7 +1205,7 @@ export const getAccountPnlCurrent = async (address: string) => {
   }`;
 
   try {
-    const res = await fetchGraphQL(q, { input: { account_id: address } });
+    const res = await fetchGraphQL(q, { input: { account_id: address } }, 2, 18_000);
     return res?.getAccountPnlCurrent ?? null;
   } catch (e) {
     return null;
@@ -1177,7 +1227,7 @@ export const getPnlLeaderboard = async (p_offset: number = 0, p_limit: number = 
   }`;
 
   try {
-    const res = await fetchGraphQL(q, { args: { p_offset, p_limit } });
+    const res = await fetchGraphQL(q, { args: { p_offset, p_limit } }, 2, 36_000);
     return res?.get_pnl_leaderboard ?? [];
   } catch (e) {
     return [];
@@ -1247,7 +1297,7 @@ export const getPnlLeaderboardPeriod = async (args: Record<string, unknown> = {}
     }
   }`;
   try {
-    const res = await fetchGraphQL(q, { args: args || {} });
+    const res = await fetchGraphQL(q, { args: args || {} }, 2, 42_000);
     const arr = res?.get_pnl_leaderboard_period ?? [];
     return limit != null ? arr.slice(0, limit) : arr;
   } catch (e) {
@@ -1271,7 +1321,7 @@ export const getPnlLeaderboardPeriodMinThreshold = async (args: Record<string, u
     }
   }`;
   try {
-    const res = await fetchGraphQL(q, { args: args || {} });
+    const res = await fetchGraphQL(q, { args: args || {} }, 2, 42_000);
     const arr = res?.get_pnl_leaderboard_period_min_threshold ?? [];
     return limit != null ? arr.slice(0, limit) : arr;
   } catch (e) {
@@ -1293,7 +1343,7 @@ export const getPnlLeaderboardPeriodAccount = async (accountId: string, args: Re
     }
   }`;
   try {
-    const res = await fetchGraphQL(q, { args: args || {} });
+    const res = await fetchGraphQL(q, { args: args || {} }, 2, 22_000);
     const arr = res?.get_pnl_leaderboard_period ?? [];
     if (!Array.isArray(arr) || arr.length === 0) return null;
     return arr.find((row: any) => String(row.account_id).toLowerCase() === accountId.toLowerCase()) ?? null;
@@ -1310,7 +1360,7 @@ export const getVaultsByIds = async (ids: string[]) => {
       triples(where: { term_id: { _in: $ids } }) { term_id counter_term_id creator { id label image } subject { label term_id data image type } predicate { label } object { label term_id data image type } }
   }`;
   try {
-    const res = await fetchGraphQL(q, { ids });
+    const res = await fetchGraphQL(q, { ids }, 2, 24_000);
     const aggregated = aggregateVaultData(res?.vaults || []);
     const atoms = res?.atoms || [];
     const triples = res?.triples || [];
@@ -1333,7 +1383,7 @@ export const getNetworkStats = async () => {
     positions_aggregate(where: { shares: { _gt: "0" } }) { aggregate { count } }
   }`;
   try {
-    const data = await fetchGraphQL(q);
+    const data = await fetchGraphQL(q, {}, 2, 50_000);
     const positionCount = data?.positions_aggregate?.aggregate?.count ?? 0;
     return {
       tvl: data?.vaults_aggregate?.aggregate?.sum?.total_assets || "0",
@@ -2051,12 +2101,12 @@ export interface PositionActivityNotification {
 
 /** Human-readable curve label for UI / notifications. */
 export function getCurveLabel(curveId: number | string | undefined): string {
-  if (curveId === undefined || curveId === null) return 'LINEAR';
+  if (curveId === undefined || curveId === null) return 'Linear';
   const id = typeof curveId === 'string' ? parseInt(curveId, 10) : curveId;
   // Protocol semantics: curve_id 1 = Linear, 2 = Offset Progressive
-  if (id === 1) return 'LINEAR';
-  if (id === 2) return 'OFFSET PROGRESSIVE';
-  return 'LINEAR';
+  if (id === 1) return 'Linear';
+  if (id === 2) return 'Progressive';
+  return 'Linear';
 }
 
 export const getActivityOnMyMarkets = async (
