@@ -1235,7 +1235,7 @@ const MarketDetail: React.FC = () => {
                         </button>
                         {([LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID] as const).map((cid) => (
                           <button key={cid} onClick={() => { playClick(); setSelectedCurveId(cid); }} className={`min-h-[40px] px-3 py-2 text-[9px] font-black font-mono transition-all rounded-full uppercase tracking-widest shrink-0 ${selectedCurveId === cid ? 'bg-white text-black shadow-glow-white' : 'text-slate-500 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10'}`}>
-                            {getCurveLabel(cid) === 'LINEAR' ? 'Linear' : 'Exponential'}
+                            {cid === LINEAR_CURVE_ID ? 'Linear' : 'Exponential'}
                           </button>
                         ))}
                       </div>
@@ -1272,7 +1272,7 @@ const MarketDetail: React.FC = () => {
                         })}
                     </div>
                     <div className="mt-4 text-[7px] text-slate-700 font-mono uppercase text-center tracking-[0.3em] opacity-60">
-                      {getCurveLabel(selectedCurveId) === 'LINEAR' ? 'Linear' : 'Exponential'} curve active
+                      {selectedCurveId === LINEAR_CURVE_ID ? 'Linear' : 'Exponential'} curve active
                     </div>
                 </div>
 
@@ -1316,7 +1316,7 @@ const MarketDetail: React.FC = () => {
                         <div className="mb-6 flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-bold text-slate-400">
-                              {getCurveLabel(selectedCurveId) === 'LINEAR' ? 'Linear' : 'Exponential'}
+                              {selectedCurveId === LINEAR_CURVE_ID ? 'Linear' : 'Exponential'}
                             </span>
                             <button type="button" onClick={() => { playClick(); setIsCurveInfoOpen(true); }} onMouseEnter={playHover} className="p-1 text-slate-500 hover:text-intuition-primary transition-colors" aria-label="How curves work">
                               <Info size={12} />
@@ -1464,7 +1464,7 @@ const MarketDetail: React.FC = () => {
                           const v = vaultsByCurve.find((x) => x.curve_id === cid);
                           const price = v ? calculateAgentPrice(v.total_assets, v.total_shares, v.current_share_price) : 0;
                           const mcap = v ? calculateMarketCap(v.total_assets, v.total_shares, v.current_share_price) : 0;
-                          const label = getCurveLabel(cid) === 'LINEAR' ? 'Linear' : 'Exponential';
+                          const label = cid === LINEAR_CURVE_ID ? 'Linear' : 'Exponential';
                           return (
                             <tr key={cid} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                               <td className="py-2.5 pr-2">

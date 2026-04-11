@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Search, RefreshCw, ChevronDown, ListFilter, Terminal, Wifi, ShieldCheck, Zap, Brain, Sparkles, TrendingDown, TrendingUp, UserPlus } from 'lucide-react';
+import { Activity, Search, RefreshCw, ChevronDown, ListFilter, Terminal, Wifi, ShieldCheck, Zap, Brain, TrendingDown, TrendingUp, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { getGlobalActivity, getActivityOnMyMarkets, getActivityBySenderIds, getUserPositions, getUserHistory, getCurveLabel, type PositionActivityNotification } from '../services/graphql';
@@ -45,7 +45,7 @@ const Feed: React.FC = () => {
     const [hasMore, setHasMore] = useState(true);
     const [isSortOpen, setIsSortOpen] = useState(false);
     const [activeSort, setActiveSort] = useState<SortOption>('Newest');
-    const [aresPulse, setAresPulse] = useState<string>('SYNCHRONIZING_NEURAL_SENSORS...');
+    const [aresPulse, setAresPulse] = useState<string>('Loading a quick summary of recent activity…');
     const [isAresLoading, setIsAresLoading] = useState(false);
     
     const PAGE_SIZE = 40;
@@ -56,7 +56,7 @@ const Feed: React.FC = () => {
         setIsAresLoading(true);
         try {
             if (!getGroqApiKey() && !getGeminiApiKey() && !getOpenAiApiKey()) {
-                setAresPulse("NEURAL_UPLINK_FRAGMENTED_STANDBY");
+                setAresPulse('Add an API key in your environment to see an AI summary here. The activity list below is always live.');
                 setIsAresLoading(false);
                 return;
             }
@@ -67,17 +67,15 @@ const Feed: React.FC = () => {
                 : 'No recent activity detected.';
 
             const prompt = `
-                Analyze these recent semantic graph activities: [${summary}]
-                Role: Tactical Graph Architect.
-                Output: One punchy, aggressive cyberpunk sentence summarizing the "Vibe" or "Trend". 
-                Keywords: Ingress, Arbitrage, Dominance, Liquidity, Neural Shift.
-                Format: ALL CAPS, Max 20 words. No emojis.
+                Here are recent market activities on a trust graph: [${summary}]
+                Write ONE short sentence in plain English describing the overall trend or what stands out (e.g. volume, buys vs sells, notable names).
+                Rules: sentence case, max 22 words, no ALL CAPS, no sci-fi jargon, no emojis, no quotes around the sentence.
             `;
 
             const { text } = await generateSimpleLlmCompletion(prompt);
-            setAresPulse(text.trim() || "EQUILIBRIUM_MAINTAINED_IN_SECTOR_04");
+            setAresPulse(text.trim() || 'Recent activity is flowing normally across the network.');
         } catch (e) {
-            setAresPulse("NEURAL_UPLINK_FRAGMENTED_STANDBY");
+            setAresPulse('Couldn’t generate a summary right now. The feed below is up to date.');
         } finally {
             setIsAresLoading(false);
         }
@@ -114,7 +112,7 @@ const Feed: React.FC = () => {
 
             if (data.items.length < PAGE_SIZE) setHasMore(false);
         } catch (e) {
-            console.warn("[ARES_CORE] ACTIVITY_FETCH_FAILURE:", e);
+            console.warn('[Feed] activity fetch failed:', e);
         } finally {
             setLoading(false);
             setIsSyncing(false);
@@ -264,56 +262,54 @@ const Feed: React.FC = () => {
             <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12 border-b border-white/10 pb-10">
                 <div className="relative min-w-0 max-w-3xl space-y-3">
                     <div className="flex items-start gap-4">
-                        <div className="w-14 h-14 shrink-0 rounded-2xl bg-black border border-intuition-primary/40 flex items-center justify-center shadow-[0_0_24px_rgba(0,243,255,0.15)]">
+                        <div className="w-14 h-14 shrink-0 rounded-3xl bg-black/80 border border-intuition-primary/35 flex items-center justify-center shadow-[0_0_28px_rgba(0,243,255,0.12)] backdrop-blur-sm">
                             <Activity size={28} className="text-intuition-primary" />
                         </div>
                         <div className="min-w-0 space-y-2">
-                            <p className={PAGE_HERO_EYEBROW}>Network activity</p>
-                            <h1 className={PAGE_HERO_TITLE}>Activity</h1>
-                            <p className={`${PAGE_HERO_BODY} max-w-2xl`}>
-                                Live feed of positions, deposits, and graph events. Follow how capital moves across the trust
-                                graph.
+                            <p className={PAGE_HERO_EYEBROW}>Activity</p>
+                            <h1 className={PAGE_HERO_TITLE}>Live feed</h1>
+                            <p className={`${PAGE_HERO_BODY} max-w-2xl font-sans`}>
+                                Trades, deposits, and new claims across the network—plus your holdings, follows, and wallet
+                                history in the sidebar.
                             </p>
                         </div>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end shrink-0">
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 font-sans">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200 font-sans backdrop-blur-sm">
                         <span className="h-1.5 w-1.5 rounded-full bg-intuition-success animate-pulse" aria-hidden />
-                        Live index
+                        Live
                     </span>
                 </div>
             </div>
 
-            {/* ARES_PULSE Tactical Ticker */}
-            <div className="mb-10 p-1 rounded-2xl bg-gradient-to-r from-intuition-primary/20 via-intuition-secondary/20 to-intuition-primary/20 shadow-2xl">
-                <div className="bg-black p-4 sm:p-6 flex flex-col md:flex-row items-center gap-4 sm:gap-6 md:gap-8 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-                    <div className="flex items-center gap-4 shrink-0">
-                        <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-intuition-primary shadow-inner">
-                            <Brain size={24} className="animate-pulse" />
+            {/* Summary strip — plain-English AI blurb + refresh */}
+            <div className="mb-10 rounded-[1.75rem] border border-intuition-primary/20 bg-[#05070c]/90 p-1 shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl ring-1 ring-white/[0.04]">
+                <div className="rounded-[1.6rem] bg-[#030508]/95 p-4 sm:p-6 flex flex-col md:flex-row items-stretch md:items-center gap-4 sm:gap-6 md:gap-8 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04] pointer-events-none rounded-[1.6rem]" />
+                    <div className="flex items-center gap-4 shrink-0 relative z-[1]">
+                        <div className="w-12 h-12 rounded-2xl bg-intuition-primary/10 border border-intuition-primary/25 flex items-center justify-center text-intuition-primary">
+                            <Brain size={22} className="opacity-90" />
                         </div>
                         <div>
-                            <div className="text-[10px] font-bold text-intuition-primary uppercase tracking-wider">ARES pulse</div>
-                            <div className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                <Sparkles size={10} className="text-intuition-secondary" /> Neural dynamics
-                            </div>
+                            <div className="text-xs font-semibold text-intuition-primary font-sans">At a glance</div>
+                            <div className="text-[11px] text-slate-400 font-sans mt-0.5">Short summary of recent activity</div>
                         </div>
                     </div>
-                    <div className="flex-1 px-4 border-l-2 border-white/5 py-1">
-                        <p className={`text-sm font-black font-mono tracking-tight uppercase transition-all duration-700 ${isAresLoading ? 'opacity-30 blur-sm' : 'opacity-100'}`}>
-                            <span className="text-intuition-primary mr-2">{">>"}</span>
-                            <span className="text-white text-glow-white italic">{aresPulse}</span>
-                            <span className="inline-block w-2 h-4 bg-intuition-primary ml-2 animate-pulse"></span>
+                    <div className="flex-1 md:border-l md:border-white/[0.08] md:pl-6 py-1 min-w-0 relative z-[1]">
+                        <p className={`text-sm font-sans text-slate-100 leading-relaxed transition-all duration-500 ${isAresLoading ? 'opacity-40' : 'opacity-100'}`}>
+                            {aresPulse}
+                            <span className="inline-block w-0.5 h-4 bg-intuition-primary ml-1.5 align-middle animate-pulse rounded-sm" aria-hidden />
                         </p>
                     </div>
                     <button 
+                        type="button"
                         onClick={handleForceRecon}
                         disabled={loading}
                         onMouseEnter={playHover}
-                        className="px-8 py-3 rounded-xl bg-white/5 border-2 border-white/10 hover:border-intuition-primary hover:text-intuition-primary transition-all duration-300 text-[9px] font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="shrink-0 px-6 py-3 rounded-2xl bg-white/[0.06] border border-white/10 hover:border-intuition-primary/50 hover:bg-intuition-primary/10 text-slate-100 font-sans text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed relative z-[1]"
                     >
-                        {loading ? 'REFRESHING...' : 'FORCE_RECON'}
+                        {loading ? 'Refreshing…' : 'Refresh feed'}
                     </button>
                 </div>
             </div>
@@ -322,43 +318,41 @@ const Feed: React.FC = () => {
             <div className="mb-14 grid grid-cols-1 xl:grid-cols-3 gap-8">
                 <div className="xl:col-span-1 space-y-5">
                     {/* Header card */}
-                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="px-5 py-4 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
+                    <div className="rounded-3xl border border-white/[0.08] bg-[#05070c]/90 shadow-xl overflow-hidden backdrop-blur-md ring-1 ring-black/40">
+                        <div className="px-5 py-4 border-b border-white/[0.06] bg-white/[0.03] flex items-center justify-between gap-4">
                             <div>
-                                <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-1 flex items-center gap-2">
-                                    <Zap size={12} className="text-intuition-secondary" /> Activity feed
+                                <div className="text-xs font-semibold text-slate-300 font-sans mb-1 flex items-center gap-2">
+                                    <Zap size={14} className="text-intuition-secondary shrink-0" /> For your wallet
                                 </div>
-                                <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-[0.25em]">
-                                    YOUR GRAPH SIGNALS
-                                </h2>
-                                <p className="text-[9px] font-mono text-slate-500 mt-1 uppercase tracking-wider">
-                                    Loads on page load · Enable email alerts for notifications when away
+                                <p className="text-[12px] text-slate-500 font-sans leading-snug">
+                                    Holdings, people you follow, and your own trades. Refreshes when you open the page; use email
+                                    alerts to get notices when you’re away.
                                 </p>
                             </div>
                         </div>
                     </div>
 
                     {/* Card 1: Holdings activity */}
-                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
-                            <span className="text-[10px] font-mono text-slate-100 uppercase tracking-[0.25em]">
-                                Holdings activity
+                    <div className="rounded-3xl border border-white/[0.08] bg-[#05070c]/90 shadow-xl overflow-hidden backdrop-blur-md ring-1 ring-black/40">
+                        <div className="px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.03] flex items-center justify-between gap-4">
+                            <span className="text-xs font-semibold text-slate-200 font-sans">
+                                On your claims
                             </span>
                         </div>
                         <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
                             {!walletAddress && (
-                                <div className="px-4 py-6 text-[11px] font-mono text-slate-400 uppercase tracking-widest text-center">
-                                    Connect your wallet to see activity on your claims.
+                                <div className="px-4 py-6 text-sm font-sans text-slate-400 text-center leading-relaxed">
+                                    Connect a wallet to see activity on markets you hold.
                                 </div>
                             )}
                             {walletAddress && personalLoading && holdingsItems.length === 0 && (
-                                <div className="flex items-center justify-center py-6 text-slate-400 text-[10px] font-mono uppercase tracking-widest">
-                                    <RefreshCw size={16} className="animate-spin mr-2" /> Synchronizing…
+                                <div className="flex items-center justify-center py-6 text-slate-400 text-sm font-sans">
+                                    <RefreshCw size={16} className="animate-spin mr-2 shrink-0" /> Loading…
                                 </div>
                             )}
                             {walletAddress && !personalLoading && holdingsItems.length === 0 && (
-                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
-                                    No recent activity detected on your holdings.
+                                <div className="px-4 py-4 text-sm font-sans text-slate-500 text-center">
+                                    No recent activity on your claims yet.
                                 </div>
                             )}
                             {walletAddress && holdingsItems.slice(0, 15).map((n) => {
@@ -367,7 +361,7 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={n.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-slate-800 hover:border-intuition-primary/50 hover:bg-white/5 transition-all duration-300 group motion-hover-lift"
+                                        className="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-white/[0.08] hover:border-intuition-primary/40 hover:bg-white/[0.04] transition-all duration-300 group motion-hover-lift"
                                     >
                                         <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
@@ -424,22 +418,22 @@ const Feed: React.FC = () => {
                     </div>
 
                     {/* Card 2: People you follow */}
-                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
-                            <span className="text-[10px] font-mono text-amber-300 uppercase tracking-[0.25em] flex items-center gap-1">
-                                <UserPlus size={10} /> People you follow
+                    <div className="rounded-3xl border border-white/[0.08] bg-[#05070c]/90 shadow-xl overflow-hidden backdrop-blur-md ring-1 ring-black/40">
+                        <div className="px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.03] flex items-center justify-between gap-4">
+                            <span className="text-xs font-semibold text-amber-200/95 font-sans flex items-center gap-2">
+                                <UserPlus size={14} className="shrink-0 opacity-90" /> People you follow
                             </span>
                             {walletAddress && (
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest tabular-nums" title="Accounts you follow">
-                                        Following: {followsCount}
+                                    <span className="text-[11px] font-sans text-slate-500 tabular-nums" title="Accounts you follow">
+                                        {followsCount} following
                                     </span>
                                     <button
                                         type="button"
                                         onClick={() => { playClick(); fetchPersonal(); }}
                                         onMouseEnter={playHover}
                                         disabled={personalLoading}
-                                        className="p-1.5 rounded-lg border border-slate-600 text-slate-400 hover:text-amber-400 hover:border-amber-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-amber-300 hover:border-amber-400/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                         title="Refresh follow activity"
                                         aria-label="Refresh"
                                     >
@@ -450,22 +444,22 @@ const Feed: React.FC = () => {
                         </div>
                         <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
                             {!walletAddress && (
-                                <div className="px-4 py-6 text-[11px] font-mono text-slate-400 uppercase tracking-widest text-center">
-                                    Connect your wallet and follow accounts to see their trades.
+                                <div className="px-4 py-6 text-sm font-sans text-slate-400 text-center leading-relaxed">
+                                    Connect a wallet, then follow people from their profiles to see their trades here.
                                 </div>
                             )}
                             {walletAddress && personalLoading && followItems.length === 0 && (
-                                <div className="flex items-center justify-center py-6 text-slate-400 text-[10px] font-mono uppercase tracking-widest">
-                                    <RefreshCw size={16} className="animate-spin mr-2" /> Synchronizing…
+                                <div className="flex items-center justify-center py-6 text-slate-400 text-sm font-sans">
+                                    <RefreshCw size={16} className="animate-spin mr-2 shrink-0" /> Loading…
                                 </div>
                             )}
                             {walletAddress && !personalLoading && followItems.length === 0 && (
-                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center space-y-2">
+                                <div className="px-4 py-4 text-sm font-sans text-slate-500 text-center space-y-2 leading-relaxed">
                                     {followsCount === 0 ? (
                                         <>
-                                            <p>Follow accounts from their profiles to see their trades here.</p>
-                                            <Link to="/markets" onClick={playClick} className="inline-flex items-center gap-1 text-intuition-primary hover:text-intuition-secondary transition-colors mt-2">
-                                                Browse markets <Activity size={10} />
+                                            <p>Follow someone from their profile to see their activity here.</p>
+                                            <Link to="/markets" onClick={playClick} className="inline-flex items-center gap-1.5 text-intuition-primary hover:text-intuition-secondary transition-colors mt-1 font-medium">
+                                                Browse markets <Activity size={14} />
                                             </Link>
                                         </>
                                     ) : (
@@ -479,15 +473,15 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={n.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 border border-slate-800 hover:border-amber-400/70 hover:bg-amber-500/5 transition-all duration-200 group motion-hover-lift"
+                                        className="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-white/[0.08] hover:border-amber-400/50 hover:bg-amber-500/[0.06] transition-all duration-200 group motion-hover-lift"
                                     >
                                         <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                                         </span>
                                         <div className="min-w-0 flex-1">
                                             <p className="text-[11px] font-bold font-mono text-white leading-tight">
-                                                <span className="inline-flex items-center gap-1 mr-1 text-amber-300/90 text-[9px] border border-amber-500/60 px-1 py-0.5 rounded-xl" title="Someone you follow">
-                                                    <UserPlus size={9} /> FOLLOW
+                                                <span className="inline-flex items-center gap-1 mr-1 text-amber-200/95 text-[10px] font-sans font-medium border border-amber-500/40 px-2 py-0.5 rounded-full" title="Someone you follow">
+                                                    <UserPlus size={10} /> Following
                                                 </span>
                                                 <span className="font-black text-intuition-primary">{n.senderLabel}</span>
                                                 {' '}
@@ -539,26 +533,26 @@ const Feed: React.FC = () => {
                     </div>
 
                     {/* Card 3: Your actions */}
-                    <div className="bg-black border border-slate-900 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="px-5 py-3 border-b border-slate-800 bg-white/5 flex items-center justify-between gap-4">
-                            <span className="text-[10px] font-mono text-slate-100 uppercase tracking-[0.25em] flex items-center gap-1">
-                                <ShieldCheck size={10} className="text-intuition-success" /> Your actions
+                    <div className="rounded-3xl border border-white/[0.08] bg-[#05070c]/90 shadow-xl overflow-hidden backdrop-blur-md ring-1 ring-black/40">
+                        <div className="px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.03] flex items-center justify-between gap-4">
+                            <span className="text-xs font-semibold text-slate-200 font-sans flex items-center gap-2">
+                                <ShieldCheck size={14} className="text-intuition-success shrink-0" /> Your trades
                             </span>
                         </div>
                         <div className="max-h-[260px] overflow-y-auto custom-scrollbar px-3 py-3 space-y-2">
                             {!walletAddress && (
-                                <div className="px-4 py-6 text-[11px] font-mono text-slate-400 uppercase tracking-widest text-center">
-                                    Connect your wallet to see your own buys, sells, and creations.
+                                <div className="px-4 py-6 text-sm font-sans text-slate-400 text-center leading-relaxed">
+                                    Connect a wallet to see your buys, sells, and new claims.
                                 </div>
                             )}
                             {walletAddress && ownLoading && ownHistory.length === 0 && (
-                                <div className="flex items-center justify-center py-6 text-slate-400 text-[10px] font-mono uppercase tracking-widest">
-                                    <RefreshCw size={16} className="animate-spin mr-2" /> Loading your history…
+                                <div className="flex items-center justify-center py-6 text-slate-400 text-sm font-sans">
+                                    <RefreshCw size={16} className="animate-spin mr-2 shrink-0" /> Loading your history…
                                 </div>
                             )}
                             {walletAddress && !ownLoading && ownHistory.length === 0 && (
-                                <div className="px-4 py-4 text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
-                                    No recent buys, sells, or creations.
+                                <div className="px-4 py-4 text-sm font-sans text-slate-500 text-center">
+                                    No recent trades or claims yet.
                                 </div>
                             )}
                             {walletAddress && ownHistory.slice(0, 20).map((tx) => {
@@ -567,7 +561,7 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={tx.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 border border-slate-800 hover:border-intuition-primary/60 hover:bg-white/5 transition-all duration-200 group motion-hover-lift"
+                                        className="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-white/[0.08] hover:border-intuition-primary/40 hover:bg-white/[0.04] transition-all duration-200 group motion-hover-lift"
                                     >
                                         <span className={`flex-shrink-0 mt-0.5 ${isRedeem ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {isRedeem ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
@@ -613,38 +607,42 @@ const Feed: React.FC = () => {
 
             {/* Action Bar */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-5 mb-8">
-                <div className="flex-1 relative group p-[2px] bg-slate-900 rounded-xl focus-within:bg-intuition-primary/40 transition-colors">
-                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-intuition-primary transition-colors">
+                <div className="flex-1 relative group p-[1px] rounded-2xl bg-gradient-to-r from-white/[0.08] to-white/[0.04] focus-within:from-intuition-primary/35 focus-within:to-intuition-primary/15 transition-colors">
+                    <div className="relative rounded-2xl bg-[#080a10]">
+                    <div className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-intuition-primary transition-colors pointer-events-none">
                         <Search size={18} />
                     </div>
                     <input 
                         type="text" 
-                        placeholder="Search by wallet, node or claim…" 
-                        className="w-full bg-[#050505] py-3 sm:py-4 pl-12 sm:pl-14 pr-4 sm:pr-10 text-white font-mono text-xs sm:text-sm focus:outline-none placeholder-slate-500 uppercase tracking-wider rounded-xl min-h-[42px]"
+                        placeholder="Search by wallet, name, or claim…" 
+                        className="w-full bg-transparent py-3.5 sm:py-4 pl-12 sm:pl-14 pr-4 sm:pr-6 text-white font-sans text-sm focus:outline-none placeholder-slate-500 rounded-2xl min-h-[48px]"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                    <button className="flex items-center gap-2 sm:gap-3 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 border-slate-800 text-slate-300 hover:text-white hover:border-white transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl group relative overflow-hidden">
+                <div className="flex items-center gap-3">
+                    <button type="button" className="flex items-center gap-2 min-h-[48px] px-5 py-3 bg-white/[0.04] border border-white/10 text-slate-200 hover:text-white hover:border-white/20 transition-all text-sm font-sans font-medium rounded-2xl">
                         <ListFilter size={16} className="shrink-0" /> <span className="hidden sm:inline">Filter</span>
                     </button>
                     
                     <div className="relative min-w-0 flex-1 sm:flex-initial">
                         <button 
+                            type="button"
                             onClick={() => { playClick(); setIsSortOpen(!isSortOpen); }}
-                            className={`w-full sm:w-auto flex items-center justify-between gap-4 sm:gap-8 min-h-[40px] px-4 sm:px-6 md:px-8 py-3 md:py-4 bg-black border-2 transition-all text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl min-w-0 sm:min-w-[180px] md:min-w-[220px] ${isSortOpen ? 'border-intuition-primary text-white shadow-glow-blue' : 'border-slate-800 text-slate-300'}`}
+                            className={`w-full sm:w-auto flex items-center justify-between gap-3 min-h-[48px] px-5 py-3 bg-white/[0.04] border transition-all text-sm font-sans font-medium rounded-2xl min-w-0 sm:min-w-[200px] ${isSortOpen ? 'border-intuition-primary text-white shadow-[0_0_20px_rgba(0,243,255,0.12)]' : 'border-white/10 text-slate-300'}`}
                         >
-                            {activeSort} <ChevronDown size={14} className={`transition-transform duration-500 ${isSortOpen ? 'rotate-180' : ''}`} />
+                            Sort: {activeSort} <ChevronDown size={16} className={`shrink-0 transition-transform duration-300 ${isSortOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {isSortOpen && (
-                            <div className="absolute right-0 top-full mt-2 w-full bg-black border-2 border-intuition-primary/40 shadow-[0_0_80px_rgba(0,0,0,1)] z-[100] p-1 rounded-xl animate-in fade-in slide-in-from-top-3 duration-300">
+                            <div className="absolute right-0 top-full mt-2 w-full border border-white/10 bg-[#0a0c12]/98 backdrop-blur-xl shadow-2xl z-[100] p-1.5 rounded-2xl">
                                 {(['Newest', 'Oldest', 'Highest Volume'] as SortOption[]).map((opt) => (
                                     <button 
                                         key={opt}
+                                        type="button"
                                         onClick={() => { setActiveSort(opt); setIsSortOpen(false); playClick(); }}
-                                        className={`w-full min-h-[44px] px-4 sm:px-6 py-3 sm:py-4 text-left text-sm font-bold uppercase tracking-wider transition-all hover:bg-intuition-primary hover:text-black ${activeSort === opt ? 'text-intuition-primary bg-white/5' : 'text-slate-300'}`}
+                                        className={`w-full min-h-[44px] px-4 py-3 text-left text-sm font-sans rounded-xl transition-all hover:bg-intuition-primary/15 hover:text-white ${activeSort === opt ? 'text-intuition-primary bg-white/[0.06]' : 'text-slate-300'}`}
                                     >
                                         {opt}
                                     </button>
@@ -657,8 +655,8 @@ const Feed: React.FC = () => {
 
             {/* Activity Feed Container */}
             <div className="relative min-h-[600px] z-10">
-                <div className="flex items-center gap-3 text-slate-400 font-bold text-xs tracking-wider uppercase mb-6 px-1">
-                    <Wifi size={12} className="animate-pulse" /> Live stream · Sector 04
+                <div className="flex items-center gap-2 text-slate-400 text-sm font-sans font-medium mb-6 px-1">
+                    <Wifi size={14} className="text-intuition-success shrink-0 animate-pulse" aria-hidden /> All activity
                 </div>
 
                 {loading && events.length === 0 ? (
@@ -670,16 +668,16 @@ const Feed: React.FC = () => {
                         className="absolute inset-0 bg-[#020308]/85 backdrop-blur-[2px]"
                     />
                 ) : filteredEvents.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-48 border-2 border-dashed border-slate-900 bg-black/40 rounded-xl relative group">
+                    <div className="flex flex-col items-center justify-center py-48 border border-dashed border-white/10 bg-white/[0.02] rounded-3xl relative group backdrop-blur-sm">
                         <div className="absolute inset-0 bg-intuition-danger/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <Zap size={64} className="text-slate-800 mb-8 opacity-40 group-hover:text-intuition-danger transition-colors" />
                         <div className="text-center space-y-2">
-                            <span className="text-sm font-bold font-mono text-slate-400 uppercase tracking-wider group-hover:text-white transition-colors">No results</span>
-                            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">No activity matches your search.</p>
+                            <span className="text-base font-sans font-semibold text-slate-300 group-hover:text-white transition-colors">No matches</span>
+                            <p className="text-sm text-slate-500 font-sans">Try another wallet, name, or claim.</p>
                         </div>
                     </div>
                 ) : (
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-1.5">
                         {filteredEvents.map((ev, i) => (
                             <div key={ev.id + i} className="animate-in fade-in slide-in-from-right-2 duration-500 fill-mode-both" style={{ animationDelay: `${Math.min(i * 30, 400)}ms` }}>
                                 <ActivityRow event={ev} />
@@ -697,11 +695,11 @@ const Feed: React.FC = () => {
                         </div>
                     ) : !hasMore && events.length > 0 && (
                         <div className="flex flex-col items-center gap-6 opacity-80">
-                            <div className="w-10 h-10 bg-black border border-slate-700 flex items-center justify-center text-slate-400">
+                            <div className="w-11 h-11 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-slate-500">
                                 <Terminal size={18} />
                             </div>
                             <div className="text-center space-y-2">
-                                <span className="text-sm font-bold font-mono text-slate-400 uppercase tracking-wider">End of feed</span>
+                                <span className="text-sm font-sans font-medium text-slate-500">You’re caught up</span>
                             </div>
                         </div>
                     )}
@@ -710,15 +708,6 @@ const Feed: React.FC = () => {
                 </div>
             </div>
 
-            {/* Sub-Watermark HUD elements */}
-            <div className="fixed bottom-12 right-12 z-50 pointer-events-none opacity-40 hidden 2xl:block">
-                <div className="flex flex-col items-end gap-3 font-mono">
-                    <div className="flex items-center gap-2 text-[11px] font-black text-slate-500 uppercase tracking-[0.4em]">
-                        <ShieldCheck size={12} className="text-intuition-success" /> Network_Secured
-                    </div>
-                    <div className="text-[11px] font-black text-slate-700 uppercase tracking-[0.8em]">ARES_ACTIVE</div>
-                </div>
-            </div>
         </div>
     );
 };
