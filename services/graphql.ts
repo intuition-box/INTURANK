@@ -85,6 +85,36 @@ const fetchGraphQL = async (query: string, variables: any = {}, retries = 2, ttl
 const normalize = (x: string) => x ? x.toLowerCase() : '';
 
 /**
+ * Parse TRUST notional for a claim side from `total_market_cap` (often wei as string) or `total_assets` wei fallback.
+ */
+function parseClaimVaultSideTrust(marketCap: unknown, assetsWei: unknown): number {
+  if (marketCap != null && marketCap !== '') {
+    const str = String(marketCap).trim();
+    if (str && str !== '0') {
+      if (/^\d+$/.test(str)) {
+        try {
+          const w = BigInt(str);
+          if (w > 0n) return parseFloat(formatEther(w));
+        } catch {
+          /* fall through */
+        }
+      }
+      const n = Number(str);
+      if (!isNaN(n) && n > 0) {
+        return n > 1e15 ? safeWeiToEther(str) : n;
+      }
+    }
+  }
+  const a = assetsWei != null && String(assetsWei) !== '' ? String(assetsWei) : '0';
+  try {
+    if (a === '0') return 0;
+    return parseFloat(formatEther(BigInt(a)));
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * IntuRank routes deposits/redemptions through FeeProxy; the subgraph often sets `sender` to the proxy.
  * The EOA user is typically on `receiver` for deposits (and similarly when sender is proxy on redemptions).
  */
@@ -1308,6 +1338,7 @@ export const getPnlLeaderboardPeriod = async (args: Record<string, unknown> = {}
 
 /** Epoch-based PnL leaderboard with minimum threshold filtering and realized PnL fields. */
 export const getPnlLeaderboardPeriodMinThreshold = async (args: Record<string, unknown> = {}, limit?: number) => {
+  /** Field set aligned with Intuition portal (no extra columns — avoids divergent indexer behavior). */
   const q = `query GetPnlLeaderboardPeriodMinThreshold($args: get_pnl_leaderboard_period_min_threshold_args!) {
     get_pnl_leaderboard_period_min_threshold(args: $args) {
       rank
@@ -1715,13 +1746,10 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
         const opposeMcap = ct?.total_market_cap;
         const supportAssets = row.total_assets ?? row.term?.total_assets ?? '0';
         const opposeAssets = ct?.total_assets ?? '0';
-        // API may return wei (raw) or ether; safeWeiToEther normalizes both
-        const supportVal = supportMcap != null && Number(supportMcap) > 0
-          ? (Number(supportMcap) > 1e15 ? safeWeiToEther(supportMcap) : Number(supportMcap))
-          : parseFloat(formatEther(BigInt(supportAssets)));
-        const opposeVal = opposeMcap != null && Number(opposeMcap) > 0
-          ? (Number(opposeMcap) > 1e15 ? safeWeiToEther(opposeMcap) : Number(opposeMcap))
-          : parseFloat(formatEther(BigInt(opposeAssets)));
+        const supportVal = parseClaimVaultSideTrust(supportMcap, supportAssets);
+        const opposeHolders = ct?.positions_aggregate?.aggregate?.count ?? 0;
+        /** With zero opposers, vault `total_assets` fallback is often misleading (shows bogus TVL); show 0 TRUST. */
+        const opposeVal = opposeHolders <= 0 ? 0 : parseClaimVaultSideTrust(opposeMcap, opposeAssets);
         return {
           id: row.term_id,
           counterTermId: row.counter_term_id,
@@ -1731,7 +1759,7 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
           value: supportVal,
           holders: row.total_position_count ?? row.term?.positions_aggregate?.aggregate?.count ?? 0,
           opposeValue: opposeVal,
-          opposeHolders: ct?.positions_aggregate?.aggregate?.count ?? 0
+          opposeHolders
         };
       }).filter(Boolean);
       return { items, hasMore: tt.length >= limit };
@@ -1830,15 +1858,17 @@ export const getTopClaims = async (limit: number = 40, offset: number = 0) => {
         const oppose = counterId ? opposeMap[counterId] : null;
         const supportHolders = supportHolderMap[normalize(v.term_id)] ?? v.position_count ?? 0;
         const opposeHolders = counterId ? (opposeHolderMap[counterId] ?? oppose?.position_count ?? 0) : 0;
+        const supportVal = (v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets)));
+        const rawOppose = oppose ? parseClaimVaultSideTrust(oppose.computed_mcap, oppose.total_assets) : 0;
         return {
             id: v.term_id,
             counterTermId: t.counter_term_id,
             subject: { ...t.subject, label: resolveMetadata(t.subject).label },
             predicate: t.predicate?.label || 'LINK',
             object: { ...t.object, label: resolveMetadata(t.object).label },
-            value: (v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets))),
+            value: supportVal,
             holders: supportHolders,
-            opposeValue: oppose ? (oppose.computed_mcap ?? 0) > 0 ? oppose.computed_mcap : parseFloat(formatEther(BigInt(oppose.total_assets))) : 0,
+            opposeValue: opposeHolders <= 0 ? 0 : rawOppose,
             opposeHolders
         };
     }).filter(Boolean);
@@ -1886,6 +1916,8 @@ export const searchClaims = async (term: string): Promise<any[]> => {
     return triples.map((t: any) => {
       const v = aggMap.get(normalize(t.term_id));
       const oppose = t.counter_term_id ? opposeMap[normalize(t.counter_term_id)] : null;
+      const opposeHolders = oppose?.position_count ?? 0;
+      const rawOppose = oppose ? parseClaimVaultSideTrust(oppose.computed_mcap, oppose.total_assets) : 0;
       return {
         id: t.term_id,
         subject: { ...t.subject, label: resolveMetadata(t.subject).label },
@@ -1893,8 +1925,8 @@ export const searchClaims = async (term: string): Promise<any[]> => {
         object: { ...t.object, label: resolveMetadata(t.object).label },
         value: v ? ((v.computed_mcap ?? 0) > 0 ? v.computed_mcap : parseFloat(formatEther(BigInt(v.total_assets)))) : 0,
         holders: v?.position_count ?? 0,
-        opposeValue: oppose ? (oppose.computed_mcap > 0 ? oppose.computed_mcap : parseFloat(formatEther(BigInt(oppose.total_assets)))) : 0,
-        opposeHolders: oppose?.position_count ?? 0,
+        opposeValue: opposeHolders <= 0 ? 0 : rawOppose,
+        opposeHolders,
       };
     });
   } catch (e) {
@@ -2042,24 +2074,93 @@ export const getLists = async (limit: number = 40, offset: number = 0, orderBy?:
   }
 };
 
+/** Prefer ENS / account name; avoid showing subgraph hex snippets or duplicate address as "label". */
+function pickDisplayLabel(
+  label: string | undefined,
+  resolvedUser: string | undefined
+): string | undefined {
+  const lab = label?.trim();
+  if (!lab || lab === '0x') return undefined;
+  // Truncated address chips from indexers (e.g. 0xab…cd12)
+  if (lab.includes('\u2026') || lab.includes('...')) return undefined;
+  const lower = lab.toLowerCase();
+  if (lower.startsWith('0x00') && lab.length >= 10) return undefined;
+  if (resolvedUser && /^0x[0-9a-f]{40}$/i.test(lab)) {
+    try {
+      if (getAddress(lab as `0x${string}`).toLowerCase() === resolvedUser.toLowerCase()) return undefined;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (resolvedUser && /^0x[0-9a-f]+$/i.test(lab)) {
+    try {
+      const asAddr =
+        lab.length === 42 && isAddress(lab)
+          ? getAddress(lab as `0x${string}`)
+          : lab.length === 66 && lab.startsWith('0x')
+            ? getAddress(('0x' + lab.slice(26)) as `0x${string}`)
+            : null;
+      if (asAddr && asAddr.toLowerCase() === resolvedUser.toLowerCase()) return undefined;
+    } catch {
+      /* keep label if parse fails */
+    }
+  }
+  return lab;
+}
+
+function resolveActivityUserFields(ev: any): { user?: string; userLabel?: string } {
+  const dep = ev?.type === 'Deposited' ? ev?.deposit : ev?.redemption;
+  const actor = resolveProxyActivityAccount(dep);
+  if (!actor?.id) return {};
+  const raw = String(actor.id);
+  let user: string | undefined;
+  try {
+    if (isAddress(raw)) user = getAddress(raw);
+    else if (raw.length === 66 && raw.startsWith('0x')) {
+      const tail = ('0x' + raw.slice(26)) as `0x${string}`;
+      if (isAddress(tail)) user = getAddress(tail);
+    }
+  } catch {
+    /* ignore */
+  }
+  if (!user && raw.startsWith('0x') && raw.length >= 42) {
+    try {
+      user = getAddress(raw.slice(0, 42) as `0x${string}`);
+    } catch {
+      /* ignore */
+    }
+  }
+  const userLabel = pickDisplayLabel(actor.label, user);
+  return { user, userLabel };
+}
+
 export const getMarketActivity = async (termId: string): Promise<Transaction[]> => {
   const ids = prepareQueryIds(termId);
   const q = `query GetMarketActivity($ids: [String!]!) {
       events(where: { _or: [{ atom: { term_id: { _in: $ids } } }, { triple: { term_id: { _in: $ids } } }], _and: [{ type: { _in: ["Deposited", "Redeemed"] } }] }, order_by: { created_at: desc }, limit: 50) {
-        transaction_hash created_at type deposit { shares assets_after_fees } redemption { shares assets }
+        transaction_hash created_at type
+        deposit { shares assets_after_fees sender { id label } receiver { id label } }
+        redemption { shares assets sender { id label } receiver { id label } }
       }
   }`;
   try {
     const data = await fetchGraphQL(q, { ids });
-    return (data?.events || []).map((ev: any) => ({
-      id: ev.transaction_hash,
-      type: ev.type === 'Deposited' ? 'DEPOSIT' : 'REDEEM',
-      shares: (ev.deposit?.shares || ev.redemption?.shares || '0').toString(),
-      assets: (ev.deposit?.assets_after_fees || ev.redemption?.assets || '0').toString(),
-      timestamp: new Date(ev.created_at).getTime(),
-      vaultId: termId
-    }));
-  } catch (e) { return []; }
+    return (data?.events || []).map((ev: any) => {
+      const { user, userLabel } = resolveActivityUserFields(ev);
+      return {
+        id: ev.transaction_hash,
+        type: ev.type === 'Deposited' ? 'DEPOSIT' : 'REDEEM',
+        shares: (ev.deposit?.shares || ev.redemption?.shares || '0').toString(),
+        assets: (ev.deposit?.assets_after_fees || ev.redemption?.assets || '0').toString(),
+        timestamp: new Date(ev.created_at).getTime(),
+        vaultId: termId,
+        user,
+        userLabel,
+      };
+    });
+  } catch (e) {
+    return [];
+  }
 };
 
 /** Count redemption (exit/sell) events for a vault — for comparison "sellers" metric. */

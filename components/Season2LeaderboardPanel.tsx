@@ -26,9 +26,144 @@ const HREF_NETWORK_PNL = '/stats?tab=pnl#network-pnl';
 const HREF_SEASON2_PANEL = '/stats?tab=season2#season2-panel';
 
 const PAGE_ROWS_PER_PAGE = 10;
-const PAGE_FETCH_CAP = 500;
+/** Fetch enough rows for client-side sort + merge; capped by EPOCH_QUERY_LIMIT. */
+const PAGE_FETCH_CAP = 2500;
 /** Period RPCs return a capped list; account lookup must scan enough rows or “your rank” stays empty even when you have epoch PnL. */
 const EPOCH_QUERY_LIMIT = 2500;
+
+/**
+ * Realized PnL for sort + table — prefer `realized_pnl_formatted` so PnL aligns with `realized_pnl_pct`.
+ * `total_pnl_raw` on the period RPC is not reliably “realized only”; never mix it with min-threshold realized fields.
+ * Wei fallback when formatted parses to 0: only if `total_pnl_raw` is on this min-threshold row (GraphQL) and
+ * realized ROI is not explicitly 0 (otherwise wei was often garbage vs 0% ROI).
+ */
+function resolveEpochRealizedPnl(row: any): { value: number; display: string } {
+  const formatted = row?.realized_pnl_formatted;
+  const hasFormatted = formatted != null && String(formatted).trim() !== '';
+
+  const roiRaw = row?.realized_pnl_pct ?? row?.pnl_pct;
+  const roiExplicitZero = roiRaw != null && Number.isFinite(Number(roiRaw)) && Number(roiRaw) === 0;
+
+  if (hasFormatted) {
+    const num = Number(String(formatted).replace(/[^\d.-]/g, ''));
+    if (Number.isFinite(num)) {
+      if (
+        num === 0 &&
+        !roiExplicitZero &&
+        row?.total_pnl_raw != null &&
+        String(row.total_pnl_raw) !== ''
+      ) {
+        try {
+          const fromWei = parseFloat(formatEther(BigInt(String(row.total_pnl_raw))));
+          if (Number.isFinite(fromWei) && Math.abs(fromWei) > 1e-18) {
+            return {
+              value: fromWei,
+              display: `${fromWei.toLocaleString(undefined, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 4,
+              })} ${CURRENCY_SYMBOL}`,
+            };
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+      return { value: num, display: String(formatted) };
+    }
+  }
+
+  const raw = row?.total_pnl_raw;
+  if (raw != null && String(raw) !== '') {
+    try {
+      const fromWei = parseFloat(formatEther(BigInt(String(raw))));
+      if (Number.isFinite(fromWei)) {
+        return {
+          value: fromWei,
+          display: `${fromWei.toLocaleString(undefined, {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 4,
+          })} ${CURRENCY_SYMBOL}`,
+        };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  return { value: 0, display: `0.0 ${CURRENCY_SYMBOL}` };
+}
+
+/** Parse single pct field (realized / unrealized) for display + color. */
+function parsePctField(raw: unknown): number {
+  if (raw === null || raw === undefined || raw === '') return NaN;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const n = raw;
+    return Math.abs(n) <= 1 ? n * 100 : n;
+  }
+  const s = String(raw).trim().replace(/[^\d.-]/g, '');
+  if (s === '' || s === '-') return NaN;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return NaN;
+  return Math.abs(n) <= 1 ? n * 100 : n;
+}
+
+/** Descending sort key: realized ROI% (missing → −∞ so ties-at-bottom group sorts last). */
+function realizedRoiSortKey(row: any): number {
+  const v = parsePctField(row?.realized_pnl_pct ?? row?.pnl_pct);
+  return Number.isFinite(v) ? v : Number.NEGATIVE_INFINITY;
+}
+
+function unrealizedRoiSortKey(row: any): number {
+  const v = parsePctField(row?.unrealized_pnl_pct);
+  return Number.isFinite(v) ? v : Number.NEGATIVE_INFINITY;
+}
+
+function pctTextClass(pct: number): string {
+  if (!Number.isFinite(pct)) return 'text-slate-500';
+  if (pct > 0) return 'text-intuition-success';
+  if (pct < 0) return 'text-red-400';
+  return 'text-slate-400';
+}
+
+/** Renders e.g. +58.4% or — if missing (fixes blank “Realized ROI” when API omits the field). */
+function formatPctPretty(raw: unknown): string {
+  const pct = parsePctField(raw);
+  if (!Number.isFinite(pct)) return '—';
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+function resolveUnrealizedPnl(row: any): { value: number; display: string } {
+  const formatted = row?.unrealized_pnl_formatted;
+  if (formatted != null && String(formatted).trim() !== '') {
+    const num = Number(String(formatted).replace(/[^\d.-]/g, ''));
+    if (Number.isFinite(num)) {
+      return { value: num, display: String(formatted) };
+    }
+  }
+  return { value: 0, display: '0' };
+}
+
+function sortSeason2LeaderboardRows(
+  rows: any[],
+  sortMetric: 'REALIZED_PNL' | 'REALIZED_ROI_PCT'
+): any[] {
+  const tie = (a: any, b: any) =>
+    String(a?.account_id ?? '').localeCompare(String(b?.account_id ?? ''), undefined, { sensitivity: 'base' });
+  return [...rows].sort((a, b) => {
+    if (sortMetric === 'REALIZED_ROI_PCT') {
+      const d = realizedRoiSortKey(b) - realizedRoiSortKey(a);
+      if (d !== 0) return d;
+      const d2 = unrealizedRoiSortKey(b) - unrealizedRoiSortKey(a);
+      if (d2 !== 0) return d2;
+      return tie(a, b);
+    }
+    const d = resolveEpochRealizedPnl(b).value - resolveEpochRealizedPnl(a).value;
+    if (d !== 0) return d;
+    const d2 = resolveUnrealizedPnl(b).value - resolveUnrealizedPnl(a).value;
+    if (d2 !== 0) return d2;
+    return tie(a, b);
+  });
+}
 
 function epochIsCurrent(e: (typeof SEASON_2_EPOCHS)[number]): boolean {
   return 'isCurrent' in e && !!(e as { isCurrent?: boolean }).isCurrent;
@@ -49,8 +184,10 @@ export const Season2LeaderboardPanel: React.FC<{
   loadEnabled?: boolean;
 }> = ({ variant = 'page', maxRows: maxRowsProp, loadEnabled = true }) => {
   const isHome = variant === 'home';
-  const fetchCap = maxRowsProp ?? (isHome ? 10 : PAGE_FETCH_CAP);
-  const [pnlTop, setPnlTop] = useState<any[]>([]);
+  const queryLimit = Math.min(maxRowsProp ?? PAGE_FETCH_CAP, EPOCH_QUERY_LIMIT);
+  const rowsToStoreCap = maxRowsProp ?? (isHome ? 10 : PAGE_FETCH_CAP);
+  /** Fetched + merged rows (unsorted); sort is derived so switching PnL ↔ ROI does not refetch GraphQL. */
+  const [pnlRawRows, setPnlRawRows] = useState<any[]>([]);
   const [pnlLoading, setPnlLoading] = useState(true);
   const [userPnlPosition, setUserPnlPosition] = useState<{
     rank: number;
@@ -87,27 +224,6 @@ export const Season2LeaderboardPanel: React.FC<{
   useEffect(() => {
     if (!loadEnabled) return;
 
-    const sortRows = (rows: any[]) =>
-      [...rows].sort((a: any, b: any) => {
-        if (sortMetric === 'REALIZED_ROI_PCT') {
-          const av = Number(a.realized_pnl_pct ?? a.pnl_pct ?? 0);
-          const bv = Number(b.realized_pnl_pct ?? b.pnl_pct ?? 0);
-          return bv - av;
-        }
-        const parseValue = (row: any) => {
-          if (row.realized_pnl_formatted != null) {
-            const num = Number(String(row.realized_pnl_formatted).replace(/[^\d.-]/g, ''));
-            if (Number.isFinite(num)) return num;
-          }
-          try {
-            return parseFloat(formatEther(BigInt(row.total_pnl_raw || '0')));
-          } catch {
-            return 0;
-          }
-        };
-        return parseValue(b) - parseValue(a);
-      });
-
     const fetchPnl = async () => {
       setPnlLoading(true);
       const epoch = selectedEpoch || {
@@ -118,39 +234,30 @@ export const Season2LeaderboardPanel: React.FC<{
       try {
         const startIso = normalizeGraphqlIsoDate(String(epoch.start));
         const endIso = normalizeGraphqlIsoDate(String(epoch.end));
-        const periodArgs = buildPnlLeaderboardPeriodArgs(startIso, endIso, { limit: fetchCap });
+        const periodArgs = buildPnlLeaderboardPeriodArgs(startIso, endIso, { limit: queryLimit });
+        const minThresholdArgs = buildPnlLeaderboardPeriodMinThresholdArgs(startIso, endIso, { limit: queryLimit });
+        /** Same RPC + field set as Intuition portal: `get_pnl_leaderboard_period_min_threshold` only when it returns rows (portal does not merge with period). */
+        const pnlMin = await getPnlLeaderboardPeriodMinThreshold(minThresholdArgs, queryLimit);
+        const raw =
+          pnlMin.length > 0
+            ? pnlMin
+            : (await getPnlLeaderboardPeriod(periodArgs, queryLimit)) ?? [];
 
-        let raw: any[] = [];
-
-        if (isHome) {
-          /** Home teaser: one query only — min-threshold is slow and rarely needed for top 10 vs period. */
-          const pnlPeriod = await getPnlLeaderboardPeriod(periodArgs, fetchCap);
-          raw = pnlPeriod.length > 0 ? pnlPeriod : [];
-        } else {
-          const qLimit = Math.min(fetchCap, EPOCH_QUERY_LIMIT);
-          const minThresholdArgs = buildPnlLeaderboardPeriodMinThresholdArgs(startIso, endIso, { limit: qLimit });
-          const [pnlMin, pnlPeriod] = await Promise.all([
-            getPnlLeaderboardPeriodMinThreshold(minThresholdArgs, qLimit),
-            getPnlLeaderboardPeriod(periodArgs, qLimit),
-          ]);
-          raw = pnlMin.length > 0 ? pnlMin : pnlPeriod.length > 0 ? pnlPeriod : [];
-        }
-
-        if (raw.length > 0) {
-          setPnlTop(sortRows(raw).slice(0, fetchCap));
-        } else {
-          /** Do not substitute all-time PnL here — it looked like epoch data and confused “no rank” messaging. */
-          setPnlTop([]);
-        }
+        setPnlRawRows(raw.length > 0 ? raw : []);
       } catch (e) {
         console.warn('Season 2 PnL period fetch failed:', e);
-        setPnlTop([]);
+        setPnlRawRows([]);
       } finally {
         setPnlLoading(false);
       }
     };
     fetchPnl();
-  }, [selectedEpochId, sortMetric, fetchCap, loadEnabled, isHome]);
+  }, [selectedEpochId, queryLimit, loadEnabled]);
+
+  const pnlTop = useMemo(
+    () => sortSeason2LeaderboardRows(pnlRawRows, sortMetric).slice(0, rowsToStoreCap),
+    [pnlRawRows, sortMetric, rowsToStoreCap]
+  );
 
   useEffect(() => {
     setPage(1);
@@ -295,7 +402,7 @@ export const Season2LeaderboardPanel: React.FC<{
             </div>
             {!isHome && (
               <p className="max-w-2xl font-sans text-sm leading-relaxed text-slate-400">
-                Realized PnL for the selected epoch ({PAGE_ROWS_PER_PAGE} rows per page). All-time rankings live under{' '}
+                Unrealized + realized columns match the sort metric (PnL or ROI%), like the Intuition portal ({PAGE_ROWS_PER_PAGE} rows per page). All-time rankings live under{' '}
                 <span className="font-medium text-slate-300">TOP PnL</span>.
               </p>
             )}
@@ -479,29 +586,28 @@ export const Season2LeaderboardPanel: React.FC<{
                     if (pctRaw == null || !Number.isFinite(pctRaw)) return null;
                     const pct = Math.abs(pctRaw) <= 1 ? pctRaw * 100 : pctRaw;
                     return (
-                      <span className="text-intuition-success font-semibold">
-                        +{pct.toFixed(1)}% ROI
+                      <span
+                        className={`font-semibold ${pct >= 0 ? 'text-intuition-success' : 'text-red-400'}`}
+                      >
+                        {pct >= 0 ? '+' : ''}
+                        {pct.toFixed(1)}% ROI
                       </span>
                     );
                   })()}
                   {(() => {
                     const row = userRowOnBoard as any;
-                    const raw = row?.total_pnl_raw ?? userPnlPosition?.total_pnl_raw;
-                    if (!raw) return null;
-                    try {
-                      return (
-                        <span className="text-slate-300">
-                          +
-                          {parseFloat(formatEther(BigInt(raw))).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}{' '}
-                          {CURRENCY_SYMBOL}
-                        </span>
-                      );
-                    } catch {
-                      return null;
-                    }
+                    const src =
+                      row ??
+                      (userPnlPosition?.total_pnl_raw != null
+                        ? { total_pnl_raw: userPnlPosition.total_pnl_raw }
+                        : null);
+                    if (!src) return null;
+                    const { value, display } = resolveEpochRealizedPnl(src);
+                    return (
+                      <span className={value >= 0 ? 'text-slate-300' : 'text-red-400'}>
+                        {display}
+                      </span>
+                    );
                   })()}
                 </div>
               </div>
@@ -530,19 +636,36 @@ export const Season2LeaderboardPanel: React.FC<{
           <table className="w-full text-left font-mono border-collapse min-w-[520px] text-xs sm:text-sm">
             <thead className="bg-black/50 border-b border-white/[0.07]">
               <tr>
-                <th className="px-3 sm:px-6 py-3 sm:py-3.5 w-16 sm:w-20 text-center text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
+                <th className="px-2 sm:px-4 py-3 sm:py-3.5 w-14 sm:w-16 text-center text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
                   Rank
                 </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-3.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
+                <th className="px-2 sm:px-4 py-3 sm:py-3.5 text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans min-w-[140px]">
                   User
                 </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-3.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
-                  PnL
-                </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-3.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide font-sans">
-                  ROI %
-                </th>
-                <th className="px-3 sm:px-6 py-3 sm:py-3.5 w-16 sm:w-24" aria-hidden />
+                {sortMetric === 'REALIZED_PNL' ? (
+                  <>
+                    <th className="px-2 sm:px-3 py-3 sm:py-3.5 text-right text-[10px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-wide font-sans whitespace-nowrap">
+                      Unrealized PnL
+                    </th>
+                    <th
+                      className={`px-2 sm:px-3 py-3 sm:py-3.5 text-right text-[10px] sm:text-[11px] font-semibold uppercase tracking-wide font-sans whitespace-nowrap rounded-t text-amber-200 bg-intuition-primary/10 ring-1 ring-inset ring-intuition-primary/35`}
+                    >
+                      Realized PnL
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-2 sm:px-3 py-3 sm:py-3.5 text-right text-[10px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-wide font-sans whitespace-nowrap">
+                      Unrealized ROI%
+                    </th>
+                    <th
+                      className={`px-2 sm:px-3 py-3 sm:py-3.5 text-right text-[10px] sm:text-[11px] font-semibold uppercase tracking-wide font-sans whitespace-nowrap rounded-t text-amber-200 bg-intuition-primary/10 ring-1 ring-inset ring-intuition-primary/35`}
+                    >
+                      Realized ROI%
+                    </th>
+                  </>
+                )}
+                <th className="px-2 sm:px-3 py-3 sm:py-3.5 w-16 sm:w-24" aria-hidden />
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -566,27 +689,10 @@ export const Season2LeaderboardPanel: React.FC<{
                   const ordered = isHome ? homeRowsOrdered : pageRows;
                   const walletVariants = walletAddress ? prepareQueryIds(walletAddress) : [];
                   return ordered.map((e: any, i: number) => {
-                    let pnlDisplay = '';
-                    if (e.realized_pnl_formatted != null) {
-                      pnlDisplay = String(e.realized_pnl_formatted);
-                    } else {
-                      try {
-                        const pnlEth = parseFloat(formatEther(BigInt(e.total_pnl_raw || '0')));
-                        pnlDisplay = `${pnlEth.toLocaleString(undefined, {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        })} ${CURRENCY_SYMBOL}`;
-                      } catch {
-                        pnlDisplay = `0.0 ${CURRENCY_SYMBOL}`;
-                      }
-                    }
-                    const pctRaw =
-                      e.realized_pnl_pct != null
-                        ? Number(e.realized_pnl_pct)
-                        : e.pnl_pct != null
-                          ? Number(e.pnl_pct)
-                          : 0;
-                    const pct = Math.abs(pctRaw) <= 1 ? pctRaw * 100 : pctRaw;
+                    const { value: pnlNum, display: pnlDisplay } = resolveEpochRealizedPnl(e);
+                    const { value: uPnlNum, display: uPnlDisplay } = resolveUnrealizedPnl(e);
+                    const unrealRoi = parsePctField(e.unrealized_pnl_pct);
+                    const realRoi = parsePctField(e.realized_pnl_pct ?? e.pnl_pct);
                     const id = (e.account_id || '').trim();
                     const isUser = walletAddress && walletVariants.some((v) => v.toLowerCase() === id.toLowerCase());
                     const label = e.account_label || `${(e.account_id || '').slice(0, 10)}...${(e.account_id || '').slice(-6)}`;
@@ -604,7 +710,7 @@ export const Season2LeaderboardPanel: React.FC<{
                             : 'text-slate-500';
                     return (
                       <tr
-                        key={`${e.account_id || 'row'}-${i}-${page}`}
+                        key={`${sortMetric}-${e.account_id || 'row'}-${(page - 1) * PAGE_ROWS_PER_PAGE + i}`}
                         id={!isHome && page === 1 && i === 0 ? 'season2-champions' : undefined}
                         className={`hover:bg-white/5 transition-colors ${isUser ? 'bg-intuition-primary/10 border-l-4 border-l-intuition-primary' : ''}`}
                       >
@@ -630,14 +736,44 @@ export const Season2LeaderboardPanel: React.FC<{
                             )}
                           </div>
                         </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-right font-black text-intuition-success text-xs sm:text-base">
-                          {pnlDisplay}
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-right font-bold text-intuition-success text-xs sm:text-sm">
-                          {pct >= 0 ? '+' : ''}
-                          {pct.toFixed(1)}%
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-right">
+                        {sortMetric === 'REALIZED_PNL' ? (
+                          <>
+                            <td
+                              className={`px-2 sm:px-3 py-3 sm:py-4 text-right font-semibold text-[11px] sm:text-sm tabular-nums ${
+                                uPnlNum > 0
+                                  ? 'text-intuition-success'
+                                  : uPnlNum < 0
+                                    ? 'text-red-400'
+                                    : 'text-slate-400'
+                              }`}
+                            >
+                              {uPnlDisplay}
+                            </td>
+                            <td
+                              className={`px-2 sm:px-3 py-3 sm:py-4 text-right font-black text-[11px] sm:text-base tabular-nums bg-intuition-primary/[0.06] ${
+                                pnlNum >= 0 ? 'text-intuition-success' : 'text-red-400'
+                              }`}
+                            >
+                              {pnlDisplay}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td
+                              className={`px-2 sm:px-3 py-3 sm:py-4 text-right font-bold text-[11px] sm:text-sm tabular-nums ${pctTextClass(unrealRoi)}`}
+                            >
+                              {formatPctPretty(e.unrealized_pnl_pct)}
+                            </td>
+                            <td
+                              className={`px-2 sm:px-3 py-3 sm:py-4 text-right font-bold text-[11px] sm:text-sm tabular-nums bg-intuition-primary/[0.06] ${pctTextClass(
+                                realRoi
+                              )}`}
+                            >
+                              {formatPctPretty(e.realized_pnl_pct ?? e.pnl_pct)}
+                            </td>
+                          </>
+                        )}
+                        <td className="px-2 sm:px-3 py-3 sm:py-4 text-right">
                           <Link
                             to={`/profile/${e.account_id}`}
                             onClick={playClick}

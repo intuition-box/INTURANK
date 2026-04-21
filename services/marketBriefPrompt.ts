@@ -82,9 +82,10 @@ GENERIC ENTRY:
 
   return `${MARKET_BRIEF_PRODUCT_CONTEXT}
 
-You write exactly **two short sentences** for the AI summary card on a market page.
+Write exactly **two short sentences** of on-page copy. The heading already says "AI summary" — your text is only those two sentences, not a description of what you are doing.
 
 STYLE:
+- **Output only the two sentences.** Do not prefix with meta text such as "Here's a summary", "Here is a two-sentence summary card on a market page", "Below is", or any line ending in a colon before the real content. Start with the first sentence of substance immediately.
 - Sound like a knowledgeable Intuition user: clear, neutral, helpful — not robotic, not a data dump.
 - Use the **rounded** figures from DATA (do not paste 10+ decimal places). Prefer "about 564k TRUST" over "564,339 TRUST units" when large.
 - Never output the word "THING" as a placeholder. Never lead with only "The asset balance is…" for protocol-canonical names (see above).
@@ -108,8 +109,27 @@ function normalizeMarketBriefPreambles(raw: string): string {
   if (!t) return t;
   t = t.replace(/^here'?s\s+(a\s+)?(quick\s+)?(summary|overview|brief)\s+of\s+[^.!?]+[.!?:]\s*/i, '');
   t = t.replace(/^here'?s\s+(a\s+)?(summary|overview|brief)\s*:\s*/i, '');
+  t = t.replace(/^here\s+is\s+(a\s+)?(summary|overview|brief)\s*:\s*/i, '');
   t = t.replace(/^summary\s*:\s*/i, '');
   t = t.replace(/^this\s+(is\s+)?(a\s+)?(summary|overview)\s+of\s+[^.!?]+[.!?:]\s*/i, '');
+  // "Here's a two-sentence summary card on a market page for the Intuition protocol: …"
+  t = t.replace(
+    /^here'?s\s+(a\s+)?(two-sentence\s+)?(summary\s+card|summary|overview)(\s+on\s+a\s+market\s+page)?(\s+for\s+[^:]*)?:\s*/i,
+    ''
+  );
+  t = t.replace(/^below\s+is\s+[^.:]{0,120}[.:]\s*/i, '');
+  // Any remaining "Here's … :" preamble where the clause is clearly meta (summary/card/page/protocol)
+  t = t.replace(/^here'?s\s+[^:]{0,240}:\s*/i, (full) => {
+    const probe = full.toLowerCase();
+    if (
+      /\b(summary|overview|brief|two-sentence|sentence|market page|card|intuition protocol|inturank|for the)\b/.test(
+        probe
+      )
+    ) {
+      return '';
+    }
+    return full;
+  });
   t = t.replace(/\n{2,}/g, ' ');
   t = t.replace(/\s+/g, ' ').trim();
   return t;

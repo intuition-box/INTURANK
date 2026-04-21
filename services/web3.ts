@@ -809,7 +809,8 @@ export const parseProtocolError = (error: any) => {
     const combined = `${rawMsg} ${collectErrorText(error)}`.trim();
     const msg = combined.toLowerCase();
 
-    if (msg.includes("0xd76f6ff8")) return "PROTOCOL_APPROVAL_REQUIRED: Please 'Enable Protocol' first.";
+    if (msg.includes("0xd76f6ff8"))
+        return "PROTOCOL_APPROVAL_REQUIRED: Enable the IntuRank fee proxy first (Skill chat bar or Create flow), then retry.";
     if (msg.includes("minimumdeposit") || /MinimumDeposit/i.test(msg)) {
         return `MINIMUM_DEPOSIT: The protocol requires at least ${formatEther(CURVE_OFFSET)} TRUST as vault deposit (same as claims).`;
     }
@@ -831,7 +832,7 @@ export const parseProtocolError = (error: any) => {
     if (msg.includes("creation failed")) return combined.slice(0, 200) + (combined.length > 200 ? "…" : "");
 
     if (msg.includes("createtriples") || (msg.includes("reverted") && msg.includes("triple"))) {
-        return "Triple creation failed. Check: all 3 atoms exist on-chain, enough TRUST, and Enable Protocol.";
+        return "Triple creation failed. Check: all 3 atoms exist on-chain, enough TRUST, and fee proxy enabled.";
     }
 
     // previewRedeem / redeem — often indexer UI > on-chain getShares, or wrong curve
@@ -846,7 +847,7 @@ export const parseProtocolError = (error: any) => {
             return concise;
         }
         if (msg.includes("createatoms")) {
-            return "Atom creation reverted. Check: TRUST balance ≥ value, value matches fee+deposit in calldata, and Enable Protocol.";
+            return "Atom creation reverted. Check: TRUST balance ≥ value, value matches fee+deposit in calldata, and fee proxy enabled (Enable in Skill chat or Create).";
         }
         return "Transaction reverted. Ensure all 3 atoms exist on-chain and you have enough TRUST.";
     }
@@ -1160,7 +1161,8 @@ export async function getAtomTermIdFromTxHash(
     return undefined;
 }
 
-function looksLikeBytes32TermId(s: string): boolean {
+/** Subject / predicate / object values that look like existing on-chain term ids (bytes32). */
+export function looksLikeBytes32TermId(s: string): boolean {
     const t = s.trim();
     return /^0x[0-9a-fA-F]{64}$/.test(t);
 }
@@ -1228,8 +1230,9 @@ export async function resolveAtomReferenceToTermId(
 }
 
 /**
- * Create a semantic triple from three text labels (or existing term ids). Creates any missing atoms first (one tx each), then the triple.
- * Wallets that do not batch will prompt once per transaction — typically up to 4 signatures if all atoms are new.
+ * Create a semantic triple from three text labels (or existing term ids as 0x + 64 hex).
+ * Hex ids that exist on-chain reuse those atoms (no creation tx). Text labels resolve/create atoms as needed, then the triple.
+ * Wallets that do not batch may prompt once per transaction — fewer signatures when term ids already exist.
  */
 export async function createTripleFromLabels(
     subjectRef: string,
@@ -1297,7 +1300,7 @@ export const createIdentityAtom = async (metadata: any, depositAmount: string, r
 
     try {
         onProgress?.("Verifying Protocol Approval...");
-        const approved = await getProxyApprovalStatus(receiver);
+        const approved = await getProxyApprovalStatus(receiver, { readRetries: 5, readDelayMs: 300 });
         if (!approved) {
             onProgress?.("Awaiting Protocol Handshake...");
             await grantProxyApproval(receiver);
@@ -1577,6 +1580,14 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
         const valueToSend = totalCost; // buffer already included in totalCost from getTotalTripleCreationCost
 
         onProgress?.(`Handshake Cost: ${formatEther(valueToSend)} ${CURRENCY_SYMBOL}`);
+
+        onProgress?.("Verifying Protocol Approval...");
+        const proxyOk = await getProxyApprovalStatus(checksumReceiver, { readRetries: 5, readDelayMs: 300 });
+        if (!proxyOk) {
+            onProgress?.("Awaiting Protocol Handshake...");
+            await grantProxyApproval(checksumReceiver);
+        }
+
         onProgress?.("Awaiting Synapse Signature...");
         
         // 3. Create triple via FeeProxy (handles direct native TRUST funding to user's vault balance)

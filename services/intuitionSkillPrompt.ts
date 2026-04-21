@@ -90,8 +90,8 @@ When the user wants a semantic claim (subject → predicate → object), use **e
 }
 \`\`\`
 
-- **subject**, **predicate**, **object** are human-readable atom names **or** existing \`0x\` term ids (66 hex chars). For text labels, the app may create missing atoms **then** the triple — **multiple signatures** may be required; that is normal.
-- **depositTrust** minimum **0.5** TRUST for the triple vault leg unless the user specifies otherwise (within app limits).
+- **subject**, **predicate**, **object** are human-readable atom names **or** existing \`0x\` **term ids** (bytes32: \`0x\` + 64 hex chars). If you pass a term id, the app **reuses that on-chain atom** — it does **not** mint a duplicate. Only **text labels** may trigger "create atom" txs when the atom does not exist yet.
+- **depositTrust** is always the triple vault deposit as a decimal string. **Default when the user gives no amount: \`"0.5"\`** (protocol-style floor). **Never** invent \`"10"\`, \`"1"\`, or other round numbers as a guess — use \`"0.5"\` unless the user explicitly asked for another TRUST amount.
 
 ## Advanced / raw transactions
 
