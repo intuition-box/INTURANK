@@ -6,7 +6,7 @@ import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRi
 import { getAgentById, getAgentTriples, getAgentTriplesWithVaults, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalanceEffective, toggleWatchlist, isInWatchlist, parseProtocolError, getProxyApprovalStatus, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
-import { formatEther, parseEther } from 'viem';
+import { formatEther, parseEther, getAddress, isAddress } from 'viem';
 import { toast } from '../components/Toast';
 import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
@@ -722,14 +722,15 @@ const MarketDetail: React.FC = () => {
                 ? `TRUSTING_${tickerName}` 
                 : `OPPOSING_${tickerName}`;
             
-            const localTx: Transaction = { 
-                id: res.hash, 
-                type: action === 'ACQUIRE' ? 'DEPOSIT' : 'REDEEM', 
+            const localTx: Transaction = {
+                id: res.hash,
+                type: action === 'ACQUIRE' ? 'DEPOSIT' : 'REDEEM',
                 assets: res.assets ? res.assets.toString() : parseEther(inputAmount).toString(),
                 shares: res.shares.toString(),
-                timestamp: Date.now(), 
-                vaultId: activeTargetId, 
-                assetLabel: assetLabel
+                timestamp: Date.now(),
+                vaultId: activeTargetId,
+                assetLabel: assetLabel,
+                user: isAddress(activeWallet) ? getAddress(activeWallet) : activeWallet,
             };
             
             saveLocalTransaction(localTx, activeWallet);
@@ -1854,10 +1855,10 @@ const MarketDetail: React.FC = () => {
                     </div>)}
                 {activeTab === 'ACTIVITY' && (
                     <div className="animate-in fade-in duration-700 overflow-x-auto ares-frame bg-white/[0.01] border-2 border-slate-900 rounded-2xl shadow-2xl backdrop-blur-sm">
-                        <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[500px]">
-                            <thead className="bg-black border-b border-slate-800 text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">
+                        <table className="w-full text-left font-sans text-[11px] sm:text-[12px] min-w-[500px]">
+                            <thead className="bg-black border-b border-slate-800 text-slate-500 font-semibold uppercase tracking-[0.18em] sm:tracking-[0.22em] text-[9px] sm:text-[10px]">
                                 <tr>
-                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">TRANSACTION_HASH</th>
+                                    <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">USER</th>
                                     <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5">ACTION</th>
                                     <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">UNITS</th>
                                     <th className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 text-right">TIMESTAMP</th>
@@ -1867,19 +1868,37 @@ const MarketDetail: React.FC = () => {
                             <tbody className="divide-y divide-white/5">
                                 {activityLog.length > 0 ? activityLog.map((tx, i) => (
                                     <tr key={i} className="hover:bg-white/5 transition-all group">
-                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 font-mono text-slate-300 group-hover:text-white group-hover:text-glow-white transition-colors uppercase tracking-tighter">
-                                            {tx.id.slice(0, 24)}...
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 min-w-0 max-w-[16rem]">
+                                            {tx.user ? (
+                                                <Link
+                                                    to={`/profile/${tx.user}`}
+                                                    onClick={playClick}
+                                                    title={tx.user}
+                                                    className={`inline-flex max-w-full text-slate-200 group-hover:text-intuition-primary transition-colors break-all hover:underline leading-snug ${
+                                                        tx.userLabel
+                                                            ? 'font-sans text-[11px] sm:text-[12px] font-medium tracking-normal'
+                                                            : 'font-mono text-[10px] sm:text-[11px] tracking-tight text-slate-300'
+                                                    }`}
+                                                >
+                                                    {tx.userLabel ||
+                                                        `${tx.user.slice(0, 6)}...${tx.user.slice(-4)}`}
+                                                </Link>
+                                            ) : (
+                                                <span className="font-sans text-slate-500 text-[11px]" title="Wallet not indexed for this row yet">
+                                                    —
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6">
-                                            <span className={`px-2 py-0.5 rounded-sm font-black border uppercase tracking-widest text-[8px] sm:text-[9px] ${tx.type === 'DEPOSIT' ? 'text-intuition-success bg-intuition-success/10 border-intuition-success/20 text-glow-success' : 'text-intuition-danger bg-intuition-danger/10 border-intuition-danger/20 text-glow-red'}`}>
+                                            <span className={`px-2 py-0.5 rounded-md font-bold border uppercase tracking-wider text-[8px] sm:text-[9px] ${tx.type === 'DEPOSIT' ? 'text-intuition-success bg-intuition-success/10 border-intuition-success/20 text-glow-success' : 'text-intuition-danger bg-intuition-danger/10 border-intuition-danger/20 text-glow-red'}`}>
                                                 {tx.type}
                                             </span>
                                             {!tx.id.startsWith('0x') && <span className="ml-2 px-1.5 py-0.5 bg-intuition-warning/10 text-intuition-warning border border-intuition-warning/30 text-[7px] font-black">LOCAL_UNSYNCED</span>}
                                         </td>
-                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-black text-white text-base sm:text-lg group-hover:text-glow-white transition-all">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-sans tabular-nums text-sm sm:text-[15px] font-semibold text-slate-100 tracking-tight">
                                             {formatDisplayedShares(tx.shares)}
                                         </td>
-                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-mono text-slate-400 uppercase tracking-tighter whitespace-nowrap">
+                                        <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right font-sans text-[10px] sm:text-[11px] text-slate-400 tracking-normal whitespace-nowrap">
                                             {new Date(tx.timestamp).toLocaleString()}
                                         </td>
                                         <td className="px-3 sm:px-6 md:px-8 py-4 sm:py-6 text-right">

@@ -64,7 +64,10 @@ export interface Transaction {
   /** Curve id (1 = offset progressive / exponential, 2 = linear) for correct PnL per curve */
   curveId?: number;
   assetLabel?: string;
+  /** Wallet that performed the deposit/redeem (EOA; resolved when tx went through FeeProxy). */
   user?: string;
+  /** Subgraph label when available (e.g. ENS). */
+  userLabel?: string;
 }
 
 // UI Types
