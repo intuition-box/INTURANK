@@ -1,5 +1,13 @@
 
-import { GRAPHQL_URL, IS_PREDICATE_ID, DISTRUST_ATOM_ID, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID } from '../constants';
+import {
+  GRAPHQL_URL,
+  IS_PREDICATE_ID,
+  DISTRUST_ATOM_ID,
+  FEE_PROXY_ADDRESS,
+  MULTI_VAULT_ADDRESS,
+  LINEAR_CURVE_ID,
+  OFFSET_PROGRESSIVE_CURVE_ID,
+} from '../constants';
 import { Account, Transaction, Claim, Triple } from '../types';
 import { hexToString, formatEther, parseEther, getAddress, isAddress } from 'viem';
 import { safeWeiToEther, safeParseUnits } from './analytics';
@@ -1510,6 +1518,97 @@ export const getNetworkKPIs = async () => {
   } catch (e) {
     console.error("SOVEREIGN_KPI_FETCH_FAILURE", e);
     return { proxyTVL: "0", globalTVL: "0", marketShare: 0, userCount: 0, txCount: 0, atomCount: 0, signalCount: 0, userLedger: [] };
+  }
+};
+
+/** Rows for the system health "Activity log" (deposits/redemptions with fee proxy as `sender`). */
+export type FeeProxyActivityLine = {
+  id: string;
+  timestampMs: number;
+  kind: 'DEP' | 'RED';
+  amountFormatted: string;
+  /** Resolved EOA (for /profile/:id) */
+  actorId: string;
+  actorLabel: string;
+  marketLabel: string;
+  transactionHash: string;
+};
+
+function formatFeeProxyActorLabel(a: { id: string; label?: string } | null): string {
+  if (!a?.id) return 'unknown';
+  if (a.label && a.label !== '0x' && !a.label.startsWith('0x00')) return a.label;
+  return `${a.id.slice(0, 6)}…${a.id.slice(-4)}`;
+}
+
+function truncateFeeProxyLabel(s: string, n: number) {
+  if (!s) return '…';
+  return s.length <= n ? s : s.slice(0, n - 1) + '…';
+}
+
+/** Latest indexed deposits/redemptions where the IntuRank fee proxy is the on-chain `sender` (routed flow). */
+export const getRecentFeeProxyActivity = async (limit: number = 20): Promise<FeeProxyActivityLine[]> => {
+  const proxyVariants = prepareQueryIds(FEE_PROXY_ADDRESS);
+  const q = `query RecentFeeProxyEvents($proxyVariants: [String!]!, $limit: Int!) {
+    events(
+      where: {
+        _and: [
+          { type: { _in: ["Deposited", "Redeemed"] } },
+          { _or: [
+            { deposit: { sender_id: { _in: $proxyVariants } } },
+            { redemption: { sender_id: { _in: $proxyVariants } } }
+          ] }
+        ]
+      }
+      order_by: { created_at: desc }
+      limit: $limit
+    ) {
+      id
+      created_at
+      type
+      transaction_hash
+      atom { term_id label data type }
+      triple { term_id subject { label term_id data type } predicate { label } object { label term_id data type } }
+      deposit { shares assets_after_fees sender { id label } receiver { id label } vault { term_id curve_id } }
+      redemption { shares assets sender { id label } receiver { id label } vault { term_id curve_id } }
+    }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { proxyVariants, limit });
+    const rows = data?.events ?? [];
+    return (rows as any[]).map((ev) => {
+      const dep = ev.deposit || ev.redemption;
+      const actor = resolveProxyActivityAccount(dep);
+      let market = '…';
+      if (ev.atom) {
+        market = resolveMetadata(ev.atom).label;
+      } else if (ev.triple) {
+        const s = resolveMetadata(ev.triple.subject);
+        const o = resolveMetadata(ev.triple.object);
+        market = `${s.label} ${ev.triple.predicate?.label || '·'} ${o.label}`;
+      }
+      const rawAssets = ev.type === 'Deposited' ? ev.deposit?.assets_after_fees : ev.redemption?.assets;
+      let amt = '0.00';
+      try {
+        amt = parseFloat(formatEther(BigInt(String(rawAssets || '0')))).toFixed(2);
+      } catch {
+        /* keep default */
+      }
+      const kind: 'DEP' | 'RED' = ev.type === 'Deposited' ? 'DEP' : 'RED';
+      const t = ev.created_at ? new Date(ev.created_at).getTime() : Date.now();
+      return {
+        id: String(ev.id ?? ev.transaction_hash ?? t),
+        timestampMs: t,
+        kind,
+        amountFormatted: amt,
+        actorId: String(actor?.id || ''),
+        actorLabel: formatFeeProxyActorLabel(actor),
+        marketLabel: truncateFeeProxyLabel(market, 96),
+        transactionHash: String(ev.transaction_hash || ''),
+      };
+    });
+  } catch (e) {
+    console.warn('[getRecentFeeProxyActivity]', e);
+    return [];
   }
 };
 

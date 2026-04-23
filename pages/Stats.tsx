@@ -13,6 +13,7 @@ import { CURRENCY_SYMBOL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } f
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { PageLoading } from '../components/PageLoading';
 import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
+import { computeClaimEntropyScore } from '../services/statsClaimEntropy';
 
 type LeaderboardType = 'STAKERS' | 'SEASON_2' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
 
@@ -303,18 +304,19 @@ const Stats: React.FC = () => {
       } else if (activeTab === 'AGENTS_CONTROVERSY') {
         const agentsData = await getAllAgents(1000);
         const agents = agentsData.items;
-        const sorted = agents.map(a => {
-            const assets = parseFloat(formatEther(BigInt(a.totalAssets || '0')));
-            const shares = parseFloat(formatEther(BigInt(a.totalShares || '0')));
-            const positionCount = Number(a.positionCount || 0);
-            
-            // Heuristic refinement: Controversy is a function of Liquidity Depth vs Node Interaction frequency
-            const price = shares > 0 ? (assets / shares) : 1;
-            const interactionDensity = Math.sqrt(positionCount + 1);
-            const entropyIndex = (Math.log10(assets + 1) * 10) + (price * 2) + (interactionDensity * 5);
-            
-            return { ...a, heuristic: entropyIndex };
-        }).sort((a, b) => b.heuristic - a.heuristic).slice(0, 100).map((a, idx) => ({
+        const sorted = agents
+          .map((a: any) => ({
+            ...a,
+            heuristic: computeClaimEntropyScore({
+              totalAssets: String(a.totalAssets ?? '0'),
+              totalShares: String(a.totalShares ?? '0'),
+              positionCount: Number(a.positionCount || 0),
+              currentSharePrice: a.currentSharePrice,
+            }),
+          }))
+          .sort((a, b) => b.heuristic - a.heuristic)
+          .slice(0, 100)
+          .map((a, idx) => ({
             rank: idx + 1,
             id: a.id,
             label: a.label || 'Unknown Agent',

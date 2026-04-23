@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, type LucideIcon } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect, type LucideIcon } from 'react';
 import {
   Terminal,
   Cpu,
@@ -109,6 +109,39 @@ const Documentation: React.FC = () => {
   const pendingSectionRef = useRef<string | null>(null);
   const scrollLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
+  const tocListRef = useRef<HTMLDivElement>(null);
+  const tocItemRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const [tocHighlight, setTocHighlight] = useState({ top: 0, height: 0 });
+
+  const updateTocHighlight = useCallback(() => {
+    const wrap = tocListRef.current;
+    if (!wrap) return;
+    const idx = SECTIONS.findIndex((s) => s.id === activeSection);
+    const li = tocItemRefs.current[idx];
+    if (!li) return;
+    const w = wrap.getBoundingClientRect();
+    const l = li.getBoundingClientRect();
+    setTocHighlight({ top: l.top - w.top + wrap.scrollTop, height: l.height });
+  }, [activeSection]);
+
+  useLayoutEffect(() => {
+    const idx = SECTIONS.findIndex((s) => s.id === activeSection);
+    const li = tocItemRefs.current[idx];
+    li?.scrollIntoView({ block: 'nearest' });
+    updateTocHighlight();
+  }, [updateTocHighlight, activeSection]);
+
+  useEffect(() => {
+    const ro = new ResizeObserver(() => updateTocHighlight());
+    const wrap = tocListRef.current;
+    if (wrap) ro.observe(wrap);
+    const onWin = () => updateTocHighlight();
+    window.addEventListener('resize', onWin, { passive: true });
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onWin);
+    };
+  }, [updateTocHighlight]);
 
   const computeActiveFromScroll = useCallback((): string => {
     const main = mainRef.current;
@@ -176,7 +209,7 @@ const Documentation: React.FC = () => {
     const main = mainRef.current;
     // scrollIntoView scrolls every scrollable ancestor (including the window), which shifts the whole layout on desktop.
     // Only the docs column should move: scroll the inner main explicitly.
-    // "Introduction" maps to #intro, but the hero (title + blurb) lives above that section — scroll to top of the column.
+    // "Introduction" maps to #intro, but the hero (title + blurb) lives above that section. Scroll the column to top.
     if (mq.matches && main) {
       if (id === 'intro') {
         main.scrollTo({ top: 0, behavior: 'smooth' });
@@ -263,41 +296,69 @@ const Documentation: React.FC = () => {
         </header>
 
         {/*
-          Desktop: only <main> scrolls — TOC stays in the left column (no fixed/JS overlap).
+          Desktop: only <main> scrolls; the TOC stays in the left column (no fixed/JS overlap).
         */}
         <div className="flex flex-col lg:flex-row lg:gap-10 xl:gap-14 lg:items-stretch lg:min-h-0 lg:flex-1 lg:overflow-hidden">
-          <aside className="hidden lg:flex w-[240px] shrink-0 flex-col min-h-0">
+          <aside className="hidden lg:flex w-[260px] shrink-0 flex-col min-h-0">
             <nav
-              className="flex flex-col flex-1 min-h-0 overflow-y-auto rounded-xl border border-white/[0.08] bg-[#0a0c12]/95 backdrop-blur-md p-4 shadow-[0_8px_40px_rgba(0,0,0,0.45)] overflow-x-hidden"
+              className="group/toc flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-xl border border-white/[0.08] bg-[#0a0c12]/95 backdrop-blur-md p-3 shadow-[0_8px_40px_rgba(0,0,0,0.45)]"
               aria-label="Documentation sections"
             >
               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2">
                 On this page
               </p>
-              <ul className="space-y-0.5">
-                {SECTIONS.map((s) => {
-                  const Icon = s.icon;
-                  const active = activeSection === s.id;
-                  return (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => scrollTo(s.id)}
-                        onMouseEnter={playHover}
-                        className={`w-full text-left flex items-start gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors ${
-                          active
-                            ? 'bg-white/10 text-white border-l-2 border-intuition-primary -ml-0.5 pl-[calc(0.5rem+2px)]'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] border-l-2 border-transparent'
-                        }`}
+              <div ref={tocListRef} className="relative min-h-0">
+                <div
+                  className="pointer-events-none absolute left-0 right-0 top-0 z-0 h-0"
+                  aria-hidden
+                >
+                  <div
+                    className="absolute left-0 right-0 top-0 min-h-[2.25rem] rounded-lg border-l-[3px] border-intuition-primary bg-gradient-to-r from-intuition-primary/[0.2] via-intuition-primary/[0.08] to-white/[0.04] ring-1 ring-inset ring-white/[0.07] shadow-[0_0_0_1px_rgba(0,243,255,0.1),0_6px_28px_rgba(0,243,255,0.12)] will-change-[transform,height] motion-safe:transition-[transform,height,opacity] motion-safe:duration-500 motion-reduce:transition-none motion-safe:[transition-timing-function:cubic-bezier(0.33,1,0.68,1)]"
+                    style={{
+                      transform: `translateY(${tocHighlight.top}px) scaleY(1)`,
+                      height: Math.max(0, tocHighlight.height),
+                      opacity: tocHighlight.height > 0 ? 1 : 0,
+                    }}
+                  />
+                </div>
+                <ul className="relative z-10 m-0 list-none space-y-1 p-0">
+                  {SECTIONS.map((s, i) => {
+                    const Icon = s.icon;
+                    const active = activeSection === s.id;
+                    return (
+                      <li
+                        key={s.id}
+                        ref={(el) => {
+                          tocItemRefs.current[i] = el;
+                        }}
+                        className="relative"
                       >
-                        <Icon className="w-4 h-4 mt-0.5 shrink-0 opacity-70" aria-hidden />
-                        <span className="leading-snug">{s.navLabel}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => scrollTo(s.id)}
+                          onMouseEnter={playHover}
+                          className={`w-full text-left flex items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-sm transition-colors duration-300 ${
+                            active
+                              ? 'text-white font-medium'
+                              : 'text-slate-400 hover:text-slate-100'
+                          }`}
+                        >
+                          <Icon
+                            className={`w-4 h-4 mt-0.5 shrink-0 transition-all duration-300 ${
+                              active
+                                ? 'text-intuition-primary opacity-100 scale-110 drop-shadow-[0_0_8px_rgba(0,243,255,0.45)]'
+                                : 'opacity-60'
+                            }`}
+                            aria-hidden
+                          />
+                          <span className="leading-snug">{s.navLabel}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </nav>
           </aside>
 
@@ -795,13 +856,87 @@ const Documentation: React.FC = () => {
                   <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/markets/:id</code>.
                 </li>
                 <li>
-                  <strong className="text-slate-200">Claim entropy.</strong> Highlights contested or high-entropy claims for
-                  discovery (naming in the UI: controversy-style framing).
+                  <strong className="text-slate-200">Claim entropy.</strong> A discovery list for{' '}
+                  <strong className="text-slate-100">markets</strong> (atoms and claims): we sort by a simple IntuRank score
+                  (explained below). Same score everywhere; small labels like <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">MARKET_ENTROPY_INDEX</code> or{' '}
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">PROTOCOL_MAGNITUDE</code> are just different names for that one number.
                 </li>
                 <li>
                   <strong className="text-slate-200">TOP CLAIMS.</strong> Semantic triples ranked for attention in the graph.
                 </li>
               </ul>
+
+              <h4 className="text-sm font-semibold text-slate-100 mt-6 mb-2">Claim entropy in plain English</h4>
+              <p className="text-slate-300 leading-relaxed">
+                <strong className="text-white">In one sentence:</strong> IntuRank gives each market a single number so that
+                pools with <strong className="text-slate-100">more TRUST locked</strong>, a <strong className="text-slate-100">higher share price</strong>, and{' '}
+                <strong className="text-slate-100">more open positions</strong> tend to rank higher. The name
+                &quot;entropy&quot; is just a label. This is <strong className="text-slate-100">not</strong> a separate on
+                chain entropy reading. The app computes the number from ordinary vault data from the indexer.
+              </p>
+
+              <div className="not-prose rounded-xl border border-white/10 bg-[#0a0d14] p-4 sm:p-5 my-4 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Three parts (we add them up)</p>
+                <ul className="list-none space-y-3 text-sm text-slate-300 leading-relaxed pl-0">
+                  <li className="flex gap-3">
+                    <span className="shrink-0 font-mono text-intuition-primary font-bold">1</span>
+                    <span>
+                      <strong className="text-white">Size of the pool.</strong> More {CURRENCY_SYMBOL} in the vault lifts
+                      the score. We use a <em className="text-slate-400 not-italic">log</em> curve so the list is not only
+                      about who has the most capital. Extra liquidity still helps, with a little less impact each time the pool
+                      roughly doubles.
+                    </span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="shrink-0 font-mono text-intuition-primary font-bold">2</span>
+                    <span>
+                      <strong className="text-white">Price of one share.</strong> If one share costs more {CURRENCY_SYMBOL}, the
+                      score moves up a little. We use the index price when present. If not,{' '}
+                      <code className="text-[11px] bg-black/40 px-1 rounded">pool / shares</code> when there are shares, else a
+                      small safe default.
+                    </span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="shrink-0 font-mono text-intuition-primary font-bold">3</span>
+                    <span>
+                      <strong className="text-white">How busy the vault is.</strong> More open positions add a little. We use
+                      a square root so one very large count does not override everything else.
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
+              <p className="text-slate-400 text-sm leading-relaxed">
+                <strong className="text-slate-200">On screen</strong> you get{' '}
+                <code className="text-[11px] bg-white/5 px-1 rounded">Score: …</code> and the table sorted{' '}
+                <strong className="text-slate-200">high → low</strong>. For discovery only, not investment advice.
+              </p>
+
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mt-5 mb-2">The formula</p>
+              <p className="text-slate-400 text-sm mb-2">
+                <em className="not-italic text-slate-300">A</em> = total assets in {CURRENCY_SYMBOL}.{' '}
+                <em className="not-italic text-slate-300">P</em> = {CURRENCY_SYMBOL} per share: use the index price, or{' '}
+                <em className="not-italic text-slate-300">A / S</em> when share supply <em className="not-italic text-slate-300">S &gt; 0</em>, or{' '}
+                <em className="not-italic text-slate-300">1</em> if there are no shares.{' '}
+                <em className="not-italic text-slate-300">N</em> = number of positions.
+              </p>
+              <pre className="not-prose rounded-xl border border-white/10 bg-[#080a10] p-4 text-[12px] leading-relaxed text-slate-300 font-mono overflow-x-auto my-2">
+{`score = 10 * log10(A + 1) + 2 * P + 5 * sqrt(N + 1)`}
+              </pre>
+              <p className="text-slate-500 text-xs leading-relaxed">
+                Code: <code className="bg-white/5 px-1 rounded">computeClaimEntropyScore</code> in{' '}
+                <code className="bg-white/5 px-1 rounded">services/statsClaimEntropy.ts</code>. For protocol-level definitions, see{' '}
+                <a
+                  className="text-intuition-primary hover:underline"
+                  href="https://docs.intuition.systems"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Intuition docs
+                </a>
+                .
+              </p>
+
               <p>
                 For <strong className="text-slate-100 font-semibold">TOP STAKERS</strong> and{' '}
                 <strong className="text-slate-100 font-semibold">TOP PNL</strong>, a command-style search accepts{' '}
@@ -1199,7 +1334,7 @@ const Documentation: React.FC = () => {
                 <div>
                   <dt className="text-sm font-semibold text-intuition-primary">Triple</dt>
                   <dd className="mt-1.5 text-sm text-slate-400 leading-relaxed">
-                    A subject–predicate–object claim built from three atom IDs. Triples are first-class terms with their own
+                    A subject, predicate, and object claim built from three atom IDs. Triples are first-class terms with their own
                     IDs and markets.
                   </dd>
                 </div>

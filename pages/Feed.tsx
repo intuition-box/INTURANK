@@ -12,6 +12,8 @@ import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import {
   EXPLORER_URL,
+  FEE_PROXY_ADDRESS,
+  MULTI_VAULT_ADDRESS,
   getGeminiApiKey,
   getGroqApiKey,
   getOpenAiApiKey,
@@ -28,6 +30,41 @@ import { PageLoading, PageLoadingSpinner } from '../components/PageLoading';
 type SortOption = 'Newest' | 'Oldest' | 'Highest Volume';
 
 type PersonalItem = PositionActivityNotification & { source?: 'holdings' | 'follow' };
+
+function isProfileLinkableSender(senderId: string | undefined, senderLabel: string): boolean {
+  if (!senderId || typeof senderId !== 'string') return false;
+  const id = senderId.toLowerCase();
+  if (id === FEE_PROXY_ADDRESS.toLowerCase() || id === MULTI_VAULT_ADDRESS.toLowerCase()) return false;
+  if (senderLabel === 'IntuRank routing contract') return false;
+  return true;
+}
+
+/** Buyer / actor label in personal columns → profile when the id is a real account (not proxy routers). */
+const PersonalActorLink: React.FC<{
+  senderId: string;
+  senderLabel: string;
+}> = ({ senderId, senderLabel }) => {
+  const linkable = isProfileLinkableSender(senderId, senderLabel);
+  const className = `font-black text-intuition-primary rounded-sm transition-[color,transform,filter] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none hover:text-white focus-visible:outline focus-visible:ring-2 focus-visible:ring-intuition-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#05070c] ${
+    linkable
+      ? 'underline-offset-2 hover:underline hover:drop-shadow-[0_0_14px_rgba(0,243,255,0.4)] active:scale-[0.99]'
+      : 'cursor-default opacity-90'
+  }`;
+  if (!linkable) {
+    return <span className={className}>{senderLabel}</span>;
+  }
+  return (
+    <Link
+      to={`/profile/${encodeURIComponent(senderId)}`}
+      onClick={playClick}
+      onMouseEnter={playHover}
+      className={className}
+      aria-label={`View profile: ${senderLabel}`}
+    >
+      {senderLabel}
+    </Link>
+  );
+};
 
 const Feed: React.FC = () => {
     const { address: walletAddress } = useAccount();
@@ -361,14 +398,14 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={n.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-white/[0.08] hover:border-intuition-primary/40 hover:bg-white/[0.04] transition-all duration-300 group motion-hover-lift"
+                                        className="group/pitem relative flex items-start gap-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#04060a]/50 px-3 py-2.5 shadow-sm transition-all duration-500 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-gradient-to-r before:from-intuition-primary/[0.08] before:via-transparent before:to-transparent before:opacity-0 before:transition-opacity before:duration-500 hover:border-intuition-primary/45 hover:bg-white/[0.05] hover:shadow-[0_0_28px_rgba(0,243,255,0.1)] motion-safe:md:hover:before:opacity-100"
                                     >
-                                        <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
+                                        <span className={`relative z-[1] flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                                         </span>
-                                        <div className="min-w-0 flex-1">
+                                        <div className="relative z-[1] min-w-0 flex-1">
                                             <p className="text-[11px] font-bold font-mono text-white leading-tight">
-                                                <span className="font-black text-intuition-primary">{n.senderLabel}</span>
+                                                <PersonalActorLink senderId={n.senderId} senderLabel={n.senderLabel} />
                                                 {' '}
                                                 <span className="text-slate-200">{n.type === 'liquidated' ? 'liquidated' : 'acquired'}</span>
                                                 {sharesNum > 0 ? (
@@ -388,7 +425,7 @@ const Feed: React.FC = () => {
                                                     to={`/markets/${n.vaultId}`}
                                                     onClick={playClick}
                                                     onMouseEnter={playHover}
-                                                    className="font-bold text-slate-100 group-hover:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover:underline"
+                                                    className="font-bold text-slate-100 group-hover/pitem:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover/pitem:underline"
                                                 >
                                                     {n.marketLabel}
                                                 </Link>
@@ -473,17 +510,17 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={n.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-white/[0.08] hover:border-amber-400/50 hover:bg-amber-500/[0.06] transition-all duration-200 group motion-hover-lift"
+                                        className="group/pitem relative flex items-start gap-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#04060a]/50 px-3 py-2.5 shadow-sm transition-all duration-500 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-gradient-to-r before:from-amber-500/[0.08] before:via-transparent before:to-intuition-primary/[0.05] before:opacity-0 before:transition-opacity before:duration-500 hover:border-amber-400/55 hover:bg-amber-500/[0.07] hover:shadow-[0_0_28px_rgba(251,191,36,0.12)] motion-safe:md:hover:before:opacity-100"
                                     >
-                                        <span className={`flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
+                                        <span className={`relative z-[1] flex-shrink-0 mt-0.5 ${n.type === 'liquidated' ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {n.type === 'liquidated' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                                         </span>
-                                        <div className="min-w-0 flex-1">
+                                        <div className="relative z-[1] min-w-0 flex-1">
                                             <p className="text-[11px] font-bold font-mono text-white leading-tight">
                                                 <span className="inline-flex items-center gap-1 mr-1 text-amber-200/95 text-[10px] font-sans font-medium border border-amber-500/40 px-2 py-0.5 rounded-full" title="Someone you follow">
                                                     <UserPlus size={10} /> Following
                                                 </span>
-                                                <span className="font-black text-intuition-primary">{n.senderLabel}</span>
+                                                <PersonalActorLink senderId={n.senderId} senderLabel={n.senderLabel} />
                                                 {' '}
                                                 <span className="text-slate-200">{n.type === 'liquidated' ? 'liquidated' : 'acquired'}</span>
                                                 {sharesNum > 0 ? (
@@ -503,7 +540,7 @@ const Feed: React.FC = () => {
                                                     to={`/markets/${n.vaultId}`}
                                                     onClick={playClick}
                                                     onMouseEnter={playHover}
-                                                    className="font-bold text-slate-100 group-hover:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover:underline"
+                                                    className="font-bold text-slate-100 group-hover/pitem:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover/pitem:underline"
                                                 >
                                                     {n.marketLabel}
                                                 </Link>
@@ -561,14 +598,26 @@ const Feed: React.FC = () => {
                                 return (
                                     <div
                                         key={tx.id}
-                                        className="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-white/[0.08] hover:border-intuition-primary/40 hover:bg-white/[0.04] transition-all duration-200 group motion-hover-lift"
+                                        className="group/pitem relative flex items-start gap-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#04060a]/50 px-3 py-2.5 shadow-sm transition-all duration-500 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-gradient-to-r before:from-intuition-success/[0.06] before:via-transparent before:to-intuition-primary/[0.05] before:opacity-0 before:transition-opacity before:duration-500 hover:border-intuition-primary/45 hover:bg-white/[0.05] hover:shadow-[0_0_28px_rgba(0,243,255,0.1)] motion-safe:md:hover:before:opacity-100"
                                     >
-                                        <span className={`flex-shrink-0 mt-0.5 ${isRedeem ? 'text-intuition-danger' : 'text-intuition-success'}`}>
+                                        <span className={`relative z-[1] flex-shrink-0 mt-0.5 ${isRedeem ? 'text-intuition-danger' : 'text-intuition-success'}`}>
                                             {isRedeem ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                                         </span>
-                                        <div className="min-w-0 flex-1">
+                                        <div className="relative z-[1] min-w-0 flex-1">
                                             <p className="text-[11px] font-bold font-mono text-white leading-tight">
-                                                <span className="font-black text-intuition-primary">You</span>
+                                                {walletAddress ? (
+                                                  <Link
+                                                    to={`/profile/${encodeURIComponent(walletAddress)}`}
+                                                    onClick={playClick}
+                                                    onMouseEnter={playHover}
+                                                    className="font-black text-intuition-primary underline-offset-2 transition-[color,transform] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] hover:text-white hover:underline hover:drop-shadow-[0_0_14px_rgba(0,243,255,0.4)] focus-visible:outline focus-visible:ring-2 focus-visible:ring-intuition-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#05070c] active:scale-[0.99]"
+                                                    aria-label="View your public profile"
+                                                  >
+                                                    You
+                                                  </Link>
+                                                ) : (
+                                                  <span className="font-black text-intuition-primary">You</span>
+                                                )}
                                                 {' '}
                                                 <span className="text-slate-200">{isRedeem ? 'liquidated' : 'acquired'}</span>
                                                 {' '}
@@ -585,7 +634,7 @@ const Feed: React.FC = () => {
                                                     to={`/markets/${tx.vaultId}`}
                                                     onClick={playClick}
                                                     onMouseEnter={playHover}
-                                                    className="font-bold text-slate-100 group-hover:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover:underline"
+                                                    className="font-bold text-slate-100 group-hover/pitem:text-intuition-primary transition-colors truncate inline-block max-w-full align-baseline underline-offset-2 group-hover/pitem:underline"
                                                 >
                                                     {tx.assetLabel || tx.vaultId.slice(0, 10) + '…'}
                                                 </Link>
