@@ -1,13 +1,15 @@
 
-import React, { useEffect, useState, useRef } from 'react';
-import { Shield, Activity, Users, Database, Zap, Download, RefreshCw, FileText, Globe, Terminal, Award, ArrowUpRight, BarChart3, TrendingUp, Loader2, UserCircle, BadgeCheck, Network, Cpu, Lock, Coins, PieChart, Clock, Box, ShieldCheck } from 'lucide-react';
-import { getNetworkKPIs } from '../services/graphql';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { Shield, Activity, Users, Zap, Download, RefreshCw, FileText, Globe, Terminal, Award, ArrowUpRight, BarChart3, TrendingUp, Loader2, UserCircle, BadgeCheck, Network, Lock, Coins, Clock, Box, ShieldCheck, ExternalLink } from 'lucide-react';
+import { getNetworkKPIs, getRecentFeeProxyActivity, type FeeProxyActivityLine } from '../services/graphql';
+import { subscribeVisibilityAwareInterval } from '../services/visibility';
 import { formatEther } from 'viem';
 import { PageLoading } from '../components/PageLoading';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import html2canvas from 'html2canvas';
-import { CURRENCY_SYMBOL, FEE_PROXY_ADDRESS, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE } from '../constants';
+import { CURRENCY_SYMBOL, FEE_PROXY_ADDRESS, EXPLORER_URL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { getWalletBalance } from '../services/web3';
 
@@ -56,50 +58,53 @@ const KPIDashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<any>(null);
     const [isExporting, setIsExporting] = useState(false);
-    const [reconLog, setReconLog] = useState<string[]>([]);
     const [userBalances, setUserBalances] = useState<Record<string, string>>({});
+    const [proxyLog, setProxyLog] = useState<FeeProxyActivityLine[]>([]);
+    const [proxyLogLoading, setProxyLogLoading] = useState(true);
+    const [proxyLogError, setProxyLogError] = useState(false);
+    const [proxyLogManualRefresh, setProxyLogManualRefresh] = useState(false);
 
-    const addLog = (msg: string) => {
-        setReconLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-8));
-    };
+    const refreshProxyLog = useCallback(async (mode: 'initial' | 'poll' | 'manual' = 'poll') => {
+        if (mode === 'initial') setProxyLogLoading(true);
+        if (mode === 'manual') {
+            playClick();
+            setProxyLogManualRefresh(true);
+        }
+        try {
+            const rows = await getRecentFeeProxyActivity(24);
+            setProxyLog(rows);
+            setProxyLogError(false);
+        } catch {
+            setProxyLogError(true);
+        } finally {
+            if (mode === 'initial') setProxyLogLoading(false);
+            if (mode === 'manual') setProxyLogManualRefresh(false);
+        }
+    }, []);
 
     const fetchData = async () => {
         setLoading(true);
-        setReconLog([]);
-        addLog("Loading network metrics…");
-        
         try {
-            await new Promise(r => setTimeout(r, 1200)); 
-            addLog("Reading subgraph…");
-            addLog("Fetching fee proxy stats…");
             const data = await getNetworkKPIs();
-            
             if (data.txCount > 0) {
-                addLog(`Found ${data.txCount} fee proxy transactions.`);
-                addLog(`${data.userCount} accounts in the leaderboard.`);
-                addLog(`Fee proxy TVL: ${parseFloat(formatEther(BigInt(data.proxyTVL))).toFixed(4)} ${CURRENCY_SYMBOL}.`);
-                toast.success("Stats updated");
-
-                // Fetching top user balances asynchronously for the "Fun" part
+                toast.success('Stats updated');
                 const topUsers = data.userLedger.slice(0, 15);
-                addLog("Loading wallet balances…");
                 const balanceMap: Record<string, string> = {};
-                for(const user of topUsers) {
+                for (const user of topUsers) {
                     try {
                         const b = await getWalletBalance(user.id);
                         balanceMap[user.id] = parseFloat(b).toLocaleString(undefined, { maximumFractionDigits: 2 });
-                    } catch { balanceMap[user.id] = "0.00"; }
+                    } catch {
+                        balanceMap[user.id] = '0.00';
+                    }
                 }
                 setUserBalances(balanceMap);
             } else {
-                addLog("No fee proxy transactions in this window.");
-                addLog("Try again later or check your connection.");
+                setUserBalances({});
             }
-            
             setStats(data);
-        } catch (e) {
-            addLog("Could not load data (timeout or network error).");
-            toast.error("Failed to load stats");
+        } catch {
+            toast.error('Failed to load stats');
         } finally {
             setLoading(false);
         }
@@ -108,6 +113,13 @@ const KPIDashboard: React.FC = () => {
     useEffect(() => {
         fetchData();
     }, []);
+
+    useEffect(() => {
+        void refreshProxyLog('initial');
+        return subscribeVisibilityAwareInterval(() => {
+            void refreshProxyLog('poll');
+        }, 12_000);
+    }, [refreshProxyLog]);
 
     const handleExport = async () => {
         if (!reportRef.current) return;
@@ -140,14 +152,7 @@ const KPIDashboard: React.FC = () => {
     }
 
     const formattedProxyTVL = parseFloat(formatEther(BigInt(stats?.proxyTVL || '0'))).toLocaleString(undefined, { maximumFractionDigits: 4 });
-    const formattedGlobalTVL = parseFloat(formatEther(BigInt(stats?.globalTVL || '0'))).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const isProxyEmpty = !stats || stats.txCount === 0;
-    
-    // High-precision formatting for market share magnitude
-    const marketShareVal = stats?.marketShare || 0;
-    const formattedMarketShare = marketShareVal > 0 && marketShareVal < 0.01 
-        ? marketShareVal.toFixed(4) 
-        : marketShareVal.toFixed(2);
 
     return (
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-10 pb-24 font-sans min-w-0">
@@ -187,12 +192,10 @@ const KPIDashboard: React.FC = () => {
                 </div>
 
                 {/* KPI Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 relative z-10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
                     <KPIStatCard label="Fee proxy TVL" value={formattedProxyTVL} sub={<CurrencySymbol size="md" />} icon={Coins} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
                     <KPIStatCard label="Accounts tracked" value={stats?.userCount || 0} sub="wallets" icon={Users} color="primary" isZero={isProxyEmpty} />
                     <KPIStatCard label="Fee proxy transactions" value={stats?.txCount || 0} sub="all time" icon={Box} color="secondary" animate={!isProxyEmpty} isZero={isProxyEmpty} />
-                    <KPIStatCard label="Market share" value={`${formattedMarketShare}%`} sub="of activity" icon={PieChart} color="primary" isZero={isProxyEmpty} />
-                    <KPIStatCard label="Atoms on graph" value={stats?.atomCount || 0} sub="nodes" icon={Database} color="secondary" isZero={isProxyEmpty} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-8 relative z-10">
@@ -278,71 +281,171 @@ const KPIDashboard: React.FC = () => {
                     </div>
 
                     {/* Sidebar: full-width grid below ledger so table gets all horizontal space */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full lg:items-stretch">
+                    <div className="grid w-full grid-cols-1 gap-6 md:gap-8 lg:grid-cols-[minmax(0,1fr)_min(100%,260px)] xl:grid-cols-[minmax(0,1fr)_240px] lg:items-start">
                         {/* Activity log */}
-                        <div className="bg-black border border-intuition-primary/20 p-6 clip-path-slant shadow-2xl group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500 h-full flex flex-col min-h-[220px]">
-                            <div className="flex items-center gap-3 mb-6 border-b border-intuition-primary/20 pb-3">
-                                <Terminal size={14} className="text-intuition-primary animate-pulse text-glow-blue" />
-                                <h4 className="text-sm font-semibold text-intuition-primary text-glow-blue">Activity log</h4>
-                            </div>
-                            <div className="space-y-3 font-sans text-xs sm:text-sm min-h-[160px] flex-1">
-                                {reconLog.map((log, i) => (
-                                    <div key={i} className="text-slate-400 group-hover:text-intuition-primary transition-colors duration-300 leading-relaxed border-l-2 border-intuition-primary/30 pl-3 group-hover:border-intuition-primary/60">
-                                        <span className="group-hover:text-glow-blue">{log}</span>
+                        <div className="group/feeact flex min-h-[220px] min-w-0 flex-col rounded-2xl border border-cyan-500/30 bg-[#020308]/90 p-5 shadow-lg shadow-black/40 ring-1 ring-white/[0.04] transition-all duration-300 [text-shadow:none] clip-path-slant hover:border-cyan-400/45 hover:shadow-xl hover:shadow-black/50 sm:p-6 [&_*]:[text-shadow:none]">
+                            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-cyan-500/20 pb-4">
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <Terminal size={14} className="shrink-0 text-cyan-400" aria-hidden />
+                                    <div>
+                                        <h4 className="text-sm font-bold tracking-tight text-cyan-200">Fee proxy activity</h4>
+                                        <p className="mt-1 text-[10px] font-medium text-slate-400">Indexed deposits &amp; redemptions · auto ~12s</p>
                                     </div>
-                                ))}
+                                </div>
+                                <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            void refreshProxyLog('manual');
+                                        }}
+                                        disabled={proxyLogManualRefresh}
+                                        onMouseEnter={playHover}
+                                        title="Refresh activity now"
+                                        aria-label="Refresh fee proxy activity"
+                                        className="group/ref inline-flex items-center gap-2 rounded-lg border border-cyan-500/50 bg-cyan-950/40 px-3 py-1.5 text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-cyan-100 shadow-sm shadow-black/30 transition-all duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none hover:-translate-y-px hover:border-cyan-400/80 hover:bg-cyan-950/70 active:translate-y-0 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                                    >
+                                        <RefreshCw
+                                            size={12}
+                                            className={`shrink-0 text-cyan-300 transition-transform duration-500 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] ${
+                                                proxyLogManualRefresh ? 'animate-spin' : 'group-hover/ref:rotate-180'
+                                            }`}
+                                            aria-hidden
+                                        />
+                                        <span>Sync</span>
+                                    </button>
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-950/30 px-2.5 py-1 text-[9px] font-mono font-semibold uppercase tracking-wider text-cyan-200">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-emerald-500/50" aria-hidden />
+                                        Live
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="min-h-[200px] flex-1 overflow-hidden rounded-xl border border-white/[0.06] bg-[#03050d]/90">
+                                {proxyLogLoading && proxyLog.length === 0 ? (
+                                    <div className="flex items-center gap-2 p-5 text-sm text-slate-500">
+                                        <Loader2 size={16} className="shrink-0 animate-spin" aria-hidden />
+                                        <span>Loading indexed activity…</span>
+                                    </div>
+                                ) : proxyLogError ? (
+                                    <div className="p-5 text-sm text-amber-400/90">Could not load activity. Will retry on the next tick.</div>
+                                ) : proxyLog.length === 0 ? (
+                                    <div className="p-5 text-sm text-slate-500">No fee-proxy transactions in the subgraph yet.</div>
+                                ) : (
+                                    <div className="max-h-[340px] overflow-auto custom-scrollbar">
+                                        <table className="w-full min-w-[640px] border-collapse text-left">
+                                            <thead className="sticky top-0 z-[1] bg-[#05070c]/95 backdrop-blur-sm">
+                                                <tr className="border-b border-white/[0.08] text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                                    <th className="whitespace-nowrap px-3 py-2.5 pl-4 font-medium sm:pl-5">When</th>
+                                                    <th className="whitespace-nowrap px-2 py-2.5 font-medium">Type</th>
+                                                    <th className="whitespace-nowrap px-2 py-2.5 font-medium">Amount</th>
+                                                    <th className="min-w-[7.5rem] px-2 py-2.5 font-medium">Account</th>
+                                                    <th className="min-w-[10rem] px-2 py-2.5 font-medium">Market / claim</th>
+                                                    <th className="w-12 whitespace-nowrap px-3 py-2.5 pr-4 text-right font-medium sm:pr-5">Tx</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="font-sans text-[11px] text-slate-300 sm:text-xs">
+                                                {proxyLog.map((row) => {
+                                                    const d = new Date(row.timestampMs);
+                                                    return (
+                                                        <tr
+                                                            key={row.id}
+                                                            className="border-b border-white/[0.04] transition-colors hover:bg-white/[0.03] last:border-b-0"
+                                                        >
+                                                            <td className="align-top whitespace-nowrap px-3 py-3 pl-4 sm:pl-5">
+                                                                <div className="flex flex-col gap-0.5 leading-tight">
+                                                                    <span className="text-[11px] font-medium tabular-nums text-slate-100 sm:text-xs">
+                                                                        {d.toLocaleDateString(undefined, {
+                                                                            weekday: 'short',
+                                                                            month: 'short',
+                                                                            day: 'numeric',
+                                                                            year: 'numeric',
+                                                                        })}
+                                                                    </span>
+                                                                    <span className="text-[10px] tabular-nums text-slate-500">
+                                                                        {d.toLocaleTimeString(undefined, {
+                                                                            hour: 'numeric',
+                                                                            minute: '2-digit',
+                                                                            second: '2-digit',
+                                                                        })}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="align-top px-2 py-3">
+                                                                <span
+                                                                    className={`inline-flex rounded-md border px-2 py-0.5 text-[9px] font-bold font-mono uppercase tracking-wide [text-shadow:none] ${
+                                                                        row.kind === 'DEP'
+                                                                            ? 'border-cyan-500/50 bg-cyan-950/60 text-cyan-200'
+                                                                            : 'border-rose-500/45 bg-rose-950/50 text-rose-200'
+                                                                    }`}
+                                                                >
+                                                                    {row.kind}
+                                                                </span>
+                                                            </td>
+                                                            <td className="align-top whitespace-nowrap px-2 py-3 tabular-nums font-semibold text-slate-100">
+                                                                {row.amountFormatted}
+                                                                <CurrencySymbol
+                                                                    size="sm"
+                                                                    className="inline align-[-0.1em] !text-cyan-300 [text-shadow:none]"
+                                                                />
+                                                            </td>
+                                                            <td className="align-top px-2 py-3">
+                                                                {row.actorId ? (
+                                                                    <Link
+                                                                        to={`/profile/${encodeURIComponent(row.actorId)}`}
+                                                                        onClick={playClick}
+                                                                        onMouseEnter={playHover}
+                                                                        className="font-semibold text-cyan-300 [text-shadow:none] transition-colors hover:text-white hover:underline hover:decoration-cyan-500/50 hover:underline-offset-2"
+                                                                        title={row.actorLabel}
+                                                                    >
+                                                                        <span className="line-clamp-2 break-all">{row.actorLabel}</span>
+                                                                    </Link>
+                                                                ) : (
+                                                                    <span className="text-slate-500">—</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="align-top px-2 py-3 text-slate-300">
+                                                                <span className="line-clamp-2 break-words [text-shadow:none]" title={row.marketLabel}>
+                                                                    {row.marketLabel}
+                                                                </span>
+                                                            </td>
+                                                            <td className="align-top px-3 py-3 pr-4 text-right sm:pr-5">
+                                                                {row.transactionHash ? (
+                                                                    <a
+                                                                        href={`${EXPLORER_URL}/tx/${row.transactionHash}`}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        onClick={playClick}
+                                                                        onMouseEnter={playHover}
+                                                                        className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] p-1.5 text-slate-400 [text-shadow:none] transition-colors hover:border-cyan-500/50 hover:text-cyan-200"
+                                                                        title="View on explorer"
+                                                                        aria-label="View transaction on block explorer"
+                                                                    >
+                                                                        <ExternalLink size={14} />
+                                                                    </a>
+                                                                ) : (
+                                                                    <span className="text-slate-600">—</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        {/* Gauges */}
-                        <div className="bg-[#020308] border border-intuition-primary/20 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-primary/40 hover:shadow-[0_0_25px_rgba(0,243,255,0.08)] transition-all duration-500 h-full flex flex-col min-h-[220px]">
-                            <h4 className="text-sm font-semibold text-intuition-primary mb-8 flex items-center gap-3 text-glow-blue">
-                                <Cpu size={16} className="animate-pulse shrink-0" /> Network snapshot
-                            </h4>
-                            <div className="space-y-8 flex-1 flex flex-col justify-center">
-                                <div className="group/diag">
-                                    <div className="flex justify-between items-end mb-2 gap-2">
-                                        <span className="text-xs text-slate-400 font-medium group-hover/diag:text-intuition-primary group-hover/diag:text-glow-blue transition-all">Network TVL</span>
-                                        <span className="text-sm font-bold text-white text-glow-white inline-flex items-baseline gap-1 tabular-nums">{formattedGlobalTVL} <CurrencySymbol size="md" /></span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none">
-                                        <div className="h-full bg-intuition-primary/40 group-hover/diag:bg-intuition-primary group-hover/diag:shadow-glow-blue transition-all duration-500" style={{ width: '100%' }}></div>
-                                    </div>
-                                </div>
-                                <div className="group/diag">
-                                    <div className="flex justify-between items-end mb-2 gap-2">
-                                        <span className="text-xs text-slate-400 font-medium group-hover/diag:text-intuition-secondary group-hover/diag:text-glow-red transition-all">Avg. TVL per transaction</span>
-                                        <span className={`text-sm font-bold tabular-nums shrink-0 ${isProxyEmpty ? 'text-slate-600' : 'text-intuition-secondary text-glow-red'}`}>
-                                            {stats?.txCount > 0 ? (parseFloat(formatEther(BigInt(stats.proxyTVL))) / stats.txCount).toFixed(4) : "0.0000"}
-                                        </span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none">
-                                        <div className={`h-full bg-intuition-secondary shadow-glow-red transition-all duration-1000 ${!isProxyEmpty ? 'animate-pulse' : ''}`} style={{ width: isProxyEmpty ? '0%' : '50%' }}></div>
-                                    </div>
-                                </div>
-                                <div className="group/diag">
-                                    <div className="flex justify-between items-end mb-2 gap-2">
-                                        <span className="text-xs text-slate-400 font-medium group-hover/diag:text-intuition-primary transition-colors">Indexer sync</span>
-                                        <span className="text-xs font-semibold text-intuition-primary text-glow-blue animate-pulse">Live</span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-slate-950 overflow-hidden border border-white/10 rounded-none relative">
-                                        <div className="h-full bg-intuition-primary shadow-glow-blue animate-buffer-fill"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Fee proxy */}
-                        <div className="bg-[#050505] border-2 border-intuition-secondary/30 p-8 clip-path-slant shadow-2xl relative overflow-hidden group hover:border-intuition-secondary/60 hover:shadow-[0_0_30px_rgba(255,30,109,0.12)] transition-all duration-500 h-full flex flex-col min-h-[220px]">
-                             <div className="relative z-10 flex flex-col flex-1">
-                                <div className="flex items-center gap-4 mb-6">
-                                    <Lock size={18} className="text-intuition-secondary animate-pulse text-glow-red shrink-0" />
+                        {/* Fee proxy — narrow column so activity table gets most width */}
+                        <div className="relative w-full self-start overflow-hidden rounded-2xl border-2 border-intuition-secondary/30 bg-[#050505] p-5 shadow-2xl clip-path-slant transition-all duration-500 group hover:border-intuition-secondary/60 hover:shadow-[0_0_30px_rgba(255,30,109,0.12)]">
+                             <div className="relative z-10 flex flex-col">
+                                <div className="mb-4 flex items-center gap-3">
+                                    <Lock size={16} className="shrink-0 animate-pulse text-intuition-secondary text-glow-red" aria-hidden />
                                     <h4 className="text-sm font-semibold text-intuition-secondary text-glow-red">Fee proxy contract</h4>
                                 </div>
-                                <p className="text-xs text-slate-400 leading-relaxed font-medium group-hover:text-slate-300 transition-colors flex-1 flex flex-col">
-                                    <span className="mb-2">Address (read-only)</span>
-                                    <span className="text-intuition-primary/90 font-mono font-semibold select-all break-all py-3 px-4 bg-white/5 border border-intuition-primary/20 clip-path-slant text-xs sm:text-sm text-glow-blue group-hover:border-intuition-primary/40 transition-all">{FEE_PROXY_ADDRESS}</span>
-                                </p>
+                                <div className="text-xs font-medium leading-relaxed text-slate-400 transition-colors group-hover:text-slate-300">
+                                    <span className="mb-2 block text-[10px] uppercase tracking-wide text-slate-500">Address (read-only)</span>
+                                    <span className="block break-all rounded-lg border border-intuition-primary/20 bg-white/5 px-3 py-2.5 font-mono text-[10px] font-semibold leading-snug text-intuition-primary/90 text-glow-blue transition-all group-hover:border-intuition-primary/40 sm:text-[11px]">{FEE_PROXY_ADDRESS}</span>
+                                </div>
                              </div>
                         </div>
                     </div>

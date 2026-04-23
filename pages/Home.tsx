@@ -1432,28 +1432,90 @@ const Home: React.FC = () => {
       </section>
 
       {/* 3. CTA — third */}
-      <section className="relative overflow-hidden min-w-0 py-20 sm:py-28 md:py-32 border-b border-white/5 bg-gradient-to-b from-[#050810] to-[#04060a]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_50%,rgba(0,243,255,0.03),transparent)] pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 text-center" style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}>
-          <Reveal delay={100}>
-            <div className="relative rounded-[2rem] sm:rounded-[2.5rem] p-12 sm:p-16 md:p-20 border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm">
-              <div className="absolute -inset-px rounded-[2rem] sm:rounded-[2.5rem] bg-gradient-to-b from-intuition-primary/20 via-transparent to-intuition-secondary/20 opacity-60 -z-10" />
-              <p className="text-slate-400 text-base sm:text-lg mb-6 font-medium">
-                Still can&apos;t find what to buy?
-              </p>
-              <p className="text-slate-100 text-xl sm:text-2xl md:text-3xl mb-10 leading-relaxed">
-                Our <Link to="/markets" onClick={playClick} className="text-intuition-primary font-semibold hover:text-intuition-primary/80 transition-colors">Markets</Link> page has a wide variety of Atoms — stake to earn {CURRENCY_SYMBOL}, or trade the <span className="text-intuition-secondary font-semibold">exponential curve</span> for higher rewards.
-              </p>
-              <Link
-                to="/markets"
-                onClick={playClick}
-                className="group inline-flex items-center gap-3 px-10 sm:px-12 py-5 sm:py-6 rounded-2xl bg-gradient-to-r from-intuition-primary/15 to-intuition-secondary/15 border border-intuition-primary/40 text-white font-semibold text-base sm:text-lg hover:from-intuition-primary/25 hover:to-intuition-secondary/25 hover:border-intuition-primary/60 hover:shadow-[0_0_30px_rgba(0,243,255,0.15)] transition-all duration-300"
-              >
-                Explore Markets
-                <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 group-hover:translate-x-0.5 transition-transform text-intuition-primary" />
-              </Link>
+      <section className="relative overflow-hidden min-w-0 border-b border-white/5 py-20 sm:py-28 md:py-32 bg-gradient-to-b from-[#04060a] via-[#05070f] to-[#04060a]">
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_100%_60%_at_30%_20%,rgba(0,243,255,0.07),transparent_55%)]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_70%_80%,rgba(255,0,85,0.05),transparent_50%)]"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 h-[min(90vw,520px)] w-[min(90vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.04] opacity-50"
+          aria-hidden
+        />
+        <div
+          className="relative mx-auto max-w-3xl min-w-0 px-4 text-center sm:px-6"
+          style={{ paddingLeft: 'clamp(1.5rem, 5vw, 4rem)', paddingRight: 'clamp(1.5rem, 5vw, 4rem)' }}
+        >
+          <div className="group/cta relative">
+            <div
+              className="pointer-events-none absolute -inset-3 rounded-[2rem] bg-gradient-to-br from-intuition-primary/25 via-transparent to-intuition-secondary/20 opacity-50 blur-2xl transition-opacity duration-700 group-hover/cta:opacity-80 sm:-inset-4 sm:rounded-[2.25rem] motion-reduce:opacity-40 motion-reduce:transition-none"
+              aria-hidden
+            />
+            <div className="relative overflow-hidden rounded-[1.75rem] border border-white/[0.08] bg-[#03050d]/[0.92] shadow-[0_4px_0_0_rgba(0,243,255,0.12),0_32px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.04] backdrop-blur-2xl transition-[transform,box-shadow] duration-500 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none sm:rounded-[2rem] sm:shadow-[0_4px_0_0_rgba(0,243,255,0.15),0_40px_100px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.07)] motion-safe:md:group-hover/cta:-translate-y-1 motion-safe:md:group-hover/cta:shadow-[0_6px_0_0_rgba(0,243,255,0.2),0_48px_100px_rgba(0,0,0,0.55),0_0_60px_rgba(0,243,255,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <div
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_70%_at_50%_-10%,rgba(0,243,255,0.12),transparent_50%)]"
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute -right-16 top-0 h-48 w-48 rounded-full bg-intuition-secondary/15 blur-3xl"
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-intuition-primary/10 blur-3xl"
+                aria-hidden
+              />
+              <div
+                className="pointer-events-none absolute inset-0 opacity-[0.35] [background-image:linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:24px_24px]"
+                aria-hidden
+              />
+              <div className="absolute left-0 top-0 h-1 w-24 rounded-br bg-gradient-to-r from-intuition-primary to-intuition-primary/0 sm:w-32" aria-hidden />
+              <div className="absolute bottom-0 right-0 h-1 w-24 rounded-tl bg-gradient-to-l from-intuition-secondary to-intuition-secondary/0 sm:w-32" aria-hidden />
+              <div className="relative z-10 px-8 py-10 sm:px-12 sm:py-14 md:px-14 md:py-16">
+                <Reveal delay={40}>
+                  <p className="mb-3 font-mono text-[10px] font-black uppercase tracking-[0.4em] text-slate-500 sm:text-[11px] sm:tracking-[0.45em]">
+                    Discovery
+                  </p>
+                </Reveal>
+                <Reveal delay={100}>
+                  <h3 className="mb-2 font-display text-lg font-bold tracking-tight text-white sm:text-xl">
+                    Still can&apos;t find what to buy?
+                  </h3>
+                </Reveal>
+                <Reveal delay={180}>
+                  <p className="mx-auto mb-10 max-w-[40rem] text-base leading-[1.65] text-slate-300 sm:text-lg md:text-[1.125rem]">
+                    Our{' '}
+                    <Link
+                      to="/markets"
+                      onClick={playClick}
+                      onMouseEnter={playHover}
+                      className="font-semibold text-intuition-primary underline decoration-intuition-primary/35 underline-offset-4 transition-colors hover:text-white hover:decoration-white/50"
+                    >
+                      Markets
+                    </Link>{' '}
+                    page has a wide variety of Atoms → stake to earn {CURRENCY_SYMBOL}, or trade the{' '}
+                    <span className="font-semibold text-intuition-secondary [text-shadow:0_0_24px_rgba(255,0,85,0.25)]">
+                      exponential curve
+                    </span>{' '}
+                    for higher rewards.
+                  </p>
+                </Reveal>
+                <Reveal delay={260}>
+                  <Link
+                    to="/markets"
+                    onClick={playClick}
+                    onMouseEnter={playHover}
+                    className="group/btn inline-flex min-h-[3.25rem] items-center justify-center gap-2.5 rounded-2xl bg-intuition-primary px-8 py-3.5 text-sm font-bold text-black shadow-[0_0_0_0_rgba(0,243,255,0.4),0_12px_32px_rgba(0,243,255,0.25)] ring-1 ring-white/20 transition-all duration-400 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-none sm:min-h-[3.5rem] sm:px-10 sm:text-base hover:scale-[1.02] hover:bg-[#33f5ff] hover:shadow-[0_0_0_1px_rgba(0,243,255,0.5),0_0_40px_rgba(0,243,255,0.45),0_16px_40px_rgba(0,0,0,0.35)] active:scale-[0.98] sm:py-4"
+                  >
+                    <span>Explore Markets</span>
+                    <ArrowRight className="h-4 w-4 transition-transform duration-400 group-hover/btn:translate-x-1 sm:h-5 sm:w-5" aria-hidden />
+                  </Link>
+                </Reveal>
+              </div>
             </div>
-          </Reveal>
+          </div>
         </div>
       </section>
 

@@ -97,18 +97,22 @@ const NavItem = memo(function NavItem({
 }: NavItemProps) {
   const isGold = variant === 'gold';
   const isSuccess = variant === 'success';
+  const motionEasing = 'motion-safe:[transition-timing-function:cubic-bezier(0.33,1,0.68,1)]';
+  const baseMotion =
+    'motion-reduce:transition-none motion-reduce:duration-0 motion-safe:transition-[gap,padding,background-color,border-color,color,box-shadow,transform,filter] motion-safe:duration-400 ' +
+    motionEasing;
   const activeCls = isGold
-    ? 'text-black bg-intuition-warning border-intuition-warning shadow-[0_0_14px_rgba(250,204,21,0.5)] ring-1 ring-amber-400/45'
+    ? 'text-black bg-intuition-warning border-intuition-warning shadow-[0_0_16px_rgba(250,204,21,0.55)] ring-1 ring-amber-400/50 motion-safe:duration-500 hover:shadow-[0_0_28px_rgba(250,204,21,0.5)] motion-safe:group-hover/item:-translate-y-px'
     : isSuccess
-      ? 'text-black bg-intuition-success border-intuition-success shadow-[0_0_14px_rgba(0,255,157,0.45)] ring-1 ring-intuition-success/40'
-      : 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_12px_rgba(0,243,255,0.35)] ring-1 ring-intuition-primary/40';
+      ? 'text-black bg-intuition-success border-intuition-success shadow-[0_0_16px_rgba(0,255,157,0.5)] ring-1 ring-intuition-success/45 motion-safe:duration-500 hover:shadow-[0_0_28px_rgba(0,255,157,0.45)] motion-safe:group-hover/item:-translate-y-px'
+      : 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_14px_rgba(0,243,255,0.45)] ring-1 ring-intuition-primary/45 motion-safe:duration-500 hover:shadow-[0_0_32px_rgba(0,243,255,0.38)] motion-safe:group-hover/item:-translate-y-px';
   const idleCls = isGold
-    ? 'text-amber-200/95 border border-amber-500/35 bg-gradient-to-br from-amber-950/50 to-black/60 hover:text-amber-50 hover:border-amber-400/75 hover:bg-amber-500/12 hover:shadow-[0_0_18px_rgba(250,204,21,0.22)]'
+    ? 'text-amber-200/95 border border-amber-500/40 bg-gradient-to-br from-amber-950/55 to-black/60 hover:text-amber-50 hover:border-amber-400/85 hover:from-amber-500/15 hover:via-amber-400/8 hover:to-black/50 hover:shadow-[0_0_22px_rgba(250,204,21,0.28),inset_0_1px_0_0_rgba(255,255,255,0.05)] motion-safe:group-hover/item:-translate-y-px'
     : isSuccess
-      ? 'text-intuition-success border border-intuition-success/35 bg-intuition-success/5 hover:text-intuition-success hover:border-intuition-success/70 hover:bg-intuition-success/12 hover:shadow-[0_0_16px_rgba(0,255,157,0.22)]'
-      : 'text-slate-400 border-transparent bg-white/5 hover:text-white hover:border-intuition-primary/60 hover:bg-intuition-primary/15';
+      ? 'text-intuition-success border border-intuition-success/40 bg-gradient-to-br from-intuition-success/8 to-intuition-success/[0.03] hover:text-intuition-success hover:border-intuition-success/80 hover:from-intuition-success/16 hover:via-white/[0.04] hover:to-intuition-success/8 hover:shadow-[0_0_22px_rgba(0,255,157,0.28),inset_0_1px_0_0_rgba(255,255,255,0.04)] motion-safe:group-hover/item:-translate-y-px'
+      : 'text-slate-400/95 border border-white/[0.07] bg-gradient-to-br from-white/[0.07] to-white/[0.02] hover:text-white hover:border-intuition-primary/55 hover:from-intuition-primary/14 hover:via-white/[0.05] hover:to-intuition-primary/10 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.2),0_6px_32px_rgba(0,243,255,0.16),inset_0_1px_0_0_rgba(255,255,255,0.07)] motion-safe:group-hover/item:-translate-y-px';
 
-  const cls = `relative flex items-center gap-0 group-hover/sidebar:gap-2.5 group-focus-within/sidebar:gap-2.5 justify-center group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start px-2 group-hover/sidebar:px-4 group-focus-within/sidebar:px-4 sm:group-hover/sidebar:px-5 sm:group-focus-within/sidebar:px-5 py-2.5 min-h-[44px] text-[10px] font-black tracking-[0.25em] font-mono rounded-xl sm:rounded-full border min-w-0 motion-reduce:transition-none motion-reduce:duration-0 transition-[gap,padding,background-color,border-color,color,box-shadow] duration-200 ease-out ${
+  const cls = `group/item relative z-0 flex items-center overflow-hidden gap-0 group-hover/sidebar:gap-2.5 group-focus-within/sidebar:gap-2.5 justify-center group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start px-2 group-hover/sidebar:px-4 group-focus-within/sidebar:px-4 sm:group-hover/sidebar:px-5 sm:group-focus-within/sidebar:px-5 py-2.5 min-h-[44px] text-[10px] font-black tracking-[0.25em] font-mono rounded-xl sm:rounded-full border min-w-0 will-change-transform active:scale-[0.99] ${baseMotion} ${
     active ? activeCls : idleCls
   }`;
 
@@ -117,10 +121,41 @@ const NavItem = memo(function NavItem({
     onClick();
   };
 
+  const sheenVia =
+    isGold
+      ? 'from-transparent via-amber-200/25 to-transparent'
+      : isSuccess
+        ? 'from-transparent via-emerald-200/22 to-transparent'
+        : 'from-transparent via-white/20 to-transparent';
+
+  const iconT =
+    'transition-[transform,filter] duration-400 motion-reduce:transition-none motion-reduce:duration-0 ' + motionEasing;
+
+  const iconHoverIdle = isGold
+    ? 'text-amber-200/95 group-hover/item:scale-110 group-hover/item:text-amber-50'
+    : isSuccess
+      ? 'text-intuition-success group-hover/item:scale-110 group-hover/item:drop-shadow-[0_0_10px_rgba(0,255,157,0.4)]'
+      : 'text-slate-400 group-hover/item:scale-110 group-hover/item:text-intuition-primary group-hover/item:drop-shadow-[0_0_10px_rgba(0,243,255,0.45)]';
+
+  const iconActive = 'text-black group-hover/item:scale-105 group-hover/item:drop-shadow-sm';
+
   const inner = (
     <>
-      <span className="shrink-0 flex items-center justify-center w-5 [&>svg]:shrink-0">{icon}</span>
-      <span className="whitespace-nowrap overflow-hidden text-left max-w-0 opacity-0 motion-reduce:transition-none motion-reduce:duration-0 transition-opacity duration-200 ease-out group-hover/sidebar:max-w-[13rem] xl:group-hover/sidebar:max-w-[15rem] group-hover/sidebar:opacity-100 group-focus-within/sidebar:max-w-[13rem] xl:group-focus-within/sidebar:max-w-[15rem] group-focus-within/sidebar:opacity-100 flex-1 min-w-0">
+      {!active && (
+        <span className="pointer-events-none absolute inset-0 z-[1] overflow-hidden rounded-[inherit]" aria-hidden>
+          <span
+            className={`absolute -left-1/3 top-0 h-full w-2/3 -skew-x-12 -translate-x-full bg-gradient-to-r ${sheenVia} opacity-0 transition-[transform,opacity] duration-[650ms] ease-out group-hover/item:translate-x-[220%] group-hover/item:opacity-100 motion-reduce:translate-x-[-100%] motion-reduce:opacity-0 motion-reduce:transition-none motion-reduce:group-hover/item:translate-x-[-100%] motion-reduce:group-hover/item:opacity-0 ${motionEasing}`}
+          />
+        </span>
+      )}
+      <span
+        className={`shrink-0 flex items-center justify-center w-5 relative z-[2] [&>svg]:shrink-0 ${iconT} ${
+          active ? iconActive : iconHoverIdle
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="whitespace-nowrap overflow-hidden text-left max-w-0 opacity-0 motion-reduce:transition-none transition-[max-width,opacity] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-hover/sidebar:max-w-[13rem] xl:group-hover/sidebar:max-w-[15rem] group-hover/sidebar:opacity-100 group-focus-within/sidebar:max-w-[13rem] xl:group-focus-within/sidebar:max-w-[15rem] group-focus-within/sidebar:opacity-100 flex-1 min-w-0 relative z-[2]">
         {label}
       </span>
     </>
@@ -289,7 +324,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Desktop side nav — full-height dock (flush left/top/bottom), icon rail expands on hover */}
       <aside
         ref={sidebarAsideRef}
-        className="group/sidebar hidden lg:flex fixed inset-y-0 left-0 z-[105] flex-col rounded-none rounded-r-2xl xl:rounded-r-3xl bg-[#020308] border-y-0 border-l-0 border-r border-slate-800/80 shadow-[2px_0_16px_rgba(0,0,0,0.35)] overflow-hidden contain-[layout] transform-gpu motion-reduce:transition-none motion-reduce:duration-0 transition-[width] duration-200 ease-out w-[4.5rem] hover:w-72 xl:hover:w-80 focus-within:w-72 xl:focus-within:w-80 hover:shadow-[4px_0_24px_rgba(0,0,0,0.45)] focus-within:shadow-[4px_0_24px_rgba(0,0,0,0.45)]"
+        className="group/sidebar hidden lg:flex fixed inset-y-0 left-0 z-[105] flex-col rounded-none rounded-r-2xl xl:rounded-r-3xl bg-[#020308] border-y-0 border-l-0 border-r border-slate-800/80 shadow-[2px_0_16px_rgba(0,0,0,0.35)] overflow-hidden contain-[layout] transform-gpu motion-reduce:transition-none motion-reduce:duration-0 transition-[width,box-shadow] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] w-[4.5rem] hover:w-72 xl:hover:w-80 focus-within:w-72 xl:focus-within:w-80 hover:shadow-[4px_0_28px_rgba(0,0,0,0.5),0_0_40px_rgba(0,243,255,0.04)] focus-within:shadow-[4px_0_28px_rgba(0,0,0,0.5),0_0_40px_rgba(0,243,255,0.04)]"
       >
         <Link
           to="/"
@@ -298,7 +333,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           }}
           onMouseEnter={playHover}
           aria-label="IntuRank home"
-          className="flex h-16 shrink-0 items-center gap-3 px-2.5 group-hover/sidebar:px-4 group-focus-within/sidebar:px-4 border-b border-slate-800/50 justify-center group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start min-w-0 overflow-visible relative z-10 no-underline outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020308] motion-reduce:transition-none transition-[gap,padding] duration-200 ease-out"
+          className="flex h-16 shrink-0 items-center gap-3 px-2.5 group-hover/sidebar:px-4 group-focus-within/sidebar:px-4 border-b border-slate-800/50 justify-center group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start min-w-0 overflow-visible relative z-10 no-underline outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020308] motion-reduce:transition-none transition-[gap,padding] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)]"
         >
           <div className="shrink-0 flex items-center justify-center">
             <div
@@ -325,7 +360,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         <div className="flex-1 flex flex-col px-3 py-3 gap-4 overflow-y-auto overflow-x-clip min-h-0 overscroll-contain">
           <nav
-            className="rounded-2xl border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.08] to-transparent p-2.5 space-y-2 shadow-[inset_0_1px_0_0_rgba(0,243,255,0.15)]"
+            className="rounded-2xl border border-intuition-primary/30 bg-gradient-to-b from-intuition-primary/[0.08] to-transparent p-2.5 space-y-2 shadow-[inset_0_1px_0_0_rgba(0,243,255,0.15)] transition-[box-shadow,background-color,border-color] duration-500 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-hover/sidebar:shadow-[inset_0_1px_0_0_rgba(0,243,255,0.22),0_0_32px_rgba(0,243,255,0.08)]"
             aria-label="Primary navigation"
           >
             <div className="hidden group-hover/sidebar:block group-focus-within/sidebar:block px-2 pb-2 border-b border-white/5">

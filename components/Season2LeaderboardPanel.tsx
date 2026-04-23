@@ -388,7 +388,7 @@ export const Season2LeaderboardPanel: React.FC<{
         }`}
       >
         <div className="flex flex-col gap-4">
-          <header className={`space-y-3 border-b border-white/[0.07] ${isHome ? 'pb-3' : 'pb-4'}`}>
+          <header className={`space-y-2 border-b border-white/[0.07] ${isHome ? 'pb-3' : 'pb-4'}`}>
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/35 bg-amber-400/10 px-3 py-1.5 text-amber-100/95 shadow-[0_0_20px_rgba(251,191,36,0.12)] backdrop-blur-sm">
                 <Trophy size={15} className="shrink-0 text-amber-400" aria-hidden />
@@ -401,27 +401,22 @@ export const Season2LeaderboardPanel: React.FC<{
               )}
             </div>
             {!isHome && (
-              <p className="max-w-2xl font-sans text-sm leading-relaxed text-slate-400">
-                Unrealized + realized columns match the sort metric (PnL or ROI%), like the Intuition portal ({PAGE_ROWS_PER_PAGE} rows per page). All-time rankings live under{' '}
-                <span className="font-medium text-slate-300">TOP PnL</span>.
-              </p>
-            )}
-            {!isHome && (
-              <p className="max-w-2xl font-sans text-sm leading-relaxed text-slate-400">
-                Stake and trade on{' '}
+              <p className="max-w-2xl font-sans text-xs sm:text-sm text-slate-500">
+                <Link to={HREF_NETWORK_PNL} onClick={playClick} className="text-slate-400 hover:text-slate-300">
+                  All-time
+                </Link>
+                {' · '}
                 <Link
                   to="/#trending-atoms"
                   onClick={playClick}
-                  className="font-medium text-intuition-primary transition-colors hover:text-cyan-200"
+                  className="text-intuition-primary/90 hover:text-cyan-200"
                 >
-                  Trending Atoms
-                </Link>{' '}
-                to move up the board.
+                  Trending
+                </Link>
               </p>
             )}
             {isHome && (
               <p className="font-sans text-xs text-slate-500">
-                Trade during the epoch to climb ·{' '}
                 <a
                   href="#trending-atoms"
                   className="font-medium text-intuition-primary/90 hover:text-intuition-primary"
@@ -431,7 +426,7 @@ export const Season2LeaderboardPanel: React.FC<{
                     document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }}
                 >
-                  Trending atoms
+                  Trending
                 </a>
               </p>
             )}
@@ -572,41 +567,71 @@ export const Season2LeaderboardPanel: React.FC<{
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 text-sm font-mono">
-                  {(() => {
-                    const row = userRowOnBoard as any;
-                    const pctRaw =
-                      row?.realized_pnl_pct != null
-                        ? Number(row.realized_pnl_pct)
-                        : row?.pnl_pct != null
-                          ? Number(row.pnl_pct)
-                          : userPnlPosition?.pnl_pct != null
-                            ? Number(userPnlPosition.pnl_pct)
-                            : null;
-                    if (pctRaw == null || !Number.isFinite(pctRaw)) return null;
-                    const pct = Math.abs(pctRaw) <= 1 ? pctRaw * 100 : pctRaw;
-                    return (
-                      <span
-                        className={`font-semibold ${pct >= 0 ? 'text-intuition-success' : 'text-red-400'}`}
-                      >
-                        {pct >= 0 ? '+' : ''}
-                        {pct.toFixed(1)}% ROI
-                      </span>
-                    );
-                  })()}
+                <div className="flex items-center justify-end gap-2 sm:gap-3 text-xs sm:text-sm font-mono min-w-0">
                   {(() => {
                     const row = userRowOnBoard as any;
                     const src =
                       row ??
-                      (userPnlPosition?.total_pnl_raw != null
-                        ? { total_pnl_raw: userPnlPosition.total_pnl_raw }
+                      (userPnlPosition != null
+                        ? {
+                            total_pnl_raw: userPnlPosition.total_pnl_raw,
+                            pnl_pct: userPnlPosition.pnl_pct,
+                            realized_pnl_pct: (userPnlPosition as any).realized_pnl_pct,
+                            unrealized_pnl_pct: (userPnlPosition as any).unrealized_pnl_pct,
+                            realized_pnl_formatted: (userPnlPosition as any).realized_pnl_formatted,
+                            unrealized_pnl_formatted: (userPnlPosition as any).unrealized_pnl_formatted,
+                          }
                         : null);
                     if (!src) return null;
-                    const { value, display } = resolveEpochRealizedPnl(src);
+                    if (sortMetric === 'REALIZED_PNL') {
+                      const u = resolveUnrealizedPnl(src);
+                      const p = resolveEpochRealizedPnl(src);
+                      return (
+                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                          <span
+                            className={`min-w-0 tabular-nums ${
+                              u.value > 0
+                                ? 'text-intuition-success'
+                                : u.value < 0
+                                  ? 'text-red-400'
+                                  : 'text-slate-400'
+                            }`}
+                            title="Unrealized PnL"
+                          >
+                            {u.display}
+                          </span>
+                          <span className="text-slate-600 shrink-0" aria-hidden>
+                            ·
+                          </span>
+                          <span
+                            className={`min-w-0 font-semibold tabular-nums ${p.value >= 0 ? 'text-intuition-success' : 'text-red-400'}`}
+                            title="Realized PnL"
+                          >
+                            {p.display}
+                          </span>
+                        </div>
+                      );
+                    }
+                    const uPct = parsePctField(src.unrealized_pnl_pct);
+                    const rPct = parsePctField(src.realized_pnl_pct ?? src.pnl_pct);
                     return (
-                      <span className={value >= 0 ? 'text-slate-300' : 'text-red-400'}>
-                        {display}
-                      </span>
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <span
+                          className={`min-w-0 font-semibold tabular-nums ${pctTextClass(uPct)}`}
+                          title="Unrealized ROI"
+                        >
+                          {formatPctPretty(src.unrealized_pnl_pct)}
+                        </span>
+                        <span className="text-slate-600 shrink-0" aria-hidden>
+                          ·
+                        </span>
+                        <span
+                          className={`min-w-0 font-semibold tabular-nums ${pctTextClass(rPct)}`}
+                          title="Realized ROI"
+                        >
+                          {formatPctPretty(src.realized_pnl_pct ?? src.pnl_pct)}
+                        </span>
+                      </div>
                     );
                   })()}
                 </div>
@@ -616,18 +641,16 @@ export const Season2LeaderboardPanel: React.FC<{
           {walletAddress && !userHasEpochRow && !pnlLoading && (
             <div className="mx-auto max-w-lg space-y-1 rounded-2xl border border-white/[0.08] bg-[#05070c]/80 px-4 py-4 text-center backdrop-blur-sm sm:px-5">
               <p className="font-sans text-sm font-medium leading-relaxed text-slate-300">
-                {pnlTop.length > 0 ? 'No row for your wallet in this snapshot.' : 'No leaderboard rows for this window yet.'}
+                {pnlTop.length > 0 ? 'Not ranked this epoch.' : 'No rows yet.'}
               </p>
-              {pnlTop.length > 0 ? (
-                <p className="font-sans text-xs text-slate-500">Trade during the epoch or check the full board.</p>
-              ) : (
-                <p className="font-sans text-xs text-slate-500">Indexing may still be catching up.</p>
+              {pnlTop.length > 0 ? null : (
+                <p className="font-sans text-xs text-slate-500">Indexing can lag.</p>
               )}
             </div>
           )}
           {!walletAddress && (
             <div className="mx-auto max-w-lg rounded-2xl border border-white/[0.08] bg-[#05070c]/70 px-4 py-4 text-center backdrop-blur-sm">
-              <p className="font-sans text-sm text-slate-400">Connect a wallet to see your epoch rank.</p>
+              <p className="font-sans text-sm text-slate-400">Connect a wallet for your rank.</p>
             </div>
           )}
 
@@ -674,14 +697,14 @@ export const Season2LeaderboardPanel: React.FC<{
                   <td colSpan={5} className="px-4 sm:px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <Loader2 className="w-10 h-10 text-intuition-primary animate-spin" />
-                      <span className="text-slate-500 font-mono text-sm uppercase tracking-wider">Loading leaderboard…</span>
+                      <span className="text-slate-500 font-mono text-sm">Loading…</span>
                     </div>
                   </td>
                 </tr>
               ) : pnlTop.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 sm:px-6 py-16 text-center text-slate-500 font-mono text-sm uppercase tracking-wider">
-                    No leaderboard data available
+                    No data
                   </td>
                 </tr>
               ) : (
