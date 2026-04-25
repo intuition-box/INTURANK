@@ -914,7 +914,7 @@ style={{
                   >
                     <ChevronsRight size={18} className="shrink-0 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0" />
                     <span className="flex items-center gap-2 flex-wrap">
-                      Intuition docs <BookOpen size={16} className="opacity-80 shrink-0" />
+                      Intuition Docs <BookOpen size={16} className="opacity-80 shrink-0" />
                     </span>
                   </a>
                   <a
