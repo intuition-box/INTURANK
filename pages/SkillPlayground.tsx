@@ -1,10 +1,79 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Cpu, Zap, Info, Terminal, BookOpen, ExternalLink, ShieldCheck, History } from 'lucide-react';
+import {
+    ArrowLeft,
+    ArrowRight,
+    Cpu,
+    Zap,
+    Info,
+    BookOpen,
+    ExternalLink,
+    ShieldCheck,
+    History,
+    ChevronRight,
+} from 'lucide-react';
 import SkillChat from '../components/SkillChat';
 import { SkillErrorBoundary } from '../components/SkillErrorBoundary';
 import { playClick, playHover } from '../services/audio';
 import { CURRENCY_SYMBOL, PAGE_HERO_TITLE } from '../constants';
+
+const useInView = (options: { once?: boolean; threshold?: number } = {}) => {
+    const [isInView, setIsInView] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setIsInView(true);
+                    if (options.once) observer.unobserve(entry.target);
+                } else if (!options.once) {
+                    setIsInView(false);
+                }
+            },
+            { threshold: 0.1, ...options }
+        );
+
+        const el = ref.current;
+        if (el) observer.observe(el);
+        return () => {
+            if (el) observer.unobserve(el);
+        };
+    }, [options.once]);
+
+    return [ref, isInView] as const;
+};
+
+const Reveal: React.FC<{
+    children: React.ReactNode;
+    delay?: number;
+    className?: string;
+}> = ({ children, delay = 0, className = '' }) => {
+    const [ref, isInView] = useInView({ once: true });
+    return (
+        <div
+            ref={ref}
+            className={`transition-[opacity,transform] duration-500 ${isInView ? 'opacity-100' : 'opacity-0'} ${className}`}
+            style={{
+                transitionDelay: `${delay}ms`,
+                transform: isInView ? 'translateY(0)' : 'translateY(14px)',
+                transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            }}
+        >
+            {children}
+        </div>
+    );
+};
+
+const REF_CARD =
+    'group relative overflow-hidden rounded-[1.5rem] border border-white/[0.1] bg-[#04060c]/80 ' +
+    'shadow-[0_20px_50px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)] ' +
+    'ring-1 ring-inset ring-white/[0.04] backdrop-blur-2xl backdrop-saturate-150 motion-hover-lift';
+
+const TIP_CARD =
+    'group relative overflow-hidden rounded-[1.5rem] border border-white/[0.09] bg-[#03050a]/75 ' +
+    'shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.05)] ' +
+    'ring-1 ring-inset ring-white/[0.03] backdrop-blur-xl backdrop-saturate-150 motion-hover-lift';
 
 /** Fixed-height shell: inner message list scrolls; outer height does not grow with message count. */
 const CHAT_SHELL =
@@ -72,7 +141,7 @@ const SkillPlayground: React.FC = () => {
                             rel="noopener noreferrer"
                             className="px-4 sm:px-5 py-2.5 bg-intuition-primary text-black text-sm font-semibold rounded-2xl shadow-[0_0_28px_rgba(0,243,255,0.35)] inline-flex items-center gap-2"
                         >
-                            <BookOpen size={14} /> Docs <ExternalLink size={10} />
+                            <BookOpen size={14} /> Intuition Docs <ExternalLink size={10} />
                         </a>
                     </div>
                 </header>
@@ -89,74 +158,138 @@ const SkillPlayground: React.FC = () => {
                     </div>
 
                     <aside className="w-full xl:w-[min(100%,300px)] 2xl:w-[320px] shrink-0 xl:sticky xl:top-20 xl:self-start xl:max-h-[min(calc(100dvh-6rem),920px)] overflow-y-auto custom-scrollbar space-y-4">
-                        <div className="bg-[#03050d]/[0.96] backdrop-blur-xl backdrop-saturate-150 border border-white/12 p-5 sm:p-6 rounded-2xl lg:rounded-3xl relative overflow-hidden group shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-black/35">
-                            <div className="absolute -right-4 -top-4 opacity-[0.06] pointer-events-none group-hover:opacity-[0.1] transition-opacity">
-                                <Terminal size={88} className="text-intuition-primary" />
-                            </div>
-
-                            <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2 relative font-sans">
-                                <Info size={15} className="text-intuition-primary shrink-0" />
-                                Quick reference
-                            </h2>
-
-                            <div className="space-y-4 text-sm text-slate-400 leading-relaxed relative font-sans">
-                                <p>
-                                    Ask in plain language. When a step needs the chain, review the summary and use{' '}
-                                    <span className="text-slate-200">Sign &amp; broadcast</span>.
-                                </p>
-
-                                <div>
-                                    <div className="text-xs font-medium text-slate-500 mb-2">Typical costs (approx.)</div>
-                                    <ul className="space-y-2 text-sm text-slate-300">
-                                        <li className="flex justify-between gap-2 border-b border-white/5 pb-2">
-                                            <span>Atom</span>
-                                            <span className="text-intuition-primary tabular-nums">~0.15 {CURRENCY_SYMBOL} + deposit</span>
-                                        </li>
-                                        <li className="flex justify-between gap-2 border-b border-white/5 pb-2">
-                                            <span>Triple</span>
-                                            <span className="text-intuition-primary tabular-nums">~0.15 {CURRENCY_SYMBOL} + deposit</span>
-                                        </li>
-                                        <li className="flex justify-between gap-2">
-                                            <span>Vault deposit</span>
-                                            <span className="text-slate-500">Varies</span>
-                                        </li>
-                                    </ul>
+                        <Reveal delay={0}>
+                            <div
+                                className={`${REF_CARD} p-5 sm:p-6 transition-[border-color,box-shadow] duration-300 hover:border-intuition-primary/30 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_40px_rgba(0,243,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+                            >
+                                <div
+                                    className="pointer-events-none absolute inset-0 opacity-[0.5]"
+                                    style={{
+                                        background:
+                                            'radial-gradient(ellipse 90% 70% at 100% 0%, rgba(0,243,255,0.12), transparent 55%), radial-gradient(ellipse 70% 50% at 0% 100%, rgba(255,30,109,0.08), transparent 50%)',
+                                    }}
+                                />
+                                <div className="absolute -right-2 top-3 opacity-[0.12] transition-opacity group-hover:opacity-20">
+                                    <ChevronRight
+                                        strokeWidth={1.25}
+                                        className="h-20 w-20 text-intuition-primary"
+                                        aria-hidden
+                                    />
                                 </div>
+                                <div className="relative">
+                                    <p className="mb-2 font-mono text-[9px] font-black uppercase tracking-[0.35em] text-slate-500">
+                                        Playbook
+                                    </p>
+                                    <h2 className="mb-3 flex items-center gap-2 font-sans text-sm font-semibold text-white">
+                                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-intuition-primary/30 bg-intuition-primary/10 shadow-[0_0_20px_rgba(0,243,255,0.15)]">
+                                            <Info size={15} className="text-intuition-primary" />
+                                        </span>
+                                        Quick reference
+                                    </h2>
 
-                                <div className="pt-2 border-t border-white/10">
-                                    <div className="text-xs font-medium text-amber-400/90 mb-1 flex items-center gap-1.5">
-                                        <Zap size={10} className="shrink-0" /> Tip
+                                    <p className="mb-4 flex flex-wrap items-center gap-1.5 text-sm text-slate-400">
+                                        <span>Natural language in.</span>
+                                        <span className="inline-flex items-center gap-0.5 text-slate-300">
+                                            Chain
+                                            <ArrowRight className="h-3.5 w-3.5 text-intuition-primary/80" />
+                                        </span>
+                                        <span>
+                                            review, then{' '}
+                                            <span className="font-medium text-slate-100">Sign &amp; broadcast</span>
+                                        </span>
+                                    </p>
+
+                                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                        Typical costs
+                                    </p>
+                                    <div className="mb-1 grid grid-cols-2 gap-2">
+                                        <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2.5">
+                                            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                                Atom
+                                            </div>
+                                            <div className="mt-0.5 font-mono text-xs tabular-nums text-intuition-primary">
+                                                ~0.15 {CURRENCY_SYMBOL}
+                                                <span className="text-slate-500"> + dep.</span>
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2.5">
+                                            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                                Triple
+                                            </div>
+                                            <div className="mt-0.5 font-mono text-xs tabular-nums text-intuition-primary">
+                                                ~0.15 {CURRENCY_SYMBOL}
+                                                <span className="text-slate-500"> + dep.</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <p className="text-slate-500 text-sm">
-                                        You can explore without a wallet. Connect when you are ready to spend TRUST on Intuition Mainnet.
+                                    <div className="flex items-center justify-between rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-400">
+                                        <span className="text-slate-500">Vault deposit</span>
+                                        <span className="font-medium text-slate-300">Varies</span>
+                                    </div>
+
+                                    <div className="mt-4 border-t border-white/10 pt-4">
+                                        <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-400/90">
+                                            <Zap size={12} className="shrink-0" />
+                                            Tip
+                                        </div>
+                                        <p className="text-sm text-slate-500">
+                                            Browse without a wallet. Connect to move{' '}
+                                            <span className="text-slate-300">TRUST</span> on Mainnet.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </Reveal>
+
+                        <Reveal delay={90}>
+                            <div
+                                className={`${TIP_CARD} p-4 lg:p-5 transition-[border-color,box-shadow] duration-300 hover:border-intuition-primary/40 hover:shadow-[0_0_32px_rgba(0,243,255,0.1),inset_0_1px_0_rgba(255,255,255,0.07)]`}
+                            >
+                                <div
+                                    className="pointer-events-none absolute inset-0 opacity-40"
+                                    style={{
+                                        background:
+                                            'radial-gradient(ellipse 80% 60% at 0% 0%, rgba(0,243,255,0.15), transparent 50%)',
+                                    }}
+                                />
+                                <div className="relative">
+                                    <div className="mb-2.5 flex items-center gap-3">
+                                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-intuition-primary/35 bg-gradient-to-br from-intuition-primary/20 to-intuition-primary/5 shadow-[0_0_24px_rgba(0,243,255,0.2)]">
+                                            <Zap size={18} className="text-intuition-primary" />
+                                        </div>
+                                        <h3 className="font-sans text-sm font-semibold text-white">Autonomous creation</h3>
+                                    </div>
+                                    <p className="text-sm leading-relaxed text-slate-400">
+                                        Agent assembles calldata and fees. You sign in your wallet.
                                     </p>
                                 </div>
                             </div>
-                        </div>
+                        </Reveal>
 
-                        <div className="bg-[#04060c]/[0.94] backdrop-blur-lg border border-white/12 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-intuition-primary/35 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-1.5 bg-intuition-primary/15 rounded-lg border border-intuition-primary/25">
-                                    <Zap size={16} className="text-intuition-primary" />
+                        <Reveal delay={180}>
+                            <div
+                                className={`${TIP_CARD} p-4 lg:p-5 transition-[border-color,box-shadow] duration-300 hover:border-[#ff3d7a]/40 hover:shadow-[0_0_32px_rgba(255,30,109,0.12),inset_0_1px_0_rgba(255,255,255,0.07)]`}
+                            >
+                                <div
+                                    className="pointer-events-none absolute inset-0 opacity-50"
+                                    style={{
+                                        background:
+                                            'radial-gradient(ellipse 90% 70% at 100% 100%, rgba(255,30,109,0.12), transparent 55%)',
+                                    }}
+                                />
+                                <div className="relative">
+                                    <div className="mb-2.5 flex items-center gap-3">
+                                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#ff1e6d]/30 bg-gradient-to-br from-[#ff1e6d]/20 to-[#3d0a18]/40 shadow-[0_0_20px_rgba(255,30,109,0.15)]">
+                                            <ShieldCheck size={18} className="text-[#ff6b9d]" />
+                                        </div>
+                                        <h3 className="font-sans text-sm font-semibold text-white">You stay in control</h3>
+                                    </div>
+                                    <p className="text-sm leading-relaxed text-slate-400">
+                                        Read every summary before signing. Your keys, your transactions.
+                                    </p>
                                 </div>
-                                <h3 className="text-sm font-semibold text-white font-sans">Autonomous creation</h3>
                             </div>
-                            <p className="text-sm text-slate-400 leading-relaxed font-sans">
-                                Describe what you want in everyday language. The agent builds calldata and fees. You approve in your wallet.
-                            </p>
-                        </div>
-
-                        <div className="bg-[#04060c]/[0.94] backdrop-blur-lg border border-white/12 rounded-2xl lg:rounded-3xl p-4 lg:p-5 hover:border-[#ff1e6d]/35 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="p-1.5 bg-[#ff1e6d]/10 rounded-lg border border-[#ff1e6d]/25">
-                                    <ShieldCheck size={16} className="text-[#ff1e6d]" />
-                                </div>
-                                <h3 className="text-sm font-semibold text-white font-sans">You stay in control</h3>
-                            </div>
-                            <p className="text-sm text-slate-400 leading-relaxed font-sans">
-                                Transactions follow Intuition standards. Always read the summary before signing. Your keys, your approval.
-                            </p>
-                        </div>
+                        </Reveal>
                     </aside>
                 </div>
             </div>

@@ -290,7 +290,7 @@ const Documentation: React.FC = () => {
               onMouseEnter={playHover}
               className="px-4 sm:px-5 py-2.5 bg-intuition-primary text-black text-sm font-semibold rounded-2xl shadow-[0_0_28px_rgba(0,243,255,0.35)] inline-flex items-center gap-2"
             >
-              <BookOpen size={14} /> Protocol docs <ExternalLink size={10} className="opacity-80" />
+              <BookOpen size={14} /> Intuition Docs <ExternalLink size={10} className="opacity-80" />
             </a>
           </div>
         </header>
@@ -932,7 +932,7 @@ const Documentation: React.FC = () => {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Intuition docs
+                  Intuition Docs
                 </a>
                 .
               </p>

@@ -1,15 +1,23 @@
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { getWalletBalance, getShareBalance, getQuoteRedeem, resolveENS, reverseResolveENS, toAddress } from '../services/web3';
+import { getWalletBalance, getShareBalanceEffective, getQuoteRedeem, resolveENS, reverseResolveENS, toAddress } from '../services/web3';
 import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount, getCurveLabel } from '../services/graphql';
 import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail, Copy, ChevronRight, Trash2 } from 'lucide-react';
-import { formatEther, isAddress } from 'viem';
+import { formatEther, isAddress, getAddress } from 'viem';
 import { Transaction } from '../types';
 import { calculateCategoryExposure, calculateSentimentBias, formatMarketValue, formatDisplayedShares } from '../services/analytics';
-import { CURRENCY_SYMBOL, DISTRUST_ATOM_ID, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
+import {
+  CURRENCY_SYMBOL,
+  DISTRUST_ATOM_ID,
+  LINEAR_CURVE_ID,
+  OFFSET_PROGRESSIVE_CURVE_ID,
+  PAGE_HERO_EYEBROW,
+  PAGE_HERO_TITLE,
+  PAGE_HERO_BODY,
+} from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { PageLoadingSpinner } from '../components/PageLoading';
 import { playClick, playHover } from '../services/audio';
@@ -21,9 +29,48 @@ import { useEmailNotify } from '../contexts/EmailNotifyContext';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#ff0055', '#facc15', '#94a3b8'];
 
+/** Rounded “product” glass — matches Home / Skill Playground energy */
+const GLASS_SHEET =
+  'relative overflow-hidden rounded-[1.5rem] border border-white/[0.1] bg-[#05070c]/[0.88] ' +
+  'shadow-[0_20px_50px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)] ' +
+  'ring-1 ring-inset ring-white/[0.04] backdrop-blur-2xl backdrop-saturate-150 ' +
+  'transition-[border-color,box-shadow,transform] duration-300';
+
+const MESH_ACCENT = {
+  background:
+    'radial-gradient(ellipse 80% 55% at 0% 0%, rgba(0,243,255,0.14), transparent 52%), ' +
+    'radial-gradient(ellipse 60% 45% at 100% 100%, rgba(255,30,109,0.1), transparent 48%)',
+} as const;
+
+/** Card / table labels: crisp sans, no faux-wide tracking */
+const labelSm =
+  'font-sans text-xs font-semibold text-slate-100 antialiased tracking-tight [text-rendering:geometricPrecision]';
+const labelMuted =
+  'font-sans text-[10px] font-medium text-slate-400 antialiased tracking-tight [text-rendering:geometricPrecision]';
+const statDisplay =
+  'font-display text-4xl font-black tracking-tight text-white antialiased [text-rendering:geometricPrecision] [text-shadow:none]';
+
+const POSITIONS_PER_PAGE = 10;
+/** Unbounded `Promise.all` on large holder accounts hammers RPC + can hang the page before `setLoading(false)`. */
+const PROFILE_LIVE_CHECK_CAP = 200;
+const LIVE_VERIFY_BATCH = 8;
+
 const PublicProfile: React.FC = () => {
-  const { address } = useParams<{ address: string }>();
+  const { address: addressParam = '' } = useParams<{ address: string }>();
   const navigate = useNavigate();
+  /** Checksummed; avoids search/navigation race with mixed-case 0x in the path. */
+  const address = useMemo(() => {
+    const t = addressParam?.trim();
+    if (!t) return undefined;
+    if (!isAddress(t as `0x${string}`)) return undefined;
+    try {
+      return getAddress(t as `0x${string}`);
+    } catch {
+      return undefined;
+    }
+  }, [addressParam]);
+
+  const activeProfileFetchFor = useRef<string | null>(null);
   const { address: connectedAddress } = useAccount();
   const { openEmailNotify, isEmailNotifyOpen } = useEmailNotify();
   const [ensName, setEnsName] = useState<string | null>(null);
@@ -41,8 +88,17 @@ const PublicProfile: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isResolving, setIsResolving] = useState(false);
   const [subscription, setSubscription] = useState<{ email: string; nickname?: string; subscribedAt?: number; alertFrequency?: EmailAlertFrequency } | null>(null);
+  const [positionsPage, setPositionsPage] = useState(1);
 
   const isOwnProfile = !!address && !!connectedAddress && address.toLowerCase() === connectedAddress.toLowerCase();
+  /** Param present in URL but not a valid 0x address (e.g. typos, truncated paste). */
+  const isInvalidAddressParam = Boolean(addressParam?.trim()) && !address;
+
+  const totalPositionPages = Math.max(1, Math.ceil(positions.length / POSITIONS_PER_PAGE));
+  const positionsPageSlice = useMemo(() => {
+    const start = (positionsPage - 1) * POSITIONS_PER_PAGE;
+    return positions.slice(start, start + POSITIONS_PER_PAGE);
+  }, [positions, positionsPage]);
 
   const refreshSubscription = useCallback((addr: string | null) => {
     if (!addr) {
@@ -63,8 +119,35 @@ const PublicProfile: React.FC = () => {
   }, [isEmailNotifyOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (address) fetchUserData(address);
+    if (address) {
+      setEnsName(null);
+      setPositions([]);
+      setHistory([]);
+      setVolumeData([]);
+      setPortfolioValue('0.00');
+      setEthBalance('0.00');
+      setSentimentBias({ trust: 50, distrust: 50 });
+      setExposureData([]);
+      setSemanticFootprint(0);
+      setActiveHoldingsCount(0);
+      fetchUserData(address);
+    } else if (addressParam?.trim()) {
+      setLoading(false);
+      setPositions([]);
+      setHistory([]);
+      setVolumeData([]);
+      setSemanticFootprint(0);
+      setActiveHoldingsCount(0);
+    }
+  }, [address, addressParam]);
+
+  useEffect(() => {
+    setPositionsPage(1);
   }, [address]);
+
+  useEffect(() => {
+    if (positionsPage > totalPositionPages) setPositionsPage(totalPositionPages);
+  }, [positionsPage, totalPositionPages]);
 
   useEffect(() => {
     if (connectedAddress && address) setFollowEntry(isFollowing(connectedAddress, address) ?? null);
@@ -81,10 +164,14 @@ const PublicProfile: React.FC = () => {
   }, [connectedAddress, address, followEntry?.emailAlerts]);
 
   const fetchUserData = async (addr: string) => {
+    activeProfileFetchFor.current = addr;
     setLoading(true);
     try {
-      reverseResolveENS(addr).then(setEnsName);
+      reverseResolveENS(addr).then((name) => {
+        if (activeProfileFetchFor.current === addr) setEnsName(name);
+      });
       const bal = await getWalletBalance(addr);
+      if (activeProfileFetchFor.current !== addr) return;
       setEthBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
       // High-precision parallel fetch (all from Intuition graph / chain)
@@ -94,6 +181,7 @@ const PublicProfile: React.FC = () => {
           getUserActivityStats(addr).catch(() => ({ txCount: 0, holdingsCount: 0 })),
           getUserIdTransactionCount(addr).catch(() => 0)
       ]);
+      if (activeProfileFetchFor.current !== addr) return;
       
       const uniqueVaultIds = Array.from(new Set([
           ...graphPositions.map((p: any) => p.vault?.term_id?.toLowerCase()),
@@ -101,8 +189,7 @@ const PublicProfile: React.FC = () => {
       ])).filter(Boolean) as string[];
 
       const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
-      
-      let totalAssetsSum = 0;
+      if (activeProfileFetchFor.current !== addr) return;
 
       const DUST = 1e-8; // treat below this as zero (sold / dust) — strict so closed positions never show
       const graphWithShares = graphPositions.filter((p: any) => {
@@ -111,30 +198,47 @@ const PublicProfile: React.FC = () => {
         const n = typeof s === 'string' ? parseFloat(s) : Number(s);
         return n > DUST;
       });
+      // Index query is already order_by shares desc — take top N for live verify only (huge accounts exist).
+      const graphForLiveCheck = graphWithShares.slice(0, PROFILE_LIVE_CHECK_CAP);
 
-      // Only show positions the user currently holds (on-chain verified)
-      const livePositions = await Promise.all(graphWithShares.map(async (p: any) => {
+      // Positions: use effective shares (RPC + subgraph merge) and try both curves — in small
+      // batches so we never run thousands of concurrent RPC/GQL calls (hangs the UI, loading never ends).
+      const processGraphPosition = async (p: any) => {
           const rawId = p.vault?.term_id;
           if (!rawId || typeof rawId !== 'string') return null;
           const id = rawId.toLowerCase();
           const meta = metadata.find(m => m.id.toLowerCase() === id);
           const rawCurve = p.vault.curve_id ?? meta?.curveId;
-          const curveId = rawCurve != null ? Number(rawCurve) || 1 : 1;
-          
-          const sharesRaw = await getShareBalance(addr, id, curveId);
-          const sharesNum = typeof sharesRaw === 'string' ? parseFloat(sharesRaw) : Number(sharesRaw);
-          const hasBalance = Number.isFinite(sharesNum) && sharesNum > DUST;
-          if (!hasBalance) return null;
+          const curveFromGraph = rawCurve != null ? Number(rawCurve) || LINEAR_CURVE_ID : LINEAR_CURVE_ID;
+          const otherCurve = curveFromGraph === LINEAR_CURVE_ID ? OFFSET_PROGRESSIVE_CURVE_ID : LINEAR_CURVE_ID;
+
+          const sPrimary = await getShareBalanceEffective(addr, id, curveFromGraph);
+          const sAlt = await getShareBalanceEffective(addr, id, otherCurve);
+          const nPrimary = parseFloat(sPrimary) || 0;
+          const nAlt = parseFloat(sAlt) || 0;
+
+          let sharesRaw: string;
+          let curveId: number;
+          let sharesNum: number;
+          if (nAlt > nPrimary && nAlt > DUST) {
+            sharesRaw = sAlt;
+            curveId = otherCurve;
+            sharesNum = nAlt;
+          } else if (nPrimary > DUST) {
+            sharesRaw = sPrimary;
+            curveId = curveFromGraph;
+            sharesNum = nPrimary;
+          } else {
+            return null;
+          }
 
           const valueStr = await getQuoteRedeem(sharesRaw, id, addr, curveId);
           const value = parseFloat(valueStr);
-          totalAssetsSum += value;
 
           let label = meta?.label || `Agent ${id.slice(0,6)}...`;
           let image = meta?.image;
           let type = meta?.type || 'ATOM';
 
-          // Handle Triple/Opposition labels for public recon
           const triple = p.vault?.term?.triple;
           const isCounter = triple?.counter_term_id?.toLowerCase() === id.toLowerCase();
           const pointsToDistrust = triple?.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
@@ -153,15 +257,24 @@ const PublicProfile: React.FC = () => {
               value: value,
               atom: { label, id, image, type }
           };
-      }));
+      };
 
-      const finalPositions = livePositions.filter(Boolean) as any[];
-      finalPositions.sort((a, b) => (b.value ?? 0) - (a.value ?? 0)); // highest market cap (net valuation) first
+      const liveResolved: (Awaited<ReturnType<typeof processGraphPosition>>)[] = [];
+      for (let o = 0; o < graphForLiveCheck.length; o += LIVE_VERIFY_BATCH) {
+        if (activeProfileFetchFor.current !== addr) return;
+        const chunk = graphForLiveCheck.slice(o, o + LIVE_VERIFY_BATCH);
+        const part = await Promise.all(chunk.map(processGraphPosition));
+        if (activeProfileFetchFor.current !== addr) return;
+        liveResolved.push(...part);
+      }
+
+      const finalPositions = (liveResolved.filter(Boolean) as any[]).sort(
+        (a, b) => (b.value ?? 0) - (a.value ?? 0)
+      );
+      const totalAssetsSum = finalPositions.reduce((s, p) => s + (p.value || 0), 0);
       setPositions(finalPositions);
       setActiveHoldingsCount(activityStats.holdingsCount || finalPositions.length);
       setExposureData(calculateCategoryExposure(finalPositions));
-      
-      // Update Global Magnitude Display based purely on live position value
       setPortfolioValue(
         totalAssetsSum.toLocaleString(undefined, {
           minimumFractionDigits: 4,
@@ -212,7 +325,9 @@ const PublicProfile: React.FC = () => {
     } catch (e) {
       console.error("PROFILE_RECON_FAILURE:", e);
     } finally {
-      setLoading(false);
+      if (activeProfileFetchFor.current === addr) {
+        setLoading(false);
+      }
     }
   };
 
@@ -220,8 +335,13 @@ const PublicProfile: React.FC = () => {
       const cleanQuery = searchQuery.trim();
       if (isAddress(cleanQuery)) {
           playClick();
-          navigate(`/profile/${cleanQuery}`);
-          setSearchQuery('');
+          try {
+            const normalized = getAddress(cleanQuery as `0x${string}`);
+            navigate(`/profile/${normalized}`);
+            setSearchQuery('');
+          } catch {
+            toast.error('Invalid address');
+          }
           return;
       }
       if (cleanQuery.endsWith('.eth')) {
@@ -230,15 +350,38 @@ const PublicProfile: React.FC = () => {
           try {
               const resolvedAddress = await resolveENS(cleanQuery);
               if (resolvedAddress) {
-                  navigate(`/profile/${resolvedAddress}`);
-                  setSearchQuery('');
+                  const n = toAddress(resolvedAddress);
+                  if (n) {
+                    navigate(`/profile/${n}`);
+                    setSearchQuery('');
+                  } else {
+                    toast.error('ENS did not resolve to a valid address');
+                  }
               } else { toast.error(`ENS NOT FOUND: ${cleanQuery}`); }
           } catch (e) { toast.error("ENS RESOLUTION FAILED"); } finally { setIsResolving(false); }
       }
   };
 
+  /** Non-zero slices + stable color index (matches legend). Pie `data` is only { name, value }. */
+  const exposurePieSlices = useMemo(
+    () =>
+      exposureData
+        .map((entry, colorIndex) => ({ name: entry.name, value: entry.value, colorIndex }))
+        .filter((row) => row.value > 0),
+    [exposureData]
+  );
+
   return (
-    <div className="min-h-screen bg-[#020308] pt-8 pb-20 px-4 max-w-7xl mx-auto font-mono selection:bg-intuition-primary selection:text-black">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#020308] font-mono selection:bg-intuition-primary selection:text-black">
+      <div
+        className="pointer-events-none fixed inset-0 z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.035]"
+        aria-hidden
+      />
+      <div className="pointer-events-none absolute inset-0 z-0 opacity-[0.04] retro-grid" aria-hidden />
+      <div className="pointer-events-none absolute top-0 right-0 z-0 h-[min(70vw,560px)] w-[min(70vw,560px)] rounded-full bg-intuition-primary/6 blur-[120px]" />
+      <div className="pointer-events-none absolute bottom-1/4 left-0 z-0 h-[min(55vw,480px)] w-[min(55vw,480px)] rounded-full bg-[#ff1e6d]/5 blur-[100px]" />
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4 pb-20 pt-8 sm:px-5 lg:px-8">
       <header className="mb-8 space-y-2 font-sans">
         <p className={PAGE_HERO_EYEBROW}>{isOwnProfile ? 'Your account' : 'Trader profile'}</p>
         <h1 className={PAGE_HERO_TITLE}>Profile</h1>
@@ -249,53 +392,72 @@ const PublicProfile: React.FC = () => {
         </p>
       </header>
 
-      <div className="flex justify-end mb-8 relative z-20">
-          <div className="flex items-center bg-black border border-slate-800 p-1 clip-path-slant focus-within:border-intuition-primary transition-all shadow-2xl">
-              <input 
-                  type="text" 
-                  placeholder="QUERY_PLAYER: [0x... | .eth]" 
-                  className="bg-transparent text-white font-mono text-[10px] px-4 outline-none w-72 uppercase tracking-widest"
+      <div className="relative z-20 mb-8 flex justify-end">
+          <div className="flex items-center gap-0 rounded-2xl border border-white/[0.1] bg-[#0a0c14]/80 py-1.5 pl-4 pr-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all focus-within:border-intuition-primary/45 focus-within:shadow-[0_0_0_1px_rgba(0,243,255,0.12),0_12px_40px_rgba(0,0,0,0.45)]">
+              <input
+                  type="text"
+                  placeholder="Search by address or ENS"
+                  className="w-60 bg-transparent font-sans text-sm text-slate-100 outline-none placeholder:text-slate-500 sm:w-72"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   disabled={isResolving}
               />
-              <button 
+              <button
                   onClick={handleSearch}
                   disabled={!isAddress(searchQuery.trim()) && !searchQuery.trim().endsWith('.eth') || isResolving}
-                  className="bg-slate-900 text-slate-500 p-1 hover:text-white hover:bg-intuition-primary transition-all w-8 h-8 flex items-center justify-center clip-path-slant"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-500 transition-all hover:bg-intuition-primary hover:text-black"
               >
                   {isResolving ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
               </button>
           </div>
       </div>
 
-      <div className="mb-12 p-1 bg-gradient-to-r from-intuition-primary/40 via-white/10 to-intuition-primary/40 rounded-none clip-path-slant shadow-[0_0_50px_rgba(0,243,255,0.05)]">
-        <div className="bg-[#050505] p-10 flex flex-col md:flex-row items-center gap-10 clip-path-slant relative overflow-hidden">
-          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none"></div>
-          <div className="w-28 h-28 bg-black border-2 border-slate-800 flex items-center justify-center shadow-2xl group relative clip-path-slant shrink-0">
-            <div className="absolute inset-0 bg-intuition-primary/5 group-hover:bg-intuition-primary/10 transition-colors"></div>
-            <User size={56} className="text-slate-600 group-hover:text-intuition-primary transition-colors" />
+      {isInvalidAddressParam && (
+        <div
+          role="alert"
+          className="relative z-20 mb-6 flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 font-sans text-sm text-amber-100 [text-rendering:geometricPrecision] sm:items-center"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" aria-hidden />
+          <p>
+            <span className="font-semibold text-amber-50">Invalid address in URL. </span>
+            The path must be a full 42-character <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs">0x</code> address. Try pasting the address again or search by ENS.
+          </p>
+        </div>
+      )}
+
+      <div className="mb-10 sm:mb-12 rounded-[1.75rem] bg-gradient-to-r from-intuition-primary/45 via-cyan-200/15 to-intuition-primary/40 p-[1px] shadow-[0_0_50px_rgba(0,243,255,0.14)] sm:rounded-[2rem]">
+        <div className="relative flex flex-col items-center gap-8 overflow-hidden rounded-[1.7rem] bg-gradient-to-b from-[#0c101c]/[0.97] to-[#05070d]/[0.98] p-8 sm:p-10 md:flex-row md:items-center md:gap-10 sm:rounded-[1.95rem]">
+          <div className="pointer-events-none absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04]" />
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.55]"
+            style={{ background: MESH_ACCENT.background }}
+          />
+          <div className="group relative flex h-28 w-28 shrink-0 items-center justify-center rounded-3xl border-2 border-white/10 bg-black/40 shadow-[0_0_40px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-inset ring-white/5">
+            <div className="absolute inset-0 rounded-3xl bg-intuition-primary/5 transition-colors group-hover:bg-intuition-primary/10" />
+            <User size={56} className="relative z-10 text-slate-500 transition-colors group-hover:text-intuition-primary" />
           </div>
-          <div className="flex-1 min-w-0 text-center md:text-left relative z-10">
-            <p className="text-sm text-slate-500 font-sans mb-2">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
-            <h2 className="text-2xl sm:text-3xl font-bold text-white font-display tracking-tight mb-1 break-words">
+          <div className="relative z-10 min-w-0 flex-1 text-center md:text-left">
+            <p className="mb-2 font-sans text-sm text-slate-500">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
+            <h2 className="mb-1 break-words font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 {ensName || (address ? address.slice(0, 6) + "..." + address.slice(-4) : "Unknown address")}
             </h2>
             {ensName && (
-                <div className="text-xs font-black font-mono text-intuition-primary/80 tracking-widest mb-6 bg-black w-fit px-3 py-1.5 border border-intuition-primary/30 clip-path-slant mx-auto md:mx-0 antialiased">
+                <div className="mx-auto mb-6 w-fit rounded-xl border border-intuition-primary/35 bg-black/50 px-3 py-1.5 font-mono text-xs font-black tracking-widest text-intuition-primary/90 antialiased backdrop-blur-sm md:mx-0">
                     {address}
                 </div>
             )}
             {!ensName && <div className="mb-4"></div>}
-            <div className="flex flex-wrap items-center gap-3 justify-between font-mono font-black uppercase antialiased">
-              <div className="flex flex-wrap gap-3 justify-center md:justify-start items-center">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start sm:gap-3">
                 {/* {address && <BadgesSection address={address} compact />} */}
-                <span className="bg-intuition-primary/20 text-intuition-primary px-3 py-2 border border-intuition-primary/40 clip-path-slant text-xs tracking-wide">LEVEL: {activeHoldingsCount > 50 ? 'ELITE_TRADER' : activeHoldingsCount > 10 ? 'MASTER_TRADER' : 'RECON_LEVEL_1'}</span>
-                <span className="bg-white/10 text-slate-200 px-3 py-2 border border-white/20 clip-path-slant text-xs tracking-wide">
-                    {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} ACTIVE CLAIMS
+                <span className="rounded-full border border-intuition-primary/40 bg-gradient-to-r from-intuition-primary/25 to-intuition-primary/10 px-3.5 py-2 font-sans text-xs font-semibold text-intuition-primary shadow-[0_0_24px_rgba(0,243,255,0.12)] [text-rendering:geometricPrecision]">
+                  {activeHoldingsCount > 50 ? 'Level · Elite' : activeHoldingsCount > 10 ? 'Level · Pro' : 'Level · Explorer'}
                 </span>
-                <span className="bg-black text-slate-200 px-3 py-2 border border-slate-600 flex items-center gap-2 clip-path-slant text-xs tracking-wide">
+                <span className="rounded-full border border-white/15 bg-white/[0.06] px-3.5 py-2 font-sans text-xs font-medium text-slate-200 backdrop-blur-sm [text-rendering:geometricPrecision]">
+                  {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} open positions
+                </span>
+                <span className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3.5 py-2 font-sans text-xs font-medium text-slate-200 ring-1 ring-inset ring-white/5 [text-rendering:geometricPrecision]">
                     <Wallet size={12} className="text-intuition-primary" /> {ethBalance} {CURRENCY_SYMBOL}
                 </span>
               </div>
@@ -303,7 +465,7 @@ const PublicProfile: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 shrink-0">
                   {followEntry ? (
                     <>
-                      <span className="bg-intuition-success/20 text-intuition-success px-3 py-2 border border-intuition-success/40 clip-path-slant flex items-center gap-1.5 text-xs font-black uppercase tracking-wide">
+                      <span className="flex items-center gap-1.5 rounded-full border border-intuition-success/40 bg-intuition-success/15 px-3 py-2 font-sans text-xs font-semibold text-intuition-success [text-rendering:geometricPrecision]">
                         <UserMinus size={12} /> Following
                       </span>
                       <button
@@ -314,12 +476,12 @@ const PublicProfile: React.FC = () => {
                           setFollowEntry(null);
                           toast.success('Unfollowed');
                         }}
-                        className="px-3 py-2 text-xs font-black border-2 border-slate-500 text-slate-200 hover:text-white hover:border-slate-400 clip-path-slant uppercase tracking-wide"
+                        className="rounded-xl border-2 border-slate-500 px-3 py-2 font-sans text-xs font-semibold text-slate-200 transition-colors hover:border-slate-400 hover:text-white"
                       >
                         Unfollow
                       </button>
                       <label
-                        className="flex items-center gap-2 px-3 py-2 border-2 border-slate-600 rounded-sm cursor-pointer hover:border-amber-500/50 hover:text-amber-400/90 transition-all duration-200"
+                        className="flex cursor-pointer items-center gap-2 rounded-xl border-2 border-slate-600 px-3 py-2 transition-all duration-200 hover:border-amber-500/50 hover:text-amber-400/90"
                         title="Email when they buy or sell"
                       >
                         <input
@@ -366,7 +528,7 @@ const PublicProfile: React.FC = () => {
                           toast.info('Add your email to get alerts when they buy or sell');
                         }
                       }}
-                      className="bg-black text-amber-400 border-2 border-amber-400 px-4 py-2.5 clip-path-slant flex items-center gap-2.5 shadow-[0_0_14px_rgba(251,191,36,0.5),0_0_28px_rgba(245,158,11,0.2)] hover:border-amber-300 hover:text-amber-300 hover:shadow-[0_0_18px_rgba(251,191,36,0.6),0_0_36px_rgba(245,158,11,0.25)] transition-all duration-200"
+                      className="flex items-center gap-2.5 rounded-2xl border-2 border-amber-400 bg-black/60 px-4 py-2.5 text-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.35)] backdrop-blur-sm transition-all duration-200 hover:border-amber-300 hover:text-amber-300 hover:shadow-[0_0_28px_rgba(251,191,36,0.45)]"
                       title="Get email when they buy or sell"
                     >
                       <UserPlus size={16} strokeWidth={2} className="shrink-0" />
@@ -382,50 +544,98 @@ const PublicProfile: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-10">
+      <div className="mb-10 grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 lg:grid-cols-3">
           {/* {address && (
             <BadgesSection address={address} />
           )} */}
-          <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-primary/40 transition-all shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform"><Shield size={80}/></div>
-              <div className="text-[9px] font-black font-mono text-slate-600 uppercase mb-4 tracking-[0.3em] flex items-center gap-3">
-                  <Activity size={14} className="text-intuition-primary" /> Protocol_Assets
+          <div
+            className={`${GLASS_SHEET} group motion-hover-lift p-7 sm:p-8 hover:border-intuition-primary/35 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_40px_rgba(0,243,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+          >
+              <div
+                className="pointer-events-none absolute inset-0 opacity-40"
+                style={{
+                  background:
+                    'radial-gradient(ellipse 100% 80% at 100% 0%, rgba(0,243,255,0.1), transparent 55%)',
+                }}
+              />
+              <div className="pointer-events-none absolute right-0 top-0 p-4 opacity-[0.07] transition-transform group-hover:scale-110">
+                <Shield size={80} />
               </div>
-              <div className="text-4xl font-black text-white font-display tracking-tighter text-glow-white inline-flex items-baseline gap-2"><CurrencySymbol size="2xl" leading />{portfolioValue}</div>
-          </div>
-          <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-secondary/40 transition-all shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform"><Layers size={80}/></div>
-              <div className="text-[9px] font-black font-mono text-slate-600 uppercase mb-4 tracking-[0.3em] flex items-center gap-3">
-                  <Database size={14} className="text-intuition-secondary" /> Semantic_Footprint
-              </div>
-              <div className="text-4xl font-black font-display flex items-center gap-3 text-white tracking-tighter" style={{ textShadow: 'none' }}>
-                  <span className="tabular-nums">{semanticFootprint >= 100 ? `${semanticFootprint}+` : semanticFootprint}</span>
-                  <span className="text-[10px] text-slate-500 font-mono tracking-widest font-black uppercase">TXS_LOGGED</span>
-              </div>
-          </div>
-          <div className="bg-black border border-slate-900 p-8 clip-path-slant group hover:border-intuition-primary/30 transition-all shadow-2xl relative overflow-hidden">
-              <div className="text-[9px] font-black font-mono text-slate-600 uppercase mb-4 tracking-[0.3em] flex items-center gap-3">
-                  <PulseIcon size={14} className="text-intuition-primary animate-pulse" /> Sentiment_Bias
-              </div>
-              <div className="flex items-center gap-1.5 h-1.5 w-full px-1 mt-6 relative">
-                <div className="flex-1 flex justify-end h-full relative overflow-visible">
-                    <div style={{ width: `${sentimentBias.trust}%` }} className="h-full bg-intuition-success shadow-[0_0_15px_#00ff9d] transition-all duration-1000 origin-right"></div>
-                    <div style={{ width: `${sentimentBias.trust}%` }} className="absolute inset-0 bg-intuition-success/30 blur-[3px] animate-pulse pointer-events-none"></div>
-                </div>
-                <div className="w-px h-2.5 bg-white/20 shrink-0 z-10"></div>
-                <div className="flex-1 flex justify-start h-full relative overflow-visible">
-                    <div style={{ width: `${sentimentBias.distrust}%` }} className="h-full bg-intuition-danger shadow-[0_0_15px_#ff1e6d] transition-all duration-1000 origin-left"></div>
-                    <div style={{ width: `${sentimentBias.distrust}%` }} className="absolute inset-0 bg-intuition-danger/30 blur-[3px] animate-pulse pointer-events-none"></div>
-                </div>
-              </div>
-              <div className="flex justify-between items-end text-[9px] font-black font-mono mt-4 uppercase tracking-widest">
-                  <div className="flex flex-col">
-                      <span className="text-intuition-success text-glow-success">BULLISH</span>
-                      <span className="text-white text-[11px] mt-0.5">{sentimentBias.trust.toFixed(0)}%</span>
+              <div className="relative mb-1 flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-intuition-primary/25 bg-intuition-primary/10">
+                    <Activity size={14} className="text-intuition-primary" />
+                  </span>
+                  <div>
+                    <p className={labelSm}>Total in vaults</p>
+                    <p className={`${labelMuted} mt-0.5`}>TRUST value of your open positions</p>
                   </div>
-                  <div className="flex flex-col items-end">
-                      <span className="text-intuition-danger text-glow-red">BEARISH</span>
-                      <span className="text-white text-[11px] mt-0.5">{sentimentBias.distrust.toFixed(0)}%</span>
+              </div>
+              <div className={`relative mt-3 inline-flex items-baseline gap-2 ${statDisplay} tabular-nums`}>
+                <CurrencySymbol size="2xl" leading />
+                {portfolioValue}
+              </div>
+          </div>
+          <div
+            className={`${GLASS_SHEET} group motion-hover-lift p-7 sm:p-8 hover:border-intuition-secondary/40 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_36px_rgba(255,0,85,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+          >
+              <div
+                className="pointer-events-none absolute inset-0 opacity-35"
+                style={{
+                  background:
+                    'radial-gradient(ellipse 90% 70% at 0% 100%, rgba(255,0,85,0.08), transparent 50%)',
+                }}
+              />
+              <div className="pointer-events-none absolute right-0 top-0 p-4 opacity-[0.07] transition-transform group-hover:scale-110">
+                <Layers size={80} />
+              </div>
+              <div className="relative mb-1 flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-intuition-secondary/30 bg-intuition-secondary/10">
+                    <Database size={14} className="text-intuition-secondary" />
+                  </span>
+                  <div>
+                    <p className={labelSm}>On-chain transactions</p>
+                    <p className={`${labelMuted} mt-0.5`}>Recorded on the Intuition index</p>
+                  </div>
+              </div>
+              <div className={`relative mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 ${statDisplay}`}>
+                  <span className="tabular-nums">{semanticFootprint >= 100 ? `${semanticFootprint}+` : semanticFootprint}</span>
+                  <span className={labelMuted}>all-time</span>
+              </div>
+          </div>
+          <div
+            className={`${GLASS_SHEET} group motion-hover-lift p-7 sm:p-8 md:col-span-2 lg:col-span-1 hover:border-intuition-primary/30 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+          >
+              <div className="relative mb-1 flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-intuition-primary/25 bg-intuition-primary/10">
+                    <PulseIcon size={14} className="animate-pulse text-intuition-primary" />
+                  </span>
+                  <div>
+                    <p className={labelSm}>Trust vs. distrust</p>
+                    <p className={`${labelMuted} mt-0.5`}>From your recent activity</p>
+                  </div>
+              </div>
+              {/*
+                One full-width track: each segment is a % of the *whole* bar.
+                (The old 50/50 split halves made each % only fill half the bar — wrong vs labels.)
+              */}
+              <div className="relative mt-5 flex h-2 w-full overflow-hidden rounded-full bg-white/5 ring-1 ring-inset ring-white/10">
+                <div
+                  style={{ width: `${sentimentBias.trust}%` }}
+                  className="h-full shrink-0 bg-intuition-success transition-all duration-1000"
+                />
+                <div
+                  style={{ width: `${sentimentBias.distrust}%` }}
+                  className="h-full shrink-0 bg-intuition-danger transition-all duration-1000"
+                />
+              </div>
+              <div className="mt-4 flex items-end justify-between font-sans">
+                  <div className="flex flex-col gap-0.5">
+                      <span className="text-[11px] font-semibold text-intuition-success [text-rendering:geometricPrecision]">Trust</span>
+                      <span className="text-sm font-semibold tabular-nums text-white [text-rendering:geometricPrecision]">{sentimentBias.trust.toFixed(0)}%</span>
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-[11px] font-semibold text-intuition-danger [text-rendering:geometricPrecision]">Distrust</span>
+                      <span className="text-sm font-semibold tabular-nums text-white [text-rendering:geometricPrecision]">{sentimentBias.distrust.toFixed(0)}%</span>
                   </div>
               </div>
           </div>
@@ -434,30 +644,33 @@ const PublicProfile: React.FC = () => {
       {/* Account settings — only when viewing own profile */}
       {isOwnProfile && address && (
         <div className="mb-10 space-y-6">
-          <div className="text-[9px] font-black font-mono text-slate-500 uppercase tracking-[0.3em] flex items-center gap-2 mb-4">
-            <Shield size={14} className="text-intuition-primary" /> Account settings
+          <div className="mb-4 flex items-center gap-2 font-sans text-sm font-semibold text-slate-200 [text-rendering:geometricPrecision]">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]">
+              <Shield size={14} className="text-intuition-primary" />
+            </span>
+            Account settings
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-black border border-slate-900 p-6 clip-path-slant">
-              <div className="flex items-center gap-2 mb-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+            <div className={`${GLASS_SHEET} p-6 hover:border-white/15`}>
+              <div className="mb-3 flex items-center gap-2">
                 <Wallet size={14} className="text-intuition-primary" />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Ident hash</span>
+                <span className="font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">Wallet address</span>
               </div>
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <span className="font-mono text-sm text-slate-300 break-all">{address.slice(0, 10)}...{address.slice(-8)}</span>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <span className="break-all font-mono text-sm text-slate-300">{address.slice(0, 10)}...{address.slice(-8)}</span>
                 <button
                   onClick={() => { playClick(); navigator.clipboard.writeText(address); toast.success('Address copied'); }}
                   onMouseEnter={playHover}
-                  className="flex items-center gap-2 px-4 py-2 border-2 border-slate-700 text-slate-400 font-mono text-[10px] font-black tracking-widest hover:border-intuition-primary hover:text-intuition-primary transition-colors"
+                  className="flex items-center gap-2 rounded-xl border-2 border-white/10 px-4 py-2 font-mono text-[10px] font-black tracking-widest text-slate-400 transition-colors hover:border-intuition-primary hover:text-intuition-primary"
                 >
                   <Copy size={12} /> Copy
                 </button>
               </div>
             </div>
-            <div className="bg-black border border-slate-900 p-6 clip-path-slant">
+            <div className={`${GLASS_SHEET} p-6 hover:border-white/15`}>
               <div className="flex items-center gap-2 mb-3">
                 <Mail size={14} className="text-intuition-primary" />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Email alerts</span>
+                <span className="font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">Email alerts</span>
               </div>
               {subscription?.email ? (
                 <div className="space-y-3">
@@ -477,7 +690,7 @@ const PublicProfile: React.FC = () => {
                         className="sr-only"
                       />
                       <span className={`w-3 h-3 rounded-sm border-2 flex items-center justify-center ${(subscription.alertFrequency ?? 'per_tx') === 'per_tx' ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`} />
-                      <span className="text-slate-400 text-xs font-mono">Per tx</span>
+                      <span className="font-sans text-xs text-slate-300">Every trade</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -493,67 +706,132 @@ const PublicProfile: React.FC = () => {
                         className="sr-only"
                       />
                       <span className={`w-3 h-3 rounded-sm border-2 flex items-center justify-center ${subscription.alertFrequency === 'daily' ? 'border-intuition-primary bg-intuition-primary' : 'border-slate-600'}`} />
-                      <span className="text-slate-400 text-xs font-mono">Daily</span>
+                      <span className="font-sans text-xs text-slate-300">Daily summary</span>
                     </label>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="px-3 py-1.5 border border-intuition-primary/50 text-intuition-primary text-[10px] font-black uppercase hover:bg-intuition-primary hover:text-black">Change</button>
-                    <button onClick={() => { playClick(); removeEmailSubscription(address); setSubscription(null); toast.success('Email unlinked'); }} onMouseEnter={playHover} className="px-3 py-1.5 border border-slate-600 text-slate-400 text-[10px] font-black uppercase hover:border-intuition-danger hover:text-intuition-danger flex items-center gap-1"><Trash2 size={10} /> Delete</button>
+                    <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="rounded-lg border border-intuition-primary/50 px-3 py-1.5 text-[10px] font-black uppercase text-intuition-primary transition-colors hover:bg-intuition-primary hover:text-black">Change</button>
+                    <button onClick={() => { playClick(); removeEmailSubscription(address); setSubscription(null); toast.success('Email unlinked'); }} onMouseEnter={playHover} className="flex items-center gap-1 rounded-lg border border-slate-600 px-3 py-1.5 text-[10px] font-black uppercase text-slate-400 transition-colors hover:border-intuition-danger hover:text-intuition-danger"><Trash2 size={10} /> Delete</button>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <p className="text-slate-500 text-xs font-mono">No email linked</p>
-                  <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="flex items-center gap-2 px-4 py-2 bg-intuition-primary text-black font-mono text-[10px] font-black uppercase border border-intuition-primary hover:bg-white"><Mail size={12} /> Add email</button>
+                    <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="flex items-center gap-2 rounded-xl border border-intuition-primary bg-intuition-primary px-4 py-2.5 font-mono text-[10px] font-black uppercase text-black shadow-[0_0_24px_rgba(0,243,255,0.25)] transition-colors hover:bg-white"><Mail size={12} /> Add email</button>
                 </div>
               )}
             </div>
           </div>
-          <Link to="/portfolio" onClick={playClick} onMouseEnter={playHover} className="flex items-center justify-between w-full py-4 px-4 border-2 border-slate-800 text-slate-400 font-mono text-[10px] font-black tracking-widest hover:border-intuition-primary hover:text-intuition-primary transition-colors">
-            <span>View portfolio</span>
+          <Link to="/portfolio" onClick={playClick} onMouseEnter={playHover} className={`${GLASS_SHEET} flex w-full items-center justify-between rounded-2xl px-5 py-4 font-sans text-sm font-semibold text-slate-300 transition-colors hover:border-intuition-primary/40 hover:text-intuition-primary`}>
+            <span>View full portfolio</span>
             <ChevronRight size={16} />
           </Link>
         </div>
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-          <div className="bg-black border border-slate-900 p-10 clip-path-slant h-[360px] flex flex-col shadow-2xl relative group overflow-hidden">
-              <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><PieIcon size={120} /></div>
-              <h3 className="text-[10px] font-black text-white uppercase mb-8 tracking-[0.4em] flex items-center gap-4 relative z-10"><Zap size={16} className="text-intuition-primary"/> Asset_Cluster_Index</h3>
+      {/*
+        5-column row: mix 40% · activity 60% — the old 33/66 mix card was too narrow; legend text collided.
+      */}
+      <div className="mb-12 grid grid-cols-1 gap-5 lg:grid-cols-5 lg:gap-6">
+          <div className={`${GLASS_SHEET} group flex min-h-[360px] flex-col p-6 sm:p-8 lg:col-span-2 motion-hover-lift`}>
+              <div
+                className="pointer-events-none absolute bottom-0 left-0 z-0 p-5 opacity-[0.04] transition-transform group-hover:scale-105"
+                aria-hidden
+              >
+                <PieIcon className="text-slate-500" size={96} />
+              </div>
+              <h3 className="relative z-10 mb-4 flex items-center gap-3 font-sans text-sm font-semibold text-slate-100 [text-rendering:geometricPrecision]">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-intuition-primary/20 bg-intuition-primary/10">
+                  <Zap size={16} className="text-intuition-primary" />
+                </span>
+                <span>
+                  <span className="block">Portfolio mix</span>
+                  <span className={`${labelMuted} mt-0.5 block font-normal`}>Share of TRUST by category</span>
+                </span>
+              </h3>
               {exposureData.length > 0 ? (
-                  <div className="flex items-center h-full relative z-10">
-                      <div className="w-1/2 h-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                  <Pie data={exposureData} innerRadius={50} outerRadius={85} paddingAngle={6} dataKey="value" nameKey="name" stroke="none">
-                                      {exposureData.map((entry, index) => (
-                                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                      ))}
-                                  </Pie>
-                                  <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
-                              </PieChart>
-                          </ResponsiveContainer>
+                  <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-5 xl:grid xl:min-h-0 xl:grid-cols-[minmax(0,200px)_minmax(0,1fr)] xl:items-center xl:gap-6">
+                      {/*
+                        Recharts: square box only. On xl+ we can sit chart + legend side-by-side with room;
+                        below xl, stack so legend is full width (avoids crammed / overlapping text).
+                      */}
+                      <div className="mx-auto aspect-square w-full max-w-[200px] shrink-0 xl:mx-0 xl:max-w-[min(100%,200px)]">
+                          <div className="h-full min-h-[160px] w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+                                      <Pie
+                                          data={exposurePieSlices.map(({ name, value }) => ({ name, value }))}
+                                          dataKey="value"
+                                          nameKey="name"
+                                          cx="50%"
+                                          cy="50%"
+                                          innerRadius="48%"
+                                          outerRadius="78%"
+                                          paddingAngle={1}
+                                          startAngle={90}
+                                          endAngle={-270}
+                                          stroke="#05070c"
+                                          strokeWidth={2}
+                                          isAnimationActive
+                                      >
+                                          {exposurePieSlices.map((row) => (
+                                              <Cell
+                                                  key={`cell-${row.name}-${row.colorIndex}`}
+                                                  fill={COLORS[row.colorIndex % COLORS.length]}
+                                              />
+                                          ))}
+                                      </Pie>
+                                      <Tooltip
+                                          formatter={(value: number) => [`${Number(value).toFixed(1)}%`, 'Share']}
+                                          contentStyle={{
+                                              backgroundColor: 'rgba(5,7,12,0.95)',
+                                              border: '1px solid rgba(255,255,255,0.1)',
+                                              fontSize: '11px',
+                                              borderRadius: '12px',
+                                          }}
+                                      />
+                                  </PieChart>
+                              </ResponsiveContainer>
+                          </div>
                       </div>
-                      <div className="w-1/2 pl-6 flex flex-col justify-center gap-4 overflow-y-auto max-h-[260px] custom-scrollbar">
+                      <ul className="font-sans min-h-0 w-full list-none space-y-2.5 [text-rendering:optimizeLegibility] xl:max-h-[280px] xl:overflow-y-auto xl:pr-1 custom-scrollbar">
                           {exposureData.map((entry, index) => (
-                              <div key={index} className="flex items-center justify-between group/item">
-                                  <div className="flex items-center gap-3">
-                                      <div className="w-2 h-2 rounded-none clip-path-slant shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
-                                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest group-hover/item:text-white transition-colors">{entry.name}</span>
+                              <li
+                                  key={`${entry.name}-${index}`}
+                                  className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 border-b border-white/[0.06] pb-2.5 last:border-0 last:pb-0"
+                              >
+                                  <div className="flex min-w-0 items-start gap-2.5 sm:items-center sm:gap-3">
+                                      <div
+                                          className="mt-0.5 h-2.5 w-2.5 shrink-0 self-start rounded-sm shadow-sm ring-1 ring-white/20 sm:mt-0"
+                                          style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                      />
+                                      <span className="min-w-0 break-words text-left text-xs font-medium leading-snug text-slate-200">
+                                          {entry.name}
+                                      </span>
                                   </div>
-                                  <span className="text-[10px] font-black text-white">{entry.value.toFixed(0)}%</span>
-                              </div>
+                                  <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-white">
+                                      {entry.value.toFixed(0)}%
+                                  </span>
+                              </li>
                           ))}
-                      </div>
+                      </ul>
                   </div>
               ) : (
-                  <div className="h-full flex items-center justify-center text-slate-700 text-[8px] font-black tracking-[0.5em] border border-dashed border-slate-900 uppercase">NULL_CLUSTER_DATA</div>
+                  <div className="font-sans flex h-full min-h-[200px] flex-1 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 text-center text-sm text-slate-500 [text-rendering:geometricPrecision]">No category breakdown yet — open a position to see a split.</div>
               )}
           </div>
-          <div className="lg:col-span-2 bg-[#020408] border border-slate-900 p-10 clip-path-slant h-[360px] flex flex-col shadow-2xl group overflow-hidden relative">
-              <div className="absolute inset-0 bg-gradient-to-tr from-intuition-primary/5 via-transparent to-transparent opacity-40"></div>
-              <h3 className="text-[10px] font-black text-white uppercase mb-8 tracking-[0.4em] flex items-center gap-4 relative z-10"><Activity size={16} className="text-intuition-primary animate-pulse"/> Activity over time</h3>
-              <div className="flex-1 relative z-10">
+          <div className={`${GLASS_SHEET} group relative flex h-[360px] flex-col overflow-hidden p-8 sm:p-10 lg:col-span-3 motion-hover-lift`}>
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-intuition-primary/8 via-transparent to-[#ff1e6d]/5 opacity-60" />
+              <h3 className="relative z-10 mb-4 flex items-center gap-3 font-sans text-sm font-semibold text-slate-100 [text-rendering:geometricPrecision]">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-intuition-primary/20 bg-intuition-primary/10">
+                  <Activity size={16} className="animate-pulse text-intuition-primary" />
+                </span>
+                <span>
+                  <span className="block">Activity over time</span>
+                  <span className={`${labelMuted} mt-0.5 block font-normal`}>Cumulative TRUST from your on-chain events</span>
+                </span>
+              </h3>
+              <div className="relative z-10 min-h-0 flex-1">
                 {volumeData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={volumeData}>
@@ -566,50 +844,57 @@ const PublicProfile: React.FC = () => {
                             <CartesianGrid strokeDasharray="3 6" stroke="#ffffff08" vertical={false} />
                             <XAxis dataKey="idx" hide />
                             <YAxis hide />
-                            <Tooltip contentStyle={{ backgroundColor: '#000', border: '1px solid #333', fontSize: '10px' }} />
+                            <Tooltip contentStyle={{ backgroundColor: 'rgba(5,7,12,0.95)', border: '1px solid rgba(255,255,255,0.1)', fontSize: '10px', borderRadius: '12px' }} />
                             <Area type="stepAfter" dataKey="val" stroke="#00f3ff" strokeWidth={2} fillOpacity={1} fill="url(#colorVal)" isAnimationActive={true} animationDuration={1000} />
                         </AreaChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="h-full flex items-center justify-center text-slate-700 text-[8px] font-black tracking-[0.5em] border border-dashed border-slate-900 uppercase">NULL_TEMPORAL_DATA</div>
+                    <div className="flex h-full min-h-[200px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 text-center font-sans text-sm text-slate-500 [text-rendering:geometricPrecision]">Not enough history to chart yet.</div>
                 )}
               </div>
           </div>
       </div>
 
-      <div className="bg-black border border-slate-900 clip-path-slant overflow-hidden shadow-2xl">
-          <div className="p-4 sm:p-6 md:p-8 border-b border-slate-900 bg-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h3 className="text-[10px] sm:text-xs font-black text-white font-display tracking-[0.2em] sm:tracking-[0.3em] uppercase flex items-center gap-4"><Fingerprint size={20} className="text-slate-500 shrink-0"/> Claims you hold</h3>
-              <div className="text-[8px] font-black text-slate-700 uppercase tracking-[0.4em]">Verified_On_Intuition_Mainnet</div>
+      <div className={`${GLASS_SHEET} overflow-hidden`}>
+          <div className="flex flex-col items-start justify-between gap-4 border-b border-white/[0.08] bg-white/[0.04] p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:p-6 md:p-8">
+              <h3 className="flex items-center gap-3 font-sans text-sm font-semibold text-slate-100 [text-rendering:geometricPrecision] sm:text-base">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                  <Fingerprint size={20} className="shrink-0 text-slate-400" />
+                </span>
+                Your positions
+              </h3>
+              <div className="max-w-xs text-right font-sans text-xs text-slate-500 [text-rendering:geometricPrecision]">Sourced from Intuition mainnet</div>
           </div>
           <div className="overflow-x-auto">
-              <table className="w-full text-left font-mono text-[9px] sm:text-[10px] min-w-[480px]">
-                  <thead className="bg-[#080808] text-slate-600 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] border-b border-slate-900">
+              <table className="w-full min-w-[480px] text-left text-[10px] sm:text-xs">
+                  <thead className="border-b border-white/[0.06] bg-[#080a10]/90 font-sans">
                       <tr>
-                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Identity_Node</th>
-                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Sector</th>
-                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6">Curve</th>
-                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Magnitude</th>
-                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Net_Valuation</th>
-                          <th className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">Recon</th>
+                          <th className="px-3 py-3 font-semibold text-slate-200 sm:px-6 md:px-10 md:py-4">Name</th>
+                          <th className="px-3 py-3 font-semibold text-slate-200 sm:px-6 md:px-10 md:py-4">Type</th>
+                          <th className="px-3 py-3 font-semibold text-slate-200 sm:px-6 md:px-10 md:py-4">Curve</th>
+                          <th className="px-3 py-3 text-right font-semibold text-slate-200 sm:px-6 md:px-10 md:py-4">Shares</th>
+                          <th className="px-3 py-3 text-right font-semibold text-slate-200 sm:px-6 md:px-10 md:py-4">Value (TRUST)</th>
+                          <th className="px-3 py-3 text-right font-semibold text-slate-200 sm:px-6 md:px-10 md:py-4">Market</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                      {positions.length > 0 ? positions.map((p, i) => (
-                          <tr key={`${p.id}-${p.curveId ?? 1}-${i}`} className="hover:bg-white/5 transition-all group relative">
+                      {positions.length > 0 ? positionsPageSlice.map((p, i) => (
+                          <tr key={`${p.id}-${p.curveId ?? 1}-${(positionsPage - 1) * POSITIONS_PER_PAGE + i}`} className="hover:bg-white/5 transition-all group relative">
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6">
                                   <Link to={`/markets/${p.id}`} className="flex items-center gap-3 sm:gap-6 group-hover:text-intuition-primary transition-colors">
-                                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 border-2 border-slate-800 clip-path-slant flex items-center justify-center overflow-hidden group-hover:border-intuition-primary transition-all shadow-xl shrink-0">
+                                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-slate-800 bg-slate-900/80 shadow-lg transition-all group-hover:border-intuition-primary sm:h-12 sm:w-12">
                                           {p.atom?.image ? <img src={p.atom.image} className="w-full h-full object-cover" /> : <User size={20} className="text-slate-700" />}
                                       </div>
                                       <div>
                                           <div className={`font-black text-sm group-hover:text-intuition-primary transition-colors uppercase leading-none mb-1.5 tracking-tight ${p.atom?.type === 'CLAIM' ? 'text-intuition-danger' : 'text-white'}`}>{p.atom?.label || p.id.slice(0,8)}</div>
-                                          <div className="text-[8px] text-slate-600 font-mono tracking-widest uppercase">ID: {p.id.slice(0, 18)}...</div>
+                                          <div className="text-[10px] font-mono text-slate-500">ID {p.id.slice(0, 10)}…</div>
                                       </div>
                                   </Link>
                               </td>
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6">
-                                  <span className="px-2 sm:px-3 py-0.5 sm:py-1 bg-white/5 border border-white/10 text-slate-500 font-black uppercase text-[8px] tracking-[0.1em] clip-path-slant group-hover:text-white transition-colors">{p.atom?.type || 'STANDARD_ATOM'}</span>
+                                  <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 font-sans text-[9px] font-medium text-slate-300 transition-colors group-hover:text-white sm:px-3 sm:py-1">
+                                    {p.atom?.type === 'CLAIM' ? 'Claim' : p.atom?.type === 'ATOM' ? 'Atom' : p.atom?.type || '—'}
+                                  </span>
                               </td>
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 whitespace-nowrap">
                                   <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase">{getCurveLabel(p.curveId ?? 1)}</span>
@@ -622,24 +907,75 @@ const PublicProfile: React.FC = () => {
                                   </div>
                               </td>
                               <td className="px-3 sm:px-6 md:px-10 py-4 md:py-6 text-right">
-                                  <Link to={`/markets/${p.id}`} className="inline-flex min-h-[44px] px-4 sm:px-6 py-2 bg-white/5 border border-white/10 hover:border-intuition-primary text-[9px] font-black uppercase clip-path-slant transition-all tracking-widest items-center justify-center">Inspect</Link>
+                                  <Link to={`/markets/${p.id}`} className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 font-sans text-xs font-semibold text-slate-200 transition-all hover:border-intuition-primary sm:px-6">Open</Link>
                               </td>
                           </tr>
                       )) : (
-                          <tr><td colSpan={6} className="p-20 text-center text-slate-700 uppercase font-black tracking-[0.5em] text-[10px]">
-                              {loading ? (
+                          <tr><td colSpan={6} className="p-20 text-center font-sans text-sm text-slate-500 [text-rendering:geometricPrecision]">
+                              {isInvalidAddressParam ? (
+                                <p className="text-slate-300">This profile link is not a valid address. Use search above or a full checksummed <span className="font-mono text-slate-400">0x…</span> path.</p>
+                              ) : loading ? (
                                   <div className="flex flex-col items-center gap-4">
                                       <PageLoadingSpinner size="sm" />
-                                      <span className="text-xs text-slate-500 font-sans">Loading claims…</span>
+                                      <span className="text-slate-400">Loading positions…</span>
                                   </div>
                               ) : (
-                                  'No claims recovered from mainnet'
+                                  <div className="mx-auto max-w-md space-y-2">
+                                    <p className="text-slate-300">No open vault positions for this address.</p>
+                                    {history.length > 0 && (
+                                      <p className="text-xs leading-relaxed text-slate-500">
+                                        Past buys, sells, and creates can still appear above — if you closed or redeemed
+                                        everything, total in vaults can read as zero while activity stays visible.
+                                      </p>
+                                    )}
+                                  </div>
                               )}
                           </td></tr>
                       )}
                   </tbody>
               </table>
           </div>
+          {positions.length > POSITIONS_PER_PAGE && (
+            <div className="flex flex-col items-stretch justify-between gap-3 border-t border-white/[0.08] bg-white/[0.02] px-4 py-3 font-sans sm:flex-row sm:items-center sm:px-6">
+              <p className="text-center text-xs text-slate-500 sm:text-left">
+                Showing{' '}
+                <span className="tabular-nums text-slate-300">
+                  {(positionsPage - 1) * POSITIONS_PER_PAGE + 1}–{Math.min(positionsPage * POSITIONS_PER_PAGE, positions.length)}
+                </span>
+                <span> of {positions.length}</span>
+              </p>
+              <div className="flex items-center justify-center gap-2 sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClick();
+                    setPositionsPage((p) => Math.max(1, p - 1));
+                  }}
+                  onMouseEnter={playHover}
+                  disabled={positionsPage <= 1}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:border-intuition-primary/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="min-w-[5rem] text-center text-xs text-slate-500 tabular-nums">
+                  {positionsPage} / {totalPositionPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClick();
+                    setPositionsPage((p) => Math.min(totalPositionPages, p + 1));
+                  }}
+                  onMouseEnter={playHover}
+                  disabled={positionsPage >= totalPositionPages}
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors hover:border-intuition-primary/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+      </div>
       </div>
     </div>
   );
