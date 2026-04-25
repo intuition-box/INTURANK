@@ -572,6 +572,24 @@
         opacity: 0.5;
         mix-blend-mode: overlay;
       }
+      /* Trending wheel: skip infinite keyframes + glitter (large paint win while dragging) */
+      .trending-atom-deck .atom-card-glitter {
+        display: none !important;
+      }
+      .trending-atom-deck .atom-card-front {
+        animation: none !important;
+      }
+      .trending-atom-deck .atom-card-front::before {
+        animation: none !important;
+        background-position: 42% 38%;
+      }
+      .trending-atom-deck .atom-card-artwork,
+      .trending-atom-deck .atom-card-artwork::before,
+      .trending-atom-deck .atom-card-artwork::after,
+      .trending-atom-deck .atom-card-artwork-image::after,
+      .trending-atom-deck .atom-card-holo-strip {
+        animation: none !important;
+      }
 
       /* Execution deck — gamified buy panel */
       @keyframes execution-pulse {

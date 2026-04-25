@@ -1,15 +1,17 @@
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap, User } from 'lucide-react';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { formatEther, getAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
-import { getAllAgents, buildHomeAtomSectionsFrom, getNewlyCreatedAtoms, getNetworkStats } from '../services/graphql';
+import { getAllAgents, buildHomeAtomSectionsFrom, getNewlyCreatedAtoms, getNetworkStats, getAccountsByTermIds } from '../services/graphql';
+import type { Account } from '../types';
+import { formatMarketValue, safeWeiToEther } from '../services/analytics';
 import { CURRENCY_SYMBOL } from '../constants';
 import { toast } from '../components/Toast';
 import {
@@ -21,6 +23,7 @@ import {
   getProxyApprovalStatus,
   grantProxyApproval,
   hasCachedProxyApproval,
+  getWatchlist,
 } from '../services/web3';
 import Logo from '../components/Logo';
 import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
@@ -401,9 +404,16 @@ const SwipeTradeCard: React.FC<SwipeCardProps> = ({ agent, onSwipeBuy }) => {
   );
 };
 
-// --- Stacked cards: vertical swipe = next/prev, horizontal = buy/watchlist (no buttons) ---
-const SWIPE_THRESHOLD = 44;
-const SWIPE_VERTICAL_THRESHOLD = 32;
+// --- Trending stack: pointer swipes = vertical (wheel) + horizontal (buy / watchlist) ---
+const SWIPE_VERTICAL_THRESHOLD = 28;
+const SWIPE_HORIZONTAL_THRESHOLD = 40;
+/** Vertical cover-flow: center card + scaled peers peek above/below (px). */
+const WHEEL_PEEK_OFF = 86;
+const WHEEL_VIEWPORT = 508;
+const PEEK_SCALE = 0.88;
+const PEEK_OPACITY = 0.8;
+const DECK_SETTLE = 'cubic-bezier(0.25, 0.8, 0.2, 1)';
+const DECK_SETTLE_MS = 0.38;
 
 const formatTimeAgo = (ts: number): string => {
   const sec = Math.floor((Date.now() - ts) / 1000);
@@ -424,11 +434,13 @@ interface StackedAtomCardProps {
   onSwipeLeft: () => void;
   isInWatchlist: boolean;
   isBackCard?: boolean;
+  /** Slightly stronger than default back (for top/bottom deck strips). */
+  isPeek?: boolean;
   showRoi?: boolean;
   showCreatedAgo?: boolean;
 }
 
-const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, onSwipeRight, onSwipeLeft, isInWatchlist, isBackCard, showRoi, showCreatedAgo }) => {
+const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, onSwipeRight, onSwipeLeft, isInWatchlist, isBackCard, isPeek, showRoi, showCreatedAgo }) => {
   const [timeAgo, setTimeAgo] = useState('');
   useEffect(() => {
     if (!showCreatedAgo || !agent?.createdAt) return;
@@ -448,9 +460,9 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
   };
   const marketCapDisplay = formatCompact(marketCapRaw);
 
-  // Glass trading card — fixed size, generous radius
+  // Glass trading card — one flat card per column; min(100%) shrinks on narrow viewports
   const cardClass =
-    'relative w-full max-w-[280px] h-[400px] rounded-3xl overflow-hidden select-none touch-none flex-shrink-0 flex flex-col ' +
+    'relative w-full max-w-[min(100%,280px)] h-[400px] rounded-3xl overflow-hidden select-none touch-none flex-shrink-0 flex flex-col ' +
     'border border-white/10 bg-[#060a12]/85 shadow-[0_20px_50px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md backdrop-saturate-150';
   const isFront = !isBackCard;
 
@@ -520,7 +532,7 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
         </div>
         {/* Holographic rainbow strip — like premium Pokémon foil cards */}
         <div
-          className="mt-1.5 h-2.5 w-full shrink-0 rounded-full opacity-90"
+          className="atom-card-holo-strip mt-1.5 h-2.5 w-full shrink-0 rounded-full opacity-90"
           style={{
             background: 'linear-gradient(90deg, #ff1e6d, #facc15, #00f3ff, #a855f7, #ff1e6d)',
             backgroundSize: '200% 100%',
@@ -583,7 +595,7 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
   // Back cards: full content but subtle (less visible, shows details)
   if (isBackCard) {
     return (
-      <div className="pointer-events-none" style={{ opacity: 0.38 }}>
+      <div className="pointer-events-none" style={{ opacity: isPeek ? 0.68 : 0.38 }}>
         {cardInner}
       </div>
     );
@@ -593,6 +605,8 @@ const StackedAtomCard: React.FC<StackedAtomCardProps> = ({ agent, dragX, dragY, 
 
 interface AtomSectionCarouselProps {
   title: string;
+  /** e.g. Hot / Cap / New chip — inline with the title, reference layout */
+  headerAddon?: React.ReactNode;
   /** Omit or pass "" to hide subtext under the title */
   subtitle?: string;
   agents: any[];
@@ -606,101 +620,138 @@ interface AtomSectionCarouselProps {
   sectionColor?: string;
 }
 
-const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtitle = '', agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi, showCreatedAgo, sectionColor = '#00f3ff' }) => {
+const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, headerAddon, subtitle = '', agents, walletAddress, onSwipeRight, onSwipeLeft, isInWatchlist, showRoi, showCreatedAgo, sectionColor = '#00f3ff' }) => {
   const [index, setIndex] = useState(0);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [dragX, setDragX] = useState(0);
-  const [dragY, setDragY] = useState(0);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-  const dragXYRef = useRef({ x: 0, y: 0 });
+  const [ptr, setPtr] = useState({ x: 0, y: 0 });
+  const [isPointerActive, setIsPointerActive] = useState(false);
+  const deckRef = useRef<HTMLDivElement | null>(null);
+  const totalRef = useRef(0);
+  const indexRef = useRef(0);
+  const agentsRef = useRef(agents);
+  const onSwipeRightRef = useRef(onSwipeRight);
+  const onSwipeLeftRef = useRef(onSwipeLeft);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  const activeIdRef = useRef<number | null>(null);
+  const moveRafRef = useRef<number | null>(null);
+  const pendingRef = useRef({ x: 0, y: 0 });
+
   const total = agents.length;
   const currentAgent = total > 0 ? agents[index % total] : null;
   const prevAgent = total > 1 ? agents[(index - 1 + total) % total] : null;
   const nextAgent = total > 1 ? agents[(index + 1) % total] : null;
+  const showPeek = total > 1;
+  totalRef.current = total;
+  indexRef.current = index;
+  agentsRef.current = agents;
+  onSwipeRightRef.current = onSwipeRight;
+  onSwipeLeftRef.current = onSwipeLeft;
 
-  dragXYRef.current = { x: dragX, y: dragY };
+  const peekParallax = ptr.y * 0.18;
+  const wheelH = showPeek ? WHEEL_VIEWPORT : 400;
 
-  const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const y = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    const start = { x, y };
-    setDragStart(start);
-    dragStartRef.current = start;
-    setDragX(0);
-    setDragY(0);
-    dragXYRef.current = { x: 0, y: 0 };
-  };
-
-  // Window-level move/end so swipe stays fluid when finger/mouse leaves the card
+  /** Native pointer capture on the deck: reliable touch + no one-frame-late window listeners (was breaking swipes; felt like "click"). */
   useEffect(() => {
-    if (dragStartRef.current == null) return;
-    const onMove = (e: MouseEvent | TouchEvent) => {
-      const x = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
-      const y = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
-      const start = dragStartRef.current!;
-      const dx = x - start.x;
-      const dy = y - start.y;
-      dragXYRef.current = { x: dx, y: dy };
-      setDragX(dx);
-      setDragY(dy);
-    };
-    const onEnd = () => {
-      if (dragStartRef.current == null) return;
-      const { x: dx, y: dy } = dragXYRef.current;
-      const cur = total > 0 ? agents[index % total] : null;
-      const isVertical = Math.abs(dy) > Math.abs(dx);
-      if (isVertical && Math.abs(dy) > SWIPE_VERTICAL_THRESHOLD) {
-        playClick();
-        if (dy < 0) setIndex((i) => (i + 1) % total);
-        else setIndex((i) => (i - 1 + total) % total);
-      } else if (!isVertical && Math.abs(dx) > SWIPE_THRESHOLD && cur) {
-        playClick();
-        if (dx > 0) onSwipeRight(cur);
-        else onSwipeLeft(cur);
-      }
-      dragStartRef.current = null;
-      setDragStart(null);
-      setDragX(0);
-      setDragY(0);
-    };
-    window.addEventListener('mousemove', onMove, { passive: true });
-    window.addEventListener('mouseup', onEnd);
-    window.addEventListener('touchmove', onMove, { passive: true });
-    window.addEventListener('touchend', onEnd);
-    window.addEventListener('touchcancel', onEnd);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onEnd);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
-      window.removeEventListener('touchcancel', onEnd);
-    };
-  }, [dragStart, index, total, agents, onSwipeRight, onSwipeLeft]);
+    const el = deckRef.current;
+    if (!el) return;
 
-  const handleEndLocal = () => {
-    if (dragStartRef.current == null) return;
-    const dx = dragX;
-    const dy = dragY;
-    const isVertical = Math.abs(dy) > Math.abs(dx);
-    if (isVertical && Math.abs(dy) > SWIPE_VERTICAL_THRESHOLD) {
-      playClick();
-      if (dy < 0) setIndex((i) => (i + 1) % total);
-      else setIndex((i) => (i - 1 + total) % total);
-    } else if (!isVertical && Math.abs(dx) > SWIPE_THRESHOLD && currentAgent) {
-      playClick();
-      if (dx > 0) onSwipeRight(currentAgent);
-      else onSwipeLeft(currentAgent);
-    }
-    dragStartRef.current = null;
-    setDragStart(null);
-    setDragX(0);
-    setDragY(0);
-  };
+    const flushMove = () => {
+      moveRafRef.current = null;
+      const p = pendingRef.current;
+      setPtr({ x: p.x, y: p.y });
+    };
+
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      startRef.current = { x: e.clientX, y: e.clientY };
+      activeIdRef.current = e.pointerId;
+      setIsPointerActive(true);
+      setPtr({ x: 0, y: 0 });
+      el.setPointerCapture(e.pointerId);
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerId !== activeIdRef.current || !startRef.current) return;
+      const st = startRef.current;
+      const dx = e.clientX - st.x;
+      const dy = e.clientY - st.y;
+      pendingRef.current = { x: dx, y: dy };
+      if (moveRafRef.current == null) {
+        moveRafRef.current = requestAnimationFrame(flushMove);
+      }
+    };
+
+    const endDrag = (e: PointerEvent) => {
+      if (e.pointerId !== activeIdRef.current) return;
+      startRef.current = null;
+      activeIdRef.current = null;
+      if (moveRafRef.current != null) {
+        cancelAnimationFrame(moveRafRef.current);
+        moveRafRef.current = null;
+      }
+      setIsPointerActive(false);
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* already released */
+      }
+      setPtr({ x: 0, y: 0 });
+    };
+
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== activeIdRef.current) return;
+      const st = startRef.current;
+      const dx = e.clientX - (st ? st.x : 0);
+      const dy = e.clientY - (st ? st.y : 0);
+      endDrag(e);
+      if (!st) return;
+      const t = totalRef.current;
+      if (t < 1) return;
+      const verticalDominant = Math.abs(dy) > Math.abs(dx) * 0.65;
+      const horizontalDominant = Math.abs(dx) > Math.abs(dy) * 0.65;
+      if (verticalDominant && t > 1 && Math.abs(dy) >= SWIPE_VERTICAL_THRESHOLD) {
+        playClick();
+        if (dy < 0) setIndex((i) => (i + 1) % t);
+        else setIndex((i) => (i - 1 + t) % t);
+        return;
+      }
+      if (horizontalDominant && Math.abs(dx) >= SWIPE_HORIZONTAL_THRESHOLD) {
+        const idx = indexRef.current;
+        const ag = agentsRef.current;
+        const cur = t > 0 ? ag[idx % t] : null;
+        if (cur) {
+          playClick();
+          if (dx > 0) onSwipeRightRef.current(cur);
+          else onSwipeLeftRef.current(cur);
+        }
+      }
+    };
+
+    const onCancel = (e: PointerEvent) => {
+      endDrag(e);
+    };
+
+    const downOpts: AddEventListenerOptions = { capture: true, passive: false };
+    const moveOpts: AddEventListenerOptions = { capture: true, passive: true };
+    el.addEventListener('pointerdown', onDown, downOpts);
+    el.addEventListener('pointermove', onMove, moveOpts);
+    el.addEventListener('pointerup', onUp, moveOpts);
+    el.addEventListener('pointercancel', onCancel, moveOpts);
+
+    return () => {
+      el.removeEventListener('pointerdown', onDown, downOpts);
+      el.removeEventListener('pointermove', onMove, moveOpts);
+      el.removeEventListener('pointerup', onUp, moveOpts);
+      el.removeEventListener('pointercancel', onCancel, moveOpts);
+    };
+  }, [total]);
 
   if (total === 0) {
     return (
-      <MuiBox sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+      <MuiBox
+        className="box-border w-full max-w-full px-2 sm:px-3"
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+      >
         <div className="w-full text-center mb-2">
           <h3 className="text-xs sm:text-sm font-black font-display text-white tracking-[0.2em] mb-1 uppercase">{title}</h3>
           <div
@@ -712,7 +763,7 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
           />
         </div>
         {subtitle ? <p className="mb-4 text-[9px] font-mono uppercase tracking-[0.2em] text-slate-500">{subtitle}</p> : null}
-        <div className="w-full max-w-[280px] min-h-[320px] flex flex-col items-center justify-center">
+        <div className="flex min-h-[200px] w-full max-w-[min(100%,280px)] flex-col items-center justify-center">
           <div
             className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
             style={{ borderColor: `${sectionColor}40`, borderTopColor: sectionColor }}
@@ -723,85 +774,128 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, subtit
     );
   }
 
-  const isDragging = dragStart != null;
-
   return (
-    <MuiBox sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-      <div className="mb-2 w-full text-center">
-        <h3 className="mb-1 text-xs font-black uppercase tracking-[0.15em] text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)] font-display sm:text-sm">{title}</h3>
-        <div
-          className="mx-auto h-0.5 w-14 rounded-full"
-          style={{
-            background: `linear-gradient(90deg, transparent, ${sectionColor}, transparent)`,
-            boxShadow: `0 0 10px ${sectionColor}40`,
-          }}
-        />
+    <MuiBox
+      className="box-border w-full max-w-full px-2 sm:px-3"
+      sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+    >
+      <div className="mb-1.5 flex w-full min-w-0 items-center justify-center gap-1.5 sm:gap-2.5">
+        <h3 className="min-w-0 flex-1 text-center text-[10px] font-black uppercase tracking-[0.12em] text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.15)] font-display sm:text-xs sm:tracking-[0.15em]">
+          {title}
+        </h3>
+        {headerAddon ? <div className="shrink-0 animate-badge-bounce">{headerAddon}</div> : null}
       </div>
-      {subtitle ? (
-        <p className="mb-3 text-[9px] font-mono uppercase tracking-[0.2em] text-slate-500">{subtitle}</p>
-      ) : null}
+      <div
+        className="mx-auto mb-1.5 h-0.5 w-12 rounded-full"
+        style={{
+          background: `linear-gradient(90deg, transparent, ${sectionColor}, transparent)`,
+          boxShadow: `0 0 8px ${sectionColor}50`,
+        }}
+      />
+      {subtitle ? <p className="mb-2 text-[9px] font-mono uppercase tracking-[0.2em] text-slate-500">{subtitle}</p> : null}
 
-      <MuiBox
-        onMouseDown={handleStart}
-        onTouchStart={handleStart}
-        onMouseUp={handleEndLocal}
-        onMouseLeave={handleEndLocal}
-        onTouchEnd={handleEndLocal}
-        sx={{
-          position: 'relative',
-          width: '100%',
-          minHeight: 440,
-          pt: 2,
-          pb: 2,
-          overflow: 'visible',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: isDragging ? 'grabbing' : 'grab',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
+      <div
+        ref={deckRef}
+        className="trending-atom-deck relative w-full max-w-[min(100%,280px)] touch-none select-none [user-select:none] [-webkit-user-select:none] mx-auto"
+        style={{
+          height: wheelH,
+          cursor: isPointerActive ? 'grabbing' : 'grab',
           touchAction: 'none',
         }}
+        role="presentation"
       >
-        {/* Above: previous card peeks from top — more visible */}
-        {prevAgent && (
-          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ top: 0, transform: 'translateX(-50%) translateY(-8px) scale(0.82)' }}>
-            <StackedAtomCard agent={prevAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && prevAgent ? isInWatchlist(prevAgent.id) : false} isBackCard showRoi={showRoi} showCreatedAgo={showCreatedAgo} />
-          </div>
-        )}
-        {/* Below: next card peeks from bottom — more visible */}
-        {nextAgent && (
-          <div className="absolute left-1/2 z-[1] pointer-events-none" style={{ bottom: 0, transform: 'translateX(-50%) translateY(8px) scale(0.82)' }}>
-            <StackedAtomCard agent={nextAgent} dragX={0} dragY={0} onSwipeRight={() => {}} onSwipeLeft={() => {}} isInWatchlist={walletAddress && nextAgent ? isInWatchlist(nextAgent.id) : false} isBackCard showRoi={showRoi} showCreatedAgo={showCreatedAgo} />
-          </div>
-        )}
-        {/* Current: centered */}
         <div
-          className="absolute left-1/2 z-10 will-change-transform w-full max-w-[280px]"
-          style={{
-            top: '50%',
-            transform: `translate(calc(-50% + ${dragX}px), calc(-50% + ${dragY}px))`,
-            transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.33, 1, 0.68, 1)',
-          }}
+          className="relative h-full w-full overflow-hidden rounded-[1rem] isolate"
+          style={{ background: 'linear-gradient(180deg, rgba(6,8,14,0.45) 0%, rgba(4,5,10,0.3) 50%, rgba(6,8,14,0.45) 100%)' }}
         >
-          <StackedAtomCard
-            agent={currentAgent}
-            dragX={dragX}
-            dragY={dragY}
-            onSwipeRight={() => currentAgent && onSwipeRight(currentAgent)}
-            onSwipeLeft={() => currentAgent && onSwipeLeft(currentAgent)}
-            isInWatchlist={walletAddress && currentAgent ? isInWatchlist(currentAgent.id) : false}
-            showRoi={showRoi}
-            showCreatedAgo={showCreatedAgo}
-          />
-        </div>
-      </MuiBox>
+          <div
+            className="absolute left-1/2 top-1/2 w-full max-w-[min(100%,280px)] -translate-x-1/2 -translate-y-1/2 [transform-style:preserve-3d]"
+            style={{ height: 400 }}
+          >
+            {showPeek && prevAgent && (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 z-[2] w-full max-w-[min(100%,280px)] will-change-transform"
+                style={{
+                  transform: `translateY(${-WHEEL_PEEK_OFF + peekParallax}px) scale(${PEEK_SCALE})`,
+                  opacity: PEEK_OPACITY,
+                  transformOrigin: '50% 100%',
+                  transition: isPointerActive ? 'none' : `transform ${DECK_SETTLE_MS}s ${DECK_SETTLE}, opacity ${DECK_SETTLE_MS}s ${DECK_SETTLE}`,
+                }}
+              >
+                <StackedAtomCard
+                  agent={prevAgent}
+                  dragX={0}
+                  dragY={0}
+                  onSwipeRight={() => {}}
+                  onSwipeLeft={() => {}}
+                  isInWatchlist={walletAddress && prevAgent ? isInWatchlist(prevAgent.id) : false}
+                  isBackCard
+                  isPeek
+                  showRoi={showRoi}
+                  showCreatedAgo={showCreatedAgo}
+                />
+              </div>
+            )}
 
-      <p className="mt-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 font-mono text-[10px] tabular-nums tracking-[0.2em] backdrop-blur-sm" style={{ boxShadow: `0 0 12px ${sectionColor}18` }}>
-        <span className="font-semibold" style={{ color: sectionColor, textShadow: `0 0 4px ${sectionColor}40` }}>{String(index + 1).padStart(2, '0')}</span>
-        <span className="text-slate-500 mx-1">/</span>
-        <span className="text-slate-400">{String(total).padStart(2, '0')}</span>
+            {currentAgent && (
+              <div
+                className="absolute inset-x-0 top-0 z-[5] w-full max-w-[min(100%,280px)] will-change-transform [transform-style:preserve-3d]"
+                style={{
+                  transform: `translate3d(${ptr.x}px, ${ptr.y * 0.1}px, 0) scale(1)`,
+                  boxShadow: '0 18px 36px rgba(0,0,0,0.5)',
+                  borderRadius: '1.5rem',
+                  transition: isPointerActive ? 'none' : `transform ${DECK_SETTLE_MS}s ${DECK_SETTLE}`,
+                }}
+              >
+                <StackedAtomCard
+                  key={currentAgent.id}
+                  agent={currentAgent}
+                  dragX={ptr.x}
+                  dragY={ptr.y}
+                  onSwipeRight={() => currentAgent && onSwipeRight(currentAgent)}
+                  onSwipeLeft={() => currentAgent && onSwipeLeft(currentAgent)}
+                  isInWatchlist={walletAddress && currentAgent ? isInWatchlist(currentAgent.id) : false}
+                  showRoi={showRoi}
+                  showCreatedAgo={showCreatedAgo}
+                />
+              </div>
+            )}
+
+            {showPeek && nextAgent && (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-0 z-[2] w-full max-w-[min(100%,280px)] will-change-transform"
+                style={{
+                  transform: `translateY(${WHEEL_PEEK_OFF + peekParallax}px) scale(${PEEK_SCALE})`,
+                  opacity: PEEK_OPACITY,
+                  transformOrigin: '50% 0%',
+                  transition: isPointerActive ? 'none' : `transform ${DECK_SETTLE_MS}s ${DECK_SETTLE}, opacity ${DECK_SETTLE_MS}s ${DECK_SETTLE}`,
+                }}
+              >
+                <StackedAtomCard
+                  agent={nextAgent}
+                  dragX={0}
+                  dragY={0}
+                  onSwipeRight={() => {}}
+                  onSwipeLeft={() => {}}
+                  isInWatchlist={walletAddress && nextAgent ? isInWatchlist(nextAgent.id) : false}
+                  isBackCard
+                  isPeek
+                  showRoi={showRoi}
+                  showCreatedAgo={showCreatedAgo}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <p
+        className="mt-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 font-mono text-[9px] tabular-nums tracking-[0.2em] text-slate-500 sm:px-3 sm:py-1 sm:text-[10px]"
+        style={{ boxShadow: `0 0 6px ${sectionColor}10` }}
+      >
+        <span className="font-semibold" style={{ color: sectionColor }}>{String(index + 1).padStart(2, '0')}</span>
+        <span className="mx-1 text-slate-600">/</span>
+        <span className="text-slate-500">{String(total).padStart(2, '0')}</span>
       </p>
     </MuiBox>
   );
@@ -1152,6 +1246,12 @@ const Home: React.FC = () => {
   const { openConnectModal } = useConnectModal();
   const { address: walletAddress } = useAccount();
 
+  /** `discover` = three card stacks; `watchlist` = full list of saved term IDs. */
+  const [arenaMode, setArenaMode] = useState<'discover' | 'watchlist'>('discover');
+  const [watchlistRows, setWatchlistRows] = useState<{ id: string; account: Account | null }[]>([]);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [watchlistVersion, setWatchlistVersion] = useState(0);
+
   const [season2Anchor, setSeason2Anchor] = useState<HTMLElement | null>(null);
   const [season2LoadEnabled, setSeason2LoadEnabled] = useState(false);
 
@@ -1206,15 +1306,54 @@ const Home: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const onWatchlistUpdate = () => setAtomSections((prev) => ({ ...prev }));
+    const onWatchlistUpdate = () => {
+      setAtomSections((prev) => ({ ...prev }));
+      setWatchlistVersion((v) => v + 1);
+    };
     window.addEventListener('watchlist-updated', onWatchlistUpdate);
     return () => window.removeEventListener('watchlist-updated', onWatchlistUpdate);
   }, []);
+
+  useEffect(() => {
+    if (arenaMode !== 'watchlist' || !walletAddress) return;
+    let cancelled = false;
+    (async () => {
+      setWatchlistLoading(true);
+      const ids = getWatchlist(walletAddress);
+      if (ids.length === 0) {
+        if (!cancelled) {
+          setWatchlistRows([]);
+          setWatchlistLoading(false);
+        }
+        return;
+      }
+      try {
+        const accounts = await getAccountsByTermIds(ids);
+        if (!cancelled) {
+          setWatchlistRows(ids.map((id, i) => ({ id, account: accounts[i] ?? null })));
+        }
+      } catch {
+        if (!cancelled) {
+          setWatchlistRows(ids.map((id) => ({ id, account: null })));
+        }
+      } finally {
+        if (!cancelled) setWatchlistLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [arenaMode, walletAddress, watchlistVersion]);
 
   const volumeValue = parseFloat(formatEther(BigInt(stats.tvl)));
   const formattedVolume = volumeValue > 0 
     ? volumeValue.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     : "0.0";
+
+  const watchlistCount = useMemo(
+    () => (walletAddress ? getWatchlist(walletAddress).length : 0),
+    [walletAddress, watchlistVersion]
+  );
 
   return (
     <div className="relative flex flex-col min-h-screen bg-intuition-dark selection:bg-intuition-secondary selection:text-white w-full min-w-0 max-w-[100vw] overflow-x-clip">
@@ -1289,24 +1428,66 @@ const Home: React.FC = () => {
                 <span className="font-semibold text-intuition-primary text-glow-blue">Swipe</span> to buy or watchlist ·{' '}
                 <span className="text-slate-300">scroll cards vertically</span>
               </p>
-              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-                <div className="group flex items-center gap-2 rounded-full border border-[#00f3ff]/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_20px_rgba(0,243,255,0.2)] backdrop-blur-md transition-all duration-300 hover:border-[#00f3ff] hover:shadow-[0_0_28px_rgba(0,243,255,0.35)]">
+              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3" role="tablist" aria-label="Trending arena view">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={arenaMode === 'discover'}
+                  onClick={() => {
+                    playClick();
+                    setArenaMode('discover');
+                  }}
+                  onMouseEnter={playHover}
+                  className={`group flex items-center gap-2 rounded-full border px-4 py-2.5 font-display shadow-[0_0_20px_rgba(0,243,255,0.2)] backdrop-blur-md transition-all duration-300 sm:px-5 ${
+                    arenaMode === 'discover'
+                      ? 'border-[#00f3ff] bg-[#00f3ff]/12 shadow-[0_0_28px_rgba(0,243,255,0.4)]'
+                      : 'border-[#00f3ff]/50 bg-[#05080c]/80 hover:border-[#00f3ff] hover:shadow-[0_0_28px_rgba(0,243,255,0.35)]'
+                  }`}
+                >
                   <ArrowRight size={17} className="text-[#00f3ff]" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#00f3ff] font-display sm:text-[11px]">Buy</span>
-                </div>
-                <div className="group flex items-center gap-2 rounded-full border border-[#ff1e6d]/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_20px_rgba(255,30,109,0.18)] backdrop-blur-md transition-all duration-300 hover:border-[#ff1e6d] hover:shadow-[0_0_28px_rgba(255,30,109,0.32)]">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#00f3ff] sm:text-[11px]">Buy</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={arenaMode === 'watchlist'}
+                  onClick={() => {
+                    playClick();
+                    if (!walletAddress) {
+                      openConnectModal?.();
+                      return;
+                    }
+                    setArenaMode('watchlist');
+                  }}
+                  onMouseEnter={playHover}
+                  className={`group flex items-center gap-2 rounded-full border px-4 py-2.5 font-display shadow-[0_0_20px_rgba(255,30,109,0.18)] backdrop-blur-md transition-all duration-300 sm:px-5 ${
+                    arenaMode === 'watchlist'
+                      ? 'border-[#ff1e6d] bg-[#ff1e6d]/12 shadow-[0_0_28px_rgba(255,30,109,0.35)]'
+                      : 'border-[#ff1e6d]/50 bg-[#05080c]/80 hover:border-[#ff1e6d] hover:shadow-[0_0_28px_rgba(255,30,109,0.32)]'
+                  }`}
+                >
                   <Heart size={17} className="text-[#ff1e6d]" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#ff1e6d] font-display sm:text-[11px]">Watchlist</span>
-                </div>
-                <div className="group flex items-center gap-2 rounded-full border border-[#facc15]/45 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(250,204,21,0.15)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(250,204,21,0.28)]">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#ff1e6d] sm:text-[11px]">Watchlist</span>
+                  {watchlistCount > 0 && (
+                    <span className="ml-0.5 min-w-[1.25rem] rounded-full border border-rose-400/40 bg-rose-500/25 px-1.5 py-0.5 text-[9px] font-black tabular-nums text-rose-100">
+                      {watchlistCount}
+                    </span>
+                  )}
+                </button>
+                <Link
+                  to="/markets"
+                  onClick={playClick}
+                  onMouseEnter={playHover}
+                  className="group flex items-center gap-2 rounded-full border border-[#facc15]/45 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(250,204,21,0.15)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(250,204,21,0.28)] sm:px-5"
+                >
                   <ChevronsUpDown size={17} className="text-[#facc15]" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-[#facc15] font-display sm:text-[11px]">Browse</span>
-                </div>
+                </Link>
                 <Link
                   to="/climb"
                   onClick={playClick}
                   onMouseEnter={playHover}
-                  className="group flex items-center gap-2 rounded-full border border-amber-400/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(251,191,36,0.18)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(251,191,36,0.3)]"
+                  className="group flex items-center gap-2 rounded-full border border-amber-400/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(251,191,36,0.18)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(251,191,36,0.3)] sm:px-5"
                 >
                   <Trophy size={17} className="text-amber-400" />
                   <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 font-display sm:text-[11px]">Climb</span>
@@ -1315,24 +1496,27 @@ const Home: React.FC = () => {
             </div>
           </Reveal>
 
+          {arenaMode === 'discover' ? (
           <div className="grid min-w-0 grid-cols-1 gap-5 sm:gap-6 md:grid-cols-3 md:gap-7">
             <Reveal delay={150}>
               <div
-                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.65rem] p-3 transition-all duration-500 sm:p-4 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
+                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.4rem] px-4 pt-1.5 pb-2.5 transition-all duration-500 sm:px-4 sm:pt-2 sm:pb-3 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
                 style={{
                   background: 'linear-gradient(155deg, rgba(255,30,109,0.1) 0%, rgba(5,8,20,0.92) 45%, rgba(0,243,255,0.04) 100%)',
                   border: '1px solid rgba(255,30,109,0.45)',
                   boxShadow: '0 0 32px rgba(255,30,109,0.12), 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
-                  backdropFilter: 'blur(16px)',
+                  backdropFilter: 'blur(12px)',
                 }}
               >
                 <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
-                <div className="absolute right-3 top-3 z-[2] flex animate-badge-bounce items-center gap-1.5 rounded-full border border-[#ff1e6d]/50 bg-[#ff1e6d]/15 px-2.5 py-1 shadow-[0_0_14px_rgba(255,30,109,0.25)] backdrop-blur-sm">
-                  <Flame size={13} className="text-[#ff1e6d]" />
-                  <span className="text-[9px] font-black uppercase tracking-wider text-[#ff1e6d] font-display">Hot</span>
-                </div>
                 <AtomSectionCarousel
                   title="Top by ROI (daily)"
+                  headerAddon={(
+                    <div className="flex items-center gap-1.5 rounded-full border border-[#ff1e6d]/50 bg-[#ff1e6d]/15 px-2.5 py-1 shadow-[0_0_12px_rgba(255,30,109,0.2)] backdrop-blur-sm">
+                      <Flame size={12} className="text-[#ff1e6d] sm:w-[13px] sm:h-[13px]" />
+                      <span className="text-[8px] font-black uppercase tracking-wider text-[#ff1e6d] font-display sm:text-[9px]">Hot</span>
+                    </div>
+                  )}
                   subtitle=""
                   agents={atomSections.roiDaily}
                   walletAddress={walletAddress}
@@ -1350,21 +1534,23 @@ const Home: React.FC = () => {
             </Reveal>
             <Reveal delay={280}>
               <div
-                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.65rem] p-3 transition-all duration-500 sm:p-4 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
+                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.4rem] px-4 pt-1.5 pb-2.5 transition-all duration-500 sm:px-4 sm:pt-2 sm:pb-3 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
                 style={{
                   background: 'linear-gradient(155deg, rgba(0,243,255,0.1) 0%, rgba(5,8,20,0.92) 45%, rgba(168,85,247,0.04) 100%)',
                   border: '1px solid rgba(0,243,255,0.45)',
                   boxShadow: '0 0 32px rgba(0,243,255,0.12), 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
-                  backdropFilter: 'blur(16px)',
+                  backdropFilter: 'blur(12px)',
                 }}
               >
                 <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
-                <div className="absolute right-3 top-3 z-[2] flex animate-badge-bounce items-center gap-1.5 rounded-full border border-[#00f3ff]/50 bg-[#00f3ff]/12 px-2.5 py-1 shadow-[0_0_14px_rgba(0,243,255,0.22)] backdrop-blur-sm" style={{ animationDelay: '0.3s' }}>
-                  <Zap size={13} className="text-[#00f3ff]" />
-                  <span className="text-[9px] font-black uppercase tracking-wider text-[#00f3ff] font-display">Cap</span>
-                </div>
                 <AtomSectionCarousel
                   title="Top by market cap"
+                  headerAddon={(
+                    <div className="flex items-center gap-1.5 rounded-full border border-[#00f3ff]/50 bg-[#00f3ff]/12 px-2.5 py-1 shadow-[0_0_12px_rgba(0,243,255,0.18)] backdrop-blur-sm" style={{ animationDelay: '0.25s' }}>
+                      <Zap size={12} className="text-[#00f3ff] sm:w-[13px] sm:h-[13px]" />
+                      <span className="text-[8px] font-black uppercase tracking-wider text-[#00f3ff] font-display sm:text-[9px]">Cap</span>
+                    </div>
+                  )}
                   subtitle=""
                   agents={atomSections.byMarketcap}
                   walletAddress={walletAddress}
@@ -1381,21 +1567,23 @@ const Home: React.FC = () => {
             </Reveal>
             <Reveal delay={410}>
               <div
-                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.65rem] p-3 transition-all duration-500 sm:p-4 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
+                className="group relative flex w-full max-w-full min-w-0 flex-col items-center overflow-visible rounded-[1.4rem] px-4 pt-1.5 pb-2.5 transition-all duration-500 sm:px-4 sm:pt-2 sm:pb-3 md:hover:-translate-y-0.5 md:hover:scale-[1.01]"
                 style={{
                   background: 'linear-gradient(155deg, rgba(250,204,21,0.08) 0%, rgba(5,8,20,0.92) 45%, rgba(34,197,94,0.04) 100%)',
                   border: '1px solid rgba(250,204,21,0.45)',
                   boxShadow: '0 0 28px rgba(250,204,21,0.12), 0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
-                  backdropFilter: 'blur(16px)',
+                  backdropFilter: 'blur(12px)',
                 }}
               >
                 <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
-                <div className="absolute right-3 top-3 z-[2] flex animate-badge-bounce items-center gap-1.5 rounded-full border border-[#facc15]/50 bg-[#facc15]/12 px-2.5 py-1 shadow-[0_0_14px_rgba(250,204,21,0.2)] backdrop-blur-sm" style={{ animationDelay: '0.6s' }}>
-                  <Sparkles size={13} className="text-[#facc15]" />
-                  <span className="text-[9px] font-black uppercase tracking-wider text-[#facc15] font-display">New</span>
-                </div>
                 <AtomSectionCarousel
                   title="Newly created"
+                  headerAddon={(
+                    <div className="flex items-center gap-1.5 rounded-full border border-[#facc15]/50 bg-[#facc15]/12 px-2.5 py-1 shadow-[0_0_12px_rgba(250,204,21,0.16)] backdrop-blur-sm" style={{ animationDelay: '0.45s' }}>
+                      <Sparkles size={12} className="text-[#facc15] sm:w-[13px] sm:h-[13px]" />
+                      <span className="text-[8px] font-black uppercase tracking-wider text-[#facc15] font-display sm:text-[9px]">New</span>
+                    </div>
+                  )}
                   subtitle=""
                   agents={atomSections.newlyCreated}
                   walletAddress={walletAddress}
@@ -1412,6 +1600,120 @@ const Home: React.FC = () => {
               </div>
             </Reveal>
           </div>
+          ) : (
+            <div className="mt-2 min-w-0 rounded-[1.65rem] border border-[#ff1e6d]/35 bg-gradient-to-b from-[#0a0610]/95 to-[#05080c]/95 p-4 shadow-[0_0_40px_rgba(255,30,109,0.1)] backdrop-blur-sm sm:p-6 md:p-8">
+              <div className="mb-6 flex flex-col gap-2 border-b border-white/[0.08] pb-4 text-center sm:text-left">
+                <h3 className="font-display text-xl font-black uppercase tracking-tight text-white sm:text-2xl">
+                  <span className="text-[#ff1e6d]">Watchlist</span>
+                  <span className="text-slate-500"> — </span>
+                  <span className="text-slate-300">saved markets</span>
+                </h3>
+                <p className="font-sans text-sm text-slate-500">
+                  Atoms and claims you added by swiping left on the cards. Open a market to trade or remove items here.
+                </p>
+              </div>
+              {!walletAddress ? (
+                <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-white/15 bg-black/30 py-16 px-4 text-center">
+                  <Heart className="h-10 w-10 text-[#ff1e6d]/60" />
+                  <p className="max-w-sm font-sans text-sm text-slate-400">Connect your wallet to see and manage your watchlist.</p>
+                  <button
+                    type="button"
+                    onClick={() => { playClick(); openConnectModal?.(); }}
+                    className="rounded-full border-2 border-[#ff1e6d]/60 bg-[#ff1e6d]/15 px-6 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#ff1e6d] transition-colors hover:bg-[#ff1e6d]/25"
+                  >
+                    Connect wallet
+                  </button>
+                </div>
+              ) : watchlistLoading ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-20">
+                  <Loader2 className="h-10 w-10 animate-spin text-[#ff1e6d]" />
+                  <p className="font-mono text-xs uppercase tracking-widest text-slate-500">Loading watchlist…</p>
+                </div>
+              ) : watchlistRows.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#ff1e6d]/25 bg-[#ff1e6d]/[0.04] py-16 px-4 text-center">
+                  <Heart className="h-10 w-10 text-[#ff1e6d]/50" />
+                  <p className="max-w-md font-sans text-sm text-slate-300">Nothing saved yet. Swipe left on any card in the stacks above to add markets here.</p>
+                  <button
+                    type="button"
+                    onClick={() => { playClick(); setArenaMode('discover'); }}
+                    className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#00f3ff] underline-offset-4 hover:underline"
+                  >
+                    Back to trending stacks
+                  </button>
+                </div>
+              ) : (
+                <ul className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {watchlistRows.map(({ id, account }) => {
+                    const mcap = account?.marketCap != null ? parseFloat(String(account.marketCap)) : 0;
+                    const spot = account?.currentSharePrice != null ? safeWeiToEther(account.currentSharePrice) : 0;
+                    const label = account?.label?.trim() || `${id.slice(0, 6)}…${id.slice(-4)}`;
+                    return (
+                      <li
+                        key={id}
+                        className="group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#080c14]/90 shadow-[0_12px_40px_rgba(0,0,0,0.4)] transition-all hover:border-[#ff1e6d]/35"
+                      >
+                        <div className="absolute right-2 top-2 z-[2]">
+                          <button
+                            type="button"
+                            title="Remove from watchlist"
+                            onClick={() => {
+                              if (!walletAddress) return;
+                              playClick();
+                              toggleWatchlist(id, walletAddress);
+                              toast.success('Removed from watchlist');
+                            }}
+                            onMouseEnter={playHover}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-rose-500/40 bg-black/50 text-rose-400 transition-colors hover:bg-rose-500/20 hover:text-rose-200"
+                            aria-label="Remove from watchlist"
+                          >
+                            <Heart size={16} className="fill-rose-500" />
+                          </button>
+                        </div>
+                        <Link
+                          to={`/markets/${id}`}
+                          onClick={playClick}
+                          onMouseEnter={playHover}
+                          className="flex min-w-0 flex-1 flex-col gap-3 p-4 pt-12"
+                        >
+                          <div className="flex min-w-0 gap-3">
+                            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80">
+                              {account?.image ? (
+                                <img src={account.image} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-slate-600">
+                                  <User size={28} />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-2 font-black uppercase leading-tight tracking-tight text-white group-hover:text-[#ff1e6d] sm:text-sm">
+                                {label}
+                              </p>
+                              <p className="mt-0.5 font-sans text-[10px] font-semibold uppercase text-slate-500">
+                                {account?.type || 'Market'} · {id.slice(0, 8)}…
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/[0.06] bg-black/30 px-3 py-2.5 font-mono text-[10px] text-slate-300">
+                            <div>
+                              <p className="text-[9px] font-bold uppercase text-slate-500">Mcap ({CURRENCY_SYMBOL})</p>
+                              <p className="mt-0.5 tabular-nums text-intuition-primary">{account ? formatMarketValue(mcap) : '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-bold uppercase text-slate-500">Spot</p>
+                              <p className="mt-0.5 tabular-nums text-slate-200">
+                                {account ? (spot < 0.0001 ? spot.toExponential(2) : spot.toFixed(4)) : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
