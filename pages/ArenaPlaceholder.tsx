@@ -3,7 +3,11 @@ import { Link } from 'react-router-dom';
 import { Trophy, ArrowLeft, Sparkles, Swords } from 'lucide-react';
 import { playClick, playHover } from '../services/audio';
 
-/** Shown at `/climb` when `VITE_ARENA_ENABLED` is not true — full Arena UI stays behind the flag. */
+/**
+ * Shown at `/climb` when the full Arena is not displayed:
+ * - `VITE_ARENA_ENABLED` is not `true`, or
+ * - `VITE_ARENA_PLACEHOLDER=true` (mask WIP; route and nav still point here).
+ */
 const ArenaPlaceholder: React.FC = () => {
   return (
     <div className="min-h-[calc(100dvh-5rem)] flex flex-col items-center justify-center px-4 py-12 md:py-20 relative overflow-hidden font-mono">

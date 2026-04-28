@@ -1,7 +1,7 @@
 /** Arena: local stance grid + arena points. Vaults: /markets/:id */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { parseEther, formatEther, getAddress } from 'viem';
 import {
@@ -10,9 +10,6 @@ import {
   Loader2,
   Sparkles,
   ChevronRight,
-  Coins,
-  FileText,
-  BookOpen,
   Flame,
   Zap,
   SkipForward,
@@ -22,18 +19,46 @@ import {
   Clock,
   Medal,
   X,
+  List,
+  ArrowLeft,
+  Check,
 } from 'lucide-react';
 import {
   getTopClaims,
+  getLists,
+  getListMemberSubjectsForObject,
   predicateIsSocialTagNoise,
   predicateLooksLikeBattlePredicateLoose,
   resolveMetadata,
 } from '../services/graphql';
-import { sendNativeTransfer } from '../services/web3';
+import { createSemanticTriplesBatch, createTripleFromLabels, sendNativeTransfer } from '../services/web3';
 import { playClick, playHover, playSuccess } from '../services/audio';
 import { toast } from '../components/Toast';
 import { addArenaXp, getArenaXp } from '../services/arenaXp';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
+import { ARENA_BATCH_MODE } from '../constants';
+import { DISTRUST_ATOM_ID, LIST_PREDICATE_ID } from '../constants';
+import {
+  clearPendingForList,
+  getFirstListIdWithPending,
+  loadPendingForList,
+  savePendingForList,
+  type ArenaPendingRow,
+} from '../services/arenaPendingBatch';
+import {
+  ARENA_CATEGORY_PILLS,
+  ARENA_LISTS,
+  buildArenaItemQuestion,
+  filterArenaListsByCategory,
+  getArenaListById,
+  getArenaListConstituents,
+  getArenaPreviewItems,
+  registerPortalListEntries,
+  portalListIdFromTermId,
+  type ArenaListEntry,
+} from '../services/arenaListsRegistry';
+import ArenaBatchReviewModal from '../components/ArenaBatchReviewModal';
+import ArenaListCard from '../components/ArenaListCard';
 export type ArenaTheme = 'claims' | 'narratives' | 'tokens' | 'passion';
 
 export type RankItemKind = 'claim' | 'atom' | 'token';
@@ -65,8 +90,10 @@ export type ArenaRound = {
   items: RankItem[];
 };
 
-/** How many yes/no cards to show when the pool is large enough. */
-const YESNO_GRID_SIZE = 6;
+/** Arena ranking: one card at a time (swipe-style; no grid/sprint toggle). */
+const ARENA_CARDS_PER_ROUND = 1;
+const ARENA_SHOW_LEADERBOARD = false;
+const TERM_ID_RE = /^0x[0-9a-fA-F]{64}$/;
 
 function pickSingleItem(pool: RankItem[], lastId: string | null): RankItem | null {
   if (pool.length === 0) return null;
@@ -80,11 +107,6 @@ const STORAGE_PREFIX = 'inturank-arena-pairwise';
 /** Discrete stake levels (no free tier). TRUST is sent as native transfer to `VITE_ARENA_TREASURY_ADDRESS`, not a MultiVault deposit. */
 const ARENA_STAKE_PRESETS = [0.1, 0.25, 0.5, 1, 2.5, 10] as const;
 const ARENA_STAKE_TITLES = ['Spark', 'Pulse', 'Surge', 'Blitz', 'Nova', 'Singularity'] as const;
-
-function formatPresetTrustLabel(n: number): string {
-  if (n === 0) return '0 TRUST';
-  return `${n} TRUST`;
-}
 
 const TOKEN_POOL: RankItem[] = [
   { id: 'tok-eth', kind: 'token', label: 'ETH', subtitle: 'Native gas & collateral', pairKind: 'token' },
@@ -138,37 +160,19 @@ function claimToRankItem(row: any, pairKind: string): RankItem | null {
   };
 }
 
-const THEMES: {
-  id: ArenaTheme;
-  short: string;
-  icon: React.ReactNode;
-  blurb: string;
-}[] = [
-  {
-    id: 'claims',
-    short: 'Claims',
-    icon: <FileText size={16} />,
-    blurb: 'Head-to-head and single claims.',
-  },
-  {
-    id: 'narratives',
-    short: 'Narratives',
-    icon: <BookOpen size={16} />,
-    blurb: 'Future and prediction shaped lines.',
-  },
-  {
-    id: 'tokens',
-    short: 'Tokens',
-    icon: <Coins size={16} />,
-    blurb: 'Ticker themes (not vault markets).',
-  },
-  {
-    id: 'passion',
-    short: 'Heat',
-    icon: <Flame size={16} />,
-    blurb: 'High-activity claims.',
-  },
-];
+function rankItemToPendingSnapshot(item: RankItem): ArenaPendingRow['item'] {
+  return {
+    id: item.id,
+    kind: item.kind,
+    label: item.label,
+    subtitle: item.subtitle,
+    image: item.image,
+    imageSecondary: item.imageSecondary,
+    versusLeftLabel: item.versusLeftLabel,
+    versusRightLabel: item.versusRightLabel,
+    pairKind: item.pairKind,
+  };
+}
 
 async function loadPool(theme: ArenaTheme): Promise<RankItem[]> {
   if (theme === 'tokens') {
@@ -204,6 +208,25 @@ async function loadPool(theme: ArenaTheme): Promise<RankItem[]> {
   return base.map((r: any) => claimToRankItem(r, 'claim')).filter(Boolean).slice(0, POOL_SIZE) as RankItem[];
 }
 
+async function loadArenaListPool(entry: ArenaListEntry): Promise<RankItem[]> {
+  if (entry.source === 'static') {
+    return [...entry.items].sort(() => Math.random() - 0.5);
+  }
+  if (entry.source === 'portal') {
+    const rows = await getListMemberSubjectsForObject(entry.listObjectTermId, 220);
+    if (rows.length < 1) return [];
+    return rows.map((r) => ({
+      id: r.id,
+      kind: 'atom' as const,
+      label: r.label,
+      subtitle: 'List member',
+      image: r.image,
+      pairKind: 'list-member',
+    }));
+  }
+  return loadPool(entry.theme);
+}
+
 function pickYesNoGridItems(pool: RankItem[], n: number): RankItem[] {
   if (pool.length === 0) return [];
   const k = Math.min(n, pool.length);
@@ -219,15 +242,6 @@ function pickReplacementForYesNoGrid(pool: RankItem[], answeredItem: RankItem, v
     return eligible[Math.floor(Math.random() * eligible.length)] ?? null;
   }
   return pickSingleItem(pool, answeredItem.id);
-}
-
-/** Session lean bar: nudges ~38–62% from 50 based on this card’s score delta (visual only). */
-function poolSentimentYesPct(_pool: RankItem[], scores: Record<string, number>, itemId: string): { yes: number; no: number } {
-  const raw = scores[itemId] ?? SCORE_START;
-  const d = raw - SCORE_START;
-  const tilt = Math.max(-12, Math.min(12, d * 0.07));
-  const yes = Math.round(50 + tilt);
-  return { yes, no: 100 - yes };
 }
 
 /** Raw Elo-style scores start at 0 and can go negative; display with a baseline so numbers read like familiar ratings. */
@@ -298,9 +312,9 @@ function leaderboardAvatarGlyph(label: string): string {
   return m ? m[0].toUpperCase() : '?';
 }
 
-function loadPersisted(theme: ArenaTheme): Record<string, number> | null {
+function loadPersistedForList(listId: string): Record<string, number> | null {
   try {
-    const raw = sessionStorage.getItem(`${STORAGE_PREFIX}-scores-${theme}`);
+    const raw = sessionStorage.getItem(`${STORAGE_PREFIX}-scores-${listId}`);
     if (!raw) return null;
     const o = JSON.parse(raw);
     if (o && typeof o === 'object') return o as Record<string, number>;
@@ -310,9 +324,9 @@ function loadPersisted(theme: ArenaTheme): Record<string, number> | null {
   return null;
 }
 
-function savePersisted(theme: ArenaTheme, s: Record<string, number>) {
+function savePersistedForList(listId: string, s: Record<string, number>) {
   try {
-    sessionStorage.setItem(`${STORAGE_PREFIX}-scores-${theme}`, JSON.stringify(s));
+    sessionStorage.setItem(`${STORAGE_PREFIX}-scores-${listId}`, JSON.stringify(s));
   } catch {
     /* ignore */
   }
@@ -400,7 +414,14 @@ function defaultStakePresetIndex(): number {
 
 const RankedList: React.FC = () => {
   const { address, isConnected } = useAccount();
-  const [theme, setTheme] = useState<ArenaTheme>('claims');
+  const [listId, setListId] = useState<string | null>(() => {
+    try {
+      const v = sessionStorage.getItem('inturank-arena-last-list');
+      return v && getArenaListById(v) ? v : null;
+    } catch {
+      return null;
+    }
+  });
   const [pool, setPool] = useState<RankItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -409,10 +430,15 @@ const RankedList: React.FC = () => {
   const [streak, setStreak] = useState(0);
   const [stakePresetIdx, setStakePresetIdx] = useState(defaultStakePresetIndex);
   const [stakingTx, setStakingTx] = useState(false);
+  const [arenaCategoryId, setArenaCategoryId] = useState<string>('all');
+  const [openBatchAfterLoad, setOpenBatchAfterLoad] = useState(false);
+  const [showAllLists, setShowAllLists] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openBatchParamHandled = useRef(false);
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [pendingRows, setPendingRows] = useState<ArenaPendingRow[]>([]);
   const [players, setPlayers] = useState<ArenaPlayerRow[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
-  /** Last claim the user stanced on: prompt to open Intuition market (step 2 on-ramp). */
-  const [lastStanceMarketCta, setLastStanceMarketCta] = useState<RankItem | null>(null);
   const reduceMotion = useReducedMotion();
 
   const stakeTRUST = useMemo(() => String(ARENA_STAKE_PRESETS[stakePresetIdx] ?? ARENA_STAKE_PRESETS[0]), [stakePresetIdx]);
@@ -433,7 +459,7 @@ const RankedList: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void refreshPlayers();
+    if (ARENA_SHOW_LEADERBOARD) void refreshPlayers();
   }, [refreshPlayers]);
 
   const myXp = useMemo(() => getArenaXp(address), [address, duels]);
@@ -493,32 +519,196 @@ const RankedList: React.FC = () => {
     return { place: i + 1, total: players.length };
   }, [address, players]);
 
-  const themeMeta = useMemo(() => THEMES.find((t) => t.id === theme)!, [theme]);
+  const activeList = useMemo(() => getArenaListById(listId), [listId]);
+
+  const stickyQuestion = useMemo(() => {
+    if (!activeList) return '—';
+    if (listId && round?.kind === 'yesno' && round.items[0]) {
+      return buildArenaItemQuestion(activeList, round.items[0]);
+    }
+    return activeList.description;
+  }, [activeList, round, listId]);
+
+  const [portalListEntries, setPortalListEntries] = useState<
+    Extract<ArenaListEntry, { source: 'portal' }>[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { items } = await getLists(48, 0, [{ total_position_count: 'desc' }]);
+        if (cancelled) return;
+        const entries: Extract<ArenaListEntry, { source: 'portal' }>[] = items.map((row: any) => {
+          const subs = (row.items || []) as { termId?: string; label?: string; image?: string }[];
+          return {
+            id: portalListIdFromTermId(row.id),
+            source: 'portal' as const,
+            listObjectTermId: row.id,
+            title: row.label || 'Untitled list',
+            description: `Intuition list · ${
+              typeof row.totalItems === 'number' ? `${row.totalItems} members indexed` : 'live on the graph'
+            }`,
+            tag: 'Live',
+            arenaCategory: 'network',
+            listGlyph: '◆',
+            totalItems: row.totalItems ?? 0,
+            itemQuestion: (item: RankItem) =>
+              `Should “${(item.label || 'this entry').trim()}” stay on “${(row.label || 'this list').trim()}” for you?`,
+            previewItemsData: subs.map((s) => ({
+              termId: s.termId,
+              label: s.label || '—',
+              image: s.image,
+            })),
+          };
+        });
+        registerPortalListEntries(entries);
+        setPortalListEntries(entries);
+      } catch {
+        if (!cancelled) setPortalListEntries([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const listsForCategory = useMemo(() => {
+    const curated = filterArenaListsByCategory(ARENA_LISTS, arenaCategoryId);
+    if (arenaCategoryId === 'all') return [...curated, ...portalListEntries];
+    if (arenaCategoryId === 'network') {
+      return filterArenaListsByCategory(portalListEntries, 'network');
+    }
+    return curated;
+  }, [arenaCategoryId, portalListEntries]);
+
+  const groupedArenaLists = useMemo(() => {
+    const order = ['network', 'ecosystem', 'identities', 'graph', 'macro'] as const;
+    const groups = order
+      .map((id) => ({
+        id,
+        label: ARENA_CATEGORY_PILLS.find((p) => p.id === id)?.label ?? id,
+        lists: listsForCategory.filter((l) => l.arenaCategory === id),
+      }))
+      .filter((g) => g.lists.length > 0);
+    return groups;
+  }, [listsForCategory]);
+
+  useEffect(() => {
+    setShowAllLists(false);
+  }, [arenaCategoryId]);
+
+  const stanceSummary = useMemo(() => {
+    let yes = 0;
+    let no = 0;
+    for (const it of pool) {
+      const r = scores[it.id] ?? SCORE_START;
+      if (r > SCORE_START) yes += 1;
+      else if (r < SCORE_START) no += 1;
+    }
+    return { yes, no, total: pool.length };
+  }, [pool, scores]);
+
+  useEffect(() => {
+    if (!listId) {
+      setPendingRows([]);
+      return;
+    }
+    setPendingRows(loadPendingForList(listId));
+  }, [listId]);
+
+  useEffect(() => {
+    if (searchParams.get('openBatch') !== '1') {
+      openBatchParamHandled.current = false;
+      return;
+    }
+    if (openBatchParamHandled.current) return;
+    openBatchParamHandled.current = true;
+    const lid = searchParams.get('listId') || getFirstListIdWithPending();
+    setSearchParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        n.delete('openBatch');
+        n.delete('listId');
+        return n;
+      },
+      { replace: true }
+    );
+    if (lid && getArenaListById(lid)) {
+      setListId(lid);
+      try {
+        sessionStorage.setItem('inturank-arena-last-list', lid);
+      } catch {
+        /* ignore */
+      }
+      setOpenBatchAfterLoad(true);
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!openBatchAfterLoad) return;
+    if (!listId || loading) return;
+    setOpenBatchAfterLoad(false);
+    if (loadPendingForList(listId).length > 0) {
+      setBatchModalOpen(true);
+    }
+  }, [openBatchAfterLoad, listId, loading]);
+
+  useEffect(() => {
+    if (!listId) return;
+    savePendingForList(listId, pendingRows);
+  }, [listId, pendingRows]);
+
+  useEffect(() => {
+    const onFabToggle = () => {
+      if (!ARENA_BATCH_MODE) return;
+      if (!listId) {
+        const lid = getFirstListIdWithPending();
+        if (lid && getArenaListById(lid)) {
+          setListId(lid);
+          setOpenBatchAfterLoad(true);
+        }
+        return;
+      }
+      const queued = loadPendingForList(listId);
+      if (queued.length < 1) return;
+      setBatchModalOpen((v) => !v);
+    };
+    window.addEventListener('arena-batch-fab-toggle', onFabToggle as EventListener);
+    return () => window.removeEventListener('arena-batch-fab-toggle', onFabToggle as EventListener);
+  }, [listId]);
 
   const initScoresForPool = useCallback(
     (items: RankItem[]) => {
-      const persisted = loadPersisted(theme);
+      if (!listId) return {};
+      const persisted = loadPersistedForList(listId);
       const next: Record<string, number> = {};
       for (const it of items) {
         next[it.id] = persisted?.[it.id] ?? SCORE_START;
       }
       return next;
     },
-    [theme]
+    [listId]
   );
 
   const refreshPool = useCallback(async () => {
+    if (!listId) return;
+    const entry = getArenaListById(listId);
+    if (!entry) return;
     setLoading(true);
     setRound(null);
-    setLastStanceMarketCta(null);
+    if (ARENA_BATCH_MODE) {
+      clearPendingForList(listId);
+      setPendingRows([]);
+    }
     try {
-      const items = await loadPool(theme);
+      const items = await loadArenaListPool(entry);
       setPool(items);
       setScores(initScoresForPool(items));
       setDuels(0);
       setStreak(0);
       if (items.length < 1) {
-        toast.error('Not enough items for this theme. Try another.');
+        toast.error('Not enough items in this list. Try another list.');
       }
     } catch (e) {
       console.error(e);
@@ -527,20 +717,29 @@ const RankedList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [theme, initScoresForPool]);
+  }, [listId, initScoresForPool]);
 
   useEffect(() => {
-    refreshPool();
-  }, [theme]);
+    if (!listId) {
+      setPool([]);
+      setRound(null);
+      setLoading(false);
+      return;
+    }
+    void refreshPool();
+    // refreshPool is listId-scoped via closure; we only re-run when listId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listId]);
 
   useEffect(() => {
+    if (!listId) return;
     if (loading || round) return;
     if (pool.length < 1) return;
-    const items = pickYesNoGridItems(pool, YESNO_GRID_SIZE);
+    const items = pickYesNoGridItems(pool, ARENA_CARDS_PER_ROUND);
     if (items.length > 0) {
       setRound({ kind: 'yesno', items });
     }
-  }, [pool, loading, round, theme]);
+  }, [pool, loading, round, listId]);
 
   /** Only items you’ve moved off the baseline — after reset, list is empty until you stance again. */
   const ranking = useMemo(() => {
@@ -551,21 +750,190 @@ const RankedList: React.FC = () => {
       .map((x, i) => ({ ...x, place: i + 1 }));
   }, [pool, scores]);
 
+  const applyLocalYesNo = useCallback(
+    (item: RankItem, support: boolean) => {
+      const delta = support ? YESNO_SCORE_YES : YESNO_SCORE_NO;
+      setScores((prev) => {
+        const R = prev[item.id] ?? SCORE_START;
+        const next = { ...prev, [item.id]: R + delta };
+        if (listId) savePersistedForList(listId, next);
+        return next;
+      });
+      setDuels((d) => d + 1);
+      setStreak((s) => {
+        const next = s + 1;
+        if (next >= 3 && next % 3 === 0) {
+          toast.success(`${next} in a row. You're on fire.`);
+        }
+        return next;
+      });
+
+      setRound((prev) => {
+        if (!prev) return prev;
+        const nextItem = pickReplacementForYesNoGrid(pool, item, prev.items);
+        if (!nextItem) return null;
+        const newItems = prev.items.map((it) => (it.id === item.id ? nextItem : it));
+        return { kind: 'yesno', items: newItems };
+      });
+    },
+    [listId, pool]
+  );
+
+  const submitArenaBatch = useCallback(async () => {
+    if (pendingRows.length === 0) return;
+    if (!isConnected || !address) {
+      toast.error('Connect your wallet to submit your batch.');
+      return;
+    }
+    let baseWei: bigint;
+    try {
+      baseWei = parseEther((stakeTRUST || '0').trim() || '0');
+    } catch {
+      toast.error('Invalid stake amount');
+      return;
+    }
+    setStakingTx(true);
+    let sent = false;
+    const totalWei = pendingRows.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
+    try {
+      const portalListObjectId =
+        activeList?.source === 'portal' && TERM_ID_RE.test(activeList.listObjectTermId)
+          ? activeList.listObjectTermId
+          : null;
+      const allSubjectsResolvable = pendingRows.every(
+        (row) => TERM_ID_RE.test(row.item.id) || !!row.item.label?.trim()
+      );
+      if (!allSubjectsResolvable) {
+        throw new Error('Some rows are missing valid term ids/labels for claim creation.');
+      }
+
+      if (portalListObjectId && pendingRows.every((row) => TERM_ID_RE.test(row.item.id))) {
+        const triples = pendingRows.map((row) => {
+          const subjectId = row.item.id;
+          const predicateId = row.support ? LIST_PREDICATE_ID : portalListObjectId;
+          const objectId = row.support ? portalListObjectId : DISTRUST_ATOM_ID;
+          return {
+            subjectId,
+            predicateId,
+            objectId,
+            assetsWei: baseWei * BigInt(row.units),
+          };
+        });
+        await createSemanticTriplesBatch(triples, address);
+      } else {
+        for (const row of pendingRows) {
+          const rowTrust = formatEther(baseWei * BigInt(row.units));
+          const subjectRef = TERM_ID_RE.test(row.item.id) ? row.item.id : (row.item.label || row.item.id);
+          const listLabel = activeList?.title || 'Arena list';
+          const predicateRef = row.support ? `belongs in ${listLabel}` : `does not belong in ${listLabel}`;
+          const objectRef = listLabel;
+          await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
+        }
+      }
+      sent = true;
+    } catch (e: any) {
+      const msg = e?.shortMessage ?? e?.message ?? 'Transaction failed';
+      toast.error(msg);
+    } finally {
+      setStakingTx(false);
+    }
+    if (!sent) return;
+
+    const trustN = parseFloat((stakeTRUST || '0').trim() || '0');
+    let totalXp = 0;
+    for (const row of pendingRows) {
+      const x = Number.isFinite(trustN) ? Math.max(1, Math.round(trustN * 100 * row.units)) : 12;
+      totalXp += x;
+    }
+    if (address) {
+      const rec = addArenaXp(address, totalXp, pendingRows.length);
+      toast.success(
+        `Claims written on Intuition · ${pendingRows.length} item${pendingRows.length === 1 ? '' : 's'} · ${formatEther(totalWei)} TRUST · +${totalXp} pts · ${rec.xp.toLocaleString()} total`
+      );
+      void refreshPlayers({ silent: true });
+    } else {
+      toast.success('Claims written on Intuition.');
+    }
+
+    if (listId) clearPendingForList(listId);
+    setPendingRows([]);
+    setBatchModalOpen(false);
+  }, [pendingRows, isConnected, address, stakeTRUST, listId, refreshPlayers, activeList]);
+
+  const updatePendingUnits = useCallback((key: string, units: number) => {
+    setPendingRows((prev) => prev.map((r) => (r.key === key ? { ...r, units } : r)));
+  }, []);
+
+  const togglePendingSupport = useCallback(
+    (key: string) => {
+      setPendingRows((prev) => {
+        const row = prev.find((r) => r.key === key);
+        if (!row) return prev;
+        const was = row.support;
+        const flipDelta =
+          (was ? -YESNO_SCORE_YES : -YESNO_SCORE_NO) + (!was ? YESNO_SCORE_YES : YESNO_SCORE_NO);
+        setScores((p) => {
+          const R = p[row.item.id] ?? SCORE_START;
+          const next = { ...p, [row.item.id]: R + flipDelta };
+          if (listId) savePersistedForList(listId, next);
+          return next;
+        });
+        return prev.map((r) => (r.key === key ? { ...r, support: !r.support } : r));
+      });
+    },
+    [listId]
+  );
+
+  const removePendingRow = useCallback(
+    (key: string) => {
+      setPendingRows((prev) => {
+        const row = prev.find((r) => r.key === key);
+        if (!row) return prev;
+        const back = row.support ? -YESNO_SCORE_YES : -YESNO_SCORE_NO;
+        setScores((p) => {
+          const R = p[row.item.id] ?? SCORE_START;
+          const next = { ...p, [row.item.id]: R + back };
+          if (listId) savePersistedForList(listId, next);
+          return next;
+        });
+        setDuels((d) => Math.max(0, d - 1));
+        setStreak(0);
+        return prev.filter((r) => r.key !== key);
+      });
+    },
+    [listId]
+  );
+
   const resolveYesNo = useCallback(
     async (item: RankItem, support: boolean) => {
       if (support) playSuccess();
       else playClick();
+
+      if (!isConnected || !address) {
+        toast.error('Connect your wallet to pick.');
+        return;
+      }
+
+      if (ARENA_BATCH_MODE) {
+        applyLocalYesNo(item, support);
+        setPendingRows((prev) => [
+          ...prev,
+          {
+            key: `q-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            item: rankItemToPendingSnapshot(item),
+            support,
+            units: 1,
+          },
+        ]);
+        return;
+      }
+
       let stakeOk = true;
       let wei = 0n;
       try {
         wei = parseEther((stakeTRUST || '0').trim() || '0');
       } catch {
         toast.error('Invalid stake amount');
-        return;
-      }
-
-      if (!isConnected || !address) {
-        toast.error('Connect your wallet to pick.');
         return;
       }
 
@@ -588,21 +956,7 @@ const RankedList: React.FC = () => {
 
       if (!stakeOk) return;
 
-      const delta = support ? YESNO_SCORE_YES : YESNO_SCORE_NO;
-      setScores((prev) => {
-        const R = prev[item.id] ?? SCORE_START;
-        const next = { ...prev, [item.id]: R + delta };
-        savePersisted(theme, next);
-        return next;
-      });
-      setDuels((d) => d + 1);
-      setStreak((s) => {
-        const next = s + 1;
-        if (next >= 3 && next % 3 === 0) {
-          toast.success(`${next} in a row. You're on fire.`);
-        }
-        return next;
-      });
+      applyLocalYesNo(item, support);
 
       if (address) {
         let xpDelta = 12;
@@ -614,20 +968,8 @@ const RankedList: React.FC = () => {
         toast.success(`+${xpDelta} pts · ${rec.xp.toLocaleString()} total`);
         void refreshPlayers({ silent: true });
       }
-
-      if (item.kind !== 'token') {
-        setLastStanceMarketCta(item);
-      }
-
-      setRound((prev) => {
-        if (!prev) return prev;
-        const nextItem = pickReplacementForYesNoGrid(pool, item, prev.items);
-        if (!nextItem) return null;
-        const newItems = prev.items.map((it) => (it.id === item.id ? nextItem : it));
-        return { kind: 'yesno', items: newItems };
-      });
     },
-    [theme, stakeTRUST, isConnected, address, treasury, refreshPlayers, pool]
+    [stakeTRUST, isConnected, address, treasury, refreshPlayers, applyLocalYesNo]
   );
 
   const onYesNo = (item: RankItem, support: boolean) => {
@@ -638,7 +980,7 @@ const RankedList: React.FC = () => {
   const onSkip = () => {
     playClick();
     setStreak(0);
-    const items = pickYesNoGridItems(pool, YESNO_GRID_SIZE);
+    const items = pickYesNoGridItems(pool, ARENA_CARDS_PER_ROUND);
     if (items.length > 0) {
       setRound({ kind: 'yesno', items });
     } else {
@@ -651,12 +993,15 @@ const RankedList: React.FC = () => {
     const next: Record<string, number> = {};
     for (const it of pool) next[it.id] = SCORE_START;
     setScores(next);
-    savePersisted(theme, next);
+    if (listId) savePersistedForList(listId, next);
     setDuels(0);
     setStreak(0);
     setRound(null);
-    setLastStanceMarketCta(null);
-    toast.success('Rank scores reset for this theme');
+    if (ARENA_BATCH_MODE && listId) {
+      clearPendingForList(listId);
+      setPendingRows([]);
+    }
+    toast.success('Session scores reset for this list');
   };
 
   const itemHref = (it: RankItem) => {
@@ -680,320 +1025,316 @@ const RankedList: React.FC = () => {
     return 12;
   }, [stakeTRUST]);
 
-  const stakeFillPct = useMemo(
-    () => (stakePresetIdx / Math.max(1, ARENA_STAKE_PRESETS.length - 1)) * 100,
-    [stakePresetIdx]
-  );
-
   const streakTier = getStreakTier(streak);
   const minPoolNeeded = 1;
+  const quickStartList = listsForCategory[0] ?? ARENA_LISTS[0];
+
+  const startListRun = useCallback((id: string) => {
+    setListId(id);
+    try {
+      sessionStorage.setItem('inturank-arena-last-list', id);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onQuickStart = useCallback(() => {
+    if (!quickStartList) return;
+    playClick();
+    startListRun(quickStartList.id);
+  }, [quickStartList, startListRun]);
 
   return (
-    <div className="min-h-screen bg-[#020617] w-full min-w-0 overflow-x-hidden pb-16 sm:pb-20 font-sans text-slate-300 selection:bg-cyan-500/25 selection:text-white">
-      <section className="relative border-b border-cyan-500/15 overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-[url('/grid.svg')] opacity-[0.06]" />
-        <div className="pointer-events-none absolute -left-32 top-0 h-[480px] w-[480px] rounded-full bg-cyan-500/12 blur-[130px]" />
-        <div className="pointer-events-none absolute right-0 top-20 h-[320px] w-[320px] rounded-full bg-fuchsia-600/10 blur-[100px]" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#030a14] via-transparent to-[#020617]" />
-
-        <div className="w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pt-4 pb-4 md:pt-5 md:pb-5 relative z-10">
-          <motion.div
-            className="rounded-2xl border border-slate-700/70 bg-slate-950/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_24px_80px_rgba(0,0,0,0.35)] p-4 sm:p-5 md:p-6 transition-shadow duration-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_28px_90px_rgba(34,211,238,0.08),0_24px_80px_rgba(0,0,0,0.35)]"
-            initial={reduceMotion ? false : { opacity: 0, y: 22 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <header className="mb-4 md:mb-5 space-y-3">
-              <motion.div
-                className="space-y-2"
-                initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+    <div className="min-h-screen bg-[#03050d] w-full min-w-0 overflow-x-hidden pb-16 sm:pb-20 font-sans text-slate-300 selection:bg-[#00f3ff]/20 selection:text-white">
+      <section className="relative border-b border-[#00f3ff]/10 overflow-hidden">
+        <div
+          className="h-1.5 w-full"
+          style={{
+            background: 'linear-gradient(90deg, #00f3ff 0%, #ff1e6d 45%, rgba(0,243,255,0.35) 100%)',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-[url('/grid.svg')] opacity-[0.055]" />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.5]"
+          style={{
+            background:
+              'radial-gradient(ellipse 100% 80% at 10% 0%, rgba(0,243,255,0.12) 0%, transparent 55%), radial-gradient(ellipse 80% 60% at 90% 20%, rgba(255,30,109,0.1) 0%, transparent 50%)',
+          }}
+        />
+        <div className="w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pt-5 pb-4 md:pt-6 md:pb-5 relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.45em] text-[#00f3ff]/90 mb-1.5">
+                IntuRank · Climb
+              </p>
+              <h1
+                className="text-3xl sm:text-4xl md:text-5xl font-black font-display tracking-tight bg-clip-text text-transparent"
+                style={{
+                  backgroundImage: 'linear-gradient(120deg, #ecfeff 0%, #00f3ff 35%, #fda4c6 60%, #ff1e6d 100%)',
+                }}
               >
-                <h1 className="space-y-1.5 sm:space-y-2">
-                  <span className="flex items-center gap-2.5 text-cyan-400/90">
-                    <Sparkles size={18} className="shrink-0 drop-shadow-[0_0_12px_rgba(34,211,238,0.6)]" strokeWidth={2.5} aria-hidden />
-                    <span className="text-base sm:text-lg md:text-xl text-slate-100 font-semibold tracking-tight">
-                      Welcome to
-                    </span>
-                  </span>
-                  <span className="block text-[2rem] sm:text-4xl md:text-5xl lg:text-[3rem] font-black font-display leading-[1.02] tracking-tight">
-                    <span className="text-cyan-300/80 font-serif text-[0.45em] sm:text-[0.5em] align-super mr-0.5 sm:mr-1" aria-hidden>
-                      &ldquo;
-                    </span>
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-fuchsia-300 drop-shadow-[0_0_48px_rgba(34,211,238,0.35)]">
-                      The Arena
-                    </span>
-                    <span className="text-cyan-300/80 font-serif text-[0.45em] sm:text-[0.5em] align-super ml-0.5 sm:ml-1" aria-hidden>
-                      &rdquo;
-                    </span>
-                  </span>
-                </h1>
-                <div className="h-1 w-28 sm:w-36 rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300/90 shadow-[0_0_20px_rgba(34,211,238,0.45)]" />
-              </motion.div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-slate-600/80 bg-slate-900/90 px-3 py-1.5 sm:px-3.5 sm:py-2 text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-slate-300">
-                  <Zap size={13} className="text-amber-400/90 shrink-0" /> Arena · yes / no
-                </span>
-              </div>
-            </header>
-
-            <div className="border-b border-slate-800/90 pb-4 space-y-3">
-              <div className="min-w-0 space-y-2">
-                <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-white font-display tracking-tight leading-[1.12]">
-                  Stance on{' '}
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-white to-fuchsia-300">
-                    the grid
-                  </span>
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-400 max-w-3xl leading-snug">
-                  Stances here don&apos;t settle on-chain; markets do.{' '}
-                  <span className="text-slate-500">Arena points reward play, not being right.</span>
-                </p>
-              </div>
-
-              <motion.div
-                className="rounded-xl border border-cyan-500/20 bg-gradient-to-r from-slate-900/95 to-[#070d16] px-3 py-2.5 sm:px-4 sm:py-3 relative overflow-hidden"
-                initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <div className="absolute -right-4 -top-4 h-16 w-16 rounded-full bg-cyan-500/10 blur-xl pointer-events-none" />
-                <div className="relative z-10 flex flex-col gap-2.5 sm:gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                  <p className="text-[9px] font-black uppercase tracking-[0.28em] text-cyan-400/90 shrink-0">Live session</p>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:gap-x-6">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-lg sm:text-xl font-black text-white tabular-nums leading-none">{duels}</span>
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wide">Rounds</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-lg sm:text-xl font-black text-fuchsia-300 tabular-nums leading-none">{streak}</span>
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wide">Streak</span>
-                    </div>
-                    {address && (
-                      <div className="flex items-baseline gap-2 border-t border-slate-800/80 pt-2 sm:border-t-0 sm:pt-0 sm:border-l sm:border-slate-800/80 sm:pl-6">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">Arena points</span>
-                        <span className="text-base sm:text-lg font-black text-amber-300 tabular-nums arena-xp-roll">{xpRoll.toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="w-full sm:w-auto sm:min-w-[140px] sm:flex-1 sm:max-w-xs">
-                    <div className="flex justify-between text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">
-                      <span>Milestone</span>
-                      <span className="tabular-nums">
-                        {progressToMilestone}/5 → {nextMilestone}
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-500 transition-all duration-500"
-                        style={{ width: `${(progressToMilestone / 5) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+                THE ARENA
+              </h1>
+              <p className="text-sm text-slate-500 mt-2 max-w-lg leading-relaxed">
+                {listId
+                  ? 'Quick flow: read the prompt, vote Yes/No, queue cuts, then confirm once.'
+                  : 'Pick a lane, pick a list, then rank with fast Yes/No decisions.'}
+              </p>
             </div>
-
-            <motion.div
-              className="mt-3 relative rounded-3xl border border-cyan-400/35 bg-gradient-to-br from-[#050c16] via-[#070f1a] to-fuchsia-950/30 p-3 sm:p-4 md:p-5 shadow-[0_0_40px_rgba(34,211,238,0.1),inset_0_1px_0_rgba(255,255,255,0.07)] overflow-hidden transition-shadow duration-500 hover:shadow-[0_0_56px_rgba(34,211,238,0.14),inset_0_1px_0_rgba(255,255,255,0.09)]"
-              initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent opacity-90 arena-stake-top-glow" aria-hidden />
-              <div className="pointer-events-none absolute -right-16 -top-12 h-32 w-32 rounded-full bg-cyan-500/12 blur-3xl" />
-              <div className="pointer-events-none absolute -left-12 bottom-0 h-24 w-24 rounded-full bg-fuchsia-600/10 blur-3xl" />
-              <div className="relative z-10 flex flex-col xl:flex-row xl:items-stretch gap-3 md:gap-4">
-                <div className="flex-1 min-w-0 space-y-3">
-                  <div className="flex flex-wrap items-start sm:items-center justify-between gap-3">
-                    <div className="min-w-0 flex gap-2.5 sm:gap-3">
-                      <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-400/45 bg-gradient-to-br from-cyan-500/25 to-fuchsia-600/20 shadow-[0_0_20px_rgba(34,211,238,0.3),inset_0_1px_0_rgba(255,255,255,0.12)]">
-                        <Zap className="w-5 h-5 sm:w-5 sm:h-5 text-amber-300 drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]" strokeWidth={2.5} />
-                      </div>
-                      <div className="min-w-0 pt-0.5">
-                        <p className="text-[10px] font-black uppercase tracking-[0.32em] text-cyan-300/95 mb-0.5">
-                          TRUST tier stake
-                        </p>
-                        <p className="text-xs text-slate-400 max-w-md leading-snug">
-                          TRUST per pick → treasury wallet (env), not the claim vault. More TRUST → more points.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-left sm:text-right w-full sm:w-auto sm:min-w-[10rem] rounded-lg border border-fuchsia-500/25 bg-slate-950/60 px-3 py-2 shadow-[0_0_24px_rgba(168,85,247,0.1),inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-fuchsia-300 font-black">
-                        {ARENA_STAKE_TITLES[stakePresetIdx]}
-                      </div>
-                      <div className="text-2xl sm:text-[1.65rem] font-black tabular-nums text-white leading-none mt-0.5 tracking-tight">
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-white to-cyan-200">
-                          {ARENA_STAKE_PRESETS[stakePresetIdx]}{' '}
-                          <span className="text-lg text-cyan-200/95">TRUST</span>
-                        </span>
-                      </div>
-                      <div className="text-xs text-amber-300 font-mono font-bold mt-1 tracking-wide">
-                        +{xpPickPreview} <span className="text-amber-400/80 font-sans text-[10px] font-semibold">pts · next pick</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label htmlFor="arena-stake-slider" className="sr-only">
-                      TRUST stake level
-                    </label>
-                    <div className="space-y-2">
-                      <div className={`relative h-11 flex items-center px-1 arena-stake-track-shell ${reduceMotion ? '' : 'arena-stake-track-shell--animated'}`}>
-                        <div
-                          className={`pointer-events-none absolute left-2 right-2 top-1/2 -translate-y-1/2 h-[14px] rounded-full overflow-hidden bg-slate-950/95 ring-1 ring-cyan-500/40 shadow-[inset_0_4px_14px_rgba(0,0,0,0.78)] ${reduceMotion ? '' : 'arena-stake-track-inner--pulse'}`}
-                          aria-hidden
-                        >
-                          <div
-                            className={`arena-stake-fill-bar h-full rounded-full transition-[width] duration-[380ms] ease-out ${reduceMotion ? '' : 'arena-stake-fill-bar--animated'}`}
-                            style={{ width: `${stakeFillPct}%` }}
-                          />
-                        </div>
-                        <input
-                          id="arena-stake-slider"
-                          type="range"
-                          className="arena-stake-range relative z-[2] w-full cursor-pointer"
-                          min={0}
-                          max={ARENA_STAKE_PRESETS.length - 1}
-                          step={1}
-                          value={stakePresetIdx}
-                          aria-valuemin={0}
-                          aria-valuemax={ARENA_STAKE_PRESETS.length - 1}
-                          aria-valuenow={stakePresetIdx}
-                          aria-valuetext={`${ARENA_STAKE_TITLES[stakePresetIdx]}: ${stakeTRUST} TRUST`}
-                          onChange={(e) => {
-                            playClick();
-                            setStakePresetIdx(Number(e.target.value));
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-between px-2">
-                        {ARENA_STAKE_PRESETS.map((_, i) => (
-                          <span
-                            key={i}
-                            className={`rounded-full transition-all duration-200 ${
-                              i === stakePresetIdx
-                                ? 'w-2 h-2 bg-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.8)] ring-2 ring-cyan-400/40'
-                                : i < stakePresetIdx
-                                  ? 'w-1.5 h-1.5 bg-cyan-500/65'
-                                  : 'w-1.5 h-1.5 bg-slate-600'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 justify-between sm:justify-start">
-                      {ARENA_STAKE_PRESETS.map((amt, i) => (
-                        <motion.button
-                          key={i}
-                          type="button"
-                          onClick={() => {
-                            playClick();
-                            setStakePresetIdx(i);
-                          }}
-                          onMouseEnter={playHover}
-                          whileHover={reduceMotion ? undefined : { scale: 1.05, y: -1 }}
-                          whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-                          transition={{ type: 'spring', stiffness: 450, damping: 28 }}
-                          className={`rounded-lg px-2 sm:px-2.5 py-1.5 min-w-[4.5rem] sm:min-w-[5rem] text-left transition-colors duration-200 ${
-                            stakePresetIdx === i
-                              ? 'bg-gradient-to-r from-cyan-500/35 to-fuchsia-600/30 text-white border border-cyan-400/50 shadow-[0_0_16px_rgba(34,211,238,0.2)]'
-                              : 'border border-slate-700/80 bg-slate-900/80 text-slate-500 hover:border-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          <span className="block text-[9px] font-black uppercase tracking-wider leading-tight">{ARENA_STAKE_TITLES[i]}</span>
-                          <span
-                            className={`block text-[8px] font-mono tabular-nums mt-0.5 leading-none ${
-                              stakePresetIdx === i ? 'text-cyan-100/90' : 'text-slate-600'
-                            }`}
-                          >
-                            {formatPresetTrustLabel(amt)}
-                          </span>
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {!isConnected && (
-                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80">
-                      <span className="text-[10px] text-amber-400/90 flex items-center gap-1">
-                        <Wallet size={12} /> Connect wallet to stake TRUST each pick
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-row xl:flex-col flex-wrap xl:flex-nowrap gap-2 xl:justify-center xl:min-w-[10rem] shrink-0 xl:border-l xl:border-slate-800/80 xl:pl-4">
-                  <motion.button
-                    type="button"
-                    onClick={() => {
-                      playClick();
-                      refreshPool();
-                    }}
-                    disabled={loading}
-                    whileHover={reduceMotion || loading ? undefined : { scale: 1.02, y: -1 }}
-                    whileTap={reduceMotion || loading ? undefined : { scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 24 }}
-                    className="inline-flex flex-1 xl:flex-none items-center justify-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-cyan-100 hover:bg-cyan-500/20 hover:border-cyan-400/50 disabled:opacity-50 transition-colors duration-200 shadow-[0_0_16px_rgba(34,211,238,0.1)]"
-                  >
-                    <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-                    New pool
-                  </motion.button>
-                  <motion.button
-                    type="button"
-                    onClick={resetSession}
-                    disabled={!pool.length}
-                    whileHover={reduceMotion || !pool.length ? undefined : { scale: 1.02 }}
-                    whileTap={reduceMotion || !pool.length ? undefined : { scale: 0.98 }}
-                    className="inline-flex flex-1 xl:flex-none items-center justify-center rounded-lg border border-slate-600/80 bg-slate-900/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white hover:border-slate-500 disabled:opacity-40 transition-colors duration-200"
-                  >
-                    Reset scores
-                  </motion.button>
+            {listId ? (
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-xs rounded-xl border border-white/[0.08] bg-black/25 px-3 py-2">
+                <span className="text-slate-500">Rounds <span className="text-white font-mono font-bold tabular-nums ml-1">{duels}</span></span>
+                <span className="text-slate-700">•</span>
+                <span className="text-slate-500">Streak <span className="text-fuchsia-300 font-mono font-bold tabular-nums ml-1">{streak}</span></span>
+                {address ? <><span className="text-slate-700">•</span><span className="text-slate-500">XP <span className="text-amber-300 font-mono font-bold tabular-nums ml-1 arena-xp-roll">{xpRoll.toLocaleString()}</span></span></> : null}
+                <div className="h-1 w-16 rounded-full bg-slate-800 overflow-hidden sm:ml-1">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-500"
+                    style={{ width: `${(progressToMilestone / 5) * 100}%` }}
+                  />
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+            ) : null}
+          </div>
         </div>
       </section>
 
       <div className="w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pb-10 pt-0">
         <motion.div
-          className="rounded-3xl border border-slate-800/80 bg-[#040a14]/95 shadow-[0_20px_60px_rgba(0,0,0,0.4)] overflow-hidden transition-shadow duration-500 hover:shadow-[0_24px_72px_rgba(34,211,238,0.06),0_20px_60px_rgba(0,0,0,0.45)]"
+          className="rounded-[1.75rem] border border-white/[0.08] bg-[#05070d]/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_24px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06),0_0_0_1px_rgba(0,243,255,0.04)] overflow-hidden"
+          style={{
+            background:
+              'linear-gradient(160deg, rgba(10,20,32,0.92) 0%, rgba(5,8,15,0.88) 40%, rgba(20,6,18,0.5) 100%)',
+            boxShadow:
+              '0 28px 90px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 80px rgba(0,243,255,0.04)',
+          }}
           initial={reduceMotion ? false : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
         >
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(300px,26vw)] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 lg:gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80">
+        <div
+          className={
+            listId && ARENA_SHOW_LEADERBOARD
+              ? 'grid lg:grid-cols-[minmax(0,1fr)_minmax(300px,26vw)] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 lg:gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80'
+              : 'grid grid-cols-1 gap-0'
+          }
+        >
         <div className="min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 space-y-4">
-          <div className="rounded-3xl border border-cyan-500/25 bg-gradient-to-br from-[#050a12] via-slate-950/90 to-[#0a0614] p-3 sm:p-4 shadow-[0_0_40px_rgba(34,211,238,0.08),inset_0_1px_0_rgba(255,255,255,0.05)]">
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-cyan-400/90 mb-2.5">Arena category</p>
-            <div className="flex flex-wrap gap-2">
-              {THEMES.map((t) => (
-                <motion.button
-                  key={t.id}
+          {!listId ? (
+            <div className="rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.04] to-transparent p-4 sm:p-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+              <div
+                className="rounded-2xl border border-[#00f3ff]/20 px-4 py-3.5 sm:px-5 mb-5 backdrop-blur-md"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0,243,255,0.1) 0%, rgba(8,10,20,0.9) 45%, rgba(255,30,109,0.06) 100%)',
+                  boxShadow: '0 0 40px rgba(0,243,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                }}
+              >
+                <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-[#00f3ff] mb-2">Run · Pick a lane</p>
+                <p className="text-base sm:text-lg text-slate-100 font-semibold leading-snug">
+                  Does this entry belong on the list you are curating?
+                </p>
+              </div>
+              <p className="text-xs text-slate-500 mb-4 max-w-2xl leading-relaxed">
+                Go straight into ranking with Quick Start, or pick a lane below. Network lists are live from Intuition.
+              </p>
+              <div className="mb-4 flex flex-wrap items-center gap-2 text-[10px]">
+                <span className="rounded-full border border-[#00f3ff]/30 bg-[#00f3ff]/10 px-3 py-1 text-[#9ef9ff] font-semibold">1. Choose lane</span>
+                <ChevronRight size={12} className="text-slate-600" />
+                <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1 text-fuchsia-200 font-semibold">2. Open list</span>
+                <ChevronRight size={12} className="text-slate-600" />
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-200 font-semibold">3. Vote yes/no</span>
+              </div>
+              <div className="mb-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-300/90 font-black">Quick start</p>
+                  <p className="text-xs text-slate-300 mt-1">
+                    Recommended now: <span className="text-white font-semibold">{quickStartList?.title ?? '—'}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onQuickStart}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-4 py-2.5 text-[11px] font-black text-cyan-100 hover:bg-cyan-500/25 transition-colors"
+                >
+                  Start Ranking
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 [scrollbar-width:thin]">
+                {ARENA_CATEGORY_PILLS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      playClick();
+                      setArenaCategoryId(c.id);
+                    }}
+                    onMouseEnter={playHover}
+                    className={`shrink-0 rounded-full px-3.5 py-1.5 text-[11px] font-bold transition-all border ${
+                      arenaCategoryId === c.id
+                        ? 'text-white border-[#00f3ff]/55 shadow-[0_0_20px_rgba(0,243,255,0.2)]'
+                        : 'bg-slate-950/60 text-slate-500 border-slate-700/80 hover:border-[#00f3ff]/25 hover:text-slate-300'
+                    }`}
+                    style={
+                      arenaCategoryId === c.id
+                        ? {
+                            background: 'linear-gradient(135deg, rgba(0,243,255,0.2), rgba(255,30,109,0.12))',
+                          }
+                        : undefined
+                    }
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2 mb-1 font-mono tabular-nums">
+                {listsForCategory.length} list{listsForCategory.length === 1 ? '' : 's'} in this lane
+              </p>
+              <div className="space-y-4">
+                {groupedArenaLists.map((group) => {
+                  const visible = showAllLists ? group.lists : group.lists.slice(0, 4);
+                  return (
+                    <div key={group.id}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{group.label}</p>
+                        <span className="text-[10px] text-slate-600">{group.lists.length}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                        {visible.map((L) => (
+                          <ArenaListCard
+                            key={L.id}
+                            title={L.title}
+                            description={L.description}
+                            tag={L.tag}
+                            categoryLabel={
+                              ARENA_CATEGORY_PILLS.find((p) => p.id === L.arenaCategory)?.label ?? L.tag
+                            }
+                            listGlyph={L.listGlyph}
+                            constituentCount={getArenaListConstituents(L)}
+                            previewItems={getArenaPreviewItems(L, [])}
+                            reduceMotion={reduceMotion}
+                            onSelect={() => {
+                              startListRun(L.id);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {arenaCategoryId === 'all' && listsForCategory.length > 8 && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClick();
+                      setShowAllLists((v) => !v);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-300 hover:border-cyan-500/35 hover:text-cyan-100 transition-colors"
+                  >
+                    {showAllLists ? 'Show fewer lists' : 'Show more lists'}
+                    <ChevronRight size={13} className={showAllLists ? 'rotate-90' : ''} />
+                  </button>
+                </div>
+              )}
+              <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.06]">
+                <p className="text-[11px] text-slate-500 max-w-md">
+                  Want deeper context before ranking? Open Markets for vaults, depth, and history.
+                </p>
+                <Link
+                  to="/markets"
+                  onClick={() => playClick()}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#00f3ff]/35 bg-[#00f3ff]/10 px-4 py-2.5 text-[11px] font-bold text-[#a5fcff] hover:bg-[#00f3ff]/20 transition-colors shrink-0"
+                >
+                  Open Markets
+                  <ChevronRight size={14} className="opacity-90" />
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <>
+          <div
+            className="rounded-3xl border border-white/[0.08] p-3 sm:p-5 backdrop-blur-xl"
+            style={{
+              background: 'linear-gradient(145deg, rgba(0,243,255,0.07) 0%, rgba(8,10,18,0.92) 38%, rgba(255,30,109,0.05) 100%)',
+              boxShadow: '0 0 60px rgba(0,243,255,0.05), inset 0 1px 0 rgba(255,255,255,0.07)',
+            }}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-1">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.35em] text-[#00f3ff]/90">Current run</p>
+              <button
+                type="button"
+                onClick={() => {
+                  playClick();
+                  setListId(null);
+                  setRound(null);
+                  try {
+                    sessionStorage.removeItem('inturank-arena-last-list');
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="group inline-flex items-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] pl-2 pr-3 py-2 text-left hover:border-[#00f3ff]/35 hover:bg-[#00f3ff]/10 transition-all"
+              >
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#00f3ff]/20 to-[#ff1e6d]/20 border border-white/10 text-[#a5fcff] group-hover:scale-105 transition-transform">
+                  <ArrowLeft size={16} strokeWidth={2.5} />
+                </span>
+                <span>
+                  <span className="block text-[9px] font-mono uppercase tracking-widest text-slate-500">Back</span>
+                  <span className="text-xs font-bold text-slate-100 group-hover:text-white">Choose another list</span>
+                </span>
+              </button>
+            </div>
+            {activeList ? (
+              <>
+                <h2 className="text-lg sm:text-xl font-bold text-white leading-tight tracking-tight mt-2">
+                  {activeList.title}
+                </h2>
+                <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">{activeList.description}</p>
+              </>
+            ) : null}
+
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <span className="rounded-full border border-[#00f3ff]/25 bg-[#00f3ff]/8 px-2.5 py-1 text-[#9ef9ff]">Read prompt</span>
+                <ChevronRight size={11} className="text-slate-600" />
+                <span className="rounded-full border border-fuchsia-500/25 bg-fuchsia-500/10 px-2.5 py-1 text-fuchsia-200">Tap Yes / No</span>
+                <ChevronRight size={11} className="text-slate-600" />
+                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">Review cuts</span>
+              </div>
+              <div
+                className="sticky top-0 z-20 -mx-0.5 px-4 py-3.5 rounded-2xl border border-[#00f3ff]/15 backdrop-blur-2xl"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(3,5,12,0.95) 0%, rgba(5,8,20,0.75) 100%)',
+                  boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 0 32px rgba(0,243,255,0.04)',
+                }}
+              >
+                <p className="text-center text-sm sm:text-[15px] font-semibold text-slate-100 leading-snug">
+                  {stickyQuestion}
+                </p>
+                {stanceSummary.total > 0 ? (
+                  <p className="text-center text-[11px] text-slate-500 mt-2 tabular-nums">
+                    {stanceSummary.total} in this list ·{' '}
+                    <span className="text-[#4ade80]">yes {stanceSummary.yes}</span>
+                    {' · '}
+                    <span className="text-[#ff1e6d]/90">no {stanceSummary.no}</span>
+                  </p>
+                ) : null}
+              </div>
+              {ARENA_BATCH_MODE && pendingRows.length > 0 && (
+                <button
                   type="button"
                   onClick={() => {
                     playClick();
-                    setTheme(t.id);
+                    setBatchModalOpen(true);
                   }}
-                  onMouseEnter={playHover}
-                  whileHover={reduceMotion ? undefined : { scale: 1.04, y: -1 }}
-                  whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-black uppercase tracking-widest transition-colors duration-200 ${
-                    theme === t.id
-                      ? 'border-cyan-400/70 bg-gradient-to-r from-cyan-500/25 to-fuchsia-600/20 text-white shadow-[0_0_28px_rgba(34,211,238,0.22)] ring-1 ring-cyan-400/30'
-                      : 'border-slate-700/90 bg-slate-900/70 text-slate-400 hover:border-slate-500 hover:text-white'
-                  }`}
+                  className="w-full text-center text-[11px] font-bold text-[#a5fcff] border border-[#00f3ff]/35 rounded-xl py-2.5 bg-[#00f3ff]/5 hover:bg-[#00f3ff]/10 transition-colors"
                 >
-                  {t.icon}
-                  {t.short}
-                </motion.button>
-              ))}
+                  Review batch ({pendingRows.length} queued) — TRUST on submit
+                </button>
+              )}
             </div>
-            <p className="text-[11px] text-slate-500 mt-3 leading-snug max-w-2xl">{themeMeta.blurb}</p>
           </div>
 
           {loading ? (
@@ -1003,65 +1344,62 @@ const RankedList: React.FC = () => {
             </div>
           ) : pool.length < minPoolNeeded ? (
             <div className="rounded-xl border border-dashed border-slate-700 py-16 text-center text-sm text-slate-500">
-              Not enough items. Try another theme.
+              Not enough items. Try another list.
             </div>
           ) : !round ? (
             <div className="rounded-xl border border-slate-700/60 py-16 text-center bg-slate-900/15">
               <Loader2 className="w-9 h-9 text-cyan-400 animate-spin mx-auto mb-2" />
-              <p className="text-slate-500 text-sm">Drawing next round…</p>
+              <p className="text-slate-500 text-sm">Next item…</p>
             </div>
           ) : (
-            <motion.div
-              key={`y-${round.items.map((i) => i.id).join('-')}`}
-              className="space-y-6"
-              initial={reduceMotion ? false : { opacity: 0.94, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <div className="rounded-3xl border border-white/[0.08] bg-[#0B0E11] p-3 sm:p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.03]">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      <span className="inline-flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                        Arena · Round {duels + 1}
+            <motion.div className="space-y-5" initial={false}>
+              <div
+                className="rounded-2xl max-w-md w-full mx-auto p-[3px] sm:max-w-md"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0,243,255,0.3) 0%, rgba(255,30,109,0.16) 50%, rgba(0,243,255,0.12) 100%)',
+                  boxShadow: '0 20px 56px rgba(0,0,0,0.5), 0 0 40px rgba(0,243,255,0.05)',
+                }}
+              >
+                <div className="rounded-[0.9rem] border border-white/[0.07] bg-[#05080f]/95 p-3 sm:p-4 backdrop-blur-2xl ring-1 ring-white/[0.04]">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-slate-500">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full shadow-[0_0_12px_rgba(0,243,255,0.9)]"
+                      style={{ background: '#00f3ff' }}
+                    />
+                    <span className="text-slate-400">Round {duels + 1}</span>
+                    {streakTier.label ? (
+                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-sans font-black normal-case text-white ${streakTier.className}`}>
+                        <Flame size={10} />
+                        {streakTier.label} ×{streak}
                       </span>
-                      <span className="inline-flex items-center gap-2 flex-wrap justify-end">
-                        {streakTier.label ? (
-                          <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-black uppercase text-white ${streakTier.className}`}>
-                            <Flame size={10} />
-                            {streakTier.label} ×{streak}
-                          </span>
-                        ) : null}
-                        <span className="inline-flex items-center gap-1.5 text-amber-200/90">
-                          <Zap size={12} className="text-amber-400" />
-                          <span>+{xpPickPreview} pts</span>
-                        </span>
-                      </span>
-                    </div>
+                    ) : null}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#ffd89a]">
+                    <Zap size={12} className="text-[#fbbf24]" />
+                    +{xpPickPreview} XP
+                  </span>
+                </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-                      {round.items.map((item, idx) => {
-                        const bar = poolSentimentYesPct(pool, scores, item.id);
-                        const spotlight = idx === 0 && (streak >= 3 || duels % 4 === 0);
+                <AnimatePresence mode="wait">
+                  {round.items[0] ? (
+                    <motion.div
+                      key={round.items[0].id}
+                      initial={reduceMotion ? false : { opacity: 0, x: 48, filter: 'blur(4px)' }}
+                      animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                      exit={reduceMotion ? undefined : { opacity: 0, x: -40, filter: 'blur(4px)' }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                      className="group relative rounded-2xl border border-white/[0.1] overflow-hidden"
+                      style={{
+                        background: 'linear-gradient(165deg, rgba(8,12,24,0.95) 0%, rgba(12,6,20,0.88) 100%)',
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.4)',
+                      }}
+                    >
+                      {(() => {
+                        const item = round.items[0];
                         return (
-                          <motion.div
-                            key={item.id}
-                            initial={reduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            transition={{
-                              type: 'spring',
-                              stiffness: 380,
-                              damping: 28,
-                              delay: reduceMotion ? 0 : idx * 0.05,
-                            }}
-                            whileHover={
-                              reduceMotion
-                                ? undefined
-                                : { y: -4, transition: { type: 'spring', stiffness: 400, damping: 22 } }
-                            }
-                            className="group relative rounded-[1.75rem] border-2 border-cyan-500/20 bg-gradient-to-br from-[#121a24] via-[#161A1E] to-[#1c1028] overflow-hidden shadow-[0_12px_48px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-white/[0.04] flex flex-col min-h-0 hover:border-cyan-400/35 hover:shadow-[0_20px_56px_rgba(34,211,238,0.14)] hover:ring-cyan-400/15 transition-[box-shadow,border-color] duration-300"
-                          >
-                            <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-fuchsia-500/10 blur-3xl opacity-70 group-hover:opacity-100 transition-opacity" aria-hidden />
-                            <div className="relative aspect-[16/10] w-full bg-[#0a0d12] shrink-0 overflow-hidden rounded-t-[1.5rem]">
+                          <>
+                            <div className="relative aspect-[5/3] sm:aspect-[16/9] max-h-[200px] sm:max-h-[220px] w-full bg-[#030508] overflow-hidden rounded-xl">
                               {item.kind === 'claim' && item.pairKind === 'claim-vs' ? (
                                 <ArenaVsHeroImages
                                   leftSrc={item.image}
@@ -1072,157 +1410,118 @@ const RankedList: React.FC = () => {
                               ) : item.image ? (
                                 <img src={item.image} alt="" className="h-full w-full object-cover" />
                               ) : (
-                                <div className="absolute inset-0 bg-gradient-to-br from-[#0f1824] via-[#0B0E11] to-[#1a0a14]" />
-                              )}
-                              <div className="absolute inset-0 bg-gradient-to-t from-[#161A1E] via-transparent to-transparent opacity-90" />
-                              {spotlight && (
-                                <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded-full bg-black/80 px-2.5 py-1 text-[8px] font-black uppercase tracking-widest text-amber-100 ring-1 ring-amber-400/40 shadow-[0_0_20px_rgba(251,191,36,0.25)]">
-                                  <span className="flex gap-0.5" aria-hidden>
-                                    <span className="h-1 w-1 rounded-full bg-emerald-400" />
-                                    <span className="h-1 w-1 rounded-full bg-fuchsia-400" />
-                                  </span>
-                                  Spotlight
+                                <div
+                                  className="absolute inset-0 flex items-center justify-center text-4xl font-black font-display"
+                                  style={{
+                                    background: 'radial-gradient(circle at 30% 20%, rgba(0,243,255,0.2) 0%, transparent 50%), #050a12',
+                                    color: 'rgba(0,243,255,0.25)',
+                                  }}
+                                >
+                                  {(item.label || '?').charAt(0).toUpperCase()}
                                 </div>
                               )}
-                              <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between gap-2">
-                                <span className="rounded-md bg-black/55 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-300 ring-1 ring-white/10 truncate max-w-[70%]">
-                                  {item.pairKind}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="px-3 pt-3 pb-1 flex-1 min-h-0">
-                              <p className="text-[10px] sm:text-[11px] font-semibold text-white leading-snug break-words line-clamp-3">{item.label}</p>
-                              {item.subtitle ? (
-                                <p className="text-[9px] text-slate-500 mt-1 font-mono uppercase tracking-wider line-clamp-2">{item.subtitle}</p>
+                              <div className="absolute inset-0 bg-gradient-to-t from-[#020308] via-[#020308]/30 to-transparent opacity-90 pointer-events-none" />
+                              {item.pairKind ? (
+                                <div className="absolute bottom-2 left-2">
+                                  <span className="rounded-lg bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#00f3ff]/90 ring-1 ring-[#00f3ff]/25">
+                                    {item.pairKind}
+                                  </span>
+                                </div>
                               ) : null}
-                              <p className="text-[9px] text-slate-500 mt-1.5">
-                                Score{' '}
-                                <span className="font-mono tabular-nums text-cyan-200/90">{fmtArenaScore(scores[item.id] ?? SCORE_START)}</span>
+                            </div>
+                            <div className="px-3 pt-3 pb-1.5 relative">
+                              <p className="text-base sm:text-lg font-bold text-white leading-tight break-words drop-shadow-sm">
+                                {item.label}
                               </p>
+                              {item.subtitle ? (
+                                <p className="text-[11px] text-slate-500 mt-1 font-mono uppercase tracking-wider">
+                                  {item.subtitle}
+                                </p>
+                              ) : null}
                             </div>
-
-                            <div className="px-3 pt-1 pb-1">
-                              <p className="text-[8px] uppercase tracking-[0.18em] text-slate-500 mb-1">Session lean</p>
-                              <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-900/95 ring-1 ring-white/10 shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)]">
-                                <motion.div
-                                  className="h-full shrink-0 rounded-l-full bg-gradient-to-r from-emerald-500 via-teal-400 to-teal-500"
-                                  initial={false}
-                                  animate={{ width: `${bar.yes}%` }}
-                                  transition={{ type: 'spring', stiffness: 140, damping: 20 }}
-                                />
-                                <div className="h-full min-w-0 flex-1 bg-gradient-to-r from-fuchsia-600 via-purple-500 to-pink-600" />
-                              </div>
-                              <div className="mt-1 flex justify-between text-[10px] font-black tabular-nums">
-                                <span className="text-[#00FFA3] drop-shadow-[0_0_8px_rgba(0,255,163,0.3)]">{bar.yes}%</span>
-                                <span className="text-[#FF007A] drop-shadow-[0_0_8px_rgba(255,0,122,0.2)]">{bar.no}%</span>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2.5 p-3 pt-2">
+                            <div className="grid grid-cols-2 gap-2.5 px-3 pb-3">
                               <motion.button
                                 type="button"
                                 onClick={() => onYesNo(item, true)}
                                 disabled={stakingTx}
                                 onMouseEnter={playHover}
-                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.04 }}
-                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.96 }}
+                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
                                 transition={{ type: 'spring', stiffness: 450, damping: 22 }}
-                                className="rounded-2xl border-2 border-emerald-400/40 bg-gradient-to-b from-emerald-950/80 to-[#0a1820] py-3 text-center shadow-[0_8px_24px_rgba(16,185,129,0.15),inset_0_1px_0_rgba(255,255,255,0.08)] hover:border-emerald-300/70 hover:shadow-[0_12px_32px_rgba(16,185,129,0.25)] disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
+                                className="relative rounded-xl py-3 text-center disabled:opacity-50 disabled:pointer-events-none overflow-hidden"
+                                style={{
+                                  border: '1px solid rgba(0,243,255,0.5)',
+                                  background: 'linear-gradient(180deg, rgba(0,243,255,0.2) 0%, rgba(4,20,32,0.95) 100%)',
+                                  boxShadow: '0 0 32px rgba(0,243,255,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
+                                }}
                               >
-                                <span className="block text-[15px] font-black tracking-tight text-[#5fffc9] drop-shadow-[0_0_14px_rgba(0,255,163,0.4)]">YES</span>
-                                <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-widest text-emerald-300/80">Support</span>
+                                <span className="inline-flex items-center justify-center gap-1.5 relative z-10">
+                                  <Check className="w-[18px] h-[18px] sm:w-5 sm:h-5" style={{ color: '#7afcff' }} strokeWidth={2.5} />
+                                  <span
+                                    className="text-base sm:text-lg font-black tracking-tight"
+                                    style={{ color: '#e0fffe', textShadow: '0 0 24px rgba(0,243,255,0.5)' }}
+                                  >
+                                    Yes
+                                  </span>
+                                </span>
                               </motion.button>
                               <motion.button
                                 type="button"
                                 onClick={() => onYesNo(item, false)}
                                 disabled={stakingTx}
                                 onMouseEnter={playHover}
-                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.04 }}
-                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.96 }}
+                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
                                 transition={{ type: 'spring', stiffness: 450, damping: 22 }}
-                                className="rounded-2xl border-2 border-fuchsia-500/45 bg-gradient-to-b from-fuchsia-950/50 to-[#1c0a14] py-3 text-center shadow-[0_8px_24px_rgba(217,70,239,0.12),inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-fuchsia-400/70 hover:shadow-[0_12px_32px_rgba(217,70,239,0.22)] disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
+                                className="relative rounded-xl py-3 text-center disabled:opacity-50 disabled:pointer-events-none overflow-hidden"
+                                style={{
+                                  border: '1px solid rgba(255,30,109,0.45)',
+                                  background: 'linear-gradient(180deg, rgba(255,30,109,0.2) 0%, rgba(24,4,16,0.95) 100%)',
+                                  boxShadow: '0 0 28px rgba(255,30,109,0.12), inset 0 1px 0 rgba(255,255,255,0.12)',
+                                }}
                               >
-                                <span className="block text-[15px] font-black tracking-tight text-fuchsia-300 drop-shadow-[0_0_14px_rgba(244,114,182,0.35)]">NO</span>
-                                <span className="mt-0.5 block text-[8px] font-bold uppercase tracking-widest text-fuchsia-300/75">Oppose</span>
+                                <span className="inline-flex items-center justify-center gap-1.5 relative z-10">
+                                  <X className="w-[18px] h-[18px] sm:w-5 sm:h-5" style={{ color: '#ff9ec4' }} strokeWidth={2.5} />
+                                  <span
+                                    className="text-base sm:text-lg font-black tracking-tight"
+                                    style={{ color: '#ffe0ec', textShadow: '0 0 20px rgba(255,30,109,0.35)' }}
+                                  >
+                                    No
+                                  </span>
+                                </span>
                               </motion.button>
                             </div>
-
-                            <div className="flex items-center justify-between gap-1.5 border-t border-white/[0.06] bg-black/25 px-3 py-2.5 text-[9px] text-slate-500 mt-auto rounded-b-[1.35rem]">
-                              <span className="inline-flex items-center gap-1 min-w-0">
-                                <span className="flex -space-x-1 shrink-0" aria-hidden>
-                                  <span className="h-4 w-4 rounded-full border border-[#161A1E] bg-gradient-to-br from-cyan-500/80 to-teal-600/60" />
-                                  <span className="h-4 w-4 rounded-full border border-[#161A1E] bg-gradient-to-br from-fuchsia-500/70 to-purple-700/60" />
-                                </span>
-                                <span className="text-slate-400 tabular-nums truncate">+{pool.length}</span>
-                              </span>
-                              <span className="inline-flex items-center gap-0.5 text-slate-400 shrink-0">
-                                <Wallet size={11} className="text-slate-500" />
-                                <span className="tabular-nums">{stakeTRUST}</span>
-                              </span>
-                            </div>
-                          </motion.div>
+                          </>
                         );
-                      })}
-                    </div>
+                      })()}
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
 
-                    {lastStanceMarketCta && lastStanceMarketCta.kind !== 'token' && itemHref(lastStanceMarketCta) && (
-                      <div className="mt-4 rounded-xl border border-cyan-500/35 bg-cyan-950/40 px-3 py-3 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-                        <p className="text-[11px] sm:text-xs text-slate-400 min-w-0 flex-1 leading-snug">
-                          <span className="text-slate-200 font-semibold">Put conviction on this claim.</span>{' '}
-                          Stances here don&apos;t settle on-chain; markets do.
-                        </p>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Link
-                            to={itemHref(lastStanceMarketCta)!}
-                            onClick={() => {
-                              playClick();
-                              setLastStanceMarketCta(null);
-                            }}
-                            title="Open market · stake TRUST in the vault"
-                            className="inline-flex items-center justify-center gap-1 rounded-lg border border-cyan-400/55 bg-cyan-500/20 px-3 py-2 text-[10px] sm:text-[11px] font-black uppercase tracking-wide text-cyan-50 hover:bg-cyan-500/30"
-                          >
-                            Stake TRUST · open market
-                            <ChevronRight size={14} className="opacity-90" />
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              playClick();
-                              setLastStanceMarketCta(null);
-                            }}
-                            className="p-2 rounded-lg border border-slate-700 text-slate-500 hover:text-slate-300"
-                            aria-label="Dismiss"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    <p className="text-[9px] text-slate-600 mt-3 text-center px-2">
-                      Session momentum · not on-chain odds.
-                    </p>
-
-                    <div className="mt-4 flex justify-center">
-                      <motion.button
-                        type="button"
-                        onClick={onSkip}
-                        disabled={stakingTx}
-                        whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-                        whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.98 }}
-                        transition={{ type: 'spring', stiffness: 400, damping: 26 }}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700/90 bg-[#161A1E] px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-colors"
-                      >
-                        <SkipForward size={14} />
-                        Skip round
-                      </motion.button>
-                    </div>
-                  </div>
+                <div className="mt-4 flex flex-col items-center gap-2">
+                  <p className="text-[9px] text-slate-500 text-center">Local session only — not on-chain odds.</p>
+                  <motion.button
+                    type="button"
+                    onClick={onSkip}
+                    disabled={stakingTx}
+                    whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+                    whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.98 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-200 hover:border-[#00f3ff]/25 transition-colors"
+                  >
+                    <SkipForward size={14} />
+                    Skip
+                  </motion.button>
+                </div>
+                </div>
+              </div>
             </motion.div>
+          )}
+            </>
           )}
         </div>
 
+        {listId && ARENA_SHOW_LEADERBOARD ? (
         <aside className="lg:sticky lg:top-6 h-fit flex flex-col gap-4 min-w-0 w-full p-4 sm:p-5 md:p-6 lg:p-7 bg-[#03080e]/60">
           <div className="rounded-3xl border border-slate-700/80 bg-gradient-to-b from-slate-900/90 to-[#060b14] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             <div className="mb-3 pb-4 border-b border-slate-800/80">
@@ -1232,11 +1531,11 @@ const RankedList: React.FC = () => {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-black uppercase tracking-[0.36em] text-amber-300/90 mb-1.5 drop-shadow-[0_0_10px_rgba(245,158,11,0.25)]">
-                    {themeMeta.short} · live order
+                    {activeList?.title ?? 'List'} · live order
                   </p>
                   <h2 className="text-xl sm:text-2xl font-black font-display uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-white to-cyan-200 flex items-center gap-2 flex-wrap leading-tight">
                     <span className="inline-flex items-center gap-1.5 text-cyan-200/95">
-                      {themeMeta.icon}
+                      <List size={20} className="text-cyan-300/90" />
                     </span>
                     Your order
                     <Crown size={18} className="text-amber-400 shrink-0 drop-shadow-[0_0_10px_rgba(251,191,36,0.45)]" />
@@ -1250,7 +1549,7 @@ const RankedList: React.FC = () => {
             </div>
             {ranking.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-700/70 bg-slate-950/50 py-8 px-3 text-center text-[11px] text-slate-500 leading-relaxed">
-                Vote the grid first.
+                Start ranking to build your order.
               </div>
             ) : (
               <ol className="space-y-1.5 max-h-[min(320px,45vh)] lg:max-h-[min(380px,50vh)] overflow-y-auto pr-1 custom-scrollbar">
@@ -1302,9 +1601,88 @@ const RankedList: React.FC = () => {
             </Link>
           </motion.div>
         </aside>
+        ) : null}
+        {listId ? (
+          <div className="col-span-full border-t border-slate-800/80 p-3 sm:p-4 md:px-6 md:py-5 bg-[#020814]/50">
+            <motion.div
+              className="relative rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-[#050c16] via-[#070f1a] to-fuchsia-950/20 p-3 sm:p-4 shadow-[0_0_24px_rgba(34,211,238,0.08)] overflow-hidden"
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <div className="relative z-10 flex flex-col lg:flex-row lg:items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-300/95 mb-1">Quick controls</p>
+                  <p className="text-xs text-slate-400 leading-snug">
+                    Set TRUST intensity, then keep ranking. Your cuts are reviewed in the cart popup.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-fuchsia-500/25 bg-slate-950/60 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.2em] text-fuchsia-300 font-black">{ARENA_STAKE_TITLES[stakePresetIdx]}</div>
+                  <div className="text-lg font-black tabular-nums text-white leading-none mt-0.5">
+                    {ARENA_STAKE_PRESETS[stakePresetIdx]} <span className="text-cyan-200/95 text-sm">TRUST</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStakePresetIdx(Math.max(0, stakePresetIdx - 1))}
+                    disabled={stakePresetIdx <= 0}
+                    className="h-9 w-9 rounded-lg border border-slate-600/80 bg-slate-900/60 text-slate-300 disabled:opacity-35"
+                    aria-label="Lower trust tier"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStakePresetIdx(Math.min(ARENA_STAKE_PRESETS.length - 1, stakePresetIdx + 1))}
+                    disabled={stakePresetIdx >= ARENA_STAKE_PRESETS.length - 1}
+                    className="h-9 w-9 rounded-lg border border-cyan-500/35 bg-cyan-500/10 text-cyan-100 disabled:opacity-35"
+                    aria-label="Increase trust tier"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 lg:ml-auto">
+                  <motion.button
+                    type="button"
+                    onClick={() => {
+                      playClick();
+                      void refreshPool();
+                    }}
+                    disabled={loading}
+                    whileHover={reduceMotion || loading ? undefined : { scale: 1.02 }}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-cyan-100 disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+                    New pool
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    onClick={resetSession}
+                    disabled={!pool.length}
+                    whileHover={reduceMotion || !pool.length ? undefined : { scale: 1.02 }}
+                    className="inline-flex items-center justify-center rounded-lg border border-slate-600/80 bg-slate-900/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white disabled:opacity-40"
+                  >
+                    Reset
+                  </motion.button>
+                </div>
+              </div>
+              {!isConnected && (
+                <div className="mt-3 pt-3 border-t border-slate-800/80">
+                  <span className="text-[10px] text-amber-400/90 flex items-center gap-1">
+                    <Wallet size={12} />
+                    Connect wallet to submit ranked cuts on-chain
+                  </span>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        ) : null}
         </div>
         </motion.div>
 
+        {ARENA_SHOW_LEADERBOARD && (
         <motion.section
           className="relative mt-8 md:mt-10 w-full min-w-0 overflow-hidden rounded-3xl border-2 border-fuchsia-500/30 bg-[#020814] shadow-[0_0_100px_rgba(168,85,247,0.14),0_0_1px_rgba(34,211,238,0.35),inset_0_1px_0_rgba(255,255,255,0.07)] transition-[box-shadow] duration-500 hover:shadow-[0_0_120px_rgba(168,85,247,0.2),0_0_1px_rgba(34,211,238,0.45),inset_0_1px_0_rgba(255,255,255,0.09)]"
           initial={reduceMotion ? false : { opacity: 0, y: 28 }}
@@ -1562,7 +1940,24 @@ const RankedList: React.FC = () => {
             )}
           </div>
         </motion.section>
+        )}
       </div>
+
+      {ARENA_BATCH_MODE && listId && (
+        <ArenaBatchReviewModal
+          open={batchModalOpen}
+          onClose={() => setBatchModalOpen(false)}
+          themeShort={activeList?.title ?? 'Arena'}
+          contextSuffix={activeList?.tag ?? 'list'}
+          stakeLabel={stakeTRUST}
+          rows={pendingRows}
+          onUpdateUnits={updatePendingUnits}
+          onToggleSupport={togglePendingSupport}
+          onRemove={removePendingRow}
+          onSubmit={() => void submitArenaBatch()}
+          submitting={stakingTx}
+        />
+      )}
 
       <style>{`
         @keyframes arena-row-in {

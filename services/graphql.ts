@@ -2130,6 +2130,7 @@ export const getLists = async (limit: number = 40, offset: number = 0, orderBy?:
       const obj = po.object || {};
       const img = obj.image || obj.cached_image?.url;
       const subjects = (po.triples || []).map((t: any) => ({
+        termId: t.subject?.term_id,
         label: t.subject?.label,
         image: t.subject?.image || t.subject?.cached_image?.url,
       }));
@@ -2172,6 +2173,48 @@ export const getLists = async (limit: number = 40, offset: number = 0, orderBy?:
     }
   }
 };
+
+/**
+ * List members: triples (list predicate) whose **object** is the list — **subject** is a member to rank in Arena.
+ */
+export async function getListMemberSubjectsForObject(
+  listObjectTermId: string,
+  limit: number = 200
+): Promise<Array<{ id: string; label: string; image?: string }>> {
+  const ids = prepareQueryIds(listObjectTermId);
+  if (ids.length === 0) return [];
+  const q = `query ListMemberSubjects($ids: [String!]!, $pred: String!, $limit: Int!) {
+    triples(
+      where: { object_id: { _in: $ids }, predicate_id: { _eq: $pred } }
+      order_by: { block_number: desc }
+      limit: $limit
+    ) {
+      subject { term_id label image }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { ids, pred: LIST_PREDICATE_ID, limit });
+    const seen = new Set<string>();
+    const out: Array<{ id: string; label: string; image?: string }> = [];
+    for (const t of res?.triples || []) {
+      const sub = t?.subject;
+      if (!sub?.term_id) continue;
+      const key = normalize(sub.term_id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const m = resolveMetadata(sub);
+      out.push({
+        id: sub.term_id,
+        label: m.label || sub.label || sub.term_id.slice(0, 10),
+        image: (m.image || sub.image) as string | undefined,
+      });
+    }
+    return out;
+  } catch (e) {
+    console.warn('[getListMemberSubjectsForObject]', e);
+    return [];
+  }
+}
 
 /** Prefer ENS / account name; avoid showing subgraph hex snippets or duplicate address as "label". */
 function pickDisplayLabel(

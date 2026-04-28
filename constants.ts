@@ -1,7 +1,22 @@
 export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
 
-/** `VITE_ARENA_ENABLED=true` → full Arena at `/climb`. Otherwise `/climb` shows a coming-soon placeholder (nav unchanged). */
+/** `VITE_ARENA_ENABLED=true` → Arena route can render the real UI (see `ARENA_PLACEHOLDER`). */
 export const ARENA_ENABLED = import.meta.env.VITE_ARENA_ENABLED === 'true';
+
+/**
+ * `VITE_ARENA_PLACEHOLDER=true` → `/climb` always shows the public “coming soon” card (hides in-progress Arena UI).
+ * Omit or `false` → with `VITE_ARENA_ENABLED=true`, `/climb` renders the full Arena (`RankedList`).
+ */
+export const ARENA_PLACEHOLDER = import.meta.env.VITE_ARENA_PLACEHOLDER === 'true';
+
+/** True when `/climb` renders the full Arena (`RankedList`), not the public coming-soon card. */
+export const ARENA_UI_VISIBLE = ARENA_ENABLED && !ARENA_PLACEHOLDER;
+
+/**
+ * `VITE_ARENA_BATCH_MODE=false` → send TRUST on every yes/no (legacy).
+ * Omitted or any other value → curate in-app first, then one transfer when you submit the batch.
+ */
+export const ARENA_BATCH_MODE = import.meta.env.VITE_ARENA_BATCH_MODE !== 'false';
 
 /** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
 export const getGeminiApiKey = (): string => {

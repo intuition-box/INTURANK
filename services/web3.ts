@@ -1628,6 +1628,103 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
     }
 };
 
+export type SemanticTripleBatchInput = {
+  subjectId: string;
+  predicateId: string;
+  objectId: string;
+  assetsWei: bigint;
+};
+
+/**
+ * Single-transaction claim write batch via FeeProxy.createTriples.
+ * All ids must be valid bytes32 term ids (existing atoms/terms).
+ */
+export const createSemanticTriplesBatch = async (
+  triples: SemanticTripleBatchInput[],
+  receiver: string,
+  onProgress?: (log: string) => void
+): Promise<`0x${string}`> => {
+  if (!triples.length) throw new Error('No triples to submit.');
+  const checksumReceiver = getAddress(receiver);
+  const provider = getProvider();
+  if (!provider) throw new Error('Wallet not connected');
+
+  const subjectIds = triples.map((t) => padTermId(t.subjectId));
+  const predicateIds = triples.map((t) => padTermId(t.predicateId));
+  const objectIds = triples.map((t) => padTermId(t.objectId));
+  const assets = triples.map((t) => t.assetsWei);
+  const totalDeposit = assets.reduce((a, b) => a + b, 0n);
+  const tripleCount = BigInt(triples.length);
+
+  for (const a of assets) {
+    if (a < CURVE_OFFSET) {
+      throw new Error(
+        `Minimum deposit per claim is ${formatEther(CURVE_OFFSET)} TRUST. One or more rows are below minimum.`
+      );
+    }
+  }
+
+  const walletClient = createWalletClient({
+    chain: intuitionChain,
+    transport: custom(provider),
+    account: checksumReceiver,
+  });
+
+  let tripleCost: bigint;
+  try {
+    tripleCost = (await publicClient.readContract({
+      address: FEE_PROXY_ADDRESS as `0x${string}`,
+      abi: FEE_PROXY_ABI,
+      functionName: 'getTripleCost',
+    } as any)) as bigint;
+  } catch {
+    tripleCost = parseEther('0.15');
+  }
+  if (tripleCost < parseEther('0.15')) tripleCost = parseEther('0.15');
+
+  const multiVaultCost = tripleCost * tripleCount + totalDeposit;
+  let totalCost: bigint;
+  try {
+    totalCost = (await publicClient.readContract({
+      address: FEE_PROXY_ADDRESS as `0x${string}`,
+      abi: FEE_PROXY_ABI,
+      functionName: 'getTotalCreationCost',
+      args: [tripleCount, totalDeposit, multiVaultCost],
+    } as any)) as bigint;
+  } catch {
+    totalCost = (multiVaultCost * 115n) / 100n;
+  }
+
+  onProgress?.(`Preparing ${triples.length} claim writes…`);
+  onProgress?.(`Total value: ${formatEther(totalCost)} ${CURRENCY_SYMBOL}`);
+
+  const proxyOk = await getProxyApprovalStatus(checksumReceiver, { readRetries: 5, readDelayMs: 300 });
+  if (!proxyOk) {
+    onProgress?.('Approving FeeProxy…');
+    await grantProxyApproval(checksumReceiver);
+  }
+
+  let request: any;
+  try {
+    const simulation = await publicClient.simulateContract({
+      address: FEE_PROXY_ADDRESS as `0x${string}`,
+      abi: FEE_PROXY_ABI,
+      functionName: 'createTriples',
+      account: checksumReceiver,
+      args: [checksumReceiver, subjectIds, predicateIds, objectIds, assets, BigInt(LINEAR_CURVE_ID)],
+      value: totalCost,
+    } as any);
+    request = simulation.request;
+  } catch (e: any) {
+    const parsed = parseProtocolError(e);
+    throw new Error(parsed || 'Batch simulation failed');
+  }
+
+  const hash = await walletClient.writeContract(request);
+  window.dispatchEvent(new Event('local-tx-updated'));
+  return hash;
+};
+
 export const switchNetworkManual = async () => switchNetwork();
 export const getClientChainId = async () => CHAIN_ID;
 export const fetchAtomNameFromChain = async (id: string) => null;

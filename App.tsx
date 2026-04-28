@@ -1,6 +1,6 @@
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ARENA_ENABLED, MAINTENANCE_MODE } from './constants';
+import { ARENA_UI_VISIBLE, MAINTENANCE_MODE } from './constants';
 import Maintenance from './pages/Maintenance';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -72,6 +72,7 @@ import SendTrust from './pages/SendTrust';
 import SkillPlayground from './pages/SkillPlayground';
 import RankedList from './pages/RankedList';
 import ArenaPlaceholder from './pages/ArenaPlaceholder';
+import Compare from './pages/Compare';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 
@@ -132,13 +133,13 @@ const App: React.FC = () => {
           <Route path="/skill-playground" element={<SkillPlayground />} />
           
           {/* New Features */}
-          <Route path="/compare" element={<Navigate to="/climb" replace />} />
+          <Route path="/compare" element={<Compare />} />
           <Route path="/coming-soon" element={<ComingSoon />} />
           <Route path="/create" element={<CreateSignal />} />
           <Route path="/send-trust" element={<SendTrust />} />
           <Route
             path="/climb"
-            element={ARENA_ENABLED ? <RankedList /> : <ArenaPlaceholder />}
+            element={ARENA_UI_VISIBLE ? <RankedList /> : <ArenaPlaceholder />}
           />
           </Routes>
                 </Layout>
