@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Activity, ChevronDown, ChevronRight, Layers, Loader2, RefreshCw } from 'lucide-react';
 import { playClick, playHover } from '../services/audio';
 import { fetchUserArenaRankingClaims, type UserArenaRankingClaim } from '../services/graphql';
+import { ARENA_ATTRIBUTION_MIN_BLOCK } from '../constants';
 import { portalListIdFromTermId } from '../services/arenaListsRegistry';
 
 function climbQueryForListTermId(listTermId: string): string {
@@ -136,10 +137,21 @@ const ArenaMyRankingsPanel: React.FC<{ wallet: string | null }> = ({ wallet }) =
               <p className="text-[10px] xl:text-xs font-black text-slate-500 uppercase tracking-[0.28em] mb-1">Arena · Portfolio</p>
               <h2 className="text-xl sm:text-2xl font-black font-display text-white tracking-tight">My ranked lists</h2>
               <p className="text-[13px] text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
-                Only <span className="text-slate-300">finalized Arena portal triples</span> you authored on Intuition appear here —
-                taps or queued batches do not count until a transaction confirms. Lists are constrained to curated portal lists from
-                the graph (same picker as Arena). The indexer may lag briefly after confirmations.
+                Rows come from your wallet’s finalized <strong className="text-slate-300 font-semibold">portal list</strong>{' '}
+                triples on Intuition—the same predicates other Intuition flows use—not from this tab’s local picks. Clearing an
+                unsigned batch cannot remove them. Signed Arena batches show here once indexed.
               </p>
+              {ARENA_ATTRIBUTION_MIN_BLOCK != null ? (
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Showing activity from block{' '}
+                  <span className="font-mono text-slate-400">{ARENA_ATTRIBUTION_MIN_BLOCK}</span> onward.
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-500 mt-2 max-w-2xl leading-relaxed">
+                  If you see old list activity that isn’t from IntuRank Arena, your deployment can narrow results to a launch
+                  window (operator configuration — not something you set in the app).
+                </p>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">

@@ -8,6 +8,7 @@ import {
   MULTI_VAULT_ADDRESS,
   LINEAR_CURVE_ID,
   OFFSET_PROGRESSIVE_CURVE_ID,
+  ARENA_ATTRIBUTION_MIN_BLOCK,
   ARENA_XP_PER_RANK_PICK,
 } from '../constants';
 import { Account, Transaction, Claim, Triple } from '../types';
@@ -2364,9 +2365,12 @@ export async function fetchUserArenaRankingClaims(creatorWallet: string): Promis
   }`;
   try {
     const res = await fetchGraphQL(q, { ids, listPred: LIST_PREDICATE_ID, distrust: DISTRUST_ATOM_ID, limit: 520 });
-    const parsed = arenaTriplesResponseToPortalStances(res?.triples || []).filter(
-      (s) => idSet.has(s.creatorId) && allow.has(normalize(s.listTermId)),
-    );
+    const minBn = ARENA_ATTRIBUTION_MIN_BLOCK;
+    const parsed = arenaTriplesResponseToPortalStances(res?.triples || []).filter((s) => {
+      if (!idSet.has(s.creatorId) || !allow.has(normalize(s.listTermId))) return false;
+      if (minBn != null && s.blockNumber > 0 && s.blockNumber < minBn) return false;
+      return true;
+    });
 
     const best = new Map<string, UserArenaRankingClaim>();
     for (const r of parsed) {
@@ -2397,12 +2401,13 @@ export async function fetchArenaXpRecordForWallet(address: string | null | undef
   const claims = await fetchUserArenaRankingClaims(address ?? '');
   if (claims.length === 0) return emptyArenaXpRecord();
   const listsPlayed = new Set(claims.map((c) => normalize(c.listTermId))).size;
+  const atomsRanked = new Set(claims.map((c) => normalize(c.subjectId))).size;
   const n = claims.length;
   const lastBlock = claims.reduce((m, c) => Math.max(m, c.blockNumber), 0);
   return {
     xp: n * ARENA_XP_PER_RANK_PICK,
     duels: n,
-    atomsRanked: n,
+    atomsRanked,
     listsPlayed,
     updatedAt: lastBlock || 0,
   };
@@ -2445,9 +2450,12 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
       distrust: DISTRUST_ATOM_ID,
       limit: maxTriples,
     });
-    let stances = arenaTriplesResponseToPortalStances(res?.triples || []).filter((s) =>
-      allow.has(normalize(s.listTermId)),
-    );
+    const minBnLb = ARENA_ATTRIBUTION_MIN_BLOCK;
+    let stances = arenaTriplesResponseToPortalStances(res?.triples || []).filter((s) => {
+      if (!allow.has(normalize(s.listTermId))) return false;
+      if (minBnLb != null && s.blockNumber > 0 && s.blockNumber < minBnLb) return false;
+      return true;
+    });
 
     const best = new Map<string, ArenaGraphTripleStanceRow>();
     for (const r of stances) {
@@ -2483,14 +2491,15 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
       updatedAt: number;
     }> = [];
 
-    for (const [walletAddr, pack] of byWallet) {
+    for (const [walletAddr, pack] of byWallet.entries()) {
       const n = pack.stakes.length;
       if (n === 0) continue;
+      const distinctSubjects = new Set(pack.stakes.map((s) => normalize(s.subjectId))).size;
       out.push({
         address: walletAddr,
         xp: n * ARENA_XP_PER_RANK_PICK,
         duels: n,
-        atomsRanked: n,
+        atomsRanked: distinctSubjects,
         listsPlayed: pack.lists.size,
         updatedAt: pack.maxBn || 0,
       });

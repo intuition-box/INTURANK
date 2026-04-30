@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, User, Database, Network, Info, Loader2, Zap, ArrowRight, ShieldCheck, Cpu, Camera, Search, ChevronRight, HelpCircle, UserPlus, CheckCircle2, Globe, Fingerprint, Trash2, Plus, Terminal as TerminalIcon, ExternalLink, RefreshCw, AlertTriangle, Coins, Sparkles } from 'lucide-react';
-import { playClick, playHover, playSuccess } from '../services/audio';
+import { playClick, playHover } from '../services/audio';
 import { getConnectedAccount, createIdentityAtom, createSemanticTriple, parseProtocolError, getWalletBalance, publicClient, getAtomCreationCost, estimateAtomGas, getMinClaimDeposit, getTotalTripleCreationCost, getProxyApprovalStatus, grantProxyApproval, markProxyApproved, calculateTripleId } from '../services/web3';
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { Account } from '../types';
 import { toast } from './Toast';
 import { formatEther } from 'viem';
-import { EXPLORER_URL, CURRENCY_SYMBOL } from '../constants';
+import { EXPLORER_URL, CURRENCY_SYMBOL, PROTOCOL_XP_CREATE_ATOM, PROTOCOL_XP_CREATE_CLAIM } from '../constants';
 import { CurrencySymbol } from './CurrencySymbol';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 
 interface CreateModalProps {
   isOpen: boolean;
@@ -312,7 +313,12 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
       setTxStatus('CONFIRMING');
       await new Promise(r => setTimeout(r, 1000));
       setTxStatus('SUCCESS');
-      playSuccess();
+      notifyProtocolXpEarned({
+        address: wallet,
+        amount: PROTOCOL_XP_CREATE_ATOM,
+        reasonKey: 'create_atom',
+        txHash: hash,
+      });
     } catch (e: any) {
       setTxError(parseProtocolError(e));
       setTxStatus('ERROR');
@@ -347,7 +353,12 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose }) => {
       setTxStatus('CONFIRMING');
       await new Promise(r => setTimeout(r, 1000));
       setTxStatus('SUCCESS');
-      playSuccess();
+      notifyProtocolXpEarned({
+        address: wallet,
+        amount: PROTOCOL_XP_CREATE_CLAIM,
+        reasonKey: 'create_claim',
+        txHash: hash,
+      });
     } catch (e: any) {
       setTxError(parseProtocolError(e));
       setTxStatus('ERROR');

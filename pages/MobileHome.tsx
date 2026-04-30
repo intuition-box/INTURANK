@@ -16,6 +16,7 @@ import {
 import { getNetworkStats, getAllAgents } from '../services/graphql';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
 import { fetchArenaXpRecordForWallet } from '../services/arenaXp';
+import { getProtocolXpTotal, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 import { formatMarketValue, safeWeiToEther } from '../services/analytics';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { playClick, playHover } from '../services/audio';
@@ -104,7 +105,15 @@ const MobileHome: React.FC = () => {
   const [loadingRankers, setLoadingRankers] = useState(true);
 
   const [arenaSelf, setArenaSelf] = useState({ xp: 0, duels: 0 });
+  const [, setProtocolXpTick] = useState(0);
 
+  useEffect(() => {
+    const onProto = () => setProtocolXpTick((n) => n + 1);
+    window.addEventListener(PROTOCOL_XP_UPDATED_EVENT, onProto);
+    return () => window.removeEventListener(PROTOCOL_XP_UPDATED_EVENT, onProto);
+  }, []);
+
+  const activityXp = walletAddress ? getProtocolXpTotal(walletAddress) : 0;
   useEffect(() => {
     if (!walletAddress) {
       setArenaSelf({ xp: 0, duels: 0 });
@@ -225,18 +234,23 @@ const MobileHome: React.FC = () => {
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-mono tracking-[0.28em] uppercase text-slate-400 font-black">
-                Arena XP
+                Your XP
               </p>
-              <div className="mt-1 flex items-baseline gap-2">
+              <div
+                className="mt-1 flex items-baseline gap-2"
+                title={`Arena ${arenaSelf.xp.toLocaleString()} · Activity ${activityXp.toLocaleString()} (this browser)`}
+              >
                 <span className="text-3xl font-display font-black text-white leading-none tracking-tight">
-                  {compact(arenaSelf.xp)}
+                  {compact(arenaSelf.xp + activityXp)}
                 </span>
                 <span className="text-[11px] font-mono text-slate-500">
                   · {compact(arenaSelf.duels)} duels
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-slate-400">
-                {isConnected ? 'Climb the rankings to earn more.' : 'Connect to start earning XP.'}
+                {isConnected
+                  ? 'Arena from the graph · activity from trades & creates on this device.'
+                  : 'Connect to start earning XP.'}
               </p>
             </div>
             <Link

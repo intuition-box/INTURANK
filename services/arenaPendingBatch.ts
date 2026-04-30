@@ -48,6 +48,35 @@ function writeStore(s: Store) {
   }
 }
 
+/** Row with originating list id (for unified batch UI + per-list submission). */
+export type ArenaPendingRowWithSource = ArenaPendingRow & { sourceListId: string };
+
+/**
+ * Live view of queued rows across all lists. Uses in-memory `activeRows` for `activeListId`
+ * so the current list stays in sync before the persistence effect runs after render.
+ */
+export function loadAllPendingRowsLive(
+  activeListId: string | null | undefined,
+  activeRows: ArenaPendingRow[]
+): ArenaPendingRowWithSource[] {
+  const store = readStore();
+  const ids = new Set<string>([
+    ...Object.keys(store),
+    ...(activeListId ? [activeListId] : []),
+  ]);
+  const out: ArenaPendingRowWithSource[] = [];
+  for (const lid of [...ids].sort()) {
+    const rows =
+      lid === activeListId ? activeRows : ((store[lid] as ArenaPendingRow[] | undefined) ?? []);
+    if (!Array.isArray(rows)) continue;
+    for (const r of rows) {
+      if (!r || typeof r !== 'object' || !r.key || !r.item || typeof r.units !== 'number') continue;
+      out.push({ ...r, sourceListId: lid });
+    }
+  }
+  return out;
+}
+
 /** Pending batch rows for the current Arena list (`listId` from `arenaListsRegistry`). */
 export function loadPendingForList(listId: string): ArenaPendingRow[] {
   if (!listId) return [];

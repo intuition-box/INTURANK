@@ -37,12 +37,16 @@ import { createSemanticTriplesBatch, createTripleFromLabels, sendNativeTransfer 
 import { playClick, playHover, playSuccess } from '../services/audio';
 import { toast } from '../components/Toast';
 import { fetchArenaXpRecordForWallet, postArenaTotalsMirrorOptional } from '../services/arenaXp';
+import { getProtocolXpTotal, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
 import { ARENA_BATCH_MODE, ARENA_XP_PER_RANK_PICK } from '../constants';
 import { CURVE_OFFSET, DISTRUST_ATOM_ID, LIST_PREDICATE_ID } from '../constants';
 import {
   clearPendingForList,
+  clearPendingStorage,
   getFirstListIdWithPending,
+  getTotalPendingCount,
+  loadAllPendingRowsLive,
   loadPendingForList,
   savePendingForList,
   type ArenaPendingRow,
@@ -64,6 +68,7 @@ import ArenaBatchReviewModal from '../components/ArenaBatchReviewModal';
 import ArenaListCard from '../components/ArenaListCard';
 import ArenaLeaderboardGlance from '../components/ArenaLeaderboardGlance';
 import ArenaListQuickPick from '../components/ArenaListQuickPick';
+import ArenaClimbTerrace from '../components/ArenaClimbTerrace';
 export type ArenaTheme = 'claims' | 'narratives' | 'tokens' | 'passion';
 
 export type RankItemKind = 'claim' | 'atom' | 'token';
@@ -378,6 +383,13 @@ function savePersistedForList(listId: string, s: Record<string, number>) {
   }
 }
 
+function patchArenaPersistedScore(listId: string | null | undefined, itemId: string, delta: number) {
+  if (!listId) return;
+  const persisted = loadPersistedForList(listId) ?? {};
+  const R = persisted[itemId] ?? SCORE_START;
+  savePersistedForList(listId, { ...persisted, [itemId]: R + delta });
+}
+
 /** Versus-style claim: subject vs object with optional images (e.g. Claude | Gemini). */
 function ArenaVsHeroImages({
   leftSrc,
@@ -621,19 +633,45 @@ const RankedList: React.FC = () => {
   const [playersLoading, setPlayersLoading] = useState(true);
   const reduceMotion = useReducedMotion();
 
+  const batchModalRows = useMemo(
+    () => loadAllPendingRowsLive(listId, pendingRows),
+    [listId, pendingRows]
+  );
+
+  const batchModalRowsLabeled = useMemo(() => {
+    const ids = new Set(batchModalRows.map((r) => r.sourceListId));
+    const multi = ids.size > 1;
+    return batchModalRows.map((r) => ({
+      ...r,
+      ...(multi
+        ? { sourceListTitle: getArenaListById(r.sourceListId)?.title ?? 'List' }
+        : {}),
+    }));
+  }, [batchModalRows]);
+
+  const batchModalHeader = useMemo(() => {
+    const ids = [...new Set(batchModalRows.map((r) => r.sourceListId))];
+    if (ids.length === 1) {
+      const e = getArenaListById(ids[0]);
+      return { contextSuffix: e?.tag ?? 'list', themeShort: e?.title ?? 'Arena' };
+    }
+    if (ids.length === 0) return { contextSuffix: 'live', themeShort: 'Arena' };
+    return { contextSuffix: `${ids.length} lists`, themeShort: 'All queued picks' };
+  }, [batchModalRows]);
+
   const stakeTRUST = useMemo(() => String(ARENA_STAKE_PRESETS[stakePresetIdx] ?? ARENA_STAKE_PRESETS[0]), [stakePresetIdx]);
 
   /** Batch claims: FeeProxy rejects any triple row whose depositWei is below CURVE_OFFSET. */
   const batchDepositBelowProtocol = useMemo(() => {
-    if (!ARENA_BATCH_MODE || pendingRows.length === 0) return false;
+    if (!ARENA_BATCH_MODE || batchModalRows.length === 0) return false;
     let baseWei: bigint;
     try {
       baseWei = parseEther((stakeTRUST || '0').trim() || '0');
     } catch {
       return true;
     }
-    return pendingRows.some((row) => baseWei * BigInt(row.units) < CURVE_OFFSET);
-  }, [pendingRows, stakeTRUST]);
+    return batchModalRows.some((row) => baseWei * BigInt(row.units) < CURVE_OFFSET);
+  }, [batchModalRows, stakeTRUST]);
 
   /** Keep preset index in range if tiers differ between batch vs legacy builds. */
   useEffect(() => {
@@ -660,6 +698,19 @@ const RankedList: React.FC = () => {
   }, [refreshPlayers]);
 
   const [graphArenaXp, setGraphArenaXp] = useState(0);
+  const [protocolLedgerTick, setProtocolLedgerTick] = useState(0);
+
+  useEffect(() => {
+    const onProto = () => setProtocolLedgerTick((n) => n + 1);
+    window.addEventListener(PROTOCOL_XP_UPDATED_EVENT, onProto);
+    return () => window.removeEventListener(PROTOCOL_XP_UPDATED_EVENT, onProto);
+  }, []);
+
+  const myProtocolXp = useMemo(
+    () => (address ? getProtocolXpTotal(address) : 0),
+    [address, protocolLedgerTick]
+  );
+  const xpDisplayTarget = graphArenaXp + myProtocolXp;
 
   /** Slot-style counting — animates when XP changes after indexer-derived updates. */
   const xpAnimRef = useRef<number | null>(null);
@@ -696,7 +747,7 @@ const RankedList: React.FC = () => {
   }, [refreshArenaXpSelf]);
 
   useEffect(() => {
-    const target = graphArenaXp;
+    const target = xpDisplayTarget;
     if (xpAnimRef.current === null) {
       xpAnimRef.current = target;
       setXpRoll(target);
@@ -728,7 +779,7 @@ const RankedList: React.FC = () => {
       if (xpRafRef.current != null) cancelAnimationFrame(xpRafRef.current);
       xpRafRef.current = null;
     };
-  }, [graphArenaXp, reduceMotion]);
+  }, [xpDisplayTarget, reduceMotion]);
 
   const playersMaxXp = useMemo(() => {
     if (!players.length) return 1;
@@ -917,7 +968,7 @@ const RankedList: React.FC = () => {
     if (!openBatchAfterLoad) return;
     if (!listId || loading) return;
     setOpenBatchAfterLoad(false);
-    if (loadPendingForList(listId).length > 0) {
+    if (getTotalPendingCount() > 0) {
       setBatchModalOpen(true);
     }
   }, [openBatchAfterLoad, listId, loading]);
@@ -938,8 +989,7 @@ const RankedList: React.FC = () => {
         }
         return;
       }
-      const queued = loadPendingForList(listId);
-      if (queued.length < 1) return;
+      if (getTotalPendingCount() < 1) return;
       setBatchModalOpen((v) => !v);
     };
     window.addEventListener('arena-batch-fab-toggle', onFabToggle as EventListener);
@@ -1047,7 +1097,8 @@ const RankedList: React.FC = () => {
   );
 
   const submitArenaBatch = useCallback(async () => {
-    if (pendingRows.length === 0) return;
+    const rowsToSend = loadAllPendingRowsLive(listId, pendingRows);
+    if (rowsToSend.length === 0) return;
     if (!isConnected || !address) {
       toast.error('Connect your wallet to submit your batch.');
       return;
@@ -1059,7 +1110,7 @@ const RankedList: React.FC = () => {
       toast.error('Invalid stake amount');
       return;
     }
-    for (const row of pendingRows) {
+    for (const row of rowsToSend) {
       const rowWei = baseWei * BigInt(row.units);
       if (rowWei < CURVE_OFFSET) {
         toast.error(
@@ -1070,42 +1121,54 @@ const RankedList: React.FC = () => {
         return;
       }
     }
+    const allSubjectsResolvable = rowsToSend.every(
+      (row) => TERM_ID_RE.test(row.item.id) || !!row.item.label?.trim()
+    );
+    if (!allSubjectsResolvable) {
+      toast.error('Some rows are missing valid term ids/labels for claim creation.');
+      return;
+    }
+
     setStakingTx(true);
     let sent = false;
-    const totalWei = pendingRows.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
+    const totalWei = rowsToSend.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
     try {
-      const portalListObjectId =
-        activeList?.source === 'portal' && TERM_ID_RE.test(activeList.listObjectTermId)
-          ? activeList.listObjectTermId
-          : null;
-      const allSubjectsResolvable = pendingRows.every(
-        (row) => TERM_ID_RE.test(row.item.id) || !!row.item.label?.trim()
-      );
-      if (!allSubjectsResolvable) {
-        throw new Error('Some rows are missing valid term ids/labels for claim creation.');
+      const byList = new Map<string, typeof rowsToSend>();
+      for (const row of rowsToSend) {
+        const lid = row.sourceListId;
+        if (!byList.has(lid)) byList.set(lid, []);
+        byList.get(lid)!.push(row);
       }
 
-      if (portalListObjectId && pendingRows.every((row) => TERM_ID_RE.test(row.item.id))) {
-        const triples = pendingRows.map((row) => {
-          const subjectId = row.item.id;
-          const predicateId = row.support ? LIST_PREDICATE_ID : portalListObjectId;
-          const objectId = row.support ? portalListObjectId : DISTRUST_ATOM_ID;
-          return {
-            subjectId,
-            predicateId,
-            objectId,
-            assetsWei: baseWei * BigInt(row.units),
-          };
-        });
-        await createSemanticTriplesBatch(triples, address);
-      } else {
-        for (const row of pendingRows) {
-          const rowTrust = formatEther(baseWei * BigInt(row.units));
-          const subjectRef = TERM_ID_RE.test(row.item.id) ? row.item.id : (row.item.label || row.item.id);
-          const listLabel = activeList?.title || 'Arena list';
-          const predicateRef = row.support ? `belongs in ${listLabel}` : `does not belong in ${listLabel}`;
-          const objectRef = listLabel;
-          await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
+      for (const [, listRows] of byList) {
+        const listEntry = getArenaListById(listRows[0]!.sourceListId);
+        const portalListObjectId =
+          listEntry?.source === 'portal' && TERM_ID_RE.test(listEntry.listObjectTermId)
+            ? listEntry.listObjectTermId
+            : null;
+
+        if (portalListObjectId && listRows.every((row) => TERM_ID_RE.test(row.item.id))) {
+          const triples = listRows.map((row) => {
+            const subjectId = row.item.id;
+            const predicateId = row.support ? LIST_PREDICATE_ID : portalListObjectId;
+            const objectId = row.support ? portalListObjectId : DISTRUST_ATOM_ID;
+            return {
+              subjectId,
+              predicateId,
+              objectId,
+              assetsWei: baseWei * BigInt(row.units),
+            };
+          });
+          await createSemanticTriplesBatch(triples, address);
+        } else {
+          const listLabel = listEntry?.title || 'Arena list';
+          for (const row of listRows) {
+            const rowTrust = formatEther(baseWei * BigInt(row.units));
+            const subjectRef = TERM_ID_RE.test(row.item.id) ? row.item.id : (row.item.label || row.item.id);
+            const predicateRef = row.support ? `belongs in ${listLabel}` : `does not belong in ${listLabel}`;
+            const objectRef = listLabel;
+            await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
+          }
         }
       }
       sent = true;
@@ -1119,7 +1182,7 @@ const RankedList: React.FC = () => {
 
     if (address) {
       toast.success(
-        `Claims written on Intuition · ${pendingRows.length} item${pendingRows.length === 1 ? '' : 's'} · ${formatEther(totalWei)} TRUST`
+        `Claims written on Intuition · ${rowsToSend.length} item${rowsToSend.length === 1 ? '' : 's'} · ${formatEther(totalWei)} TRUST`
       );
       void refreshPlayers({ silent: true });
       void refreshArenaXpSelf();
@@ -1138,54 +1201,85 @@ const RankedList: React.FC = () => {
       toast.success('Claims written on Intuition.');
     }
 
-    if (listId) clearPendingForList(listId);
+    clearPendingStorage();
     setPendingRows([]);
     setBatchModalOpen(false);
-  }, [pendingRows, isConnected, address, stakeTRUST, listId, refreshPlayers, refreshArenaXpSelf, activeList]);
+  }, [pendingRows, listId, isConnected, address, stakeTRUST, refreshPlayers, refreshArenaXpSelf]);
 
-  const updatePendingUnits = useCallback((key: string, units: number) => {
-    setPendingRows((prev) => prev.map((r) => (r.key === key ? { ...r, units } : r)));
-  }, []);
+  const updatePendingUnits = useCallback((sourceListId: string, key: string, units: number) => {
+    const rows = loadPendingForList(sourceListId);
+    const next = rows.map((r) => (r.key === key ? { ...r, units } : r));
+    savePendingForList(sourceListId, next);
+    if (sourceListId === listId) setPendingRows(next);
+  }, [listId]);
 
   const togglePendingSupport = useCallback(
-    (key: string) => {
-      setPendingRows((prev) => {
-        const row = prev.find((r) => r.key === key);
-        if (!row) return prev;
-        const was = row.support;
-        const flipDelta =
-          (was ? -YESNO_SCORE_YES : -YESNO_SCORE_NO) + (!was ? YESNO_SCORE_YES : YESNO_SCORE_NO);
+    (sourceListId: string, key: string) => {
+      const rows = loadPendingForList(sourceListId);
+      const row = rows.find((r) => r.key === key);
+      if (!row) return;
+      const was = row.support;
+      const flipDelta =
+        (was ? -YESNO_SCORE_YES : -YESNO_SCORE_NO) + (!was ? YESNO_SCORE_YES : YESNO_SCORE_NO);
+      patchArenaPersistedScore(sourceListId, row.item.id, flipDelta);
+      if (sourceListId === listId) {
         setScores((p) => {
           const R = p[row.item.id] ?? SCORE_START;
-          const next = { ...p, [row.item.id]: R + flipDelta };
-          if (listId) savePersistedForList(listId, next);
-          return next;
+          return { ...p, [row.item.id]: R + flipDelta };
         });
-        return prev.map((r) => (r.key === key ? { ...r, support: !r.support } : r));
-      });
+      }
+      const nextRows = rows.map((r) => (r.key === key ? { ...r, support: !r.support } : r));
+      savePendingForList(sourceListId, nextRows);
+      if (sourceListId === listId) setPendingRows(nextRows);
     },
     [listId]
   );
 
   const removePendingRow = useCallback(
-    (key: string) => {
-      setPendingRows((prev) => {
-        const row = prev.find((r) => r.key === key);
-        if (!row) return prev;
-        const back = row.support ? -YESNO_SCORE_YES : -YESNO_SCORE_NO;
+    (sourceListId: string, key: string) => {
+      const rows = loadPendingForList(sourceListId);
+      const row = rows.find((r) => r.key === key);
+      if (!row) return;
+      const back = row.support ? -YESNO_SCORE_YES : -YESNO_SCORE_NO;
+      patchArenaPersistedScore(sourceListId, row.item.id, back);
+      if (sourceListId === listId) {
         setScores((p) => {
           const R = p[row.item.id] ?? SCORE_START;
-          const next = { ...p, [row.item.id]: R + back };
-          if (listId) savePersistedForList(listId, next);
-          return next;
+          return { ...p, [row.item.id]: R + back };
         });
         setDuels((d) => Math.max(0, d - 1));
         setStreak(0);
-        return prev.filter((r) => r.key !== key);
-      });
+      }
+      const nextRows = rows.filter((r) => r.key !== key);
+      savePendingForList(sourceListId, nextRows);
+      if (sourceListId === listId) setPendingRows(nextRows);
     },
     [listId]
   );
+
+  const clearAllArenaBatch = useCallback(() => {
+    const rows = loadAllPendingRowsLive(listId, pendingRows);
+    if (rows.length === 0) return;
+    for (const row of rows) {
+      const back = row.support ? -YESNO_SCORE_YES : -YESNO_SCORE_NO;
+      patchArenaPersistedScore(row.sourceListId, row.item.id, back);
+    }
+    clearPendingStorage();
+    setPendingRows([]);
+    const nCurrentList = rows.filter((r) => r.sourceListId === listId).length;
+    setDuels((d) => Math.max(0, d - nCurrentList));
+    setStreak(0);
+    if (listId && pool.length > 0) {
+      const persisted = loadPersistedForList(listId);
+      setScores((prev) => {
+        const next = { ...prev };
+        for (const it of pool) {
+          next[it.id] = persisted?.[it.id] ?? SCORE_START;
+        }
+        return next;
+      });
+    }
+  }, [listId, pendingRows, pool]);
 
   const resolveYesNo = useCallback(
     async (item: RankItem, support: boolean) => {
@@ -1221,7 +1315,7 @@ const RankedList: React.FC = () => {
       }
 
       if (!treasury) {
-        toast.error('Set VITE_ARENA_TREASURY_ADDRESS so TRUST can be sent on each pick.');
+        toast.error('Arena payouts aren’t enabled in this deployment (treasury not configured).');
         return;
       }
 
@@ -1374,7 +1468,7 @@ const RankedList: React.FC = () => {
                 <span className="text-slate-500">Rounds <span className="text-white font-mono font-bold tabular-nums ml-1">{duels}</span></span>
                 <span className="text-slate-700">•</span>
                 <span className="text-slate-500">Streak <span className="text-fuchsia-300 font-mono font-bold tabular-nums ml-1">{streak}</span></span>
-                {address ? <><span className="text-slate-700">•</span><span className="text-slate-500">XP <span className="text-amber-300 font-mono font-bold tabular-nums ml-1 arena-xp-roll">{xpRoll.toLocaleString()}</span></span></> : null}
+                {address ? <><span className="text-slate-700">•</span><span className="text-slate-500" title={`Arena ${graphArenaXp.toLocaleString()} · Activity ${myProtocolXp.toLocaleString()} · Total (this browser)`}>XP <span className="text-amber-300 font-mono font-bold tabular-nums ml-1 arena-xp-roll">{xpRoll.toLocaleString()}</span></span></> : null}
                 <div className="h-1 w-16 rounded-full bg-slate-800 overflow-hidden sm:ml-1">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-500"
@@ -1403,7 +1497,13 @@ const RankedList: React.FC = () => {
         <div
           className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,28vw)] xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80"
         >
-        <div className="min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 space-y-4">
+        <div
+          className={
+            listId
+              ? 'min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 flex flex-col gap-4 lg:min-h-[calc(100vh-12rem)]'
+              : 'min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 space-y-4'
+          }
+        >
           {!listId ? (
             <div className="rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.04] to-transparent p-4 sm:p-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
               <div
@@ -1668,7 +1768,7 @@ const RankedList: React.FC = () => {
               </div>
             ) : null}
 
-            {ARENA_BATCH_MODE && pendingRows.length > 0 ? (
+            {ARENA_BATCH_MODE && batchModalRows.length > 0 ? (
               <button
                 type="button"
                 onClick={() => {
@@ -1677,7 +1777,7 @@ const RankedList: React.FC = () => {
                 }}
                 className="mt-3 w-full text-center text-[11px] font-bold text-[#a5fcff] border border-[#00f3ff]/35 rounded-xl py-2.5 bg-[#00f3ff]/5 hover:bg-[#00f3ff]/10 transition-colors"
               >
-                Review batch ({pendingRows.length} queued) — TRUST on submit
+                Review batch ({batchModalRows.length} queued) — TRUST on submit
               </button>
             ) : null}
           </div>
@@ -1768,6 +1868,18 @@ const RankedList: React.FC = () => {
               </div>
             </motion.div>
           )}
+          <ArenaClimbTerrace
+            pinBottom
+            queuedBatchCount={ARENA_BATCH_MODE ? batchModalRows.length : 0}
+            onReviewBatch={
+              ARENA_BATCH_MODE
+                ? () => {
+                    playClick();
+                    setBatchModalOpen(true);
+                  }
+                : undefined
+            }
+          />
             </>
           )}
         </div>
@@ -1777,7 +1889,8 @@ const RankedList: React.FC = () => {
             players={players}
             loading={playersLoading}
             myAddress={address}
-            myXp={graphArenaXp}
+            myXp={xpDisplayTarget}
+            myXpTitle={`Arena ${graphArenaXp.toLocaleString()} · Activity ${myProtocolXp.toLocaleString()} (stored in this browser)`}
           />
           {listId ? (
             <motion.div
@@ -2145,13 +2258,14 @@ const RankedList: React.FC = () => {
         <ArenaBatchReviewModal
           open={batchModalOpen}
           onClose={() => setBatchModalOpen(false)}
-          themeShort={activeList?.title ?? 'Arena'}
-          contextSuffix={activeList?.tag ?? 'list'}
+          themeShort={batchModalHeader.themeShort}
+          contextSuffix={batchModalHeader.contextSuffix}
           stakeLabel={stakeTRUST}
-          rows={pendingRows}
+          rows={batchModalRowsLabeled}
           onUpdateUnits={updatePendingUnits}
           onToggleSupport={togglePendingSupport}
           onRemove={removePendingRow}
+          onClearAll={clearAllArenaBatch}
           onSubmit={() => void submitArenaBatch()}
           submitting={stakingTx}
           depositBlocked={batchDepositBelowProtocol}

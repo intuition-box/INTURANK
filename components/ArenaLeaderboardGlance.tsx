@@ -22,6 +22,8 @@ type Props = {
   loading: boolean;
   myAddress?: string;
   myXp: number;
+  /** Optional tooltip explaining how `myXp` is composed (e.g. arena + activity ledger). */
+  myXpTitle?: string;
 };
 
 function avatarGlyph(label: string): string {
@@ -30,7 +32,7 @@ function avatarGlyph(label: string): string {
   return m ? m[0].toUpperCase() : '?';
 }
 
-const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, myXp }) => {
+const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, myXp, myXpTitle }) => {
   const reduceMotion = useReducedMotion();
   const myAddrLc = myAddress?.toLowerCase();
   const myRow = useMemo(
@@ -205,7 +207,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                 </p>
               )}
             </div>
-            <div className="text-right shrink-0">
+            <div className="text-right shrink-0" title={myXpTitle}>
               <p className="text-[9px] font-mono uppercase tracking-wider text-amber-400/90 font-bold">XP</p>
               <p
                 className="text-base font-black tabular-nums leading-none mt-0.5"

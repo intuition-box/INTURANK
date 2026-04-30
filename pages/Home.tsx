@@ -12,7 +12,8 @@ import { subscribeVisibilityAwareInterval } from '../services/visibility';
 import { getAllAgents, buildHomeAtomSectionsFrom, getNewlyCreatedAtoms, getNetworkStats, getAccountsByTermIds } from '../services/graphql';
 import type { Account } from '../types';
 import { formatMarketValue, safeWeiToEther } from '../services/analytics';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, PROTOCOL_XP_MARKET_ACQUIRE } from '../constants';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 import { toast } from '../components/Toast';
 import {
   getConnectedAccount,
@@ -1005,7 +1006,13 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
       setTxPhase('wallet');
       playClick();
       toast.info('Confirm in your wallet…');
-      await depositToVault(trimmed, agent.id, acc, 1, (log) => toast.info(log));
+      const res = await depositToVault(trimmed, agent.id, acc, 1, (log) => toast.info(log));
+      notifyProtocolXpEarned({
+        address: acc,
+        amount: PROTOCOL_XP_MARKET_ACQUIRE,
+        reasonKey: 'market_acquire',
+        txHash: res.hash,
+      });
       toast.success('Acquisition complete.');
       onSuccess(agent.label || 'this atom');
       onClose();

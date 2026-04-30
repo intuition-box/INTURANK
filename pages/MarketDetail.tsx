@@ -11,10 +11,20 @@ import { toast } from '../components/Toast';
 import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 import { portalListIdFromTermId } from '../services/arenaListsRegistry';
 import { AIBriefing } from '../components/AISuite';
 import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, safeWeiToEther, calculatePositionPnL, calculateRealizedPnL, isSystemVerified, getSharesFromHolderRowsForCurve, mergeTrustBalanceDisplay } from '../services/analytics';
-import { APP_VERSION_DISPLAY, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
+import {
+  APP_VERSION_DISPLAY,
+  LINEAR_CURVE_ID,
+  OFFSET_PROGRESSIVE_CURVE_ID,
+  CURRENCY_SYMBOL,
+  EXPLORER_URL,
+  FEE_PROXY_ADDRESS,
+  MULTI_VAULT_ADDRESS,
+  PROTOCOL_XP_MARKET_ACQUIRE,
+} from '../constants';
 
 function isProtocolRouterAddress(addr: string | undefined): boolean {
   if (!addr) return false;
@@ -715,8 +725,17 @@ const MarketDetail: React.FC = () => {
             } else {
                 res = await redeemFromVault(inputAmount, activeTargetId, activeWallet, selectedCurveId, logHandler);
             }
-            
-            playSuccess();
+
+            if (action === 'ACQUIRE') {
+                notifyProtocolXpEarned({
+                  address: activeWallet,
+                  amount: PROTOCOL_XP_MARKET_ACQUIRE,
+                  reasonKey: 'market_acquire',
+                  txHash: res.hash,
+                });
+            } else {
+                playSuccess();
+            }
             
             const tickerName = (agent?.label || 'NODE').toUpperCase();
             const assetLabel = sentiment === 'TRUST' 

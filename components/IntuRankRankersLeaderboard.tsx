@@ -2,7 +2,7 @@
  * IntuRank Arena XP leaderboard — `/stats?tab=rankers`.
  * Rounded glass UI, cyan/magenta/gold gradients (IntuRank brand).
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Trophy, RefreshCw, Loader2, Sparkles, Zap, HelpCircle } from 'lucide-react';
 import { useAccount } from 'wagmi';
@@ -12,6 +12,7 @@ import {
 } from '../services/arenaLeaderboard';
 import { ArenaXpToken } from './ArenaXpToken';
 import { fetchArenaXpRecordForWallet } from '../services/arenaXp';
+import { getProtocolXpTotal, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 import { playClick, playHover } from '../services/audio';
 
 function shortAddr(addr: string): string {
@@ -28,9 +29,11 @@ function avatarGlyph(label: string): string {
   return letter ? letter[0].toUpperCase() : '?';
 }
 
-const HINT_LISTS = 'Arena lists reflected in your finalized portal triples on the Intuition indexer.';
-const HINT_ATOMS = 'Count of atoms you have staked stance on-chain for those Arena lists.';
-const HINT_XP = 'Arena XP = indexed portal-list stakes × tier (see constants); not stored in the browser.';
+const HINT_LISTS = 'Distinct portal lists represented in your finalized indexed claims (Arena + same Intuition predicates).';
+const HINT_ATOMS = 'Distinct subjects you have a latest on-chain stance for in those lists.';
+const HINT_XP =
+  'Total XP combines Arena XP from the indexer with activity XP from trades and creates in this browser on IntuRank.';
+
 
 /** Column template: rank · player · lists · atoms · arena XP — match header row to body rows */
 const LB_GRID =
@@ -80,7 +83,7 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setRefreshing(true);
     try {
@@ -91,10 +94,6 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    void refresh();
   }, []);
 
   const [myXpRec, setMyXpRec] = useState({
@@ -103,6 +102,22 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
     atomsRanked: 0,
     listsPlayed: 0,
   });
+  const [protoTick, setProtoTick] = useState(0);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const fn = () => setProtoTick((n) => n + 1);
+    window.addEventListener(PROTOCOL_XP_UPDATED_EVENT, fn);
+    return () => window.removeEventListener(PROTOCOL_XP_UPDATED_EVENT, fn);
+  }, []);
+
+  const activityXp = useMemo(
+    () => (address ? getProtocolXpTotal(address) : 0),
+    [address, protoTick]
+  );
 
   useEffect(() => {
     if (!address) {
@@ -128,6 +143,7 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
       cancelled = true;
     };
   }, [address]);
+
   const myLc = address?.toLowerCase();
   const myRow = useMemo(
     () => (myLc ? players.find((p) => p.address === myLc) ?? null : null),
@@ -206,7 +222,7 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
                     }}
                   >
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 sm:gap-x-10 gap-y-3 text-left items-end">
-                      <div title="Synced placement among players with Arena XP">
+                      <div title={myRow ? 'Place on this leaderboard table' : 'Shown when your wallet appears in the table below'}>
                         <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500 block mb-0.5">
                           Your rank
                         </span>
@@ -231,12 +247,12 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
                         </span>
                       </div>
                       <div className="flex items-end gap-2 col-span-2 lg:col-span-1 justify-start lg:justify-end" title={HINT_XP}>
-                        <div>
+                        <div title={`Arena (indexer): ${myXpRec.xp.toLocaleString()} · Activity (this browser): ${activityXp.toLocaleString()}`}>
                           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-400/90 block mb-0.5">
-                            Arena XP
+                            Your XP
                           </span>
                           <span className="text-lg sm:text-xl font-black tabular-nums bg-clip-text text-transparent bg-gradient-to-br from-amber-200 via-amber-300 to-orange-400 leading-none">
-                            {myXpRec.xp.toLocaleString()}
+                            {(myXpRec.xp + activityXp).toLocaleString()}
                           </span>
                         </div>
                         <ArenaXpToken size={26} className="mb-0.5 shrink-0" />
@@ -278,8 +294,14 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
                 <div className="inline-flex h-16 w-16 items-center justify-center rounded-3xl mb-6 border border-fuchsia-500/30 bg-fuchsia-500/10 shadow-[0_0_40px_rgba(217,70,239,0.15)]">
                   <Sparkles className="text-fuchsia-300" size={30} />
                 </div>
-                <p className="text-white font-semibold text-lg mb-2">Nobody here yet</p>
-                <p className="text-sm text-slate-500 mb-8 max-w-sm mx-auto">Earn Arena XP, then reload.</p>
+                <p className="text-white font-semibold text-lg mb-2">No standings to show yet</p>
+                <p className="text-sm text-slate-400 mb-3 max-w-md mx-auto leading-relaxed">
+                  When your deployment serves a community leaderboard, ranked players will appear in this table.
+                </p>
+                <p className="text-xs text-slate-500 mb-8 max-w-lg mx-auto leading-relaxed">
+                  The card above still shows your wallet’s Arena-related totals from the Intuition indexer (on-chain
+                  history), plus any activity XP recorded in this browser—not this empty table.
+                </p>
                 <Link
                   to="/climb"
                   onClick={playClick}
@@ -418,7 +440,7 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
           </div>
 
           {players.length > 0 ? (
-            <p className="sr-only">Leaderboard includes up to thirty players; list and atom counts are from this browser.</p>
+            <p className="sr-only">Leaderboard shows up to thirty players from your configured leaderboard source.</p>
           ) : null}
         </>
       )}

@@ -1,9 +1,15 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { X, Loader2, Minus, Plus, FileText, Coins, Flame, Layers, Sparkles } from 'lucide-react';
+import { X, Loader2, Minus, Plus, FileText, Coins, Flame, Layers, Trash2 } from 'lucide-react';
 import { playClick } from '../services/audio';
 import type { ArenaPendingRow } from '../services/arenaPendingBatch';
+
+export type ArenaBatchModalRow = ArenaPendingRow & {
+  sourceListId: string;
+  /** List title from registry — shown when batch spans multiple lists. */
+  sourceListTitle?: string;
+};
 
 const CY = '#00f3ff';
 const MG = '#ff1e6d';
@@ -14,10 +20,12 @@ type Props = {
   themeShort: string;
   contextSuffix: string;
   stakeLabel: string;
-  rows: ArenaPendingRow[];
-  onUpdateUnits: (key: string, units: number) => void;
-  onToggleSupport: (key: string) => void;
-  onRemove: (key: string) => void;
+  rows: ArenaBatchModalRow[];
+  onUpdateUnits: (sourceListId: string, key: string, units: number) => void;
+  onToggleSupport: (sourceListId: string, key: string) => void;
+  onRemove: (sourceListId: string, key: string) => void;
+  /** Drops every queued row (after confirm); optional so older call sites stay valid. */
+  onClearAll?: () => void;
   onSubmit: () => void;
   submitting: boolean;
   /** True when stake × units is below curve minimum on any row — submit would revert. */
@@ -47,6 +55,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
   onUpdateUnits,
   onToggleSupport,
   onRemove,
+  onClearAll,
   onSubmit,
   submitting,
   depositBlocked = false,
@@ -54,8 +63,10 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
 }) => {
   const reduceMotion = useReducedMotion();
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   const requestClose = useCallback(() => {
+    setConfirmClearAll(false);
     onClose();
   }, [onClose]);
 
@@ -77,17 +88,26 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
   const rowsNeedAttention = depositBlocked || rows.some((r) => rowBelowMinimum(r.units));
 
   useEffect(() => {
+    if (!open) setConfirmClearAll(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (rows.length === 0) setConfirmClearAll(false);
+  }, [rows.length]);
+
+  useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         playClick();
-        requestClose();
+        if (confirmClearAll) setConfirmClearAll(false);
+        else requestClose();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, requestClose]);
+  }, [open, confirmClearAll, requestClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -128,6 +148,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
             role="dialog"
             aria-modal="true"
             aria-labelledby="arena-batch-title"
+            aria-describedby="arena-batch-desc"
             className="pointer-events-auto fixed right-[max(1rem,env(safe-area-inset-right,0px))] bottom-[calc(max(1rem,env(safe-area-inset-bottom,0px))+4.5rem)] z-10 w-[min(92vw,430px)] max-h-[min(74dvh,640px)] flex flex-col overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_0_0_1px_rgba(0,243,255,0.08),0_24px_80px_rgba(0,0,0,0.75),0_0_100px_rgba(0,243,255,0.12)]"
             style={{
               background: 'linear-gradient(165deg, rgba(8,12,24,0.98) 0%, rgba(5,6,14,0.99) 50%, rgba(16,4,12,0.97) 100%)',
@@ -146,7 +167,14 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
               aria-hidden
             />
 
-            <div className="relative flex items-start justify-between gap-2 px-4 pt-4 pb-3 border-b border-white/[0.06] shrink-0 z-10">
+            <p id="arena-batch-desc" className="sr-only">
+              {themeShort}. Base stake {stakeN.toFixed(2)} TRUST per line times weight multiplier.
+              {minDepositLabel
+                ? ` Each on-chain claim needs at least ${minDepositLabel} TRUST deposit (base times weight).`
+                : ''}
+            </p>
+
+            <div className="relative flex items-start justify-between gap-2 px-4 pt-3 pb-3 border-b border-white/[0.06] shrink-0 z-10">
               <div className="min-w-0 flex items-start gap-2.5">
                 <div
                   className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border"
@@ -162,19 +190,6 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                       {contextSuffix}
                     </span>
                   </h2>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed pr-1">
-                    <Sparkles className="inline w-3 h-3 mr-1 opacity-70" style={{ color: CY }} />
-                    {themeShort} — set TRUST weight per line ({stakeN.toFixed(2)} TRUST base × units).{' '}
-                    {minDepositLabel ? (
-                      <span className="text-amber-200/90">
-                        On-chain minimum{' '}
-                        <span className="font-bold text-amber-100">{minDepositLabel} TRUST</span> per claim (each row:
-                        base × units).
-                      </span>
-                    ) : (
-                      <>One confirm to write claim activity.</>
-                    )}
-                  </p>
                 </div>
               </div>
               <button
@@ -191,16 +206,75 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
               </button>
             </div>
 
+            {rows.length > 0 && onClearAll ? (
+              <div className="relative px-4 pb-2 shrink-0 z-10">
+                {confirmClearAll ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2.5">
+                    <span className="text-[11px] text-slate-300 pr-2">
+                      Remove all {rows.length} queued stance{rows.length === 1 ? '' : 's'}?
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playClick();
+                          setConfirmClearAll(false);
+                        }}
+                        className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-slate-300 border border-white/15 hover:bg-white/[0.06] disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playClick();
+                          setConfirmClearAll(false);
+                          onClearAll();
+                        }}
+                        className="rounded-lg px-2.5 py-1 text-[11px] font-semibold bg-rose-600/90 text-white border border-rose-400/45 hover:bg-rose-600 disabled:opacity-40"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        playClick();
+                        setConfirmClearAll(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold
+                    text-slate-400 hover:text-rose-300 border border-transparent hover:border-rose-500/35 hover:bg-rose-500/10
+                    disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                      aria-label={`Clear all ${rows.length} queued stances`}
+                    >
+                      <Trash2 size={13} strokeWidth={2.2} aria-hidden />
+                      Clear all
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2.5 z-10 custom-scrollbar">
               {rows.length === 0 ? (
-                <p className="text-center text-sm text-slate-500 py-10">Queue stances from the run first.</p>
+                <p className="text-center text-sm text-slate-500 py-10">Nothing queued.</p>
               ) : (
                 rows.map((row) => {
                   const lineTrust = stakeN * row.units;
                   const belowMin = rowBelowMinimum(row.units);
+                  const rowKey = `${row.sourceListId}:${row.key}`;
                   return (
                     <div
-                      key={row.key}
+                      key={rowKey}
                       className={`rounded-xl border backdrop-blur-md px-2.5 py-2.5 flex flex-col gap-2 ${
                         belowMin ? 'border-amber-500/55 bg-amber-500/[0.08]' : 'border-white/[0.08] bg-white/[0.04]'
                       }`}
@@ -212,7 +286,12 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[13px] font-semibold text-white leading-snug line-clamp-2">{row.item.label}</p>
-                          <p className="text-[9px] text-slate-500 mt-0.5 font-mono truncate">{row.item.pairKind}</p>
+                          <p className="text-[9px] text-slate-500 mt-0.5 font-mono truncate">
+                            {row.item.pairKind}
+                            {row.sourceListTitle ? (
+                              <span className="text-slate-600"> · {row.sourceListTitle}</span>
+                            ) : null}
+                          </p>
                           <p className="text-[10px] font-mono font-bold mt-1.5" style={{ color: CY }}>
                             {lineTrust.toFixed(2)} TRUST
                             {belowMin ? (
@@ -230,7 +309,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                             type="button"
                             onClick={() => {
                               playClick();
-                              onToggleSupport(row.key);
+                              onToggleSupport(row.sourceListId, row.key);
                             }}
                             className="rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-wide"
                             style={
@@ -245,7 +324,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                             type="button"
                             onClick={() => {
                               playClick();
-                              onRemove(row.key);
+                              onRemove(row.sourceListId, row.key);
                             }}
                             className="p-1 rounded-md text-slate-500 hover:text-rose-300 hover:bg-rose-500/10"
                             aria-label="Remove from batch"
@@ -259,9 +338,9 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                         <button
                           type="button"
                           disabled={row.units <= 1}
-                          onClick={() => {
+                            onClick={() => {
                             playClick();
-                            onUpdateUnits(row.key, Math.max(1, row.units - 1));
+                            onUpdateUnits(row.sourceListId, row.key, Math.max(1, row.units - 1));
                           }}
                           className="h-8 w-8 rounded-lg border border-white/15 bg-black/50 text-slate-200 disabled:opacity-35 flex items-center justify-center"
                         >
@@ -271,9 +350,9 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                         <button
                           type="button"
                           disabled={row.units >= 99}
-                          onClick={() => {
+                            onClick={() => {
                             playClick();
-                            onUpdateUnits(row.key, Math.min(99, row.units + 1));
+                            onUpdateUnits(row.sourceListId, row.key, Math.min(99, row.units + 1));
                           }}
                           className="h-8 w-8 rounded-lg border border-white/15 bg-black/50 text-slate-200 disabled:opacity-35 flex items-center justify-center"
                         >
@@ -287,11 +366,10 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
             </div>
 
             {rowsNeedAttention && minDepositLabel ? (
-              <div className="mx-3 mb-2 shrink-0 z-10 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2.5">
-                <p className="text-[11px] text-amber-50 leading-snug">
-                  Protocol requires <strong className="text-white">{minDepositLabel} TRUST minimum</strong> vault deposit{' '}
-                  <em className="not-italic text-amber-200/95">for each written claim</em> — base stake × units on that row.{' '}
-                  Increase the stake preset in Quick controls or add units until every line clears the minimum.
+              <div className="mx-3 mb-2 shrink-0 z-10 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2">
+                <p className="text-[11px] text-amber-100/95 leading-snug">
+                  Each row needs <span className="font-bold text-white">≥ {minDepositLabel} TRUST</span> (raise stake or
+                  weight).
                 </p>
               </div>
             ) : null}
@@ -313,15 +391,12 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                 {submitting ? (
                   <>
                     <Loader2 className="animate-spin" size={18} />
-                    Sending transaction…
+                    Sending…
                   </>
                 ) : (
-                  <>Confirm send · {trustTotal.toFixed(2)} TRUST total</>
+                  <>Confirm · {trustTotal.toFixed(2)} TRUST</>
                 )}
               </button>
-              <p className="text-[9px] text-center text-slate-500 mt-2">
-                Batched write to Intuition claim activity (or per-row fallback if terms need label resolution).
-              </p>
             </div>
           </motion.div>
         </motion.div>

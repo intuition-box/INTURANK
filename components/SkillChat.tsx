@@ -42,6 +42,7 @@ import { maybeFetchSkillLiveContext } from '../services/skillLiveContext';
 import { logSkillEvent } from '../services/skillTelemetry';
 import { toast } from './Toast';
 import { playClick, playHover } from '../services/audio';
+import { notifyProtocolXpEarned, protocolXpAmountFor } from '../services/protocolXp';
 
 type TxBroadcastOutcome = 'pending' | 'success' | 'rejected' | 'failed';
 
@@ -602,6 +603,12 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                     (msg) => toast.info(msg)
                 );
                 toast.success("Triple broadcast confirmed.");
+                notifyProtocolXpEarned({
+                  address,
+                  amount: protocolXpAmountFor('skill_onchain'),
+                  reasonKey: 'skill_onchain',
+                  txHash: result.tripleHash,
+                });
                 logSkillEvent({
                     level: 'info',
                     event: 'skill.tx.success',
@@ -731,6 +738,30 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         try {
             const hash = await broadcastTransaction(address, to as `0x${string}`, valueWei, dataRaw as `0x${string}`);
             toast.success("Transaction broadcasted!");
+            if (targetsFeeProxy) {
+              if (action === 'deposit') {
+                notifyProtocolXpEarned({
+                  address,
+                  amount: protocolXpAmountFor('market_acquire'),
+                  reasonKey: 'market_acquire',
+                  txHash: hash,
+                });
+              } else if (action === 'createAtoms') {
+                notifyProtocolXpEarned({
+                  address,
+                  amount: protocolXpAmountFor('create_atom'),
+                  reasonKey: 'create_atom',
+                  txHash: hash,
+                });
+              } else if (action === 'createTriples') {
+                notifyProtocolXpEarned({
+                  address,
+                  amount: protocolXpAmountFor('create_claim'),
+                  reasonKey: 'create_claim',
+                  txHash: hash,
+                });
+              }
+            }
             logSkillEvent({
                 level: 'info',
                 event: 'skill.tx.success',

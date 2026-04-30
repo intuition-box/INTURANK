@@ -8,7 +8,8 @@ import { useAccount } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { createSemanticTriple, getConnectedAccount, getProxyApprovalStatus, grantProxyApproval, markProxyApproved } from '../services/web3';
-import { LIST_PREDICATE_ID } from '../constants';
+import { LIST_PREDICATE_ID, PROTOCOL_XP_ADD_TO_LIST } from '../constants';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 import { playClick, playHover } from '../services/audio';
 import { toast } from './Toast';
 import TransactionModal from './TransactionModal';
@@ -118,6 +119,14 @@ const AddToListModal: React.FC<AddToListModalProps> = ({ isOpen, listId, listLab
           addLog
         );
         lastHash = typeof hash === 'string' ? hash : undefined;
+        if (lastHash) {
+          notifyProtocolXpEarned({
+            address: acc,
+            amount: PROTOCOL_XP_ADD_TO_LIST,
+            reasonKey: 'add_to_list',
+            txHash: lastHash,
+          });
+        }
         addLog(`Triple created: ${String(hash).slice(0, 10)}…`);
       }
       markProxyApproved(acc);
