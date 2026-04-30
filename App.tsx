@@ -1,6 +1,6 @@
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ARENA_ENABLED, MAINTENANCE_MODE } from './constants';
+import { ARENA_UI_VISIBLE, MAINTENANCE_MODE } from './constants';
 import Maintenance from './pages/Maintenance';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -56,7 +56,10 @@ const rainbowKitTheme: Theme = (() => {
 })();
 import { EmailNotifyProvider } from './contexts/EmailNotifyContext';
 import Layout from './components/Layout';
+import MobileLayout from './components/MobileLayout';
+import { useIsMobile } from './hooks/useIsMobile';
 import Home from './pages/Home';
+import MobileHome from './pages/MobileHome';
 import Stats from './pages/Stats';
 import Markets from './pages/Markets';
 import MarketDetail from './pages/MarketDetail';
@@ -72,6 +75,7 @@ import SendTrust from './pages/SendTrust';
 import SkillPlayground from './pages/SkillPlayground';
 import RankedList from './pages/RankedList';
 import ArenaPlaceholder from './pages/ArenaPlaceholder';
+import Compare from './pages/Compare';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 
@@ -85,6 +89,55 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * AppRoutes — runtime chrome + routes. Lives inside the Router so we can
+ * read the viewport via `useIsMobile()` and pick the matching layout +
+ * landing page. Desktop bundle/markup stays identical to before; mobile
+ * users get `MobileLayout` (with bottom dock + nav sheet) and `MobileHome`.
+ */
+const AppRoutes: React.FC = () => {
+  const isMobile = useIsMobile();
+  const Shell = isMobile ? MobileLayout : Layout;
+  const Landing = isMobile ? MobileHome : Home;
+
+  return (
+    <Shell>
+      <ToastContainer />
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/agents" element={<Navigate to="/markets" replace />} />
+        <Route path="/agents/:id" element={<Navigate to="/markets/:id" replace />} />
+
+        <Route path="/portfolio" element={<Portfolio />} />
+        <Route path="/account" element={<Account />} />
+        <Route path="/profile/:address" element={<PublicProfile />} />
+        <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} />
+
+        <Route path="/stats" element={<Stats />} />
+        <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
+        <Route path="/markets/atoms" element={<Markets />} />
+        <Route path="/markets/triples" element={<Markets />} />
+        <Route path="/markets/lists" element={<Markets />} />
+        <Route path="/markets/:id" element={<MarketDetail />} />
+        <Route path="/feed" element={<Feed />} />
+        <Route path="/health" element={<KPIDashboard />} />
+        <Route path="/documentation" element={<Documentation />} />
+        <Route path="/skill-playground" element={<SkillPlayground />} />
+
+        {/* New Features */}
+        <Route path="/compare" element={<Compare />} />
+        <Route path="/coming-soon" element={<ComingSoon />} />
+        <Route path="/create" element={<CreateSignal />} />
+        <Route path="/send-trust" element={<SendTrust />} />
+        <Route
+          path="/climb"
+          element={ARENA_UI_VISIBLE ? <RankedList /> : <ArenaPlaceholder />}
+        />
+      </Routes>
+    </Shell>
+  );
+};
 
 const App: React.FC = () => {
   if (MAINTENANCE_MODE) {
@@ -108,40 +161,7 @@ const App: React.FC = () => {
           >
             <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <EmailNotifyProvider>
-                <Layout>
-          <ToastContainer />
-          <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/agents" element={<Navigate to="/markets" replace />} />
-          <Route path="/agents/:id" element={<Navigate to="/markets/:id" replace />} />
-          
-          <Route path="/portfolio" element={<Portfolio />} />
-          <Route path="/account" element={<Account />} />
-          <Route path="/profile/:address" element={<PublicProfile />} />
-          <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} /> 
-          
-          <Route path="/stats" element={<Stats />} />
-          <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
-          <Route path="/markets/atoms" element={<Markets />} />
-          <Route path="/markets/triples" element={<Markets />} />
-          <Route path="/markets/lists" element={<Markets />} />
-          <Route path="/markets/:id" element={<MarketDetail />} />
-          <Route path="/feed" element={<Feed />} />
-          <Route path="/health" element={<KPIDashboard />} />
-          <Route path="/documentation" element={<Documentation />} />
-          <Route path="/skill-playground" element={<SkillPlayground />} />
-          
-          {/* New Features */}
-          <Route path="/compare" element={<Navigate to="/climb" replace />} />
-          <Route path="/coming-soon" element={<ComingSoon />} />
-          <Route path="/create" element={<CreateSignal />} />
-          <Route path="/send-trust" element={<SendTrust />} />
-          <Route
-            path="/climb"
-            element={ARENA_ENABLED ? <RankedList /> : <ArenaPlaceholder />}
-          />
-          </Routes>
-                </Layout>
+                <AppRoutes />
                 <EmailNotifyModal />
               </EmailNotifyProvider>
             </Router>

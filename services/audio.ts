@@ -167,3 +167,34 @@ export const playSuccess = () => {
     // Silent fail
   }
 };
+
+/** Soft two-tone chime for XP / reward feedback — gentler than `playSuccess`. */
+export const playXpChime = () => {
+  if (!getSoundEnabled()) return;
+  try {
+    const ctx = initAudio();
+    if (!ctx || !masterGain || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const bell = ctx.createGain();
+    bell.gain.value = 0.09;
+    bell.connect(masterGain);
+
+    const freqs = [880, 1174.66];
+    freqs.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      const start = t + i * 0.09;
+      osc.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(0.45, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.002, start + 0.55);
+      osc.connect(g);
+      g.connect(bell);
+      osc.start(start);
+      osc.stop(start + 0.58);
+    });
+  } catch {
+    /* ignore */
+  }
+};

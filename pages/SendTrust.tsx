@@ -4,9 +4,10 @@ import { useAccount, useBalance } from 'wagmi';
 import { parseEther, formatEther, isAddress } from 'viem';
 import { Send, Coins, ArrowLeft, Loader2, AlertTriangle, User, CheckCircle2, ExternalLink, Copy } from 'lucide-react';
 import { resolveENS, sendNativeTransfer } from '../services/web3';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
-import { CHAIN_ID, EXPLORER_URL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
+import { CHAIN_ID, EXPLORER_URL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY, PROTOCOL_XP_SEND_TRUST } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 
 const SendTrust: React.FC = () => {
@@ -110,6 +111,12 @@ const SendTrust: React.FC = () => {
         resolvedAddress as `0x${string}`,
         value
       );
+      notifyProtocolXpEarned({
+        address: walletAddress,
+        amount: PROTOCOL_XP_SEND_TRUST,
+        reasonKey: 'send_trust',
+        txHash: hash,
+      });
       setConfirmedAmountTrust(formatEther(value));
       setAmountInput('');
       refetchBalance();

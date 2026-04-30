@@ -1,7 +1,53 @@
 export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
 
-/** `VITE_ARENA_ENABLED=true` → full Arena at `/climb`. Otherwise `/climb` shows a coming-soon placeholder (nav unchanged). */
+/** `VITE_ARENA_ENABLED=true` → Arena route can render the real UI (see `ARENA_PLACEHOLDER`). */
 export const ARENA_ENABLED = import.meta.env.VITE_ARENA_ENABLED === 'true';
+
+/**
+ * `VITE_ARENA_PLACEHOLDER=true` → `/climb` always shows the public “coming soon” card (hides in-progress Arena UI).
+ * Omit or `false` → with `VITE_ARENA_ENABLED=true`, `/climb` renders the full Arena (`RankedList`).
+ */
+export const ARENA_PLACEHOLDER = import.meta.env.VITE_ARENA_PLACEHOLDER === 'true';
+
+/** True when `/climb` renders the full Arena (`RankedList`), not the public coming-soon card. */
+export const ARENA_UI_VISIBLE = ARENA_ENABLED && !ARENA_PLACEHOLDER;
+
+/**
+ * `VITE_ARENA_BATCH_MODE=false` → send TRUST on every yes/no (legacy).
+ * Omitted or any other value → curate in-app first, then one transfer when you submit the batch.
+ */
+export const ARENA_BATCH_MODE = import.meta.env.VITE_ARENA_BATCH_MODE !== 'false';
+
+/** Minimum Arena XP per ranking gesture; awards scale with stake but never dip below this. */
+export const ARENA_XP_PER_RANK_PICK = 25;
+
+/** On-device “activity” XP for successful protocol actions (mirrors optional via `VITE_ARENA_LEADERBOARD_URL`). */
+export const PROTOCOL_XP_MARKET_ACQUIRE = 50;
+export const PROTOCOL_XP_CREATE_ATOM = 45;
+export const PROTOCOL_XP_CREATE_CLAIM = 45;
+/** List-triple (add atom to list) — still a proxy triple, slightly below a free-form claim. */
+export const PROTOCOL_XP_ADD_TO_LIST = 40;
+export const PROTOCOL_XP_SEND_TRUST = 8;
+/** One award per successful Skill `tripleFromLabels` pipeline (atoms + triple txs). */
+export const PROTOCOL_XP_SKILL_TRIPLE = 45;
+
+/**
+ * When set (positive integer chain block), portfolio + personal Arena XP ignore triples older than this `block_number`.
+ * Cuts unrelated Intuition list activity that predates your Arena rollout (predicates match other apps too).
+ */
+export const ARENA_ATTRIBUTION_MIN_BLOCK: number | null = (() => {
+  const s = String(import.meta.env.VITE_ARENA_ATTRIBUTION_MIN_BLOCK ?? '').trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
+})();
+
+/**
+ * When true, leaderboard scans all portal-shaped list triples on the indexer → every Intuition portal user qualifies.
+ * Default OFF — use GET `VITE_ARENA_LEADERBOARD_URL` for an IntuRank-only board.
+ */
+export const ARENA_USE_GLOBAL_GRAPH_LEADERBOARD =
+  String(import.meta.env.VITE_ARENA_USE_GLOBAL_GRAPH_LEADERBOARD ?? '').trim() === 'true';
 
 /** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
 export const getGeminiApiKey = (): string => {

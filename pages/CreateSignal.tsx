@@ -10,9 +10,10 @@ import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
 import { formatEther } from 'viem';
-import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
+import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL, PAGE_HERO_TITLE, PAGE_HERO_BODY, PROTOCOL_XP_CREATE_ATOM, PROTOCOL_XP_CREATE_CLAIM } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue } from '../services/analytics';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 
 type View = 'root' | 'identity_choice' | 'identity_manual' | 'identity_review' | 'claim' | 'claim_review' | 'construct_atom' | 'sdk' | 'manual_pathway' | 'establish_synapse' | 'ingress';
 
@@ -212,6 +213,12 @@ const CreateSignal: React.FC = () => {
         setReturnToSynapseSlot(null);
       }
       setSuccessModal({ termId: termId ?? null, type: 'atom', txHash: atomTxHash });
+      notifyProtocolXpEarned({
+        address: account,
+        amount: PROTOCOL_XP_CREATE_ATOM,
+        reasonKey: 'create_atom',
+        txHash: atomTxHash,
+      });
       toast.success('ATOM_ESTABLISHED');
     } catch (err: any) {
       toast.error((err?.message || 'GENESIS_FAILED').slice(0, 120));
@@ -241,6 +248,12 @@ const CreateSignal: React.FC = () => {
       const synapseTxHash = await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account);
       markProxyApproved(account);
       setSuccessModal({ termId: termId as Hex, type: 'synapse', txHash: synapseTxHash });
+      notifyProtocolXpEarned({
+        address: account,
+        amount: PROTOCOL_XP_CREATE_CLAIM,
+        reasonKey: 'create_claim',
+        txHash: synapseTxHash,
+      });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');
@@ -493,8 +506,13 @@ const CreateSignal: React.FC = () => {
       setImageFile(null);
       if (termId) setLastTermId(termId as Hex);
       setSuccessModal({ termId: termId ?? null, type: 'atom', txHash: atomTxHash });
+      notifyProtocolXpEarned({
+        address: account,
+        amount: PROTOCOL_XP_CREATE_ATOM,
+        reasonKey: 'create_atom',
+        txHash: atomTxHash,
+      });
       toast.success('ATOM_ESTABLISHED');
-      setView('root');
     } catch (err: any) {
       toast.error((err?.message || 'GENESIS_FAILED').slice(0, 120));
     } finally {
@@ -525,6 +543,12 @@ const CreateSignal: React.FC = () => {
       const synapseTxHash = await createSemanticTriple(subjectId, predicateId, objectId, depositAmount, account, undefined, claimReviewBypassValidation);
       markProxyApproved(account);
       setSuccessModal({ termId: termId as Hex, type: 'synapse', txHash: synapseTxHash });
+      notifyProtocolXpEarned({
+        address: account,
+        amount: PROTOCOL_XP_CREATE_CLAIM,
+        reasonKey: 'create_claim',
+        txHash: synapseTxHash,
+      });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
       setSubjectLabel('');

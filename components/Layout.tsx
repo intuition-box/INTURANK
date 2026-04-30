@@ -13,6 +13,8 @@ import { toast } from './Toast';
 import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
 import { mergeFollowsFromServer } from '../services/follows';
 import ProfileBadgeWidget from './ProfileBadgeWidget';
+import ArenaBatchFab from './ArenaBatchFab';
+import { ARENA_BATCH_MODE } from '../constants';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -35,7 +37,7 @@ const MAIN_NAV_ITEMS: Array<{
   { label: 'INTUITION_SKILL', path: '/skill-playground', icon: <Cpu size={18} strokeWidth={2} /> },
 ];
 
-const VERSUS_NAV_ITEMS = [{ label: 'BATTLEGROUND', path: '/climb', icon: <Swords size={18} strokeWidth={2} /> }];
+const VERSUS_NAV_ITEMS = [{ label: 'BATTLEGROUND', path: '/compare', icon: <Swords size={18} strokeWidth={2} /> }];
 
 const EXPLORE_NAV_ITEMS: Array<{
   label: string;
@@ -764,6 +766,8 @@ style={{
             {children}
           </div>
         </main>
+
+        {ARENA_BATCH_MODE && <ArenaBatchFab />}
 
         <footer className="border-t border-white/5 bg-[#020308] py-12 md:py-24 mt-auto z-20 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-intuition-primary/[0.04] to-transparent pointer-events-none" />

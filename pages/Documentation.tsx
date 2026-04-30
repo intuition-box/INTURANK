@@ -30,6 +30,7 @@ import {
   APP_VERSION,
   APP_VERSION_DISPLAY,
   ARENA_ENABLED,
+  ARENA_UI_VISIBLE,
   CHAIN_ID,
   CURRENCY_SYMBOL,
   EXPLORER_URL,
@@ -1004,7 +1005,7 @@ const Documentation: React.FC = () => {
                 <Activity className="w-5 h-5 text-intuition-secondary shrink-0" aria-hidden />
                 Arena (Climb)
               </h3>
-              {ARENA_ENABLED ? (
+              {ARENA_UI_VISIBLE ? (
                 <p>
                   <strong className="text-slate-100 font-semibold">The Arena</strong> (
                   <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>, nav{' '}
@@ -1022,10 +1023,11 @@ const Documentation: React.FC = () => {
               ) : (
                 <p>
                   <strong className="text-slate-100 font-semibold">The Arena</strong> route (
-                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>) is only fully live
-                  when this deployment has turned the feature on. Otherwise the nav may still show{' '}
-                  <strong className="text-slate-100 font-semibold">THE ARENA</strong>, but you may see a coming-soon screen
-                  until the operator enables it.
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>) may show a
+                  coming-soon screen when the feature is not enabled, or when{' '}
+                  <code className="text-xs bg-white/5 px-1 py-0.5 rounded text-slate-300">VITE_ARENA_PLACEHOLDER=true</code>{' '}
+                  masks the work-in-progress UI. The nav can still list{' '}
+                  <strong className="text-slate-100 font-semibold">THE ARENA</strong> while the full surface is hidden.
                 </p>
               )}
 
@@ -1049,6 +1051,7 @@ const Documentation: React.FC = () => {
                     to="/climb"
                     onClick={playClick}
                     className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white"
+                    title={ARENA_UI_VISIBLE ? undefined : 'Route may show coming-soon'}
                   >
                     Arena <ChevronRight className="w-4 h-4" />
                   </Link>
@@ -1224,7 +1227,7 @@ const Documentation: React.FC = () => {
                     Intuition Skill Playground
                   </Link>{' '}
                   under Intel for Gemini-assisted transactions
-                  {ARENA_ENABLED ? (
+                  {ARENA_UI_VISIBLE ? (
                     <>
                       {', and '}
                       <Link to="/climb" onClick={playClick} className="text-intuition-primary hover:underline font-medium">

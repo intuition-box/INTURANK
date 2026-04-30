@@ -36,6 +36,7 @@ import {
 } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { PageLoadingSpinner } from '../components/PageLoading';
+import ArenaMyRankingsPanel from '../components/ArenaMyRankingsPanel';
 import { Link } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import logo from '../logo.png';
@@ -685,6 +686,8 @@ const Portfolio: React.FC = () => {
         </div>
       </div>
       </div>
+
+      <ArenaMyRankingsPanel wallet={account} />
 
       {sharePosition && (
         <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/80 backdrop-blur-md px-4 pt-20 sm:pt-28">

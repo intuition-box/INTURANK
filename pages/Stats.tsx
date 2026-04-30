@@ -9,13 +9,14 @@ import { playHover, playClick } from '../services/audio';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { formatMarketValue, isSystemVerified } from '../services/analytics';
-import { CURRENCY_SYMBOL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
+import { CURRENCY_SYMBOL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { PageLoading } from '../components/PageLoading';
 import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
+import IntuRankRankersLeaderboard from '../components/IntuRankRankersLeaderboard';
 import { computeClaimEntropyScore } from '../services/statsClaimEntropy';
 
-type LeaderboardType = 'STAKERS' | 'SEASON_2' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
+type LeaderboardType = 'STAKERS' | 'SEASON_2' | 'RANKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
 
 interface LeaderboardEntry {
   rank: number;
@@ -36,12 +37,14 @@ const PNL_CACHE_MS = 5 * 60 * 1000; // 5 minutes (memory + sessionStorage)
 const PNL_STORAGE_KEY = 'inturank_stats_pnl_lb_v1';
 const PNL_FETCH_LIMIT = 20;
 
-const VALID_LB_TABS: LeaderboardType[] = ['SEASON_2', 'STAKERS', 'PNL', 'AGENTS_SUPPORT', 'AGENTS_CONTROVERSY', 'CLAIMS'];
+const VALID_LB_TABS: LeaderboardType[] = ['RANKERS', 'SEASON_2', 'STAKERS', 'PNL', 'AGENTS_SUPPORT', 'AGENTS_CONTROVERSY', 'CLAIMS'];
 
 function parseTabParam(searchParams: URLSearchParams): LeaderboardType {
   const raw = searchParams.get('tab');
   if (!raw) return 'SEASON_2';
-  if (raw.toLowerCase() === 'season2') return 'SEASON_2';
+  const lower = raw.toLowerCase();
+  if (lower === 'season2') return 'SEASON_2';
+  if (lower === 'rankers' || lower === 'inturank' || lower === 'arena') return 'RANKERS';
   const u = raw.toUpperCase() as LeaderboardType;
   if (VALID_LB_TABS.includes(u)) return u;
   return 'SEASON_2';
@@ -49,6 +52,7 @@ function parseTabParam(searchParams: URLSearchParams): LeaderboardType {
 
 function tabParamForLeaderboard(tab: LeaderboardType): string {
   if (tab === 'SEASON_2') return 'season2';
+  if (tab === 'RANKERS') return 'rankers';
   return tab.toLowerCase();
 }
 
@@ -175,7 +179,9 @@ const Stats: React.FC = () => {
   }, [data, loading, activeTab]);
 
   const fetchData = async () => {
-    if (activeTab === 'SEASON_2') {
+    if (activeTab === 'SEASON_2' || activeTab === 'RANKERS') {
+      // SEASON_2 and RANKERS render their own self-contained components
+      // and do not use the shared `data` state.
       setLoading(false);
       setError(false);
       setData([]);
@@ -543,32 +549,22 @@ const Stats: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#020308] pt-24 pb-40 relative overflow-x-hidden min-w-0 w-full font-mono selection:bg-intuition-primary selection:text-black">
+    <div className="min-h-screen pt-16 md:pt-20 pb-32 md:pb-40 relative overflow-x-hidden min-w-0 w-full bg-[#020308] font-mono selection:bg-intuition-primary selection:text-black">
       {/* HUD OVERLAY EFFECTS */}
       <div className="fixed inset-0 pointer-events-none z-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]"></div>
       <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-intuition-primary/5 rounded-full blur-[150px] animate-pulse pointer-events-none"></div>
       
       <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 relative z-10 min-w-0">
         
-        {/* Header */}
-        <div className="text-center mb-16 max-w-3xl mx-auto space-y-3">
-          <p className={PAGE_HERO_EYEBROW}>Rankings &amp; reputation</p>
-          <h1 className={PAGE_HERO_TITLE}>Leaderboards</h1>
-          <p className={PAGE_HERO_BODY}>
-            <span className="text-amber-200/95 font-sans font-semibold normal-case tracking-tight">
-              Season 2 is the featured competition right now
-            </span>
-            {' — '}
-            explore epochs and champions, then browse classic network rankings below.
-          </p>
-          <div className="flex items-center justify-center gap-2 pt-2 text-intuition-primary">
-            <Trophy size={18} className="shrink-0" aria-hidden />
-            <span className="text-sm font-sans text-slate-400">Other tabs: stakers, PnL, support, claims.</span>
+        {/* Header + tabs — tight vertical rhythm, full-width tab strip */}
+        <div className="mb-10 md:mb-12 flex flex-col gap-5 md:gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 border-b border-slate-800/90 pb-4 md:pb-5">
+            <h1 className="text-left text-3xl sm:text-4xl md:text-5xl font-black font-display tracking-[0.12em] text-white uppercase drop-shadow-[0_0_24px_rgba(255,255,255,0.08)] leading-none">
+              Leaderboards
+            </h1>
           </div>
-        </div>
 
-        {/* Navigation Tabs — Season 2 featured first (default tab) */}
-        <div className="flex flex-wrap justify-center gap-3 mb-16 bg-black/40 p-2 border-2 border-slate-900 clip-path-slant backdrop-blur-xl relative z-20 shadow-2xl">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 bg-black/40 p-2 border-2 border-slate-900 clip-path-slant backdrop-blur-xl relative z-20 shadow-xl w-full [&_button]:w-full [&_button]:justify-center">
             {(
               [
                 {
@@ -577,19 +573,25 @@ const Stats: React.FC = () => {
                   label: 'SEASON 2',
                   color: 'bg-amber-400',
                   text: 'text-black',
-                  glow: 'shadow-[0_0_28px_rgba(251,191,36,0.55)]',
-                  featured: true,
+                  glow: 'shadow-[0_0_16px_rgba(251,191,36,0.35)]',
                 },
-                { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-glow-blue' },
-                { id: 'PNL', icon: TrendingUp, label: 'TOP PNL', color: 'bg-amber-500', text: 'text-black', glow: 'shadow-[0_0_25px_rgba(245,158,11,0.4)]' },
-                { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_25px_#00ff9d]' },
-                { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'Claim entropy', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-glow-red' },
-                { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-glow-purple' },
+                {
+                  id: 'RANKERS',
+                  icon: Crown,
+                  label: 'INTURANK · RANKERS',
+                  color: 'bg-intuition-primary',
+                  text: 'text-black',
+                  glow: 'shadow-[0_0_16px_rgba(0,243,255,0.32)]',
+                },
+                { id: 'STAKERS', icon: Users, label: 'TOP STAKERS', color: 'bg-intuition-primary', text: 'text-black', glow: 'shadow-[0_0_14px_rgba(56,189,248,0.35)]' },
+                { id: 'PNL', icon: TrendingUp, label: 'TOP PNL', color: 'bg-amber-500', text: 'text-black', glow: 'shadow-[0_0_14px_rgba(245,158,11,0.35)]' },
+                { id: 'AGENTS_SUPPORT', icon: Shield, label: 'MOST SUPPORTED', color: 'bg-intuition-success', text: 'text-black', glow: 'shadow-[0_0_14px_rgba(74,222,128,0.35)]' },
+                { id: 'AGENTS_CONTROVERSY', icon: Flame, label: 'Claim entropy', color: 'bg-intuition-danger', text: 'text-white', glow: 'shadow-[0_0_14px_rgba(248,113,113,0.32)]' },
+                { id: 'CLAIMS', icon: Activity, label: 'TOP CLAIMS', color: 'bg-[#a855f7]', text: 'text-white', glow: 'shadow-[0_0_14px_rgba(167,139,250,0.35)]' },
               ] as const
             ).map((tab) => {
                 const isActive = activeTab === tab.id;
                 const Icon = tab.icon;
-                const featured = 'featured' in tab && tab.featured;
 
                 return (
                     <button 
@@ -610,27 +612,18 @@ const Stats: React.FC = () => {
                           );
                         }}
                         onMouseEnter={playHover}
-                        className={`relative min-h-[44px] px-4 sm:px-6 md:px-8 py-3 sm:py-4 border-2 clip-path-slant font-black font-display text-xs tracking-[0.2em] transition-all duration-300 flex items-center gap-3 group ${
+                        className={`relative min-h-[44px] px-3 sm:px-4 md:px-6 py-3 sm:py-3.5 border-2 clip-path-slant font-black font-display text-[10px] sm:text-xs tracking-[0.14em] sm:tracking-[0.18em] transition-all duration-300 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-center leading-tight group ${
                             isActive 
                             ? `${tab.color} ${tab.text} ${tab.glow} border-transparent`
-                            : featured
-                              ? 'bg-black/50 border-amber-500/45 text-amber-100/90 hover:text-white hover:border-amber-400/70 ring-1 ring-amber-500/20'
-                              : 'bg-black/40 border-slate-800 text-slate-500 hover:text-white hover:border-white/40'
+                            : 'bg-black/40 border-slate-800 text-slate-500 hover:text-white hover:border-white/40'
                         }`}
                     >
-                        {featured && (
-                          <span
-                            className="absolute -top-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-sm bg-gradient-to-r from-orange-500 to-amber-400 text-[9px] font-black uppercase tracking-[0.2em] text-black shadow-[0_0_12px_rgba(251,146,60,0.6)] pointer-events-none"
-                            aria-hidden
-                          >
-                            Hot
-                          </span>
-                        )}
-                        <Icon size={16} className={isActive ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'} /> 
-                        {tab.label}
+                        <Icon size={16} className={isActive ? '' : 'group-hover:scale-110 transition-transform shrink-0'} /> 
+                        <span className="break-words hyphens-none">{tab.label}</span>
                     </button>
                 );
             })}
+        </div>
         </div>
 
         {/* SEARCH BAR - COMMAND LINE STYLE */}
@@ -783,7 +776,11 @@ const Stats: React.FC = () => {
         )}
 
         {/* Content Area */}
-        {activeTab === 'SEASON_2' ? (
+        {activeTab === 'RANKERS' ? (
+          <div className="relative z-10 max-w-[min(1680px,calc(100vw-48px))] mx-auto w-full py-8 md:py-10 animate-in fade-in duration-500">
+            <IntuRankRankersLeaderboard />
+          </div>
+        ) : activeTab === 'SEASON_2' ? (
           <div className="max-w-6xl mx-auto w-full animate-in fade-in duration-500">
             <Season2LeaderboardPanel />
           </div>

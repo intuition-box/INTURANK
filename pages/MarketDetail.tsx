@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog } from 'lucide-react';
+import { Activity, Shield, ArrowLeft, ArrowRight, User, Star, Network, ArrowUpRight, Loader2, Zap, Info, Share2, Fingerprint, ChevronRight, ChevronDown, Clock, Users, Layers, ExternalLink, Search, List as ListIcon, Globe, Compass, MessageSquare, Link as LinkIcon, Box, Database, Plus, UserPlus, Share, Hash, Radio, ScanSearch, Target, Upload, Boxes, X, Download, Twitter, Copy, TrendingUp, ShieldAlert, UserCircle, BadgeCheck, UserCog, Swords } from 'lucide-react';
 import { getAgentById, getAgentTriples, getAgentTriplesWithVaults, getMarketActivity, getHoldersForVault, getAtomInclusionListsWithVaults, getIdentitiesEngaged, getUserPositions, getIncomingTriplesForStats, getOppositionTriple, getVaultsForTerm, getCurveLabel, type VaultByCurve } from '../services/graphql';
 import { depositToVault, redeemFromVault, connectWallet, getConnectedAccount, getWalletBalance, getShareBalanceEffective, toggleWatchlist, isInWatchlist, parseProtocolError, getProxyApprovalStatus, grantProxyApproval, saveLocalTransaction, getLocalTransactions, getQuoteRedeem, publicClient, calculateTripleId, calculateCounterTripleId } from '../services/web3';
 import { Account, Triple, Transaction } from '../types';
@@ -11,9 +11,20 @@ import { toast } from '../components/Toast';
 import TransactionModal from '../components/TransactionModal';
 import CreateModal from '../components/CreateModal';
 import { playClick, playSuccess, playHover } from '../services/audio';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
+import { portalListIdFromTermId } from '../services/arenaListsRegistry';
 import { AIBriefing } from '../components/AISuite';
 import { calculateTrustScore as computeTrust, calculateAgentPrice, formatDisplayedShares, formatMarketValue, formatLargeNumber, calculateMarketCap, safeParseUnits, safeWeiToEther, calculatePositionPnL, calculateRealizedPnL, isSystemVerified, getSharesFromHolderRowsForCurve, mergeTrustBalanceDisplay } from '../services/analytics';
-import { APP_VERSION_DISPLAY, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, CURRENCY_SYMBOL, EXPLORER_URL, FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS } from '../constants';
+import {
+  APP_VERSION_DISPLAY,
+  LINEAR_CURVE_ID,
+  OFFSET_PROGRESSIVE_CURVE_ID,
+  CURRENCY_SYMBOL,
+  EXPLORER_URL,
+  FEE_PROXY_ADDRESS,
+  MULTI_VAULT_ADDRESS,
+  PROTOCOL_XP_MARKET_ACQUIRE,
+} from '../constants';
 
 function isProtocolRouterAddress(addr: string | undefined): boolean {
   if (!addr) return false;
@@ -714,8 +725,17 @@ const MarketDetail: React.FC = () => {
             } else {
                 res = await redeemFromVault(inputAmount, activeTargetId, activeWallet, selectedCurveId, logHandler);
             }
-            
-            playSuccess();
+
+            if (action === 'ACQUIRE') {
+                notifyProtocolXpEarned({
+                  address: activeWallet,
+                  amount: PROTOCOL_XP_MARKET_ACQUIRE,
+                  reasonKey: 'market_acquire',
+                  txHash: res.hash,
+                });
+            } else {
+                playSuccess();
+            }
             
             const tickerName = (agent?.label || 'NODE').toUpperCase();
             const assetLabel = sentiment === 'TRUST' 
@@ -1188,6 +1208,29 @@ const MarketDetail: React.FC = () => {
                 <div className="text-sm font-black text-slate-700 font-mono uppercase tracking-[0.4em]">Score confirmed</div>
             </div>
         </div>
+
+        {agent.type === 'LIST' && (
+          <div className="mb-8 rounded-2xl border border-intuition-primary/30 bg-gradient-to-r from-[#00f3ff]/10 via-black/60 to-[#ff1e6d]/10 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-[0_0_40px_rgba(0,243,255,0.08)]">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.35em] text-intuition-primary mb-1.5">
+                <Swords size={14} className="shrink-0" />
+                Arena
+              </div>
+              <p className="text-sm text-slate-300 font-medium leading-snug">
+                Rank who belongs on this list — local Yes/No passes, then optional TRUST batch.
+              </p>
+            </div>
+            <Link
+              to={`/climb?listId=${encodeURIComponent(portalListIdFromTermId(agent.id))}`}
+              onClick={playClick}
+              onMouseEnter={playHover}
+              className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest text-black bg-gradient-to-r from-intuition-primary to-cyan-300 hover:brightness-110 border border-intuition-primary/50 shadow-[0_0_24px_rgba(0,243,255,0.35)] transition-all"
+            >
+              Rank items in this list
+              <ChevronRight size={16} className="opacity-90" />
+            </Link>
+          </div>
+        )}
 
         {/* Core trading layout: left = chart + AI brief, right = trade + metrics */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start mb-12">
