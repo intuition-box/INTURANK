@@ -20,6 +20,10 @@ type Props = {
   onRemove: (key: string) => void;
   onSubmit: () => void;
   submitting: boolean;
+  /** True when stake × units is below curve minimum on any row — submit would revert. */
+  depositBlocked?: boolean;
+  /** Protocol minimum TRUST label (e.g. "0.5") from `CURVE_OFFSET`. */
+  minDepositLabel?: string;
 };
 
 function kindIcon(kind: ArenaPendingRow['item']['kind']) {
@@ -45,6 +49,8 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
   onRemove,
   onSubmit,
   submitting,
+  depositBlocked = false,
+  minDepositLabel,
 }) => {
   const reduceMotion = useReducedMotion();
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -57,6 +63,18 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
     const t = parseFloat(stakeLabel);
     return Number.isFinite(t) ? t : 0;
   }, [stakeLabel]);
+
+  const minClaim = useMemo(() => {
+    const t = parseFloat(minDepositLabel || '');
+    return Number.isFinite(t) ? t : 0;
+  }, [minDepositLabel]);
+
+  const rowBelowMinimum = useCallback(
+    (units: number) => minClaim > 0 && stakeN * units < minClaim - 1e-12,
+    [minClaim, stakeN]
+  );
+
+  const rowsNeedAttention = depositBlocked || rows.some((r) => rowBelowMinimum(r.units));
 
   useEffect(() => {
     if (!open) return;
@@ -146,8 +164,16 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                   </h2>
                   <p className="text-[10px] text-slate-500 mt-1 leading-relaxed pr-1">
                     <Sparkles className="inline w-3 h-3 mr-1 opacity-70" style={{ color: CY }} />
-                    {themeShort} — set TRUST weight per line ({stakeN.toFixed(2)} TRUST base × units). One confirm to
-                    write claim activity.
+                    {themeShort} — set TRUST weight per line ({stakeN.toFixed(2)} TRUST base × units).{' '}
+                    {minDepositLabel ? (
+                      <span className="text-amber-200/90">
+                        On-chain minimum{' '}
+                        <span className="font-bold text-amber-100">{minDepositLabel} TRUST</span> per claim (each row:
+                        base × units).
+                      </span>
+                    ) : (
+                      <>One confirm to write claim activity.</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -171,10 +197,13 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
               ) : (
                 rows.map((row) => {
                   const lineTrust = stakeN * row.units;
+                  const belowMin = rowBelowMinimum(row.units);
                   return (
                     <div
                       key={row.key}
-                      className="rounded-xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-md px-2.5 py-2.5 flex flex-col gap-2"
+                      className={`rounded-xl border backdrop-blur-md px-2.5 py-2.5 flex flex-col gap-2 ${
+                        belowMin ? 'border-amber-500/55 bg-amber-500/[0.08]' : 'border-white/[0.08] bg-white/[0.04]'
+                      }`}
                       style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' }}
                     >
                       <div className="flex items-start gap-2">
@@ -186,6 +215,11 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                           <p className="text-[9px] text-slate-500 mt-0.5 font-mono truncate">{row.item.pairKind}</p>
                           <p className="text-[10px] font-mono font-bold mt-1.5" style={{ color: CY }}>
                             {lineTrust.toFixed(2)} TRUST
+                            {belowMin ? (
+                              <span className="ml-2 text-amber-200 normal-case tracking-normal">
+                                (need ≥ {minDepositLabel ?? '…'} TRUST)
+                              </span>
+                            ) : null}
                             {row.units > 1 ? (
                               <span className="text-slate-500 font-normal"> · {stakeN.toFixed(2)} × {row.units}</span>
                             ) : null}
@@ -252,10 +286,20 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
               )}
             </div>
 
+            {rowsNeedAttention && minDepositLabel ? (
+              <div className="mx-3 mb-2 shrink-0 z-10 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2.5">
+                <p className="text-[11px] text-amber-50 leading-snug">
+                  Protocol requires <strong className="text-white">{minDepositLabel} TRUST minimum</strong> vault deposit{' '}
+                  <em className="not-italic text-amber-200/95">for each written claim</em> — base stake × units on that row.{' '}
+                  Increase the stake preset in Quick controls or add units until every line clears the minimum.
+                </p>
+              </div>
+            ) : null}
+
             <div className="p-3 border-t border-white/[0.08] shrink-0 z-10 bg-gradient-to-t from-black/60 to-transparent">
               <button
                 type="button"
-                disabled={rows.length === 0 || submitting}
+                disabled={rows.length === 0 || submitting || rowsNeedAttention}
                 onClick={() => {
                   playClick();
                   onSubmit();

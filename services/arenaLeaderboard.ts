@@ -1,9 +1,12 @@
 /**
- * Arena players: local rankers only (Arena XP > 0) who resolve to an Intuition account identity on Graph.
- * Remote aggregation stays optional via VITE_ARENA_LEADERBOARD_URL in arenaXp sync.
+ * Arena rankers leaderboard: XP aggregated from recent portal-list stakes on the Intuition indexer (bounded scan).
+ * Optional `postArenaTotalsMirrorOptional` can mirror rows to your backend; in-app truth remains the subgraph.
  */
-import { getAccountsByIds, resolveIntuitionAccountForWallet } from './graphql';
-import { getArenaLeaderboardSource } from './arenaXp';
+import {
+  fetchArenaLeaderboardXpRowsFromGraph,
+  getAccountsByIds,
+  resolveIntuitionAccountForWallet,
+} from './graphql';
 
 export interface ArenaPlayerRow {
   rank: number;
@@ -12,12 +15,13 @@ export interface ArenaPlayerRow {
   image?: string;
   arenaXp: number;
   duels: number;
-  /** Last time this wallet’s arena stats were updated (ms). */
+  atomsRanked: number;
+  listsPlayed: number;
   updatedAt: number;
 }
 
 export async function fetchArenaPlayerLeaderboard(): Promise<ArenaPlayerRow[]> {
-  const source = getArenaLeaderboardSource();
+  const source = await fetchArenaLeaderboardXpRowsFromGraph(4200);
   if (source.length === 0) return [];
 
   source.sort((a, b) => b.xp - a.xp);
@@ -30,17 +34,35 @@ export async function fetchArenaPlayerLeaderboard(): Promise<ArenaPlayerRow[]> {
   for (const addr of addrs) {
     const row = byAddr.get(addr.toLowerCase());
     const xp = row?.xp ?? 0;
-    if (xp <= 0) continue;
+    if (xp <= 0 || !row) continue;
+
+    const atomsRanked = row.atomsRanked ?? row.duels;
+    const listsPlayed = row.listsPlayed ?? 0;
+
     const id = resolveIntuitionAccountForWallet(addr, graphMap);
-    if (!id) continue;
+    if (!id) {
+      merged.push({
+        address: addr,
+        label: `${addr.slice(0, 6)}…${addr.slice(-4)}`,
+        image: `https://effigy.im/a/${addr}.png`,
+        arenaXp: xp,
+        duels: row.duels,
+        atomsRanked,
+        listsPlayed,
+        updatedAt: row.updatedAt ?? 0,
+      });
+      continue;
+    }
     const label = id.label.length > 48 ? `${id.label.slice(0, 46)}…` : id.label;
     merged.push({
       address: addr,
       label,
       image: id.image,
       arenaXp: xp,
-      duels: row?.duels ?? 0,
-      updatedAt: row?.updatedAt ?? 0,
+      duels: row.duels,
+      atomsRanked,
+      listsPlayed,
+      updatedAt: row.updatedAt ?? 0,
     });
   }
 

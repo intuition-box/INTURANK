@@ -22,6 +22,7 @@ import {
   List,
   ArrowLeft,
   Check,
+  Star,
 } from 'lucide-react';
 import {
   getTopClaims,
@@ -30,14 +31,15 @@ import {
   predicateIsSocialTagNoise,
   predicateLooksLikeBattlePredicateLoose,
   resolveMetadata,
+  registerArenaPortalListTermsForIndexing,
 } from '../services/graphql';
 import { createSemanticTriplesBatch, createTripleFromLabels, sendNativeTransfer } from '../services/web3';
 import { playClick, playHover, playSuccess } from '../services/audio';
 import { toast } from '../components/Toast';
-import { addArenaXp, getArenaXp } from '../services/arenaXp';
+import { fetchArenaXpRecordForWallet, postArenaTotalsMirrorOptional } from '../services/arenaXp';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
-import { ARENA_BATCH_MODE } from '../constants';
-import { DISTRUST_ATOM_ID, LIST_PREDICATE_ID } from '../constants';
+import { ARENA_BATCH_MODE, ARENA_XP_PER_RANK_PICK } from '../constants';
+import { CURVE_OFFSET, DISTRUST_ATOM_ID, LIST_PREDICATE_ID } from '../constants';
 import {
   clearPendingForList,
   getFirstListIdWithPending,
@@ -57,8 +59,11 @@ import {
   portalListIdFromTermId,
   type ArenaListEntry,
 } from '../services/arenaListsRegistry';
+import { loadArenaFavoriteListIds, saveArenaFavoriteListIds } from '../services/arenaFavorites';
 import ArenaBatchReviewModal from '../components/ArenaBatchReviewModal';
 import ArenaListCard from '../components/ArenaListCard';
+import ArenaLeaderboardGlance from '../components/ArenaLeaderboardGlance';
+import ArenaListQuickPick from '../components/ArenaListQuickPick';
 export type ArenaTheme = 'claims' | 'narratives' | 'tokens' | 'passion';
 
 export type RankItemKind = 'claim' | 'atom' | 'token';
@@ -90,9 +95,14 @@ export type ArenaRound = {
   items: RankItem[];
 };
 
-/** Arena ranking: one card at a time (swipe-style; no grid/sprint toggle). */
-const ARENA_CARDS_PER_ROUND = 1;
-const ARENA_SHOW_LEADERBOARD = false;
+/** Arena ranking: three stance cards fill the viewport; answering one removes & shifts lanes, new fills from the right. */
+const ARENA_CARDS_PER_ROUND = 3;
+/**
+ * IntuRank-native rankers leaderboard: always shown alongside the ranking flow
+ * via the `ArenaRankerLeaderboard` component (right column on desktop, below
+ * the ranking column on mobile).
+ */
+const ARENA_SHOW_LEADERBOARD = true;
 const TERM_ID_RE = /^0x[0-9a-fA-F]{64}$/;
 
 function pickSingleItem(pool: RankItem[], lastId: string | null): RankItem | null {
@@ -104,9 +114,23 @@ function pickSingleItem(pool: RankItem[], lastId: string | null): RankItem | nul
 
 const STORAGE_PREFIX = 'inturank-arena-pairwise';
 
-/** Discrete stake levels (no free tier). TRUST is sent as native transfer to `VITE_ARENA_TREASURY_ADDRESS`, not a MultiVault deposit. */
-const ARENA_STAKE_PRESETS = [0.1, 0.25, 0.5, 1, 2.5, 10] as const;
-const ARENA_STAKE_TITLES = ['Spark', 'Pulse', 'Surge', 'Blitz', 'Nova', 'Singularity'] as const;
+/** Intuition FeeProxy / vault minimum deposit per atom or claim triple — enforced on-chain (see `CURVE_OFFSET`). */
+const PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL = formatEther(CURVE_OFFSET);
+
+/**
+ * Discrete stake tiers. With batch submissions, **each queued row’s on-chain deposit** is
+ * `preset TRUST × row units`; every row must be ≥ protocol minimum (~0.5 TRUST). Presets below
+ * that are misleading and are omitted in batch mode.
+ * Legacy mode (micro-tips per pick to treasury) can keep smaller presets.
+ */
+const ARENA_STAKE_PRESETS_BATCH = [0.5, 1, 2, 2.5, 5, 10] as const;
+const ARENA_STAKE_PRESETS_LEGACY = [0.1, 0.25, 0.5, 1, 2.5, 10] as const;
+const ARENA_STAKE_PRESETS = (ARENA_BATCH_MODE ? ARENA_STAKE_PRESETS_BATCH : ARENA_STAKE_PRESETS_LEGACY) as
+  | typeof ARENA_STAKE_PRESETS_BATCH
+  | typeof ARENA_STAKE_PRESETS_LEGACY;
+const ARENA_STAKE_TITLES = ARENA_BATCH_MODE
+  ? (['Pulse', 'Surge', 'Blitz', 'Nova', 'Forge', 'Singularity'] as const)
+  : (['Spark', 'Pulse', 'Surge', 'Blitz', 'Nova', 'Singularity'] as const);
 
 const TOKEN_POOL: RankItem[] = [
   { id: 'tok-eth', kind: 'token', label: 'ETH', subtitle: 'Native gas & collateral', pairKind: 'token' },
@@ -234,14 +258,36 @@ function pickYesNoGridItems(pool: RankItem[], n: number): RankItem[] {
   return shuffled.slice(0, k);
 }
 
-/** New card for a grid slot: prefer an item not already visible on other cards. */
-function pickReplacementForYesNoGrid(pool: RankItem[], answeredItem: RankItem, visibleItems: RankItem[]): RankItem | null {
-  const keepIds = new Set(visibleItems.filter((it) => it.id !== answeredItem.id).map((it) => it.id));
+function pickNextUniqueFromPool(pool: RankItem[], visible: RankItem[]): RankItem | null {
+  const keepIds = new Set(visible.map((it) => it.id));
   const eligible = pool.filter((it) => !keepIds.has(it.id));
   if (eligible.length > 0) {
     return eligible[Math.floor(Math.random() * eligible.length)] ?? null;
   }
-  return pickSingleItem(pool, answeredItem.id);
+  const lastId = visible[visible.length - 1]?.id ?? null;
+  return pickSingleItem(pool, lastId);
+}
+
+/**
+ * After a Yes/No, remove that lane entry; lanes shift visually (compact array order).
+ * Back-fill slots from pool up to `ARENA_CARDS_PER_ROUND` with unique entries where possible.
+ */
+function refillLanesAfterAnswer(pool: RankItem[], prevLanes: RankItem[], answeredItem: RankItem): RankItem[] | null {
+  const idx = prevLanes.findIndex((it) => it.id === answeredItem.id);
+  if (idx < 0) return null;
+  const rest = [...prevLanes.slice(0, idx), ...prevLanes.slice(idx + 1)];
+  while (rest.length < ARENA_CARDS_PER_ROUND && pool.length > 0) {
+    const next = pickNextUniqueFromPool(pool, rest);
+    if (!next) break;
+    rest.push(next);
+  }
+  return rest.length > 0 ? rest : null;
+}
+
+function dedupeArenaEntries(entries: ArenaListEntry[]): ArenaListEntry[] {
+  const m = new Map<string, ArenaListEntry>();
+  for (const e of entries) m.set(e.id, e);
+  return [...m.values()];
 }
 
 /** Raw Elo-style scores start at 0 and can go negative; display with a baseline so numbers read like familiar ratings. */
@@ -377,6 +423,139 @@ function ArenaVsHeroImages({
   );
 }
 
+function ArenaLaneCard({
+  item,
+  activeList,
+  stakingTx,
+  reduceMotion,
+  emphasized,
+  onYesNo,
+}: {
+  item: RankItem;
+  activeList: ArenaListEntry | null | undefined;
+  stakingTx: boolean;
+  reduceMotion: boolean | null;
+  emphasized: boolean;
+  onYesNo: (support: boolean) => void;
+}) {
+  let questionLine = '';
+  if (activeList) {
+    questionLine =
+      typeof activeList.itemQuestion === 'function' ? activeList.itemQuestion(item) : buildArenaItemQuestion(activeList, item);
+  }
+
+  return (
+    <motion.article
+      layout={!reduceMotion}
+      initial={reduceMotion ? false : { opacity: 0, x: 22, scale: 0.98 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={reduceMotion ? undefined : { opacity: 0, x: -16 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      className={`group relative flex flex-col rounded-2xl border overflow-hidden bg-gradient-to-br from-[#060a14]/95 via-[#080c18]/95 to-[#0c0814]/92 ${
+        emphasized
+          ? 'border-[#00f3ff]/40 shadow-[0_0_44px_rgba(0,243,255,0.18),inset_0_1px_0_rgba(255,255,255,0.06)] md:scale-[1.02] md:z-[2]'
+          : 'border-white/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_40px_rgba(0,0,0,0.45)]'
+      }`}
+      style={{
+        background:
+          emphasized && !reduceMotion
+            ? 'linear-gradient(155deg, rgba(0,243,255,0.12) 0%, rgba(6,10,20,0.96) 40%, rgba(16,8,22,0.92) 100%)'
+            : undefined,
+      }}
+    >
+      <div className="relative aspect-[4/3] min-h-[120px] sm:min-h-[132px] w-full bg-[#030508] overflow-hidden">
+        {item.kind === 'claim' && item.pairKind === 'claim-vs' ? (
+          <ArenaVsHeroImages
+            leftSrc={item.image}
+            rightSrc={item.imageSecondary}
+            leftName={item.versusLeftLabel}
+            rightName={item.versusRightLabel}
+          />
+        ) : item.image ? (
+          <img src={item.image} alt="" className="h-full w-full object-cover" loading="lazy" />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center text-3xl font-black font-display"
+            style={{
+              background: 'radial-gradient(circle at 30% 20%, rgba(0,243,255,0.2) 0%, transparent 50%), #050a12',
+              color: 'rgba(0,243,255,0.25)',
+            }}
+          >
+            {(item.label || '?').charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#020308] via-[#020308]/35 to-transparent opacity-92 pointer-events-none" />
+        {item.pairKind ? (
+          <div className="absolute bottom-2 left-2">
+            <span className="rounded-lg bg-black/55 backdrop-blur-sm px-2 py-0.5 text-[7px] sm:text-[8px] font-bold uppercase tracking-wider text-[#00f3ff]/90 ring-1 ring-[#00f3ff]/25">
+              {item.pairKind}
+            </span>
+          </div>
+        ) : null}
+      </div>
+      <div className="px-2 sm:px-3 pt-2 pb-1 relative shrink-0 min-h-0">
+        <p className="text-sm sm:text-[15px] font-bold text-white leading-tight line-clamp-2">{item.label}</p>
+        {item.subtitle ? (
+          <p className="text-[9px] sm:text-[10px] text-slate-500 mt-1 font-mono uppercase tracking-wide line-clamp-1">
+            {item.subtitle}
+          </p>
+        ) : null}
+        {questionLine ? (
+          <p className="text-[9px] sm:text-[10px] text-[#89faff]/95 mt-2 leading-snug line-clamp-3 border border-[#00f3ff]/20 rounded-lg px-2 py-1 bg-[#00f3ff]/6">
+            {questionLine}
+          </p>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 px-2 sm:px-3 pb-2.5 sm:pb-3 mt-auto">
+        <motion.button
+          type="button"
+          onClick={() => onYesNo(true)}
+          disabled={stakingTx}
+          onMouseEnter={playHover}
+          whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+          whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 450, damping: 22 }}
+          className="relative rounded-lg sm:rounded-xl py-2.5 text-center disabled:opacity-45 disabled:pointer-events-none overflow-hidden"
+          style={{
+            border: '1px solid rgba(0,243,255,0.45)',
+            background: 'linear-gradient(180deg, rgba(0,243,255,0.22) 0%, rgba(4,20,32,0.97) 100%)',
+            boxShadow: '0 0 20px rgba(0,243,255,0.1), inset 0 1px 0 rgba(255,255,255,0.18)',
+          }}
+        >
+          <span className="inline-flex items-center justify-center gap-1 relative z-10">
+            <Check className="w-4 h-4 sm:w-[18px] sm:h-[18px]" style={{ color: '#7afcff' }} strokeWidth={2.5} />
+            <span className="text-sm font-black tracking-tight" style={{ color: '#e0fffe', textShadow: '0 0 16px rgba(0,243,255,0.45)' }}>
+              Yes
+            </span>
+          </span>
+        </motion.button>
+        <motion.button
+          type="button"
+          onClick={() => onYesNo(false)}
+          disabled={stakingTx}
+          onMouseEnter={playHover}
+          whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+          whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 450, damping: 22 }}
+          className="relative rounded-lg sm:rounded-xl py-2.5 text-center disabled:opacity-45 disabled:pointer-events-none overflow-hidden"
+          style={{
+            border: '1px solid rgba(255,30,109,0.45)',
+            background: 'linear-gradient(180deg, rgba(255,30,109,0.2) 0%, rgba(24,4,16,0.97) 100%)',
+            boxShadow: '0 0 18px rgba(255,30,109,0.08), inset 0 1px 0 rgba(255,255,255,0.11)',
+          }}
+        >
+          <span className="inline-flex items-center justify-center gap-1 relative z-10">
+            <X className="w-4 h-4 sm:w-[18px] sm:h-[18px]" style={{ color: '#ff9ec4' }} strokeWidth={2.5} />
+            <span className="text-sm font-black tracking-tight" style={{ color: '#ffe0ec', textShadow: '0 0 14px rgba(255,30,109,0.3)' }}>
+              No
+            </span>
+          </span>
+        </motion.button>
+      </div>
+    </motion.article>
+  );
+}
+
 function parseEnvTreasuryRaw(): string {
   let raw = (import.meta.env.VITE_ARENA_TREASURY_ADDRESS as string | undefined)?.trim() ?? '';
   raw = raw.replace(/^['"]|['"]$/g, '');
@@ -433,6 +612,7 @@ const RankedList: React.FC = () => {
   const [arenaCategoryId, setArenaCategoryId] = useState<string>('all');
   const [openBatchAfterLoad, setOpenBatchAfterLoad] = useState(false);
   const [showAllLists, setShowAllLists] = useState(false);
+  const [favoriteListIds, setFavoriteListIds] = useState<string[]>(() => loadArenaFavoriteListIds());
   const [searchParams, setSearchParams] = useSearchParams();
   const openBatchParamHandled = useRef(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -442,6 +622,23 @@ const RankedList: React.FC = () => {
   const reduceMotion = useReducedMotion();
 
   const stakeTRUST = useMemo(() => String(ARENA_STAKE_PRESETS[stakePresetIdx] ?? ARENA_STAKE_PRESETS[0]), [stakePresetIdx]);
+
+  /** Batch claims: FeeProxy rejects any triple row whose depositWei is below CURVE_OFFSET. */
+  const batchDepositBelowProtocol = useMemo(() => {
+    if (!ARENA_BATCH_MODE || pendingRows.length === 0) return false;
+    let baseWei: bigint;
+    try {
+      baseWei = parseEther((stakeTRUST || '0').trim() || '0');
+    } catch {
+      return true;
+    }
+    return pendingRows.some((row) => baseWei * BigInt(row.units) < CURVE_OFFSET);
+  }, [pendingRows, stakeTRUST]);
+
+  /** Keep preset index in range if tiers differ between batch vs legacy builds. */
+  useEffect(() => {
+    setStakePresetIdx((i) => Math.min(Math.max(0, i), ARENA_STAKE_PRESETS.length - 1));
+  }, []);
 
   const treasury = useMemo(() => getTreasury(), []);
 
@@ -459,21 +656,47 @@ const RankedList: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (ARENA_SHOW_LEADERBOARD) void refreshPlayers();
+    void refreshPlayers();
   }, [refreshPlayers]);
 
-  const myXp = useMemo(() => getArenaXp(address), [address, duels]);
+  const [graphArenaXp, setGraphArenaXp] = useState(0);
 
-  /** Slot-style counting — animates when XP changes (e.g. after a pick). */
+  /** Slot-style counting — animates when XP changes after indexer-derived updates. */
   const xpAnimRef = useRef<number | null>(null);
   const xpRafRef = useRef<number | null>(null);
   const [xpRoll, setXpRoll] = useState(0);
+
+  const refreshArenaXpSelf = useCallback(async () => {
+    if (!address) {
+      xpAnimRef.current = null;
+      setGraphArenaXp(0);
+      setXpRoll(0);
+      return;
+    }
+    try {
+      const rec = await fetchArenaXpRecordForWallet(address);
+      setGraphArenaXp(rec.xp);
+    } catch {
+      setGraphArenaXp(0);
+    }
+  }, [address]);
+
   useEffect(() => {
     xpAnimRef.current = null;
   }, [address]);
 
   useEffect(() => {
-    const target = myXp.xp;
+    void refreshArenaXpSelf();
+  }, [refreshArenaXpSelf]);
+
+  useEffect(() => {
+    const onUp = () => void refreshArenaXpSelf();
+    window.addEventListener('inturank-arena-onchain-updated', onUp);
+    return () => window.removeEventListener('inturank-arena-onchain-updated', onUp);
+  }, [refreshArenaXpSelf]);
+
+  useEffect(() => {
+    const target = graphArenaXp;
     if (xpAnimRef.current === null) {
       xpAnimRef.current = target;
       setXpRoll(target);
@@ -505,7 +728,7 @@ const RankedList: React.FC = () => {
       if (xpRafRef.current != null) cancelAnimationFrame(xpRafRef.current);
       xpRafRef.current = null;
     };
-  }, [myXp.xp, reduceMotion]);
+  }, [graphArenaXp, reduceMotion]);
 
   const playersMaxXp = useMemo(() => {
     if (!players.length) return 1;
@@ -521,13 +744,12 @@ const RankedList: React.FC = () => {
 
   const activeList = useMemo(() => getArenaListById(listId), [listId]);
 
-  const stickyQuestion = useMemo(() => {
-    if (!activeList) return '—';
-    if (listId && round?.kind === 'yesno' && round.items[0]) {
-      return buildArenaItemQuestion(activeList, round.items[0]);
+  useEffect(() => {
+    const entry = listId ? getArenaListById(listId) : undefined;
+    if (entry?.source === 'portal' && entry.listObjectTermId) {
+      registerArenaPortalListTermsForIndexing([entry.listObjectTermId]);
     }
-    return activeList.description;
-  }, [activeList, round, listId]);
+  }, [listId]);
 
   const [portalListEntries, setPortalListEntries] = useState<
     Extract<ArenaListEntry, { source: 'portal' }>[]
@@ -563,6 +785,7 @@ const RankedList: React.FC = () => {
           };
         });
         registerPortalListEntries(entries);
+        registerArenaPortalListTermsForIndexing(entries.map((e) => e.listObjectTermId));
         setPortalListEntries(entries);
       } catch {
         if (!cancelled) setPortalListEntries([]);
@@ -593,6 +816,51 @@ const RankedList: React.FC = () => {
       .filter((g) => g.lists.length > 0);
     return groups;
   }, [listsForCategory]);
+
+  const favoriteSet = useMemo(() => new Set(favoriteListIds), [favoriteListIds]);
+
+  const toggleListFavorite = useCallback((fid: string) => {
+    const k = fid.trim();
+    if (!k || !getArenaListById(k)) return;
+    playClick();
+    setFavoriteListIds((prev) => {
+      let next: string[];
+      const i = prev.findIndex((x) => x === k);
+      if (i >= 0) next = prev.filter((_, j) => j !== i);
+      else next = [...prev, k];
+      saveArenaFavoriteListIds(next);
+      return next;
+    });
+  }, []);
+
+  const allArenaListsFlat = useMemo(() => dedupeArenaEntries([...ARENA_LISTS, ...portalListEntries]), [portalListEntries]);
+
+  /** Quick-switch + dropdown: favorites first, then alphabetical. */
+  const quickSwitchSortedLists = useMemo(() => {
+    return [...allArenaListsFlat].sort((a, b) => {
+      const fa = favoriteSet.has(a.id);
+      const fb = favoriteSet.has(b.id);
+      if (fa !== fb) return fa ? -1 : 1;
+      return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' });
+    });
+  }, [allArenaListsFlat, favoriteSet]);
+
+  const favoriteListsInLane = useMemo(
+    () =>
+      [...listsForCategory]
+        .filter((l) => favoriteSet.has(l.id))
+        .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })),
+    [listsForCategory, favoriteSet]
+  );
+
+  const quickPickFavoriteRows = useMemo(
+    () => quickSwitchSortedLists.filter((l) => favoriteSet.has(l.id)),
+    [quickSwitchSortedLists, favoriteSet]
+  );
+  const quickPickOtherRows = useMemo(
+    () => quickSwitchSortedLists.filter((l) => !favoriteSet.has(l.id)),
+    [quickSwitchSortedLists, favoriteSet]
+  );
 
   useEffect(() => {
     setShowAllLists(false);
@@ -770,9 +1038,8 @@ const RankedList: React.FC = () => {
 
       setRound((prev) => {
         if (!prev) return prev;
-        const nextItem = pickReplacementForYesNoGrid(pool, item, prev.items);
-        if (!nextItem) return null;
-        const newItems = prev.items.map((it) => (it.id === item.id ? nextItem : it));
+        const newItems = refillLanesAfterAnswer(pool, prev.items, item);
+        if (!newItems) return null;
         return { kind: 'yesno', items: newItems };
       });
     },
@@ -791,6 +1058,17 @@ const RankedList: React.FC = () => {
     } catch {
       toast.error('Invalid stake amount');
       return;
+    }
+    for (const row of pendingRows) {
+      const rowWei = baseWei * BigInt(row.units);
+      if (rowWei < CURVE_OFFSET) {
+        toast.error(
+          `Intuition requires ≥ ${PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL} TRUST per on-chain claim. ` +
+            `Each row deposit is stake × units; one row totals ${formatEther(rowWei)} TRUST (${stakeTRUST}×${row.units}). ` +
+            `Raise the stake preset or bump units until every line reaches at least ${PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL}.`
+        );
+        return;
+      }
     }
     setStakingTx(true);
     let sent = false;
@@ -839,18 +1117,23 @@ const RankedList: React.FC = () => {
     }
     if (!sent) return;
 
-    const trustN = parseFloat((stakeTRUST || '0').trim() || '0');
-    let totalXp = 0;
-    for (const row of pendingRows) {
-      const x = Number.isFinite(trustN) ? Math.max(1, Math.round(trustN * 100 * row.units)) : 12;
-      totalXp += x;
-    }
     if (address) {
-      const rec = addArenaXp(address, totalXp, pendingRows.length);
       toast.success(
-        `Claims written on Intuition · ${pendingRows.length} item${pendingRows.length === 1 ? '' : 's'} · ${formatEther(totalWei)} TRUST · +${totalXp} pts · ${rec.xp.toLocaleString()} total`
+        `Claims written on Intuition · ${pendingRows.length} item${pendingRows.length === 1 ? '' : 's'} · ${formatEther(totalWei)} TRUST`
       );
       void refreshPlayers({ silent: true });
+      void refreshArenaXpSelf();
+      try {
+        window.dispatchEvent(new Event('inturank-arena-onchain-updated'));
+      } catch {
+        /* ignore */
+      }
+      window.setTimeout(() => {
+        void fetchArenaXpRecordForWallet(address).then((rec) => {
+          setGraphArenaXp(rec.xp);
+          postArenaTotalsMirrorOptional(address, rec);
+        });
+      }, 2800);
     } else {
       toast.success('Claims written on Intuition.');
     }
@@ -858,7 +1141,7 @@ const RankedList: React.FC = () => {
     if (listId) clearPendingForList(listId);
     setPendingRows([]);
     setBatchModalOpen(false);
-  }, [pendingRows, isConnected, address, stakeTRUST, listId, refreshPlayers, activeList]);
+  }, [pendingRows, isConnected, address, stakeTRUST, listId, refreshPlayers, refreshArenaXpSelf, activeList]);
 
   const updatePendingUnits = useCallback((key: string, units: number) => {
     setPendingRows((prev) => prev.map((r) => (r.key === key ? { ...r, units } : r)));
@@ -959,17 +1242,23 @@ const RankedList: React.FC = () => {
       applyLocalYesNo(item, support);
 
       if (address) {
-        let xpDelta = 12;
-        if (wei > 0n) {
-          const trust = parseFloat(formatEther(wei));
-          if (Number.isFinite(trust)) xpDelta = Math.max(1, Math.round(trust * 100));
-        }
-        const rec = addArenaXp(address, xpDelta, 1);
-        toast.success(`+${xpDelta} pts · ${rec.xp.toLocaleString()} total`);
+        toast.success(`Stance sent on-chain. Arena XP refreshes from the indexer after sync.`);
+        void refreshArenaXpSelf();
         void refreshPlayers({ silent: true });
+        try {
+          window.dispatchEvent(new Event('inturank-arena-onchain-updated'));
+        } catch {
+          /* ignore */
+        }
+        window.setTimeout(() => {
+          void fetchArenaXpRecordForWallet(address).then((rec) => {
+            setGraphArenaXp(rec.xp);
+            postArenaTotalsMirrorOptional(address, rec);
+          });
+        }, 2800);
       }
     },
-    [stakeTRUST, isConnected, address, treasury, refreshPlayers, applyLocalYesNo]
+    [stakeTRUST, isConnected, address, treasury, refreshPlayers, refreshArenaXpSelf, applyLocalYesNo]
   );
 
   const onYesNo = (item: RankItem, support: boolean) => {
@@ -1017,12 +1306,12 @@ const RankedList: React.FC = () => {
       const wei = parseEther((stakeTRUST || '0').trim() || '0');
       if (wei > 0n) {
         const t = parseFloat(formatEther(wei));
-        if (Number.isFinite(t)) return Math.max(1, Math.round(t * 100));
+        if (Number.isFinite(t)) return Math.max(ARENA_XP_PER_RANK_PICK, Math.round(t * 100));
       }
     } catch {
       /* ignore */
     }
-    return 12;
+    return ARENA_XP_PER_RANK_PICK;
   }, [stakeTRUST]);
 
   const streakTier = getStreakTier(streak);
@@ -1045,15 +1334,14 @@ const RankedList: React.FC = () => {
   }, [quickStartList, startListRun]);
 
   return (
-    <div className="min-h-screen bg-[#03050d] w-full min-w-0 overflow-x-hidden pb-16 sm:pb-20 font-sans text-slate-300 selection:bg-[#00f3ff]/20 selection:text-white">
-      <section className="relative border-b border-[#00f3ff]/10 overflow-hidden">
+    <div className="relative isolate z-10 min-h-screen bg-[#03050d] w-full min-w-0 overflow-x-hidden pb-16 sm:pb-20 font-sans text-slate-300 selection:bg-[#00f3ff]/20 selection:text-white">
+      <section className="relative z-10 border-b border-[#00f3ff]/10 overflow-hidden">
         <div
           className="h-1.5 w-full"
           style={{
             background: 'linear-gradient(90deg, #00f3ff 0%, #ff1e6d 45%, rgba(0,243,255,0.35) 100%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-0 bg-[url('/grid.svg')] opacity-[0.055]" />
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.5]"
           style={{
@@ -1077,7 +1365,7 @@ const RankedList: React.FC = () => {
               </h1>
               <p className="text-sm text-slate-500 mt-2 max-w-lg leading-relaxed">
                 {listId
-                  ? 'Quick flow: read the prompt, vote Yes/No, queue cuts, then confirm once.'
+                  ? 'Read each card · Yes / No · queue cuts when you are ready.'
                   : 'Pick a lane, pick a list, then rank with fast Yes/No decisions.'}
               </p>
             </div>
@@ -1099,9 +1387,9 @@ const RankedList: React.FC = () => {
         </div>
       </section>
 
-      <div className="w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pb-10 pt-0">
+      <div className="relative z-10 w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pb-10 pt-0">
         <motion.div
-          className="rounded-[1.75rem] border border-white/[0.08] bg-[#05070d]/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_24px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06),0_0_0_1px_rgba(0,243,255,0.04)] overflow-hidden"
+          className="rounded-[1.75rem] border border-white/[0.08] bg-[#05070d]/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_24px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06),0_0_0_1px_rgba(0,243,255,0.04)] overflow-x-hidden lg:overflow-visible"
           style={{
             background:
               'linear-gradient(160deg, rgba(10,20,32,0.92) 0%, rgba(5,8,15,0.88) 40%, rgba(20,6,18,0.5) 100%)',
@@ -1113,11 +1401,7 @@ const RankedList: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
         >
         <div
-          className={
-            listId && ARENA_SHOW_LEADERBOARD
-              ? 'grid lg:grid-cols-[minmax(0,1fr)_minmax(300px,26vw)] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 lg:gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80'
-              : 'grid grid-cols-1 gap-0'
-          }
+          className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,28vw)] xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80"
         >
         <div className="min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 space-y-4">
           {!listId ? (
@@ -1190,6 +1474,39 @@ const RankedList: React.FC = () => {
               <p className="text-[10px] text-slate-500 mt-2 mb-1 font-mono tabular-nums">
                 {listsForCategory.length} list{listsForCategory.length === 1 ? '' : 's'} in this lane
               </p>
+              {favoriteListsInLane.length > 0 ? (
+                <div
+                  className="mb-5 rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-500/[0.06] to-[#050a12]/80 p-4 sm:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                >
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <Star className="w-4 h-4 text-amber-300 fill-amber-400/35" strokeWidth={2} />
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-200/95">Starred in this lane</p>
+                    <span className="text-[10px] text-slate-500 font-mono tabular-nums ml-auto">{favoriteListsInLane.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                    {favoriteListsInLane.map((L) => (
+                      <ArenaListCard
+                        key={`fav-${L.id}`}
+                        title={L.title}
+                        description={L.description}
+                        tag={L.tag}
+                        categoryLabel={
+                          ARENA_CATEGORY_PILLS.find((p) => p.id === L.arenaCategory)?.label ?? L.tag
+                        }
+                        listGlyph={L.listGlyph}
+                        constituentCount={getArenaListConstituents(L)}
+                        previewItems={getArenaPreviewItems(L, [])}
+                        reduceMotion={reduceMotion}
+                        isFavorite
+                        onFavoriteToggle={() => toggleListFavorite(L.id)}
+                        onSelect={() => {
+                          startListRun(L.id);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="space-y-4">
                 {groupedArenaLists.map((group) => {
                   const visible = showAllLists ? group.lists : group.lists.slice(0, 4);
@@ -1213,6 +1530,8 @@ const RankedList: React.FC = () => {
                             constituentCount={getArenaListConstituents(L)}
                             previewItems={getArenaPreviewItems(L, [])}
                             reduceMotion={reduceMotion}
+                            isFavorite={favoriteSet.has(L.id)}
+                            onFavoriteToggle={() => toggleListFavorite(L.id)}
                             onSelect={() => {
                               startListRun(L.id);
                             }}
@@ -1255,86 +1574,112 @@ const RankedList: React.FC = () => {
           ) : (
             <>
           <div
-            className="rounded-3xl border border-white/[0.08] p-3 sm:p-5 backdrop-blur-xl"
+            className="rounded-3xl border border-white/[0.08] p-4 sm:p-5 backdrop-blur-xl"
             style={{
               background: 'linear-gradient(145deg, rgba(0,243,255,0.07) 0%, rgba(8,10,18,0.92) 38%, rgba(255,30,109,0.05) 100%)',
               boxShadow: '0 0 60px rgba(0,243,255,0.05), inset 0 1px 0 rgba(255,255,255,0.07)',
             }}
           >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-1">
-              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.35em] text-[#00f3ff]/90">Current run</p>
-              <button
-                type="button"
-                onClick={() => {
-                  playClick();
-                  setListId(null);
-                  setRound(null);
-                  try {
-                    sessionStorage.removeItem('inturank-arena-last-list');
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-                className="group inline-flex items-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] pl-2 pr-3 py-2 text-left hover:border-[#00f3ff]/35 hover:bg-[#00f3ff]/10 transition-all"
-              >
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#00f3ff]/20 to-[#ff1e6d]/20 border border-white/10 text-[#a5fcff] group-hover:scale-105 transition-transform">
-                  <ArrowLeft size={16} strokeWidth={2.5} />
+            <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-5 lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2 lg:min-h-[52px]">
+                <span className="rounded-full border border-[#00f3ff]/25 bg-[#00f3ff]/8 px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-[0.28em] text-[#9ef9ff]">
+                  Current run
                 </span>
-                <span>
-                  <span className="block text-[9px] font-mono uppercase tracking-widest text-slate-500">Back</span>
-                  <span className="text-xs font-bold text-slate-100 group-hover:text-white">Choose another list</span>
-                </span>
-              </button>
-            </div>
-            {activeList ? (
-              <>
-                <h2 className="text-lg sm:text-xl font-bold text-white leading-tight tracking-tight mt-2">
-                  {activeList.title}
-                </h2>
-                <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">{activeList.description}</p>
-              </>
-            ) : null}
+                <div className="hidden sm:flex items-center gap-1 text-[10px] text-slate-500">
+                  <span>Prompt</span>
+                  <ChevronRight size={11} className="text-slate-600 shrink-0" />
+                  <span>Vote</span>
+                  <ChevronRight size={11} className="text-slate-600 shrink-0" />
+                  <span>Cuts</span>
+                </div>
+              </div>
 
-            <div className="mt-4 space-y-3">
-              <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                <span className="rounded-full border border-[#00f3ff]/25 bg-[#00f3ff]/8 px-2.5 py-1 text-[#9ef9ff]">Read prompt</span>
-                <ChevronRight size={11} className="text-slate-600" />
-                <span className="rounded-full border border-fuchsia-500/25 bg-fuchsia-500/10 px-2.5 py-1 text-fuchsia-200">Tap Yes / No</span>
-                <ChevronRight size={11} className="text-slate-600" />
-                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">Review cuts</span>
-              </div>
-              <div
-                className="sticky top-0 z-20 -mx-0.5 px-4 py-3.5 rounded-2xl border border-[#00f3ff]/15 backdrop-blur-2xl"
-                style={{
-                  background: 'linear-gradient(180deg, rgba(3,5,12,0.95) 0%, rgba(5,8,20,0.75) 100%)',
-                  boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 0 32px rgba(0,243,255,0.04)',
-                }}
-              >
-                <p className="text-center text-sm sm:text-[15px] font-semibold text-slate-100 leading-snug">
-                  {stickyQuestion}
-                </p>
-                {stanceSummary.total > 0 ? (
-                  <p className="text-center text-[11px] text-slate-500 mt-2 tabular-nums">
-                    {stanceSummary.total} in this list ·{' '}
-                    <span className="text-[#4ade80]">yes {stanceSummary.yes}</span>
-                    {' · '}
-                    <span className="text-[#ff1e6d]/90">no {stanceSummary.no}</span>
-                  </p>
-                ) : null}
-              </div>
-              {ARENA_BATCH_MODE && pendingRows.length > 0 && (
+              <div className="flex flex-col sm:flex-row flex-wrap gap-2.5 lg:max-w-[min(760px,100%)] lg:ml-auto w-full lg:w-auto lg:justify-end flex-1 min-w-0">
                 <button
                   type="button"
                   onClick={() => {
                     playClick();
-                    setBatchModalOpen(true);
+                    setListId(null);
+                    setRound(null);
+                    try {
+                      sessionStorage.removeItem('inturank-arena-last-list');
+                    } catch {
+                      /* ignore */
+                    }
                   }}
-                  className="w-full text-center text-[11px] font-bold text-[#a5fcff] border border-[#00f3ff]/35 rounded-xl py-2.5 bg-[#00f3ff]/5 hover:bg-[#00f3ff]/10 transition-colors"
+                  className="group inline-flex items-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] pl-2 pr-3 py-2.5 text-left hover:border-[#00f3ff]/35 hover:bg-[#00f3ff]/10 transition-all shrink-0 sm:self-start"
                 >
-                  Review batch ({pendingRows.length} queued) — TRUST on submit
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#00f3ff]/20 to-[#ff1e6d]/20 border border-white/10 text-[#a5fcff] group-hover:scale-105 transition-transform">
+                    <ArrowLeft size={16} strokeWidth={2.5} />
+                  </span>
+                  <span>
+                    <span className="block text-[9px] font-mono uppercase tracking-widest text-slate-500">Back</span>
+                    <span className="text-xs font-bold text-slate-100 group-hover:text-white">Browse lists</span>
+                  </span>
                 </button>
-              )}
+                <ArenaListQuickPick
+                  activeListId={listId ?? ''}
+                  favorites={quickPickFavoriteRows}
+                  others={quickPickOtherRows}
+                  onSelectList={startListRun}
+                  className="flex-1 min-w-[200px]"
+                />
+              </div>
             </div>
+
+            {activeList ? (
+              <>
+                <div className="mt-4 pt-4 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 gap-y-3">
+                  <h2 className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight truncate min-w-0">
+                    {activeList.title}
+                  </h2>
+                  {stanceSummary.total > 0 ? (
+                    <p className="text-[11px] text-slate-500 shrink-0 tabular-nums sm:text-right">
+                      {stanceSummary.total} indexed ·{' '}
+                      <span className="text-[#4ade80] font-semibold">yes {stanceSummary.yes}</span>
+                      {' · '}
+                      <span className="text-[#ff8bb0] font-semibold">no {stanceSummary.no}</span>
+                    </p>
+                  ) : null}
+                </div>
+                {activeList.description ? (
+                  <p className="text-[11px] text-slate-500 mt-1.5 line-clamp-1 leading-snug">{activeList.description}</p>
+                ) : null}
+              </>
+            ) : null}
+
+            {listId && round?.kind === 'yesno' && round.items?.length ? (
+              <div
+                className="mt-4 rounded-xl border border-[#00f3ff]/14 bg-black/30 px-3 py-2.5"
+                style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' }}
+              >
+                {round.items.length === 1 && round.items[0] && activeList ? (
+                  <p className="text-sm font-medium text-slate-100 leading-snug">{buildArenaItemQuestion(activeList, round.items[0])}</p>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 gap-y-1.5">
+                    <span className="shrink-0 rounded-lg border border-[#00f3ff]/30 bg-[#00f3ff]/12 px-2 py-1 text-[10px] font-mono font-black uppercase tracking-wider text-[#89faff] tabular-nums">
+                      {round.items.length}-lane vote
+                    </span>
+                    <p className="text-[11px] text-slate-400 leading-snug min-w-0">
+                      Each card has its prompt — tap Yes / No per lane.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {ARENA_BATCH_MODE && pendingRows.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  playClick();
+                  setBatchModalOpen(true);
+                }}
+                className="mt-3 w-full text-center text-[11px] font-bold text-[#a5fcff] border border-[#00f3ff]/35 rounded-xl py-2.5 bg-[#00f3ff]/5 hover:bg-[#00f3ff]/10 transition-colors"
+              >
+                Review batch ({pendingRows.length} queued) — TRUST on submit
+              </button>
+            ) : null}
           </div>
 
           {loading ? (
@@ -1352,167 +1697,73 @@ const RankedList: React.FC = () => {
               <p className="text-slate-500 text-sm">Next item…</p>
             </div>
           ) : (
-            <motion.div className="space-y-5" initial={false}>
+            <motion.div className="space-y-5 w-full mx-auto lg:mx-0" initial={false}>
               <div
-                className="rounded-2xl max-w-md w-full mx-auto p-[3px] sm:max-w-md"
+                className="rounded-2xl w-full p-[3px]"
                 style={{
                   background: 'linear-gradient(135deg, rgba(0,243,255,0.3) 0%, rgba(255,30,109,0.16) 50%, rgba(0,243,255,0.12) 100%)',
                   boxShadow: '0 20px 56px rgba(0,0,0,0.5), 0 0 40px rgba(0,243,255,0.05)',
                 }}
               >
-                <div className="rounded-[0.9rem] border border-white/[0.07] bg-[#05080f]/95 p-3 sm:p-4 backdrop-blur-2xl ring-1 ring-white/[0.04]">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-slate-500">
-                  <span className="inline-flex items-center gap-2">
-                    <span
-                      className="h-2 w-2 rounded-full shadow-[0_0_12px_rgba(0,243,255,0.9)]"
-                      style={{ background: '#00f3ff' }}
-                    />
-                    <span className="text-slate-400">Round {duels + 1}</span>
-                    {streakTier.label ? (
-                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-sans font-black normal-case text-white ${streakTier.className}`}>
-                        <Flame size={10} />
-                        {streakTier.label} ×{streak}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[#ffd89a]">
-                    <Zap size={12} className="text-[#fbbf24]" />
-                    +{xpPickPreview} XP
-                  </span>
-                </div>
+                <div className="rounded-[0.95rem] border border-white/[0.07] bg-[#05080f]/95 p-3 sm:p-5 backdrop-blur-2xl ring-1 ring-white/[0.04]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-slate-500">
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 rounded-full shadow-[0_0_12px_rgba(0,243,255,0.9)]"
+                        style={{ background: '#00f3ff' }}
+                      />
+                      <span className="text-slate-400">Round {duels + 1}</span>
+                      {streakTier.label ? (
+                        <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-sans font-black normal-case text-white ${streakTier.className}`}>
+                          <Flame size={10} />
+                          {streakTier.label} ×{streak}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-[#ffd89a]">
+                      <Zap size={12} className="text-[#fbbf24]" />
+                      +{xpPickPreview} XP
+                      {round.items.length > 1 ? (
+                        <span className="ml-1.5 rounded-md bg-white/[0.06] px-2 py-0.5 font-sans tabular-nums normal-case tracking-normal text-[9px] text-slate-400">
+                          {round.items.length} up
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
 
-                <AnimatePresence mode="wait">
-                  {round.items[0] ? (
-                    <motion.div
-                      key={round.items[0].id}
-                      initial={reduceMotion ? false : { opacity: 0, x: 48, filter: 'blur(4px)' }}
-                      animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                      exit={reduceMotion ? undefined : { opacity: 0, x: -40, filter: 'blur(4px)' }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="group relative rounded-2xl border border-white/[0.1] overflow-hidden"
-                      style={{
-                        background: 'linear-gradient(165deg, rgba(8,12,24,0.95) 0%, rgba(12,6,20,0.88) 100%)',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 16px 48px rgba(0,0,0,0.4)',
-                      }}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4 w-full items-stretch">
+                    <div className="contents">
+                      <AnimatePresence initial={false} mode="popLayout">
+                        {round.items.map((item, slotIdx) => (
+                          <ArenaLaneCard
+                            key={item.id}
+                            item={item}
+                            activeList={activeList ?? undefined}
+                            stakingTx={stakingTx}
+                            reduceMotion={reduceMotion}
+                            emphasized={round.items.length >= 3 ? slotIdx === 1 : round.items.length === 1}
+                            onYesNo={(support) => onYesNo(item, support)}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <p className="text-[9px] text-slate-500 text-center">Local session only — not on-chain odds.</p>
+                    <motion.button
+                      type="button"
+                      onClick={onSkip}
+                      disabled={stakingTx}
+                      whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+                      whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.98 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-200 hover:border-[#00f3ff]/25 transition-colors"
                     >
-                      {(() => {
-                        const item = round.items[0];
-                        return (
-                          <>
-                            <div className="relative aspect-[5/3] sm:aspect-[16/9] max-h-[200px] sm:max-h-[220px] w-full bg-[#030508] overflow-hidden rounded-xl">
-                              {item.kind === 'claim' && item.pairKind === 'claim-vs' ? (
-                                <ArenaVsHeroImages
-                                  leftSrc={item.image}
-                                  rightSrc={item.imageSecondary}
-                                  leftName={item.versusLeftLabel}
-                                  rightName={item.versusRightLabel}
-                                />
-                              ) : item.image ? (
-                                <img src={item.image} alt="" className="h-full w-full object-cover" />
-                              ) : (
-                                <div
-                                  className="absolute inset-0 flex items-center justify-center text-4xl font-black font-display"
-                                  style={{
-                                    background: 'radial-gradient(circle at 30% 20%, rgba(0,243,255,0.2) 0%, transparent 50%), #050a12',
-                                    color: 'rgba(0,243,255,0.25)',
-                                  }}
-                                >
-                                  {(item.label || '?').charAt(0).toUpperCase()}
-                                </div>
-                              )}
-                              <div className="absolute inset-0 bg-gradient-to-t from-[#020308] via-[#020308]/30 to-transparent opacity-90 pointer-events-none" />
-                              {item.pairKind ? (
-                                <div className="absolute bottom-2 left-2">
-                                  <span className="rounded-lg bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#00f3ff]/90 ring-1 ring-[#00f3ff]/25">
-                                    {item.pairKind}
-                                  </span>
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="px-3 pt-3 pb-1.5 relative">
-                              <p className="text-base sm:text-lg font-bold text-white leading-tight break-words drop-shadow-sm">
-                                {item.label}
-                              </p>
-                              {item.subtitle ? (
-                                <p className="text-[11px] text-slate-500 mt-1 font-mono uppercase tracking-wider">
-                                  {item.subtitle}
-                                </p>
-                              ) : null}
-                            </div>
-                            <div className="grid grid-cols-2 gap-2.5 px-3 pb-3">
-                              <motion.button
-                                type="button"
-                                onClick={() => onYesNo(item, true)}
-                                disabled={stakingTx}
-                                onMouseEnter={playHover}
-                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
-                                transition={{ type: 'spring', stiffness: 450, damping: 22 }}
-                                className="relative rounded-xl py-3 text-center disabled:opacity-50 disabled:pointer-events-none overflow-hidden"
-                                style={{
-                                  border: '1px solid rgba(0,243,255,0.5)',
-                                  background: 'linear-gradient(180deg, rgba(0,243,255,0.2) 0%, rgba(4,20,32,0.95) 100%)',
-                                  boxShadow: '0 0 32px rgba(0,243,255,0.12), inset 0 1px 0 rgba(255,255,255,0.2)',
-                                }}
-                              >
-                                <span className="inline-flex items-center justify-center gap-1.5 relative z-10">
-                                  <Check className="w-[18px] h-[18px] sm:w-5 sm:h-5" style={{ color: '#7afcff' }} strokeWidth={2.5} />
-                                  <span
-                                    className="text-base sm:text-lg font-black tracking-tight"
-                                    style={{ color: '#e0fffe', textShadow: '0 0 24px rgba(0,243,255,0.5)' }}
-                                  >
-                                    Yes
-                                  </span>
-                                </span>
-                              </motion.button>
-                              <motion.button
-                                type="button"
-                                onClick={() => onYesNo(item, false)}
-                                disabled={stakingTx}
-                                onMouseEnter={playHover}
-                                whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-                                whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
-                                transition={{ type: 'spring', stiffness: 450, damping: 22 }}
-                                className="relative rounded-xl py-3 text-center disabled:opacity-50 disabled:pointer-events-none overflow-hidden"
-                                style={{
-                                  border: '1px solid rgba(255,30,109,0.45)',
-                                  background: 'linear-gradient(180deg, rgba(255,30,109,0.2) 0%, rgba(24,4,16,0.95) 100%)',
-                                  boxShadow: '0 0 28px rgba(255,30,109,0.12), inset 0 1px 0 rgba(255,255,255,0.12)',
-                                }}
-                              >
-                                <span className="inline-flex items-center justify-center gap-1.5 relative z-10">
-                                  <X className="w-[18px] h-[18px] sm:w-5 sm:h-5" style={{ color: '#ff9ec4' }} strokeWidth={2.5} />
-                                  <span
-                                    className="text-base sm:text-lg font-black tracking-tight"
-                                    style={{ color: '#ffe0ec', textShadow: '0 0 20px rgba(255,30,109,0.35)' }}
-                                  >
-                                    No
-                                  </span>
-                                </span>
-                              </motion.button>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-
-                <div className="mt-4 flex flex-col items-center gap-2">
-                  <p className="text-[9px] text-slate-500 text-center">Local session only — not on-chain odds.</p>
-                  <motion.button
-                    type="button"
-                    onClick={onSkip}
-                    disabled={stakingTx}
-                    whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-                    whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 26 }}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-slate-200 hover:border-[#00f3ff]/25 transition-colors"
-                  >
-                    <SkipForward size={14} />
-                    Skip
-                  </motion.button>
-                </div>
+                      <SkipForward size={14} />
+                      Skip
+                    </motion.button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -1521,168 +1772,115 @@ const RankedList: React.FC = () => {
           )}
         </div>
 
-        {listId && ARENA_SHOW_LEADERBOARD ? (
-        <aside className="lg:sticky lg:top-6 h-fit flex flex-col gap-4 min-w-0 w-full p-4 sm:p-5 md:p-6 lg:p-7 bg-[#03080e]/60">
-          <div className="rounded-3xl border border-slate-700/80 bg-gradient-to-b from-slate-900/90 to-[#060b14] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="mb-3 pb-4 border-b border-slate-800/80">
-              <div className="flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500/20 to-cyan-500/15 border border-amber-400/35 shadow-[0_0_20px_rgba(245,158,11,0.15)] shrink-0">
-                  <Trophy size={18} className="text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-black uppercase tracking-[0.36em] text-amber-300/90 mb-1.5 drop-shadow-[0_0_10px_rgba(245,158,11,0.25)]">
-                    {activeList?.title ?? 'List'} · live order
-                  </p>
-                  <h2 className="text-xl sm:text-2xl font-black font-display uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-white to-cyan-200 flex items-center gap-2 flex-wrap leading-tight">
-                    <span className="inline-flex items-center gap-1.5 text-cyan-200/95">
-                      <List size={20} className="text-cyan-300/90" />
-                    </span>
-                    Your order
-                    <Crown size={18} className="text-amber-400 shrink-0 drop-shadow-[0_0_10px_rgba(251,191,36,0.45)]" />
-                  </h2>
-                  <div className="h-[3px] w-16 mt-2.5 rounded-full bg-gradient-to-r from-amber-400 via-cyan-400 to-transparent opacity-90" />
-                  <p className="text-xs text-slate-400 mt-3 leading-snug">
-                    Session lean · reset clears.
-                  </p>
-                </div>
-              </div>
-            </div>
-            {ranking.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-700/70 bg-slate-950/50 py-8 px-3 text-center text-[11px] text-slate-500 leading-relaxed">
-                Start ranking to build your order.
-              </div>
-            ) : (
-              <ol className="space-y-1.5 max-h-[min(320px,45vh)] lg:max-h-[min(380px,50vh)] overflow-y-auto pr-1 custom-scrollbar">
-                {ranking.slice(0, 10).map(({ it, place, r }, rowIdx) => (
-                  <li
-                    key={it.id}
-                    style={reduceMotion ? undefined : { animationDelay: `${rowIdx * 0.04}s` }}
-                    className="arena-sidebar-row flex items-center gap-2.5 rounded-2xl border border-slate-800/90 bg-[#070b14] px-2.5 py-2 text-sm transition-all duration-200 hover:border-cyan-500/35 hover:bg-[#0a101c] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
-                  >
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-black ${
-                        place <= 3 ? 'bg-gradient-to-br from-amber-500/30 to-orange-600/20 text-amber-100' : 'bg-slate-800 text-slate-500'
-                      }`}
-                    >
-                      {place}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-slate-100 font-medium text-[13px]">{it.label}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
-                        Rank score <span className="text-slate-400 font-mono tabular-nums">{fmtArenaScore(r)}</span>
-                      </div>
-                    </div>
-                    {itemHref(it) && (
-                      <Link to={itemHref(it)!} onClick={playClick} className="shrink-0 text-[10px] font-black uppercase text-cyan-400/90">
-                        Market
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-
-          <motion.div
-            className="w-full"
-            whileHover={reduceMotion ? undefined : { y: -2 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-          >
-            <Link
-              to="/markets/triples"
-              onMouseEnter={playHover}
-              className="flex items-center justify-between rounded-xl border border-slate-700/90 bg-slate-900/70 px-3.5 py-3 text-[13px] text-slate-300 hover:border-cyan-500/40 transition-all duration-200 hover:shadow-[0_12px_32px_rgba(34,211,238,0.08)] group"
-            >
-              <span>Browse Markets</span>
-              <ChevronRight
-                size={15}
-                className="text-cyan-500/80 shrink-0 transition-transform duration-200 group-hover:translate-x-1"
-              />
-            </Link>
-          </motion.div>
-        </aside>
-        ) : null}
-        {listId ? (
-          <div className="col-span-full border-t border-slate-800/80 p-3 sm:p-4 md:px-6 md:py-5 bg-[#020814]/50">
+        <aside className="lg:sticky lg:top-6 lg:self-start flex flex-col gap-3 min-w-0 w-full p-3 sm:p-4 md:p-5 lg:p-5 bg-[#03080e]/60">
+          <ArenaLeaderboardGlance
+            players={players}
+            loading={playersLoading}
+            myAddress={address}
+            myXp={graphArenaXp}
+          />
+          {listId ? (
             <motion.div
-              className="relative rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-[#050c16] via-[#070f1a] to-fuchsia-950/20 p-3 sm:p-4 shadow-[0_0_24px_rgba(34,211,238,0.08)] overflow-hidden"
-              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              className="relative rounded-2xl border border-fuchsia-500/20 bg-gradient-to-br from-[#070a14]/95 via-[#050914]/98 to-[#120618]/95 p-3 sm:p-3.5 shadow-[0_16px_40px_rgba(0,0,0,0.45),0_0_32px_rgba(255,30,109,0.06),inset_0_1px_0_rgba(255,255,255,0.05)] overflow-hidden"
+              initial={reduceMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="relative z-10 flex flex-col lg:flex-row lg:items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-300/95 mb-1">Quick controls</p>
-                  <p className="text-xs text-slate-400 leading-snug">
-                    Set TRUST intensity, then keep ranking. Your cuts are reviewed in the cart popup.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-fuchsia-500/25 bg-slate-950/60 px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-fuchsia-300 font-black">{ARENA_STAKE_TITLES[stakePresetIdx]}</div>
-                  <div className="text-lg font-black tabular-nums text-white leading-none mt-0.5">
-                    {ARENA_STAKE_PRESETS[stakePresetIdx]} <span className="text-cyan-200/95 text-sm">TRUST</span>
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#00f3ff]/35 to-transparent pointer-events-none" aria-hidden />
+              <p className="text-[9px] font-black uppercase tracking-[0.34em] text-cyan-300/95 mb-2">Arena controls</p>
+              <p className="text-[10px] text-slate-500 leading-relaxed mb-2.5 line-clamp-3">
+                {ARENA_BATCH_MODE ? (
+                  <>
+                    TRUST preset for cuts. Claims need ≥{' '}
+                    <span className="text-amber-200/90 tabular-nums">{PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL}</span> TRUST.
+                  </>
+                ) : (
+                  <>Tip intensity preset while you rank.</>
+                )}
+              </p>
+
+              <div className="flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStakePresetIdx(Math.max(0, stakePresetIdx - 1))}
+                  disabled={stakePresetIdx <= 0}
+                  className="h-11 w-10 shrink-0 rounded-xl border border-slate-600/85 bg-slate-900/65 text-lg font-black text-slate-200 hover:border-[#00f3ff]/30 disabled:opacity-35 disabled:pointer-events-none"
+                  aria-label="Lower trust tier"
+                >
+                  −
+                </button>
+                <div className="flex-1 min-w-0 rounded-xl border border-fuchsia-500/30 bg-black/55 px-2.5 py-1 text-center backdrop-blur-sm">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-fuchsia-300/95 font-black truncate">{ARENA_STAKE_TITLES[stakePresetIdx]}</div>
+                  <div className="text-lg font-black tabular-nums text-white leading-tight mt-0.5 truncate">
+                    {ARENA_STAKE_PRESETS[stakePresetIdx]}{' '}
+                    <span className="text-cyan-200/95 text-[11px] font-bold">TRUST</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStakePresetIdx(Math.max(0, stakePresetIdx - 1))}
-                    disabled={stakePresetIdx <= 0}
-                    className="h-9 w-9 rounded-lg border border-slate-600/80 bg-slate-900/60 text-slate-300 disabled:opacity-35"
-                    aria-label="Lower trust tier"
-                  >
-                    -
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStakePresetIdx(Math.min(ARENA_STAKE_PRESETS.length - 1, stakePresetIdx + 1))}
-                    disabled={stakePresetIdx >= ARENA_STAKE_PRESETS.length - 1}
-                    className="h-9 w-9 rounded-lg border border-cyan-500/35 bg-cyan-500/10 text-cyan-100 disabled:opacity-35"
-                    aria-label="Increase trust tier"
-                  >
-                    +
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 lg:ml-auto">
-                  <motion.button
-                    type="button"
-                    onClick={() => {
-                      playClick();
-                      void refreshPool();
-                    }}
-                    disabled={loading}
-                    whileHover={reduceMotion || loading ? undefined : { scale: 1.02 }}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-cyan-100 disabled:opacity-50"
-                  >
-                    <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-                    New pool
-                  </motion.button>
-                  <motion.button
-                    type="button"
-                    onClick={resetSession}
-                    disabled={!pool.length}
-                    whileHover={reduceMotion || !pool.length ? undefined : { scale: 1.02 }}
-                    className="inline-flex items-center justify-center rounded-lg border border-slate-600/80 bg-slate-900/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white disabled:opacity-40"
-                  >
-                    Reset
-                  </motion.button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setStakePresetIdx(Math.min(ARENA_STAKE_PRESETS.length - 1, stakePresetIdx + 1))}
+                  disabled={stakePresetIdx >= ARENA_STAKE_PRESETS.length - 1}
+                  className="h-11 w-10 shrink-0 rounded-xl border border-cyan-500/40 bg-cyan-500/12 text-lg font-black text-cyan-100 hover:bg-cyan-500/18 disabled:opacity-35 disabled:pointer-events-none"
+                  aria-label="Increase trust tier"
+                >
+                  +
+                </button>
               </div>
-              {!isConnected && (
-                <div className="mt-3 pt-3 border-t border-slate-800/80">
-                  <span className="text-[10px] text-amber-400/90 flex items-center gap-1">
-                    <Wallet size={12} />
-                    Connect wallet to submit ranked cuts on-chain
+
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                <motion.button
+                  type="button"
+                  onClick={() => {
+                    playClick();
+                    void refreshPool();
+                  }}
+                  disabled={loading}
+                  whileHover={reduceMotion || loading ? undefined : { scale: 1.02 }}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/35 bg-cyan-500/10 py-2 text-[9px] font-black uppercase tracking-widest text-cyan-100 disabled:opacity-50"
+                >
+                  <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+                  New pool
+                </motion.button>
+                <motion.button
+                  type="button"
+                  onClick={resetSession}
+                  disabled={!pool.length}
+                  whileHover={reduceMotion || !pool.length ? undefined : { scale: 1.02 }}
+                  className="inline-flex items-center justify-center rounded-xl border border-slate-600/85 bg-slate-900/60 py-2 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-white disabled:opacity-40"
+                >
+                  Reset
+                </motion.button>
+              </div>
+
+              {batchDepositBelowProtocol ? (
+                <p className="mt-2.5 rounded-lg border border-amber-500/40 bg-amber-500/[0.08] px-2 py-1.5 text-[9px] text-amber-200/95 leading-snug">
+                  Some queued cuts are below the vault minimum — raise preset or bump units before submit.
+                </p>
+              ) : null}
+              {!isConnected ? (
+                <div className="mt-2.5 pt-2.5 border-t border-white/[0.06]">
+                  <span className="text-[9px] text-amber-400/95 flex items-center gap-1 leading-snug">
+                    <Wallet size={11} className="shrink-0" />
+                    Connect to submit cuts on-chain
                   </span>
                 </div>
-              )}
+              ) : null}
+              <Link
+                to="/portfolio#arena-rankings"
+                onClick={() => playClick()}
+                className="mt-2.5 flex items-center justify-center gap-1 rounded-xl border border-[#00f3ff]/20 bg-[#00f3ff]/6 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-[#9ef9ff] hover:border-[#00f3ff]/40 hover:bg-[#00f3ff]/10 transition-colors"
+              >
+                My ranked lists
+                <ChevronRight className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
+              </Link>
             </motion.div>
-          </div>
-        ) : null}
+          ) : null}
+        </aside>
         </div>
         </motion.div>
 
-        {ARENA_SHOW_LEADERBOARD && (
+        {/* Bottom "Arena champions" leaderboard kept for reference but gated off — replaced by the side-by-side ArenaRankerLeaderboard. */}
+        {false && (
         <motion.section
           className="relative mt-8 md:mt-10 w-full min-w-0 overflow-hidden rounded-3xl border-2 border-fuchsia-500/30 bg-[#020814] shadow-[0_0_100px_rgba(168,85,247,0.14),0_0_1px_rgba(34,211,238,0.35),inset_0_1px_0_rgba(255,255,255,0.07)] transition-[box-shadow] duration-500 hover:shadow-[0_0_120px_rgba(168,85,247,0.2),0_0_1px_rgba(34,211,238,0.45),inset_0_1px_0_rgba(255,255,255,0.09)]"
           initial={reduceMotion ? false : { opacity: 0, y: 28 }}
@@ -1956,6 +2154,8 @@ const RankedList: React.FC = () => {
           onRemove={removePendingRow}
           onSubmit={() => void submitArenaBatch()}
           submitting={stakingTx}
+          depositBlocked={batchDepositBelowProtocol}
+          minDepositLabel={ARENA_BATCH_MODE ? PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL : undefined}
         />
       )}
 

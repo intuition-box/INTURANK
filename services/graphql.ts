@@ -3,10 +3,12 @@ import {
   GRAPHQL_URL,
   IS_PREDICATE_ID,
   DISTRUST_ATOM_ID,
+  LIST_PREDICATE_ID,
   FEE_PROXY_ADDRESS,
   MULTI_VAULT_ADDRESS,
   LINEAR_CURVE_ID,
   OFFSET_PROGRESSIVE_CURVE_ID,
+  ARENA_XP_PER_RANK_PICK,
 } from '../constants';
 import { Account, Transaction, Claim, Triple } from '../types';
 import { hexToString, formatEther, parseEther, getAddress, isAddress } from 'viem';
@@ -15,8 +17,6 @@ import { publicClient } from './web3';
 
 // Request guard to prevent parallel overlapping global claims fetches
 let isGlobalClaimsFetching = false;
-
-const LIST_PREDICATE_ID = "0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908fb1b0a7d067c3c3cc1f5";
 
 /** In-flight dedupe + optional TTL cache to cut duplicate requests (React strict mode, LB panels, navigation). */
 const gqlInflight = new Map<string, Promise<any>>();
@@ -2176,7 +2176,112 @@ export const getLists = async (limit: number = 40, offset: number = 0, orderBy?:
 
 /**
  * List members: triples (list predicate) whose **object** is the list — **subject** is a member to rank in Arena.
+ * Arena portfolio / XP use `registerArenaPortalListTermsForIndexing` + indexer list objects — only curated portal lists count.
  */
+
+const arenaRankingAllowlistExtras = new Set<string>();
+
+/** Register list object term ids Arena can write to — e.g. current portal batch + URL-opened portal lists — so portfolio stays accurate without waiting for pagination. */
+export function registerArenaPortalListTermsForIndexing(termIds: string[]) {
+  for (const raw of termIds) {
+    const n = normalize(raw);
+    if (n) arenaRankingAllowlistExtras.add(n);
+  }
+}
+
+async function getArenaPortalRankingAllowlist(): Promise<Set<string>> {
+  const s = new Set<string>(arenaRankingAllowlistExtras);
+  try {
+    const { items } = await getLists(260, 0, [{ total_position_count: 'desc' }]);
+    for (const it of items || []) {
+      const id = (it as any)?.id;
+      if (id) s.add(normalize(id));
+    }
+  } catch {
+    /* extras-only fallback */
+  }
+  return s;
+}
+
+export interface ArenaXpRecord {
+  xp: number;
+  duels: number;
+  atomsRanked: number;
+  listsPlayed: number;
+  updatedAt: number;
+}
+
+function emptyArenaXpRecord(): ArenaXpRecord {
+  return { xp: 0, duels: 0, atomsRanked: 0, listsPlayed: 0, updatedAt: 0 };
+}
+
+type ArenaGraphTripleStanceRow = {
+  creatorId: string;
+  claimTermId: string;
+  subjectId: string;
+  subjectLabel: string;
+  subjectImage?: string;
+  listTermId: string;
+  listLabel: string;
+  support: boolean;
+  blockNumber: number;
+};
+
+function arenaTriplesResponseToPortalStances(triples: any[]): ArenaGraphTripleStanceRow[] {
+  const listPredLc = LIST_PREDICATE_ID.toLowerCase();
+  const distLc = DISTRUST_ATOM_ID.toLowerCase();
+  const rows: ArenaGraphTripleStanceRow[] = [];
+
+  for (const t of triples || []) {
+    const cid = normalize(t?.creator?.id || '');
+    if (!cid) continue;
+
+    const pred = normalize(t?.predicate?.term_id || '');
+    const obj = normalize(t?.object?.term_id || '');
+    const sub = t?.subject;
+    if (!sub?.term_id) continue;
+
+    const sImg = sub.image || sub.cached_image?.url;
+    const bn =
+      typeof t.block_number === 'number'
+        ? t.block_number
+        : typeof t.block_number === 'string'
+          ? parseInt(t.block_number, 10) || 0
+          : 0;
+
+    if (pred === listPredLc) {
+      const listTermId = t.object?.term_id || '';
+      if (!listTermId) continue;
+      rows.push({
+        creatorId: cid,
+        claimTermId: t.term_id,
+        subjectId: sub.term_id,
+        subjectLabel: resolveMetadata(sub).label || sub.label || sub.term_id.slice(0, 10),
+        subjectImage: (resolveMetadata(sub).image || sImg) as string | undefined,
+        listTermId,
+        listLabel: resolveMetadata(t.object).label || t.object?.label || 'List',
+        support: true,
+        blockNumber: bn,
+      });
+      continue;
+    }
+    if (obj === distLc && t?.predicate?.term_id) {
+      rows.push({
+        creatorId: cid,
+        claimTermId: t.term_id,
+        subjectId: sub.term_id,
+        subjectLabel: resolveMetadata(sub).label || sub.label || sub.term_id.slice(0, 10),
+        subjectImage: (resolveMetadata(sub).image || sImg) as string | undefined,
+        listTermId: t.predicate.term_id,
+        listLabel: resolveMetadata(t.predicate).label || t.predicate.label || 'List',
+        support: false,
+        blockNumber: bn,
+      });
+    }
+  }
+  return rows;
+}
+
 export async function getListMemberSubjectsForObject(
   listObjectTermId: string,
   limit: number = 200
@@ -2212,6 +2317,188 @@ export async function getListMemberSubjectsForObject(
     return out;
   } catch (e) {
     console.warn('[getListMemberSubjectsForObject]', e);
+    return [];
+  }
+}
+
+/** Arena batch claims indexed on Intuition: YES uses list predicate + list object; NO uses list as predicate + distrust object. */
+export type UserArenaRankingClaim = {
+  claimTermId: string;
+  subjectId: string;
+  subjectLabel: string;
+  subjectImage?: string;
+  listTermId: string;
+  listLabel: string;
+  support: boolean;
+  blockNumber: number;
+};
+
+/**
+ * Portfolio / sync: finalized **portal-list** memberships you created on-chain. Filtered by Intuition index list
+ * objects (`getLists`) plus optional `registerArenaPortalListTermsForIndexing` (never local queue taps).
+ */
+export async function fetchUserArenaRankingClaims(creatorWallet: string): Promise<UserArenaRankingClaim[]> {
+  const ids = prepareQueryIds(creatorWallet.trim());
+  if (!ids.length) return [];
+  const idSet = new Set(ids.map(normalize));
+
+  const allow = await getArenaPortalRankingAllowlist();
+  if (allow.size === 0) return [];
+
+  const q = `query UserArenaRankingClaims($ids: [String!]!, $listPred: String!, $distrust: String!, $limit: Int!) {
+    triples(
+      where: {
+        creator: { id: { _in: $ids } }
+        _or: [{ predicate_id: { _eq: $listPred } }, { object_id: { _eq: $distrust } }]
+      }
+      order_by: { block_number: desc }
+      limit: $limit
+    ) {
+      term_id
+      block_number
+      creator { id }
+      subject { term_id label image }
+      predicate { term_id label }
+      object { term_id label image }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { ids, listPred: LIST_PREDICATE_ID, distrust: DISTRUST_ATOM_ID, limit: 520 });
+    const parsed = arenaTriplesResponseToPortalStances(res?.triples || []).filter(
+      (s) => idSet.has(s.creatorId) && allow.has(normalize(s.listTermId)),
+    );
+
+    const best = new Map<string, UserArenaRankingClaim>();
+    for (const r of parsed) {
+      if (!r.listTermId) continue;
+      const k = `${normalize(r.listTermId)}:${normalize(r.subjectId)}`;
+      const prev = best.get(k);
+      const row: UserArenaRankingClaim = {
+        claimTermId: r.claimTermId,
+        subjectId: r.subjectId,
+        subjectLabel: r.subjectLabel,
+        subjectImage: r.subjectImage,
+        listTermId: r.listTermId,
+        listLabel: r.listLabel,
+        support: r.support,
+        blockNumber: r.blockNumber,
+      };
+      if (!prev || r.blockNumber >= prev.blockNumber) best.set(k, row);
+    }
+    return Array.from(best.values()).sort((a, b) => b.blockNumber - a.blockNumber);
+  } catch (e) {
+    console.warn('[fetchUserArenaRankingClaims]', e);
+    return [];
+  }
+}
+
+/** XP derived from finalized portal-list triples on the indexer — no browser persistence. */
+export async function fetchArenaXpRecordForWallet(address: string | null | undefined): Promise<ArenaXpRecord> {
+  const claims = await fetchUserArenaRankingClaims(address ?? '');
+  if (claims.length === 0) return emptyArenaXpRecord();
+  const listsPlayed = new Set(claims.map((c) => normalize(c.listTermId))).size;
+  const n = claims.length;
+  const lastBlock = claims.reduce((m, c) => Math.max(m, c.blockNumber), 0);
+  return {
+    xp: n * ARENA_XP_PER_RANK_PICK,
+    duels: n,
+    atomsRanked: n,
+    listsPlayed,
+    updatedAt: lastBlock || 0,
+  };
+}
+
+/** Bounded scan of recent portal-list stakes; leaderboard is approximate vs full chain history. */
+export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): Promise<
+  Array<{
+    address: string;
+    xp: number;
+    duels: number;
+    atomsRanked: number;
+    listsPlayed: number;
+    updatedAt: number;
+  }>
+> {
+  const allow = await getArenaPortalRankingAllowlist();
+  if (allow.size === 0) return [];
+
+  const q = `query ArenaPortalRankingTriples($listPred: String!, $distrust: String!, $limit: Int!) {
+    triples(
+      where: {
+        _or: [{ predicate_id: { _eq: $listPred } }, { object_id: { _eq: $distrust } }]
+      }
+      order_by: { block_number: desc }
+      limit: $limit
+    ) {
+      term_id
+      block_number
+      creator { id }
+      subject { term_id label image }
+      predicate { term_id label }
+      object { term_id label image }
+    }
+  }`;
+
+  try {
+    const res = await fetchGraphQL(q, {
+      listPred: LIST_PREDICATE_ID,
+      distrust: DISTRUST_ATOM_ID,
+      limit: maxTriples,
+    });
+    let stances = arenaTriplesResponseToPortalStances(res?.triples || []).filter((s) =>
+      allow.has(normalize(s.listTermId)),
+    );
+
+    const best = new Map<string, ArenaGraphTripleStanceRow>();
+    for (const r of stances) {
+      const k = `${r.creatorId}:${normalize(r.listTermId)}:${normalize(r.subjectId)}`;
+      const prev = best.get(k);
+      if (!prev || r.blockNumber >= prev.blockNumber) best.set(k, r);
+    }
+    stances = Array.from(best.values());
+
+    const byWallet = new Map<
+      string,
+      { stakes: ArenaGraphTripleStanceRow[]; lists: Set<string>; maxBn: number }
+    >();
+
+    for (const s of stances) {
+      const w = s.creatorId;
+      let g = byWallet.get(w);
+      if (!g) {
+        g = { stakes: [], lists: new Set(), maxBn: 0 };
+        byWallet.set(w, g);
+      }
+      g.stakes.push(s);
+      g.lists.add(normalize(s.listTermId));
+      if (s.blockNumber > g.maxBn) g.maxBn = s.blockNumber;
+    }
+
+    const out: Array<{
+      address: string;
+      xp: number;
+      duels: number;
+      atomsRanked: number;
+      listsPlayed: number;
+      updatedAt: number;
+    }> = [];
+
+    for (const [walletAddr, pack] of byWallet) {
+      const n = pack.stakes.length;
+      if (n === 0) continue;
+      out.push({
+        address: walletAddr,
+        xp: n * ARENA_XP_PER_RANK_PICK,
+        duels: n,
+        atomsRanked: n,
+        listsPlayed: pack.lists.size,
+        updatedAt: pack.maxBn || 0,
+      });
+    }
+    out.sort((a, b) => b.xp - a.xp);
+    return out;
+  } catch (e) {
+    console.warn('[fetchArenaLeaderboardXpRowsFromGraph]', e);
     return [];
   }
 }

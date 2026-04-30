@@ -18,6 +18,9 @@ export const ARENA_UI_VISIBLE = ARENA_ENABLED && !ARENA_PLACEHOLDER;
  */
 export const ARENA_BATCH_MODE = import.meta.env.VITE_ARENA_BATCH_MODE !== 'false';
 
+/** Minimum Arena XP per ranking gesture; awards scale with stake but never dip below this. */
+export const ARENA_XP_PER_RANK_PICK = 25;
+
 /** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
 export const getGeminiApiKey = (): string => {
   const raw = String(import.meta.env.VITE_GEMINI_API_KEY ?? '').trim();
