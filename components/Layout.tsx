@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useConnect, useConfig } from 'wagmi';
 import { getWalletClient } from '@wagmi/core';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords, Cpu } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Github, Plus, Shield, ExternalLink, BookOpen, MessageSquare, Twitter, Send, Coins, HeartPulse, FileText, ChevronsRight, BadgeCheck, Volume2, VolumeX, Swords, Cpu, Sparkles } from 'lucide-react';
 import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { APP_VERSION, APP_VERSION_DISPLAY, CHAIN_ID } from '../constants';
 import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../services/audio';
@@ -15,6 +15,7 @@ import { mergeFollowsFromServer } from '../services/follows';
 import ProfileBadgeWidget from './ProfileBadgeWidget';
 import ArenaBatchFab from './ArenaBatchFab';
 import { ARENA_BATCH_MODE } from '../constants';
+import { FLAGSHIP_ARENA_LIST_ID } from '../services/intuRankProductSpec';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -46,6 +47,7 @@ const EXPLORE_NAV_ITEMS: Array<{
   external?: boolean;
 }> = [
   { label: 'ACTIVITY', path: '/feed', icon: <Globe size={18} strokeWidth={2} /> },
+  { label: 'TRUST PICKS', path: `/climb?list=${FLAGSHIP_ARENA_LIST_ID}&onboard=1`, icon: <Sparkles size={18} strokeWidth={2} /> },
   { label: 'DOCUMENTATION', path: '/documentation', icon: <FileText size={18} strokeWidth={2} /> },
   { label: 'LEADERBOARD', path: '/stats', icon: <BarChart2 size={18} strokeWidth={2} /> },
   { label: 'GET TRUST', path: TRUST_SWAP_URL, icon: <Coins size={18} strokeWidth={2} />, external: true },

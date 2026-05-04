@@ -23,7 +23,6 @@ import {
   EXPLORER_URL,
   FEE_PROXY_ADDRESS,
   MULTI_VAULT_ADDRESS,
-  PROTOCOL_XP_MARKET_ACQUIRE,
 } from '../constants';
 
 function isProtocolRouterAddress(addr: string | undefined): boolean {
@@ -38,6 +37,7 @@ import Logo from '../components/Logo';
 import ShareCard from '../components/ShareCard';
 import BondingCurvesInfoPanel from '../components/BondingCurvesInfoPanel';
 import { PageLoading } from '../components/PageLoading';
+import { XpEarnHint } from '../components/XpEarnHint';
 
 type Timeframe = '15M' | '30M' | '1H' | '4H' | '1D' | '1W' | '1M' | '1Y' | 'ALL';
 type DetailTab = 'OVERVIEW' | 'POSITIONS' | 'IDENTITIES' | 'CLAIMS' | 'LISTS' | 'ACTIVITY' | 'CONNECTIONS';
@@ -729,9 +729,9 @@ const MarketDetail: React.FC = () => {
             if (action === 'ACQUIRE') {
                 notifyProtocolXpEarned({
                   address: activeWallet,
-                  amount: PROTOCOL_XP_MARKET_ACQUIRE,
                   reasonKey: 'market_acquire',
                   txHash: res.hash,
+                  depositTrustWei: parseEther(inputAmount.trim() || '0'),
                 });
             } else {
                 playSuccess();
@@ -1102,6 +1102,7 @@ const MarketDetail: React.FC = () => {
                     </div>
                 </div>))}
         </div>
+        <XpEarnHint variant="market_detail" className="mt-2 mb-2 max-w-4xl" />
 
         {/* Top summary row */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-8 mb-10 py-6 border-b border-white/5 overflow-x-auto no-scrollbar">
@@ -1221,7 +1222,7 @@ const MarketDetail: React.FC = () => {
               </p>
             </div>
             <Link
-              to={`/climb?listId=${encodeURIComponent(portalListIdFromTermId(agent.id))}`}
+              to={`/climb?list=${encodeURIComponent(portalListIdFromTermId(agent.id))}`}
               onClick={playClick}
               onMouseEnter={playHover}
               className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest text-black bg-gradient-to-r from-intuition-primary to-cyan-300 hover:brightness-110 border border-intuition-primary/50 shadow-[0_0_24px_rgba(0,243,255,0.35)] transition-all"

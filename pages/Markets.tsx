@@ -12,6 +12,7 @@ import { toast } from '../components/Toast';
 import { calculateTrustScore, calculateAgentPrice, formatMarketValue, calculateMarketCap, formatLargeNumber, isSystemVerified } from '../services/analytics';
 import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, NETWORK_NAME, PAGE_HERO_TITLE } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { XpEarnHint } from '../components/XpEarnHint';
 
 type SortOption = 'MCAP_DESC' | 'MCAP_ASC' | 'VOL_DESC' | 'VOL_ASC' | 'PRICE_DESC' | 'PRICE_ASC' | 'TRUST_DESC' | 'TRUST_ASC';
 type ClaimSortOption = 'TOTAL_MCAP_DESC' | 'TOTAL_MCAP_ASC' | 'SUPPORT_MCAP_DESC' | 'SUPPORT_MCAP_ASC' | 'OPPOSE_MCAP_DESC' | 'OPPOSE_MCAP_ASC' | 'SUPPORTERS_DESC' | 'SUPPORTERS_ASC' | 'OPPOSERS_DESC' | 'OPPOSERS_ASC' | 'POSITIONS_DESC' | 'POSITIONS_ASC';
@@ -386,6 +387,7 @@ const Markets: React.FC = () => {
               TRUST ({CURRENCY_SYMBOL})
             </span>
           </div>
+          <XpEarnHint variant="markets" className="mt-2 max-w-2xl" />
         </div>
 
         <div
@@ -901,7 +903,7 @@ const Markets: React.FC = () => {
                         <h3 className="text-white font-black font-display text-[15px] sm:text-[17px] leading-tight truncate uppercase tracking-tight group-hover:text-intuition-primary transition-colors">
                           {agent.label || 'UNKNOWN_NODE'}
                         </h3>
-                        <p className="text-[9px] font-mono text-slate-600 uppercase tracking-[0.25em] mt-1">
+                        <p className="text-[10px] font-mono text-slate-400 uppercase tracking-[0.22em] mt-1">
                           ID: {agent.id.slice(0, 10)}...
                         </p>
                       </div>
@@ -909,7 +911,7 @@ const Markets: React.FC = () => {
                         <span className={`text-2xl font-black font-display ${tierStyle.color} leading-none`}>
                           {tierStyle.label}
                         </span>
-                        <span className="text-[8px] font-mono text-slate-500 uppercase tracking-[0.3em]">
+                        <span className="text-[9px] font-mono text-slate-400 uppercase tracking-[0.28em]">
                           Trust Class
                         </span>
                       </div>
@@ -917,14 +919,14 @@ const Markets: React.FC = () => {
 
                    <div className="mt-2 mb-4 grid grid-cols-2 gap-3">
                      <div className="rounded-2xl bg-black/70 border border-white/5 px-3 py-3 flex flex-col justify-center">
-                       <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Mkt Cap</span>
+                       <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Mkt Cap</span>
                        <span className="text-sm font-mono font-black text-white inline-flex items-baseline gap-1">
                          <CurrencySymbol size="sm" leading className="text-intuition-primary/90" />
                          {mktCap > 0 ? formatMarketValue(mktCap) : '0.00K'}
                        </span>
                      </div>
-                     <div className="rounded-2xl bg-black/70 border border-white/5/10 px-3 py-3 flex flex-col justify-center">
-                       <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Price / Unit</span>
+                     <div className="rounded-2xl bg-black/70 border border-white/10 px-3 py-3 flex flex-col justify-center">
+                       <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Price / Unit</span>
                        <span className="text-sm font-mono font-black text-white inline-flex items-baseline gap-1">
                          <CurrencySymbol size="sm" leading className="text-slate-500" />
                          {formatMarketValue(price)}
@@ -935,7 +937,7 @@ const Markets: React.FC = () => {
                    <div className="mt-auto pt-3">
                      <div className="flex items-center justify-between text-[9px] font-mono font-black uppercase mb-1">
                        <span className={tierStyle.color}>Trust {strength.toFixed(0)}%</span>
-                       <span className="text-slate-600">Distrust {(100-strength).toFixed(0)}%</span>
+                       <span className="text-slate-500">Distrust {(100-strength).toFixed(0)}%</span>
                      </div>
                      <div className="h-2.5 w-full rounded-full bg-slate-900/90 border border-white/5 overflow-hidden">
                        <div

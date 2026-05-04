@@ -74,6 +74,7 @@ import CreateSignal from './pages/CreateSignal';
 import SendTrust from './pages/SendTrust';
 import SkillPlayground from './pages/SkillPlayground';
 import RankedList from './pages/RankedList';
+import DailyTrustHub from './pages/DailyTrustHub';
 import ArenaPlaceholder from './pages/ArenaPlaceholder';
 import Compare from './pages/Compare';
 import { ToastContainer } from './components/Toast';
@@ -130,6 +131,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/coming-soon" element={<ComingSoon />} />
         <Route path="/create" element={<CreateSignal />} />
         <Route path="/send-trust" element={<SendTrust />} />
+        <Route path="/hub/trust-tools" element={<DailyTrustHub />} />
         <Route
           path="/climb"
           element={ARENA_UI_VISIBLE ? <RankedList /> : <ArenaPlaceholder />}

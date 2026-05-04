@@ -1,19 +1,39 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { getWalletBalance, getShareBalanceEffective, getQuoteRedeem, resolveENS, reverseResolveENS, toAddress } from '../services/web3';
-import { getUserPositions, getUserHistory, getVaultsByIds, getUserActivityStats, getUserIdTransactionCount, getCurveLabel } from '../services/graphql';
-import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail, Copy, ChevronRight, Trash2 } from 'lucide-react';
+import { getWalletBalance, getShareBalancesBatch, resolveENS, toAddress } from '../services/web3';
+import { resolveProfileSearchInput, walletDisplayMeta, rememberTrustNameForProfile } from '../services/tns';
+import {
+  getUserPositions,
+  getPortfolioPositionsWithValue,
+  getUserHistory,
+  getVaultsByIds,
+  getUserActivityStats,
+  getUserIdTransactionCount,
+  getCurveLabel,
+  resolveMetadata,
+} from '../services/graphql';
+import { User, PieChart as PieIcon, Activity, Zap, Shield, TrendingUp, Layers, RefreshCw, Search, ArrowRight, AlertTriangle, Database, Wallet, Loader2, Fingerprint, Activity as PulseIcon, UserPlus, UserMinus, Mail, Copy, ChevronRight, Trash2, Share2, X } from 'lucide-react';
 import { formatEther, isAddress, getAddress } from 'viem';
 import { Transaction } from '../types';
-import { calculateCategoryExposure, calculateSentimentBias, formatMarketValue, formatDisplayedShares } from '../services/analytics';
+import {
+  calculateCategoryExposure,
+  calculateSentimentBias,
+  formatMarketValue,
+  formatDisplayedShares,
+  safeParseUnits,
+  calculateAgentPrice,
+  formatMaskedWalletAddress,
+  formatWalletHeadlineForUi,
+} from '../services/analytics';
 import {
   CURRENCY_SYMBOL,
+  DEFAULT_PROFILE_AVATAR_URL,
   DISTRUST_ATOM_ID,
   LINEAR_CURVE_ID,
-  OFFSET_PROGRESSIVE_CURVE_ID,
   PAGE_HERO_EYEBROW,
   PAGE_HERO_TITLE,
   PAGE_HERO_BODY,
@@ -26,6 +46,8 @@ import { isFollowing, addFollow, removeFollow, setFollowEmailAlerts, type Follow
 // import BadgesSection from '../components/BadgesSection';
 import { getEmailSubscription, removeEmailSubscription, setEmailAlertFrequency, type EmailAlertFrequency } from '../services/emailNotifications';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
+import ProfileShareCard from '../components/ProfileShareCard';
+import { getProtocolXpTotal, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#ff0055', '#facc15', '#94a3b8'];
 
@@ -51,9 +73,8 @@ const statDisplay =
   'font-display text-4xl font-black tracking-tight text-white antialiased [text-rendering:geometricPrecision] [text-shadow:none]';
 
 const POSITIONS_PER_PAGE = 10;
-/** Unbounded `Promise.all` on large holder accounts hammers RPC + can hang the page before `setLoading(false)`. */
-const PROFILE_LIVE_CHECK_CAP = 200;
-const LIVE_VERIFY_BATCH = 8;
+/** Hard cap so a wedged RPC cannot leave "Loading positions…" forever. */
+const PROFILE_FETCH_BUDGET_MS = 52_000;
 
 const PublicProfile: React.FC = () => {
   const { address: addressParam = '' } = useParams<{ address: string }>();
@@ -71,9 +92,11 @@ const PublicProfile: React.FC = () => {
   }, [addressParam]);
 
   const activeProfileFetchFor = useRef<string | null>(null);
+  /** Bumps on each profile load so abandoned requests never skip `setLoading(false)` for the active fetch. */
+  const profileFetchGenerationRef = useRef(0);
   const { address: connectedAddress } = useAccount();
   const { openEmailNotify, isEmailNotifyOpen } = useEmailNotify();
-  const [ensName, setEnsName] = useState<string | null>(null);
+  const [profileAlias, setProfileAlias] = useState<{ primaryLabel: string; isNamed: boolean } | null>(null);
   const [followEntry, setFollowEntry] = useState<FollowEntry | null>(null);
   const [positions, setPositions] = useState<any[]>([]);
   const [history, setHistory] = useState<Transaction[]>([]);
@@ -89,6 +112,7 @@ const PublicProfile: React.FC = () => {
   const [isResolving, setIsResolving] = useState(false);
   const [subscription, setSubscription] = useState<{ email: string; nickname?: string; subscribedAt?: number; alertFrequency?: EmailAlertFrequency } | null>(null);
   const [positionsPage, setPositionsPage] = useState(1);
+  const [showProfileShareModal, setShowProfileShareModal] = useState(false);
 
   const isOwnProfile = !!address && !!connectedAddress && address.toLowerCase() === connectedAddress.toLowerCase();
   /** Param present in URL but not a valid 0x address (e.g. typos, truncated paste). */
@@ -99,6 +123,25 @@ const PublicProfile: React.FC = () => {
     const start = (positionsPage - 1) * POSITIONS_PER_PAGE;
     return positions.slice(start, start + POSITIONS_PER_PAGE);
   }, [positions, positionsPage]);
+
+  const displayHeadline = useMemo(
+    () => (address ? formatWalletHeadlineForUi(profileAlias, address) : ''),
+    [profileAlias, address],
+  );
+  const maskedWalletDisplay = useMemo(() => (address ? formatMaskedWalletAddress(address) : ''), [address]);
+  const profileShareUrl = useMemo(() => {
+    if (!address || typeof window === 'undefined') return '';
+    return `${window.location.origin}/profile/${address}`;
+  }, [address]);
+
+  /** Mirrors hero badges — share card trader tier. */
+  const traderStatusLabel = useMemo(() => {
+    if (activeHoldingsCount > 50) return 'Elite trader';
+    if (activeHoldingsCount > 10) return 'Pro trader';
+    return 'Explorer';
+  }, [activeHoldingsCount]);
+
+  const [protocolXpTotal, setProtocolXpTotal] = useState(0);
 
   const refreshSubscription = useCallback((addr: string | null) => {
     if (!addr) {
@@ -120,7 +163,7 @@ const PublicProfile: React.FC = () => {
 
   useEffect(() => {
     if (address) {
-      setEnsName(null);
+      setProfileAlias(null);
       setPositions([]);
       setHistory([]);
       setVolumeData([]);
@@ -146,6 +189,21 @@ const PublicProfile: React.FC = () => {
   }, [address]);
 
   useEffect(() => {
+    setShowProfileShareModal(false);
+  }, [address]);
+
+  useEffect(() => {
+    if (!address || typeof window === 'undefined') {
+      setProtocolXpTotal(0);
+      return;
+    }
+    const refresh = () => setProtocolXpTotal(getProtocolXpTotal(address));
+    refresh();
+    window.addEventListener(PROTOCOL_XP_UPDATED_EVENT, refresh as EventListener);
+    return () => window.removeEventListener(PROTOCOL_XP_UPDATED_EVENT, refresh as EventListener);
+  }, [address]);
+
+  useEffect(() => {
     if (positionsPage > totalPositionPages) setPositionsPage(totalPositionPages);
   }, [positionsPage, totalPositionPages]);
 
@@ -164,168 +222,282 @@ const PublicProfile: React.FC = () => {
   }, [connectedAddress, address, followEntry?.emailAlerts]);
 
   const fetchUserData = async (addr: string) => {
+    const gen = ++profileFetchGenerationRef.current;
     activeProfileFetchFor.current = addr;
     setLoading(true);
+
+    const stale = () =>
+      gen !== profileFetchGenerationRef.current || activeProfileFetchFor.current !== addr;
+
     try {
-      reverseResolveENS(addr).then((name) => {
-        if (activeProfileFetchFor.current === addr) setEnsName(name);
+      walletDisplayMeta(addr).then((meta) => {
+        if (!stale()) setProfileAlias(meta);
       });
-      const bal = await getWalletBalance(addr);
-      if (activeProfileFetchFor.current !== addr) return;
-      setEthBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      // High-precision parallel fetch (all from Intuition graph / chain)
-      const [graphPositions, chainHistory, activityStats, graphTxCount] = await Promise.all([
-          getUserPositions(addr).catch(() => []),
-          getUserHistory(addr).catch(() => []),
-          getUserActivityStats(addr).catch(() => ({ txCount: 0, holdingsCount: 0 })),
-          getUserIdTransactionCount(addr).catch(() => 0)
-      ]);
-      if (activeProfileFetchFor.current !== addr) return;
-      
-      const uniqueVaultIds = Array.from(new Set([
-          ...graphPositions.map((p: any) => p.vault?.term_id?.toLowerCase()),
-          ...chainHistory.map(tx => tx.vaultId?.toLowerCase())
-      ])).filter(Boolean) as string[];
+      await Promise.race([
+        (async () => {
+          const bal = await getWalletBalance(addr);
+          if (stale()) return;
+          setEthBalance(Number(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }));
 
-      const metadata = await getVaultsByIds(uniqueVaultIds).catch(() => []);
-      if (activeProfileFetchFor.current !== addr) return;
+          // Prefer positions_with_value (Hasura: theoretical_value, sorted) — same fast path as Portfolio;
+          // skips hundreds of getShares/previewRedeem RPCs per profile load.
+          const [positionsWithValueRaw, chainHistory, activityStats, graphTxCount] = await Promise.all([
+            getPortfolioPositionsWithValue(addr).catch(() => []),
+            getUserHistory(addr).catch(() => []),
+            getUserActivityStats(addr).catch(() => ({ txCount: 0, holdingsCount: 0 })),
+            getUserIdTransactionCount(addr).catch(() => 0),
+          ]);
+          if (stale()) return;
 
-      const DUST = 1e-8; // treat below this as zero (sold / dust) — strict so closed positions never show
-      const graphWithShares = graphPositions.filter((p: any) => {
-        const s = p.shares;
-        if (s === undefined || s === null) return false;
-        const n = typeof s === 'string' ? parseFloat(s) : Number(s);
-        return n > DUST;
-      });
-      // Index query is already order_by shares desc — take top N for live verify only (huge accounts exist).
-      const graphForLiveCheck = graphWithShares.slice(0, PROFILE_LIVE_CHECK_CAP);
+          const positionsWithValue = Array.isArray(positionsWithValueRaw) ? positionsWithValueRaw : [];
 
-      // Positions: use effective shares (RPC + subgraph merge) and try both curves — in small
-      // batches so we never run thousands of concurrent RPC/GQL calls (hangs the UI, loading never ends).
-      const processGraphPosition = async (p: any) => {
-          const rawId = p.vault?.term_id;
-          if (!rawId || typeof rawId !== 'string') return null;
-          const id = rawId.toLowerCase();
-          const meta = metadata.find(m => m.id.toLowerCase() === id);
-          const rawCurve = p.vault.curve_id ?? meta?.curveId;
-          const curveFromGraph = rawCurve != null ? Number(rawCurve) || LINEAR_CURVE_ID : LINEAR_CURVE_ID;
-          const otherCurve = curveFromGraph === LINEAR_CURVE_ID ? OFFSET_PROGRESSIVE_CURVE_ID : LINEAR_CURVE_ID;
-
-          const sPrimary = await getShareBalanceEffective(addr, id, curveFromGraph);
-          const sAlt = await getShareBalanceEffective(addr, id, otherCurve);
-          const nPrimary = parseFloat(sPrimary) || 0;
-          const nAlt = parseFloat(sAlt) || 0;
-
-          let sharesRaw: string;
-          let curveId: number;
-          let sharesNum: number;
-          if (nAlt > nPrimary && nAlt > DUST) {
-            sharesRaw = sAlt;
-            curveId = otherCurve;
-            sharesNum = nAlt;
-          } else if (nPrimary > DUST) {
-            sharesRaw = sPrimary;
-            curveId = curveFromGraph;
-            sharesNum = nPrimary;
-          } else {
-            return null;
+          let graphPositions: any[] = [];
+          if (positionsWithValue.length === 0) {
+            graphPositions = await getUserPositions(addr).catch(() => []);
+            if (stale()) return;
           }
 
-          const valueStr = await getQuoteRedeem(sharesRaw, id, addr, curveId);
-          const value = parseFloat(valueStr);
+          const historyVaultIds = chainHistory.map((tx) => tx.vaultId?.toLowerCase()).filter(Boolean);
+          const graphVaultIds = (positionsWithValue.length > 0 ? positionsWithValue : graphPositions)
+            .map((p: any) => p.vault?.term_id?.toLowerCase())
+            .filter(Boolean);
+          const uniqueVaultIds = Array.from(new Set([...graphVaultIds, ...historyVaultIds])) as string[];
 
-          let label = meta?.label || `Agent ${id.slice(0,6)}...`;
-          let image = meta?.image;
-          let type = meta?.type || 'ATOM';
+          const metadata =
+            positionsWithValue.length > 0 ? [] : await getVaultsByIds(uniqueVaultIds).catch(() => []);
+          if (stale()) return;
 
-          const triple = p.vault?.term?.triple;
-          const isCounter = triple?.counter_term_id?.toLowerCase() === id.toLowerCase();
-          const pointsToDistrust = triple?.object?.term_id?.toLowerCase().includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
+          const DUST = 1e-8;
+          const finalPositionsBuf: any[] = [];
 
-          if (isCounter || pointsToDistrust) {
-              const subjectLabel = triple?.subject?.label || triple?.subject?.term_id?.slice(0, 8) || 'NODE';
-              label = `OPPOSING_${subjectLabel}`.toUpperCase();
-              image = triple?.subject?.image;
-              type = 'CLAIM';
-          }
-
-          return {
-              id,
-              curveId,
-              shares: sharesNum,
-              value: value,
-              atom: { label, id, image, type }
-          };
-      };
-
-      const liveResolved: (Awaited<ReturnType<typeof processGraphPosition>>)[] = [];
-      for (let o = 0; o < graphForLiveCheck.length; o += LIVE_VERIFY_BATCH) {
-        if (activeProfileFetchFor.current !== addr) return;
-        const chunk = graphForLiveCheck.slice(o, o + LIVE_VERIFY_BATCH);
-        const part = await Promise.all(chunk.map(processGraphPosition));
-        if (activeProfileFetchFor.current !== addr) return;
-        liveResolved.push(...part);
-      }
-
-      const finalPositions = (liveResolved.filter(Boolean) as any[]).sort(
-        (a, b) => (b.value ?? 0) - (a.value ?? 0)
-      );
-      const totalAssetsSum = finalPositions.reduce((s, p) => s + (p.value || 0), 0);
-      setPositions(finalPositions);
-      setActiveHoldingsCount(activityStats.holdingsCount || finalPositions.length);
-      setExposureData(calculateCategoryExposure(finalPositions));
-      setPortfolioValue(
-        totalAssetsSum.toLocaleString(undefined, {
-          minimumFractionDigits: 4,
-          maximumFractionDigits: 4,
-        }),
-      );
-
-      const mergedHistory = chainHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setHistory(mergedHistory);
-
-      // SEMANTIC FOOTPRINT: total transactions from Intuition graph (same definition as getUserHistory)
-      const footprintCount =
-        graphTxCount > 0
-          ? graphTxCount
-          : (mergedHistory.length > 0 ? mergedHistory.length : (activityStats.txCount > 0 ? activityStats.txCount : finalPositions.length));
-      setSemanticFootprint(footprintCount); 
-
-      // SENTIMENT BIAS: use history when available, otherwise infer from holdings
-      if (mergedHistory.length > 0) {
-          setSentimentBias(calculateSentimentBias(mergedHistory));
-      } else if (finalPositions.length > 0) {
-          // Power users with holdings but no on-chain events yet: show bullish bias
-          setSentimentBias({ trust: 95, distrust: 5 });
-      } else {
-          setSentimentBias({ trust: 50, distrust: 50 });
-      }
-      
-      // Reconstruct temporal growth chart
-      let currentRunningVol = 0;
-      let chartPoints = mergedHistory
-          .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
-          .map((tx, idx) => {
+          if (positionsWithValue.length > 0) {
+            for (const p of positionsWithValue) {
               try {
-                  const assetVal = parseFloat(formatEther(BigInt(tx.assets || '0')));
-                  currentRunningVol += assetVal > 0 ? assetVal : 0;
-              } catch (e) {}
-              return { idx, val: currentRunningVol };
-          });
-      
-      if (chartPoints.length === 0 && finalPositions.length > 0) {
-          chartPoints = [
-              { idx: 0, val: 0 },
-              { idx: 1, val: totalAssetsSum }
-          ];
-      }
-      setVolumeData(chartPoints);
+                const rawId = p.vault?.term_id;
+                if (!rawId || typeof rawId !== 'string') continue;
+                const id = rawId.toLowerCase();
+                const rawCurve = p.vault?.curve_id;
+                const curveId = rawCurve != null ? Number(rawCurve) || LINEAR_CURVE_ID : LINEAR_CURVE_ID;
+                const sharesNum = safeParseUnits(p.shares);
+                if (!Number.isFinite(sharesNum) || sharesNum <= DUST) continue;
+                const value =
+                  p.theoretical_value != null ? Number(formatEther(BigInt(p.theoretical_value))) : 0;
 
-    } catch (e) {
-      console.error("PROFILE_RECON_FAILURE:", e);
+                const triple = p.vault?.term?.triple;
+                const atom = p.vault?.term?.atom;
+                let label: string;
+                let image: string | undefined;
+                let type: string;
+                const isCounter = triple?.counter_term_id?.toLowerCase() === id;
+                const pointsToDistrust = triple?.object?.term_id
+                  ?.toLowerCase()
+                  .includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
+
+                if (isCounter || pointsToDistrust) {
+                  const subjectLabel = triple?.subject
+                    ? resolveMetadata(triple.subject).label
+                    : triple?.subject?.term_id?.slice(0, 8) || 'NODE';
+                  label = `OPPOSING_${subjectLabel}`.toUpperCase();
+                  image = triple?.subject?.image;
+                  type = 'CLAIM';
+                } else if (triple) {
+                  const sMeta = resolveMetadata(triple.subject);
+                  const oMeta = resolveMetadata(triple.object);
+                  label = `${sMeta.label} ${triple.predicate?.label || 'LINK'} ${oMeta.label}`;
+                  image = triple.subject?.image || triple.object?.image;
+                  type = 'CLAIM';
+                } else if (atom) {
+                  const meta = resolveMetadata(atom);
+                  label = meta.label || `Node_${id.slice(0, 8)}`;
+                  image = atom.image || meta.image;
+                  type = (meta.type || 'ATOM').toUpperCase();
+                } else {
+                  label = `Node_${id.slice(0, 8)}`;
+                  image = undefined;
+                  type = 'ATOM';
+                }
+
+                const dup = finalPositionsBuf.some(
+                  (x: any) => x.id === id && (x.curveId ?? LINEAR_CURVE_ID) === (curveId ?? LINEAR_CURVE_ID),
+                );
+                if (!dup) {
+                  finalPositionsBuf.push({
+                    id,
+                    curveId,
+                    shares: sharesNum,
+                    value,
+                    atom: { label, id, image, type },
+                  });
+                }
+              } catch {
+                /* skip row */
+              }
+            }
+          } else {
+            const graphWithShares = graphPositions.filter((p: any) => {
+              const s = p.shares;
+              if (s === undefined || s === null) return false;
+              const n = typeof s === 'string' ? parseFloat(s) : Number(s);
+              return n > DUST;
+            });
+
+            const batchItems = graphWithShares
+              .map((p: any) => {
+                const rawId = p.vault?.term_id;
+                if (!rawId || typeof rawId !== 'string') return null;
+                const id = rawId.toLowerCase();
+                const rawCurve =
+                  p.vault?.curve_id ?? metadata.find((m: any) => m.id.toLowerCase() === id)?.curveId;
+                const curveId = rawCurve != null ? Number(rawCurve) || LINEAR_CURVE_ID : LINEAR_CURVE_ID;
+                return { termId: id, curveId };
+              })
+              .filter(Boolean) as { termId: string; curveId: number }[];
+
+            const sharesMap =
+              batchItems.length > 0 ? await getShareBalancesBatch(addr, batchItems) : new Map<string, string>();
+            if (stale()) return;
+
+            for (const p of graphWithShares) {
+              try {
+                const rawId = p.vault?.term_id;
+                if (!rawId || typeof rawId !== 'string') continue;
+                const id = rawId.toLowerCase();
+                const meta = metadata.find((m: any) => m.id.toLowerCase() === id);
+                const rawCurve = p.vault?.curve_id ?? meta?.curveId;
+                const curveId = rawCurve != null ? Number(rawCurve) || LINEAR_CURVE_ID : LINEAR_CURVE_ID;
+
+                const sharesRaw = sharesMap.get(`${id}:${curveId}`) ?? '0';
+                const sharesNum = typeof sharesRaw === 'string' ? parseFloat(sharesRaw) : Number(sharesRaw);
+                if (!Number.isFinite(sharesNum) || sharesNum <= DUST) continue;
+
+                const vault = p.vault;
+                const price = vault
+                  ? calculateAgentPrice(
+                      vault.total_assets || '0',
+                      vault.total_shares || '1',
+                      vault.current_share_price,
+                    )
+                  : 0.1;
+                const value = sharesNum * price;
+
+                let label = meta?.label || `Agent ${id.slice(0, 6)}...`;
+                let image = meta?.image;
+                let type = meta?.type || 'ATOM';
+
+                const triple = p.vault?.term?.triple;
+                const isCounter = triple?.counter_term_id?.toLowerCase() === id.toLowerCase();
+                const pointsToDistrust = triple?.object?.term_id
+                  ?.toLowerCase()
+                  .includes(DISTRUST_ATOM_ID.toLowerCase().slice(26));
+
+                if (isCounter || pointsToDistrust) {
+                  const subjectLabel =
+                    triple?.subject?.label || triple?.subject?.term_id?.slice(0, 8) || 'NODE';
+                  label = `OPPOSING_${subjectLabel}`.toUpperCase();
+                  image = triple?.subject?.image;
+                  type = 'CLAIM';
+                }
+
+                const dup = finalPositionsBuf.some(
+                  (x: any) => x.id === id && (x.curveId ?? LINEAR_CURVE_ID) === (curveId ?? LINEAR_CURVE_ID),
+                );
+                if (!dup) {
+                  finalPositionsBuf.push({
+                    id,
+                    curveId,
+                    shares: sharesNum,
+                    value,
+                    atom: { label, id, image, type },
+                  });
+                }
+              } catch {
+                /* skip row */
+              }
+            }
+          }
+
+          const finalPositions = finalPositionsBuf.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+          const totalAssetsSum = finalPositions.reduce((s, p) => s + (p.value || 0), 0);
+          setPositions(finalPositions);
+          setActiveHoldingsCount(activityStats.holdingsCount || finalPositions.length);
+          setExposureData(calculateCategoryExposure(finalPositions));
+          setPortfolioValue(
+            totalAssetsSum.toLocaleString(undefined, {
+              minimumFractionDigits: 4,
+              maximumFractionDigits: 4,
+            }),
+          );
+
+          const mergedHistory = chainHistory.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          setHistory(mergedHistory);
+
+          // SEMANTIC FOOTPRINT: total transactions from Intuition graph (same definition as getUserHistory)
+          const footprintCount =
+            graphTxCount > 0
+              ? graphTxCount
+              : mergedHistory.length > 0
+                ? mergedHistory.length
+                : activityStats.txCount > 0
+                  ? activityStats.txCount
+                  : finalPositions.length;
+          setSemanticFootprint(footprintCount);
+
+          // SENTIMENT BIAS: use history when available, otherwise infer from holdings
+          if (mergedHistory.length > 0) {
+            setSentimentBias(calculateSentimentBias(mergedHistory));
+          } else if (finalPositions.length > 0) {
+            setSentimentBias({ trust: 95, distrust: 5 });
+          } else {
+            setSentimentBias({ trust: 50, distrust: 50 });
+          }
+
+          let currentRunningVol = 0;
+          let chartPoints = mergedHistory
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+            .map((tx, idx) => {
+              try {
+                const assetVal = parseFloat(formatEther(BigInt(tx.assets || '0')));
+                currentRunningVol += assetVal > 0 ? assetVal : 0;
+              } catch {
+                /* ignore */
+              }
+              return { idx, val: currentRunningVol };
+            });
+
+          if (chartPoints.length === 0 && finalPositions.length > 0) {
+            chartPoints = [
+              { idx: 0, val: 0 },
+              { idx: 1, val: totalAssetsSum },
+            ];
+          }
+          setVolumeData(chartPoints);
+        })(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(Object.assign(new Error('profile fetch timed out'), { name: 'ProfileFetchTimeout' })),
+            PROFILE_FETCH_BUDGET_MS,
+          ),
+        ),
+      ]);
+    } catch (e: unknown) {
+      const name = e && typeof e === 'object' && 'name' in e ? (e as { name?: string }).name : '';
+      if (name === 'ProfileFetchTimeout') {
+        console.warn('PublicProfile: fetch timed out', addr);
+        if (gen === profileFetchGenerationRef.current && activeProfileFetchFor.current === addr) {
+          setPositions([]);
+          setPortfolioValue('0.0000');
+          setSemanticFootprint(0);
+          setActiveHoldingsCount(0);
+          setExposureData([]);
+          setVolumeData([]);
+          setSentimentBias({ trust: 50, distrust: 50 });
+        }
+      } else {
+        console.error('PROFILE_RECON_FAILURE:', e);
+      }
     } finally {
-      if (activeProfileFetchFor.current === addr) {
+      if (gen === profileFetchGenerationRef.current) {
         setLoading(false);
       }
     }
@@ -333,32 +505,22 @@ const PublicProfile: React.FC = () => {
 
   const handleSearch = async () => {
       const cleanQuery = searchQuery.trim();
-      if (isAddress(cleanQuery)) {
-          playClick();
-          try {
-            const normalized = getAddress(cleanQuery as `0x${string}`);
-            navigate(`/profile/${normalized}`);
-            setSearchQuery('');
-          } catch {
-            toast.error('Invalid address');
-          }
+      if (!cleanQuery) return;
+      playClick();
+      setIsResolving(true);
+      try {
+        const { address: resolved, error } = await resolveProfileSearchInput(cleanQuery);
+        if (resolved) {
+          rememberTrustNameForProfile(resolved, cleanQuery);
+          navigate(`/profile/${resolved}`);
+          setSearchQuery('');
           return;
-      }
-      if (cleanQuery.endsWith('.eth')) {
-          playClick();
-          setIsResolving(true);
-          try {
-              const resolvedAddress = await resolveENS(cleanQuery);
-              if (resolvedAddress) {
-                  const n = toAddress(resolvedAddress);
-                  if (n) {
-                    navigate(`/profile/${n}`);
-                    setSearchQuery('');
-                  } else {
-                    toast.error('ENS did not resolve to a valid address');
-                  }
-              } else { toast.error(`ENS NOT FOUND: ${cleanQuery}`); }
-          } catch (e) { toast.error("ENS RESOLUTION FAILED"); } finally { setIsResolving(false); }
+        }
+        toast.error(error || 'Profile not found');
+      } catch {
+        toast.error('Search failed');
+      } finally {
+        setIsResolving(false);
       }
   };
 
@@ -369,6 +531,16 @@ const PublicProfile: React.FC = () => {
         .map((entry, colorIndex) => ({ name: entry.name, value: entry.value, colorIndex }))
         .filter((row) => row.value > 0),
     [exposureData]
+  );
+
+  const sharePortfolioMix = useMemo(
+    () =>
+      exposurePieSlices.slice(0, 6).map((row) => ({
+        name: row.name,
+        value: row.value,
+        color: COLORS[row.colorIndex % COLORS.length],
+      })),
+    [exposurePieSlices],
   );
 
   return (
@@ -396,7 +568,7 @@ const PublicProfile: React.FC = () => {
           <div className="flex items-center gap-0 rounded-2xl border border-white/[0.1] bg-[#0a0c14]/80 py-1.5 pl-4 pr-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all focus-within:border-intuition-primary/45 focus-within:shadow-[0_0_0_1px_rgba(0,243,255,0.12),0_12px_40px_rgba(0,0,0,0.45)]">
               <input
                   type="text"
-                  placeholder="Search by address or ENS"
+                  placeholder="Address, name.trust, or name.eth"
                   className="w-60 bg-transparent font-sans text-sm text-slate-100 outline-none placeholder:text-slate-500 sm:w-72"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -405,7 +577,14 @@ const PublicProfile: React.FC = () => {
               />
               <button
                   onClick={handleSearch}
-                  disabled={!isAddress(searchQuery.trim()) && !searchQuery.trim().endsWith('.eth') || isResolving}
+                  disabled={
+                    isResolving ||
+                    !(
+                      searchQuery.trim().length >= 2 ||
+                      isAddress(searchQuery.trim()) ||
+                      searchQuery.trim().includes('.')
+                    )
+                  }
                   className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-500 transition-all hover:bg-intuition-primary hover:text-black"
               >
                   {isResolving ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
@@ -421,33 +600,50 @@ const PublicProfile: React.FC = () => {
           <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" aria-hidden />
           <p>
             <span className="font-semibold text-amber-50">Invalid address in URL. </span>
-            The path must be a full 42-character <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs">0x</code> address. Try pasting the address again or search by ENS.
+            The path must be a full 42-character <code className="rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs">0x</code> address. Try pasting the address again or search by TNS / ENS.
           </p>
         </div>
       )}
 
       <div className="mb-10 sm:mb-12 rounded-[1.75rem] bg-gradient-to-r from-intuition-primary/45 via-cyan-200/15 to-intuition-primary/40 p-[1px] shadow-[0_0_50px_rgba(0,243,255,0.14)] sm:rounded-[2rem]">
         <div className="relative flex flex-col items-center gap-8 overflow-hidden rounded-[1.7rem] bg-gradient-to-b from-[#0c101c]/[0.97] to-[#05070d]/[0.98] p-8 sm:p-10 md:flex-row md:items-center md:gap-10 sm:rounded-[1.95rem]">
+          {address && profileShareUrl && (
+            <button
+              type="button"
+              className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-xl border border-white/15 bg-black/55 px-3 py-2 font-sans text-xs font-semibold text-slate-200 shadow-[0_0_20px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-colors hover:border-intuition-primary hover:text-intuition-primary sm:top-5 sm:right-6"
+              onClick={() => {
+                playClick();
+                setShowProfileShareModal(true);
+              }}
+              onMouseEnter={playHover}
+            >
+              <Share2 size={14} strokeWidth={2} /> Share profile
+            </button>
+          )}
           <div className="pointer-events-none absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04]" />
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.55]"
             style={{ background: MESH_ACCENT.background }}
           />
-          <div className="group relative flex h-28 w-28 shrink-0 items-center justify-center rounded-3xl border-2 border-white/10 bg-black/40 shadow-[0_0_40px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-inset ring-white/5">
+          <div className="group relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-3xl border-2 border-white/10 bg-black/40 shadow-[0_0_40px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-inset ring-white/5">
             <div className="absolute inset-0 rounded-3xl bg-intuition-primary/5 transition-colors group-hover:bg-intuition-primary/10" />
-            <User size={56} className="relative z-10 text-slate-500 transition-colors group-hover:text-intuition-primary" />
+            <img
+              src={DEFAULT_PROFILE_AVATAR_URL}
+              alt=""
+              className="relative z-10 h-full w-full object-cover"
+            />
           </div>
           <div className="relative z-10 min-w-0 flex-1 text-center md:text-left">
             <p className="mb-2 font-sans text-sm text-slate-500">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
             <h2 className="mb-1 break-words font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
-                {ensName || (address ? address.slice(0, 6) + "..." + address.slice(-4) : "Unknown address")}
+              {address ? displayHeadline || maskedWalletDisplay : 'Unknown address'}
             </h2>
-            {ensName && (
+            {profileAlias?.isNamed && address && maskedWalletDisplay && (
                 <div className="mx-auto mb-6 w-fit rounded-xl border border-intuition-primary/35 bg-black/50 px-3 py-1.5 font-mono text-xs font-black tracking-widest text-intuition-primary/90 antialiased backdrop-blur-sm md:mx-0">
-                    {address}
+                    {maskedWalletDisplay}
                 </div>
             )}
-            {!ensName && <div className="mb-4"></div>}
+            {!profileAlias?.isNamed && <div className="mb-4"></div>}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start sm:gap-3">
                 {/* {address && <BadgesSection address={address} compact />} */}
@@ -517,7 +713,7 @@ const PublicProfile: React.FC = () => {
                         playClick();
                         const addr = toAddress(address || '');
                         const idToStore = addr || (await resolveENS(address || '').then((r) => toAddress(r) || r)) || address;
-                        const label = ensName || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
+                        const label = displayHeadline || maskedWalletDisplay;
                         const hasEmail = !!getEmailSubscription(connectedAddress);
                         addFollow(connectedAddress, idToStore, { label, emailAlerts: hasEmail });
                         setFollowEntry(isFollowing(connectedAddress, idToStore) ?? null);
@@ -654,14 +850,29 @@ const PublicProfile: React.FC = () => {
             <div className={`${GLASS_SHEET} p-6 hover:border-white/15`}>
               <div className="mb-3 flex items-center gap-2">
                 <Wallet size={14} className="text-intuition-primary" />
-                <span className="font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">Wallet address</span>
+                <span className="font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">
+                  Wallet · TNS / ENS / address
+                </span>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-4">
-                <span className="break-all font-mono text-sm text-slate-300">{address.slice(0, 10)}...{address.slice(-8)}</span>
+                <div className="min-w-0 flex-1 space-y-1">
+                  {profileAlias?.isNamed ? (
+                    <>
+                      <p className="break-all font-sans text-sm font-semibold text-white">{profileAlias.primaryLabel}</p>
+                      <p className="break-all font-mono text-xs text-slate-500">{maskedWalletDisplay}</p>
+                    </>
+                  ) : (
+                    <p className="break-all font-mono text-sm text-slate-300">{displayHeadline}</p>
+                  )}
+                </div>
                 <button
-                  onClick={() => { playClick(); navigator.clipboard.writeText(address); toast.success('Address copied'); }}
+                  onClick={() => {
+                    playClick();
+                    navigator.clipboard.writeText(address);
+                    toast.success('Address copied');
+                  }}
                   onMouseEnter={playHover}
-                  className="flex items-center gap-2 rounded-xl border-2 border-white/10 px-4 py-2 font-mono text-[10px] font-black tracking-widest text-slate-400 transition-colors hover:border-intuition-primary hover:text-intuition-primary"
+                  className="flex shrink-0 items-center gap-2 rounded-xl border-2 border-white/10 px-4 py-2 font-mono text-[10px] font-black tracking-widest text-slate-400 transition-colors hover:border-intuition-primary hover:text-intuition-primary"
                 >
                   <Copy size={12} /> Copy
                 </button>
@@ -976,6 +1187,50 @@ const PublicProfile: React.FC = () => {
             </div>
           )}
       </div>
+
+      {typeof document !== 'undefined' &&
+        showProfileShareModal &&
+        address &&
+        profileShareUrl &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[500] flex items-center justify-center overflow-y-auto overscroll-contain bg-black/98 p-4 py-10 backdrop-blur-3xl animate-in zoom-in duration-300"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Share profile card"
+            onClick={() => setShowProfileShareModal(false)}
+          >
+            <div className="relative w-full max-w-3xl shrink-0 py-4" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => {
+                  playClick();
+                  setShowProfileShareModal(false);
+                }}
+                className="absolute -top-1 right-0 z-10 text-slate-500 hover:text-white transition-colors p-2 group sm:-top-2"
+                aria-label="Close share modal"
+              >
+                <X size={28} strokeWidth={2} className="sm:w-8 sm:h-8 group-hover:rotate-90 transition-transform" />
+              </button>
+              <ProfileShareCard
+                displayHeadline={displayHeadline || maskedWalletDisplay}
+                maskedAddress={maskedWalletDisplay}
+                profileUrlAbsolute={profileShareUrl}
+                avatarSrc={DEFAULT_PROFILE_AVATAR_URL}
+                vaultTotal={portfolioValue}
+                transactionCount={semanticFootprint}
+                trustPct={sentimentBias.trust}
+                portfolioMix={sharePortfolioMix}
+                protocolXpTotal={protocolXpTotal}
+                traderStatusLabel={traderStatusLabel}
+              />
+              <p className="text-center mt-6 text-slate-600 text-[8px] font-black font-mono uppercase tracking-[0.8em] animate-pulse">
+                Click outside to close
+              </p>
+            </div>
+          </div>,
+          document.body,
+        )}
       </div>
     </div>
   );

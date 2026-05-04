@@ -1,4 +1,7 @@
-export const MAINTENANCE_MODE = import.meta.env.VITE_MAINTENANCE === 'true';
+/** Maintenance page — `VITE_MAINTENANCE` is canonical; `VITE_MAINTENANCE_MODE` kept for older `.env` / CI parity. */
+export const MAINTENANCE_MODE =
+  String(import.meta.env.VITE_MAINTENANCE ?? '').trim() === 'true' ||
+  String(import.meta.env.VITE_MAINTENANCE_MODE ?? '').trim() === 'true';
 
 /** `VITE_ARENA_ENABLED=true` → Arena route can render the real UI (see `ARENA_PLACEHOLDER`). */
 export const ARENA_ENABLED = import.meta.env.VITE_ARENA_ENABLED === 'true';
@@ -18,19 +21,66 @@ export const ARENA_UI_VISIBLE = ARENA_ENABLED && !ARENA_PLACEHOLDER;
  */
 export const ARENA_BATCH_MODE = import.meta.env.VITE_ARENA_BATCH_MODE !== 'false';
 
+/**
+ * Portal Arena economic txs (vault deposit / list triples) do not always put *your* wallet as triple `creator`
+ * on the membership triple itself. When `true`, after a successful portal batch submit we also mint one stance
+ * triple per row: `(your Account atom —predicate phrase→ member atom)` so the graph reads who spoke.
+ * Adds wallet signatures (predicate atoms + triples). See `.env.example`.
+ */
+export const ARENA_PERSONAL_ATTESTATION_TRIPLES =
+  import.meta.env.VITE_ARENA_PERSONAL_ATTESTATION_TRIPLES === 'true';
+
 /** Minimum Arena XP per ranking gesture; awards scale with stake but never dip below this. */
 export const ARENA_XP_PER_RANK_PICK = 25;
 
-/** On-device “activity” XP for successful protocol actions (mirrors optional via `VITE_ARENA_LEADERBOARD_URL`). */
+/**
+ * Portal lists merged into Arena browse (`RankedList` live lists). The Arena explorer feed uses the same cap and
+ * sort so rankings shown there match lists IntuRank surfaces — not unrelated portal lists from a wider indexer scrape.
+ */
+export const ARENA_PORTAL_LISTS_FETCH_LIMIT = 48;
+
+/** On-device “activity” XP mirrors via `getArenaLeaderboardMirrorUrl()` (same IntuRank API as Arena POST). */
 export const PROTOCOL_XP_MARKET_ACQUIRE = 50;
 export const PROTOCOL_XP_CREATE_ATOM = 45;
 export const PROTOCOL_XP_CREATE_CLAIM = 45;
 /** List-triple (add atom to list) — still a proxy triple, slightly below a free-form claim. */
 export const PROTOCOL_XP_ADD_TO_LIST = 40;
-export const PROTOCOL_XP_SEND_TRUST = 8;
+/** Activity XP for qualifying native TRUST sends (see minimum amount below). */
+export const PROTOCOL_XP_SEND_TRUST = 5;
+/** Sends below this many whole TRUST tokens do not award Send TRUST activity XP in the app. */
+export const PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS = 100;
 /** One award per successful Skill `tripleFromLabels` pipeline (atoms + triple txs). */
 export const PROTOCOL_XP_SKILL_TRIPLE = 45;
 
+/**
+ * Anti-farming: activity XP scales with how much TRUST you commit on that tx, between a floor and a reference.
+ * Below `MIN_*` TRUST → 0 XP for that category (use MIN = 0 to allow any positive deposit, still scaled). At `REFERENCE_*` TRUST or above → full base XP (PROTOCOL_XP_* cap).
+ * Between → linear: floor(base × depositWei / referenceWei).
+ */
+export const PROTOCOL_XP_MARKET_ACQUIRE_MIN_DEPOSIT_TRUST_UNITS = 10;
+export const PROTOCOL_XP_MARKET_ACQUIRE_REFERENCE_DEPOSIT_TRUST_UNITS = 50;
+
+export const PROTOCOL_XP_CREATE_ATOM_MIN_DEPOSIT_TRUST_UNITS = 5;
+export const PROTOCOL_XP_CREATE_ATOM_REFERENCE_DEPOSIT_TRUST_UNITS = 25;
+
+export const PROTOCOL_XP_CREATE_CLAIM_MIN_DEPOSIT_TRUST_UNITS = 5;
+export const PROTOCOL_XP_CREATE_CLAIM_REFERENCE_DEPOSIT_TRUST_UNITS = 25;
+
+/** 0 = any on-chain deposit counts; XP still scales (protocol floor deposits stay tiny). */
+export const PROTOCOL_XP_ADD_TO_LIST_MIN_DEPOSIT_TRUST_UNITS = 0;
+export const PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS = 15;
+
+/** Match triple Skill deposits — min 0 scales everything sub-reference (raise deposit for meaningful XP). */
+export const PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS = 0;
+export const PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS = 15;
+
+/** Max activity XP points creditable per UTC calendar day per bucket (stops infinite micro-tx loops). */
+export const PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE = 200;
+export const PROTOCOL_XP_DAILY_CAP_CREATE_ATOM = 135;
+export const PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM = 135;
+export const PROTOCOL_XP_DAILY_CAP_ADD_TO_LIST = 120;
+export const PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN = 135;
+export const PROTOCOL_XP_DAILY_CAP_SEND_TRUST = 50;
 /**
  * When set (positive integer chain block), portfolio + personal Arena XP ignore triples older than this `block_number`.
  * Cuts unrelated Intuition list activity that predates your Arena rollout (predicates match other apps too).
@@ -44,10 +94,29 @@ export const ARENA_ATTRIBUTION_MIN_BLOCK: number | null = (() => {
 
 /**
  * When true, leaderboard scans all portal-shaped list triples on the indexer → every Intuition portal user qualifies.
- * Default OFF — use GET `VITE_ARENA_LEADERBOARD_URL` for an IntuRank-only board.
+ * Default OFF — use GET leaderboard mirror (`getArenaLeaderboardMirrorUrl` / explicit env) for an IntuRank-only board.
  */
 export const ARENA_USE_GLOBAL_GRAPH_LEADERBOARD =
   String(import.meta.env.VITE_ARENA_USE_GLOBAL_GRAPH_LEADERBOARD ?? '').trim() === 'true';
+
+/** Unified IntuRank backend (email, leaderboard mirror, wallet prefs). Prefer this over email-only naming. */
+export function getInturankApiOrigin(): string {
+  const u =
+    String(import.meta.env.VITE_INTURANK_API_URL ?? '').trim() ||
+    String(import.meta.env.VITE_EMAIL_API_URL ?? '').trim();
+  return u.replace(/\/$/, '');
+}
+
+/**
+ * Arena leaderboard mirror (GET list + POST telemetry). Explicit `VITE_ARENA_LEADERBOARD_URL` overrides.
+ * Otherwise defaults to `${getInturankApiOrigin()}/api/arena-leaderboard` when an API origin is set.
+ */
+export function getArenaLeaderboardMirrorUrl(): string {
+  const explicit = String(import.meta.env.VITE_ARENA_LEADERBOARD_URL ?? '').trim();
+  if (explicit) return explicit;
+  const origin = getInturankApiOrigin();
+  return origin ? `${origin}/api/arena-leaderboard` : '';
+}
 
 /** Parse VITE_GEMINI_API_KEY (single key or comma-separated keys) and return one. Picks randomly when multiple. */
 export const getGeminiApiKey = (): string => {
@@ -104,6 +173,8 @@ export const RPC_URL = "https://rpc.intuition.systems/http";
 export const GRAPHQL_URL =
   import.meta.env.DEV ? "/v1/graphql" : (import.meta.env.VITE_GRAPHQL_URL || "https://mainnet.intuition.sh/v1/graphql");
 export const EXPLORER_URL = "https://explorer.intuition.systems";
+/** Fallback avatar when effigy / indexer image is missing (bundled under `public/`). */
+export const DEFAULT_PROFILE_AVATAR_URL = "/avatars/default-profile-trust.png";
 export const CURRENCY_SYMBOL = "₸";
 
 /** Semantic app release; keep `package.json` `"version"` in sync. */
@@ -390,7 +461,9 @@ export const FEE_PROXY_ABI = [
   { "type": "error", "name": "InsufficientDepositAmountToCoverFees", "inputs": [] },
   { "type": "error", "name": "AtomDoesNotExist", "inputs": [{ "name": "atomId", "type": "bytes32" }] },
   { "type": "error", "name": "TripleExists", "inputs": [{ "name": "s", "type": "bytes32" }, { "name": "p", "type": "bytes32" }, { "name": "o", "type": "bytes32" }] },
-  { "type": "error", "name": "MinimumDeposit", "inputs": [] }
+  { "type": "error", "name": "MinimumDeposit", "inputs": [] },
+  /** Forwarded from MultiVault — selector 0xb4856ebc; enables viem to decode createAtoms simulation reverts. */
+  { "type": "error", "name": "MultiVault_AtomExists", "inputs": [{ "name": "atomData", "type": "bytes" }] }
 ] as const;
 
 export const MULTI_VAULT_ABI = [
@@ -497,6 +570,13 @@ export const MULTI_VAULT_ABI = [
     "type": "function"
   },
   {
+    "inputs": [{ "internalType": "bytes", "name": "atomData", "type": "bytes" }],
+    "name": "calculateAtomId",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
     "anonymous": false,
     "inputs": [
       { "indexed": true, "internalType": "address", "name": "creator", "type": "address" },
@@ -518,5 +598,6 @@ export const MULTI_VAULT_ABI = [
     ],
     "name": "TripleCreated",
     "type": "event"
-  }
+  },
+  { "type": "error", "name": "MultiVault_AtomExists", "inputs": [{ "name": "atomData", "type": "bytes" }] }
 ] as const;

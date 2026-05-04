@@ -4,15 +4,15 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap, User } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap, User, ArrowLeftRight, ArrowDownUp } from 'lucide-react';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
-import { formatEther, getAddress } from 'viem';
+import { formatEther, getAddress, parseEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
 import { getAllAgents, buildHomeAtomSectionsFrom, getNewlyCreatedAtoms, getNetworkStats, getAccountsByTermIds } from '../services/graphql';
 import type { Account } from '../types';
 import { formatMarketValue, safeWeiToEther } from '../services/analytics';
-import { CURRENCY_SYMBOL, PROTOCOL_XP_MARKET_ACQUIRE } from '../constants';
+import { CURRENCY_SYMBOL } from '../constants';
 import { notifyProtocolXpEarned } from '../services/protocolXp';
 import { toast } from '../components/Toast';
 import {
@@ -890,6 +890,21 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, header
         </div>
       </div>
 
+      <div
+        className="mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[8px] font-bold uppercase tracking-[0.12em] text-slate-500"
+        aria-hidden
+      >
+        <span className="inline-flex items-center gap-1 text-cyan-400/85">
+          <ArrowLeftRight size={12} strokeWidth={2.4} />
+          Buy / list
+        </span>
+        <span className="text-slate-700">·</span>
+        <span className="inline-flex items-center gap-1 text-fuchsia-400/85">
+          <ArrowDownUp size={12} strokeWidth={2.4} />
+          Next
+        </span>
+      </div>
+
       <p
         className="mt-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 font-mono text-[9px] tabular-nums tracking-[0.2em] text-slate-500 sm:px-3 sm:py-1 sm:text-[10px]"
         style={{ boxShadow: `0 0 6px ${sectionColor}10` }}
@@ -1009,9 +1024,9 @@ const BuySidePanel: React.FC<BuySidePanelProps> = ({ agent, isOpen, onClose, onS
       const res = await depositToVault(trimmed, agent.id, acc, 1, (log) => toast.info(log));
       notifyProtocolXpEarned({
         address: acc,
-        amount: PROTOCOL_XP_MARKET_ACQUIRE,
         reasonKey: 'market_acquire',
         txHash: res.hash,
+        depositTrustWei: parseEther(trimmed),
       });
       toast.success('Acquisition complete.');
       onSuccess(agent.label || 'this atom');
@@ -1431,9 +1446,16 @@ const Home: React.FC = () => {
                 <span className="block text-glow-white text-white drop-shadow-[0_0_16px_rgba(255,255,255,0.2)]">TRENDING</span>
                 <span className="mt-1 block text-glow-red text-intuition-secondary drop-shadow-[0_0_20px_rgba(255,30,109,0.25)]">ATOMS</span>
               </h2>
-              <p className="mx-auto mb-6 max-w-lg font-display text-sm tracking-wide text-slate-400 sm:text-base">
-                <span className="font-semibold text-intuition-primary text-glow-blue">Swipe</span> to buy or watchlist ·{' '}
-                <span className="text-slate-300">scroll cards vertically</span>
+              <p className="mx-auto mb-4 flex flex-wrap items-center justify-center gap-2 text-center font-display text-xs tracking-wide text-slate-500 sm:text-sm">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold text-cyan-200/95 shadow-[0_0_12px_rgba(0,243,255,0.15)]">
+                  <ArrowLeftRight size={14} className="text-cyan-400" aria-hidden />
+                  Drag sideways
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="inline-flex items-center gap-1.5 text-slate-400">
+                  <ArrowDownUp size={14} className="text-fuchsia-400/90" aria-hidden />
+                  Drag up/down for next card
+                </span>
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3" role="tablist" aria-label="Trending arena view">
                 <button

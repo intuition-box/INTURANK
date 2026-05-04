@@ -11,7 +11,7 @@ import { useAccount } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import {
   TrendingUp, Activity, Send, Cpu, ArrowRight, ArrowUpRight, Crown, Flame,
-  Sparkles, Zap, BarChart2, Wallet, Plus, Trophy, ChevronRight,
+  Sparkles, Zap, BarChart2, Wallet, Plus, Trophy, ChevronRight, ArrowLeftRight,
 } from 'lucide-react';
 import { getNetworkStats, getAllAgents } from '../services/graphql';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
@@ -350,7 +350,13 @@ const MobileHome: React.FC = () => {
           </Link>
         </div>
 
-        <div className="-mx-4 px-4 overflow-x-auto overflow-y-hidden snap-x snap-mandatory scrollbar-none">
+        <div className="relative">
+          <div className="pointer-events-none absolute right-0 top-0 bottom-4 w-10 z-[1] bg-gradient-to-l from-[#020308] to-transparent rounded-r-lg" aria-hidden />
+          <p className="flex items-center justify-end gap-1 text-[10px] font-mono font-black uppercase tracking-[0.2em] text-cyan-400/90 mb-2 pr-1">
+            <ArrowLeftRight size={12} strokeWidth={2.4} className="opacity-90" aria-hidden />
+            Swipe
+          </p>
+          <div className="-mx-4 px-4 overflow-x-auto overflow-y-hidden snap-x snap-mandatory scrollbar-none pb-1">
           <div className="flex gap-3 min-w-min pr-4">
             {loadingTrending && trending.length === 0
               ? Array.from({ length: 4 }).map((_, i) => (
@@ -401,6 +407,7 @@ const MobileHome: React.FC = () => {
                     </Link>
                   );
                 })}
+          </div>
           </div>
         </div>
       </section>

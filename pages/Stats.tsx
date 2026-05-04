@@ -2,14 +2,28 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Trophy, Medal, Award, Zap, TrendingUp, Crown, AlertTriangle, RefreshCw, Users, Shield, Flame, Activity, Search, ArrowRight, Terminal, Loader2, ArrowRightCircle, ShieldAlert, BadgeCheck, UserCog } from 'lucide-react';
-import { getTopPositions, getAllAgents, getTopClaims, getAccountPnlCurrent, getPnlLeaderboard, searchAccountsByLabel } from '../services/graphql';
+import {
+  getTopPositions,
+  getAllAgents,
+  getTopClaims,
+  getAccountPnlCurrent,
+  getPnlLeaderboard,
+  searchAccountsByLabelSuggest,
+} from '../services/graphql';
 import { reverseResolveENS, resolveENS } from '../services/web3';
-import { formatEther, isAddress } from 'viem';
+import {
+  canonicalTrustFullName,
+  rememberTrustNameForProfile,
+  resolveProfileSearchInput,
+  resolveTrustNameToAddress,
+  reverseResolveTNS,
+} from '../services/tns';
+import { formatEther, isAddress, getAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { formatMarketValue, isSystemVerified } from '../services/analytics';
-import { CURRENCY_SYMBOL } from '../constants';
+import { CURRENCY_SYMBOL, DEFAULT_PROFILE_AVATAR_URL } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { PageLoading } from '../components/PageLoading';
 import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
@@ -17,6 +31,8 @@ import IntuRankRankersLeaderboard from '../components/IntuRankRankersLeaderboard
 import { computeClaimEntropyScore } from '../services/statsClaimEntropy';
 
 type LeaderboardType = 'STAKERS' | 'SEASON_2' | 'RANKERS' | 'AGENTS_SUPPORT' | 'AGENTS_CONTROVERSY' | 'CLAIMS' | 'PNL';
+
+type IdentitySearchHint = { kind: 'tns' | 'ens'; label: string; address: string };
 
 interface LeaderboardEntry {
   rank: number;
@@ -89,7 +105,7 @@ const Stats: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isResolving, setIsResolving] = useState(false);
   const [searchSuggestions, setSearchSuggestions] = useState<{ id: string; label: string | null; image?: string | null }[]>([]);
-  const [ensSuggestion, setEnsSuggestion] = useState<{ address: string; name: string } | null>(null);
+  const [identityHints, setIdentityHints] = useState<IdentitySearchHint[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsFetched, setSuggestionsFetched] = useState(false);
@@ -97,6 +113,7 @@ const Stats: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pnlCacheRef = React.useRef<{ entries: LeaderboardEntry[]; at: number } | null>(null);
   const suggestionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionSeqRef = useRef(0);
   const [diagnostic, setDiagnostic] = useState<{
     address: string;
     label: string;
@@ -136,13 +153,15 @@ const Stats: React.FC = () => {
             topItems.map(async (item, i) => {
               if (item.label.startsWith('Trader 0x')) {
                 try {
-                  const ens = await reverseResolveENS(item.id);
-                  if (ens && ens !== item.label) {
+                  const named =
+                    (await reverseResolveTNS(item.id).catch(() => null)) ||
+                    (await reverseResolveENS(item.id).catch(() => null));
+                  if (named && named !== item.label) {
                     return {
                       i,
                       next: {
                         ...item,
-                        label: ens,
+                        label: named,
                         image: item.image || `https://effigy.im/a/${item.id}.png`,
                       },
                     };
@@ -387,19 +406,19 @@ const Stats: React.FC = () => {
     fetchData();
   }, [activeTab]);
 
-  // ENS / name search suggestions: pop up from first character when not typing a wallet address
+  // ENS / TNS / label search suggestions (debounced)
   useEffect(() => {
     const q = searchQuery.trim();
     if (isAddress(q)) {
       setSearchSuggestions([]);
-      setEnsSuggestion(null);
+      setIdentityHints([]);
       setShowSuggestions(false);
       setSuggestionsFetched(false);
       return;
     }
     if (!q) {
       setSearchSuggestions([]);
-      setEnsSuggestion(null);
+      setIdentityHints([]);
       setShowSuggestions(false);
       setSuggestionsLoading(false);
       setSuggestionsFetched(false);
@@ -410,25 +429,67 @@ const Stats: React.FC = () => {
     setSuggestionsLoading(true);
     setSuggestionsFetched(false);
     suggestionDebounceRef.current = setTimeout(async () => {
-      const ensName = q.toLowerCase().endsWith('.eth') ? q : `${q}.eth`;
+      const seq = ++suggestionSeqRef.current;
       try {
-        const [accounts, resolvedAddress] = await Promise.all([
-          searchAccountsByLabel(q),
-          q.length >= 2 ? resolveENS(ensName) : Promise.resolve(null),
-        ]);
+        const accounts = await searchAccountsByLabelSuggest(q);
+        if (seq !== suggestionSeqRef.current) return;
+
+        const hints: IdentitySearchHint[] = [];
+        let tnsAddr: string | null = null;
+        let tnsLabel = '';
+        try {
+          const queryTrust = q.toLowerCase().endsWith('.trust')
+            ? q
+            : !q.includes('.') && q.length >= 2
+              ? `${q}.trust`
+              : '';
+          if (queryTrust) {
+            const a = await resolveTrustNameToAddress(queryTrust);
+            if (a) {
+              tnsAddr = a;
+              tnsLabel = canonicalTrustFullName(queryTrust) ?? queryTrust;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        if (seq !== suggestionSeqRef.current) return;
+        if (tnsAddr && tnsLabel) {
+          hints.push({ kind: 'tns', label: tnsLabel, address: tnsAddr });
+        }
+
+        const ensNameGuess = q.toLowerCase().endsWith('.eth') ? q : `${q}.eth`;
+        let ensAddr: string | null = null;
+        if (q.length >= 2) {
+          try {
+            const r = await resolveENS(ensNameGuess);
+            if (r && isAddress(r)) ensAddr = getAddress(r as `0x${string}`);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (seq !== suggestionSeqRef.current) return;
+        if (ensAddr && !hints.some((h) => h.address.toLowerCase() === ensAddr.toLowerCase())) {
+          hints.push({ kind: 'ens', label: ensNameGuess, address: ensAddr });
+        }
+
+        if (seq !== suggestionSeqRef.current) return;
         setSearchSuggestions(accounts || []);
-        setEnsSuggestion(resolvedAddress ? { address: resolvedAddress, name: ensName } : null);
+        setIdentityHints(hints);
         setShowSuggestions(true);
       } catch {
+        if (seq !== suggestionSeqRef.current) return;
         setSearchSuggestions([]);
-        setEnsSuggestion(null);
+        setIdentityHints([]);
         setShowSuggestions(true);
       } finally {
-        setSuggestionsLoading(false);
-        setSuggestionsFetched(true);
+        if (seq === suggestionSeqRef.current) {
+          setSuggestionsLoading(false);
+          setSuggestionsFetched(true);
+        }
       }
       suggestionDebounceRef.current = null;
-    }, 280);
+    }, 120);
     return () => {
       if (suggestionDebounceRef.current) clearTimeout(suggestionDebounceRef.current);
     };
@@ -472,23 +533,17 @@ const Stats: React.FC = () => {
       const query = searchQuery.trim();
       if (!query) return;
 
-      const isWallet = isAddress(query);
-      const isEns = query.toLowerCase().endsWith('.eth');
-
-      if (isWallet) { 
-          playClick(); 
-          navigate(`/profile/${query}`); 
-          // Also load diagnostics for this address
+      const loadDiagnostics = async (addr: string, labelForDiag: string) => {
           try {
             setDiagnosticLoading(true);
             setDiagnosticError(null);
             const [stats, pnl] = await Promise.all([
-              getUserActivityStats(query),
-              getAccountPnlCurrent(query).catch(() => null),
+              getUserActivityStats(addr),
+              getAccountPnlCurrent(addr).catch(() => null),
             ]);
             setDiagnostic({
-              address: query,
-              label: ensNameForDisplay(query),
+              address: addr,
+              label: labelForDiag,
               txCount: stats.txCount,
               holdingsCount: stats.holdingsCount,
               equityValue: pnl ? Number(pnl.equity_value) : null,
@@ -500,52 +555,42 @@ const Stats: React.FC = () => {
           } finally {
             setDiagnosticLoading(false);
           }
-          return; 
+      };
+
+      playClick();
+      setIsResolving(true);
+      try {
+        if (isAddress(query)) {
+          const normalized = getAddress(query as `0x${string}`);
+          navigate(`/profile/${normalized}`);
+          await loadDiagnostics(normalized, ensNameForDisplay(normalized));
+          return;
+        }
+
+        const { address: resolved, error } = await resolveProfileSearchInput(query);
+        if (resolved) {
+          rememberTrustNameForProfile(resolved, query);
+          navigate(`/profile/${resolved}`);
+          const label =
+            query.toLowerCase().includes('.trust') || query.toLowerCase().endsWith('.eth')
+              ? query
+              : ensNameForDisplay(resolved);
+          await loadDiagnostics(resolved, label);
+          return;
+        }
+
+        const matches = await searchAccountsByLabelSuggest(query);
+        if (matches?.length) {
+          navigate(`/profile/${matches[0].id}`);
+          return;
+        }
+
+        toast.error(error || 'IDENTITY NOT FOUND');
+      } catch {
+        toast.error('Resolution failed');
+      } finally {
+        setIsResolving(false);
       }
-
-      if (isEns) {
-          playClick();
-          setIsResolving(true);
-          try {
-              // 1) Try canonical ENS on Ethereum mainnet
-              const address = await resolveENS(query);
-              if (address) {
-                  navigate(`/profile/${address}`);
-                  // diagnostics for resolved address
-                  try {
-                    setDiagnosticLoading(true);
-                    setDiagnosticError(null);
-                    const [stats, pnl] = await Promise.all([
-                      getUserActivityStats(address),
-                      getAccountPnlCurrent(address).catch(() => null),
-                    ]);
-                    setDiagnostic({
-                      address,
-                      label: query,
-                      txCount: stats.txCount,
-                      holdingsCount: stats.holdingsCount,
-                      equityValue: pnl ? Number(pnl.equity_value) : null,
-                      pnlPct: pnl ? Number(pnl.pnl_pct) : null,
-                    });
-                  } catch {
-                    setDiagnosticError('Failed to load diagnostics');
-                    setDiagnostic(null);
-                  } finally {
-                    setDiagnosticLoading(false);
-                  }
-                  return;
-              }
-
-              // 2) Fallback to Intuition account labels (old behavior)
-              const matches = await searchAccountsByLabel(query);
-              if (matches && matches.length > 0) {
-                  navigate(`/profile/${matches[0].id}`);
-                  return;
-              }
-
-              toast.error(`ENS IDENTITY NOT FOUND: ${query}`);
-          } catch (e) { toast.error("ENS RESOLUTION FAILED"); } finally { setIsResolving(false); }
-      } else { toast.error("INVALID WALLET OR ENS"); }
   };
 
   return (
@@ -638,7 +683,7 @@ const Stats: React.FC = () => {
                             <input 
                                 ref={searchInputRef}
                                 type="text" 
-                                placeholder="QUERY_DATABASE: [WALLET_ADDRESS | ENS_NAME]" 
+                                placeholder="QUERY_DATABASE: [WALLET | name.trust | name.eth]" 
                                 className="w-full h-16 bg-transparent text-white font-mono text-sm px-8 outline-none placeholder-slate-700 uppercase tracking-widest font-black"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -659,19 +704,43 @@ const Stats: React.FC = () => {
                                   <div className="flex items-center gap-3 px-4 py-4 text-slate-400 font-mono text-xs">
                                     <Loader2 size={14} className="animate-spin" /> Searching…
                                   </div>
-                                ) : (searchSuggestions.length > 0 || ensSuggestion) ? (
+                                ) : (searchSuggestions.length > 0 || identityHints.length > 0) ? (
                                   <>
-                                    {ensSuggestion && (
+                                    {identityHints.map((h) => (
                                       <button
+                                        key={`${h.kind}-${h.address}`}
                                         type="button"
-                                        onClick={() => { playClick(); setShowSuggestions(false); setSearchQuery(ensSuggestion.name); navigate(`/profile/${ensSuggestion.address}`); }}
+                                        onClick={() => {
+                                          playClick();
+                                          setShowSuggestions(false);
+                                          setSearchQuery(h.label);
+                                          rememberTrustNameForProfile(h.address, h.label);
+                                          navigate(`/profile/${h.address}`);
+                                        }}
                                         onMouseEnter={playHover}
                                         className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-intuition-primary/10 border-b border-white/5"
                                       >
-                                        <span className="text-intuition-primary font-mono text-xs font-black">{ensSuggestion.name}</span>
-                                        <span className="text-slate-500 text-[10px] font-mono">ENS → {ensSuggestion.address.slice(0, 8)}...</span>
+                                        <img
+                                          src={
+                                            h.kind === 'tns'
+                                              ? DEFAULT_PROFILE_AVATAR_URL
+                                              : `https://effigy.im/a/${h.address}.png`
+                                          }
+                                          alt=""
+                                          className="w-9 h-9 rounded-full object-cover shrink-0 border border-white/10 bg-black/40"
+                                          onError={(e) => {
+                                            e.currentTarget.onerror = null;
+                                            e.currentTarget.src = DEFAULT_PROFILE_AVATAR_URL;
+                                          }}
+                                        />
+                                        <div className="flex min-w-0 flex-col items-start gap-0.5">
+                                        <span className="text-intuition-primary font-mono text-xs font-black">{h.label}</span>
+                                        <span className="text-slate-500 text-[10px] font-mono uppercase tracking-wider">
+                                          {h.kind === 'tns' ? 'TNS' : 'ENS'} → {h.address.slice(0, 10)}…
+                                        </span>
+                                        </div>
                                       </button>
-                                    )}
+                                    ))}
                                     {searchSuggestions.map((acc) => (
                                       <button
                                         key={acc.id}
@@ -697,8 +766,7 @@ const Stats: React.FC = () => {
                         {(() => {
                             const query = searchQuery.trim();
                             const isWallet = isAddress(query);
-                            const isEns = query.toLowerCase().endsWith('.eth');
-                            const isValidTarget = isWallet || isEns;
+                            const isValidTarget = isWallet || query.includes('.') || query.length >= 3;
                             return (
                         <button 
                                 onClick={handleSearch}

@@ -64,6 +64,41 @@ const SUBS_PATH = path.join(DATA_DIR, 'email-subs.json');
 
 const state = new Map(); // wallet -> ISO timestamp of last successful poll
 const followState = new Map(); // "wallet:identityId" -> Set of event ids we already emailed
+/** Queued bodies for subscribers with `daily` holdings digest. */
+const digestLines = new Map();
+const digestLastFlushMsByWallet = new Map();
+const DAILY_DIGEST_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+function appendDailyDigest(wallet, block) {
+  const w = String(wallet || '').toLowerCase();
+  if (!w || typeof block !== 'string' || !block.trim()) return;
+  if (!digestLines.has(w)) digestLines.set(w, []);
+  digestLines.get(w).push(block.trim());
+}
+
+async function flushDailyDigests() {
+  const subs = await loadSubscriptions();
+  const now = Date.now();
+  for (const sub of subs) {
+    const freq = String(sub.alertFrequency || 'per_tx').toLowerCase();
+    if (freq !== 'daily' || !sub.email) continue;
+    const wallet = String(sub.wallet || '').toLowerCase();
+    const lines = digestLines.get(wallet);
+    if (!lines?.length) continue;
+    const last = digestLastFlushMsByWallet.get(wallet) ?? 0;
+    if (now - last < DAILY_DIGEST_COOLDOWN_MS) continue;
+
+    digestLastFlushMsByWallet.set(wallet, now);
+    digestLines.delete(wallet);
+
+    const body = lines.join('\n\n— — —\n\n');
+    const subject =
+      lines.length === 1
+        ? 'IntuRank: Daily digest — 1 update'
+        : `IntuRank: Daily digest — ${lines.length} updates`;
+    await sendEmail({ to: sub.email, subject, message: body });
+  }
+}
 
 function toAddress(id) {
   if (!id || typeof id !== 'string') return null;
@@ -146,6 +181,7 @@ async function pollWallet(sub) {
   const wallet = String(sub.wallet || '').toLowerCase();
   const to = sub.email;
   if (!wallet || !to) return;
+  const daily = String(sub.alertFrequency || 'per_tx').toLowerCase() === 'daily';
   const now = new Date();
   const since =
     state.get(wallet) ||
@@ -231,12 +267,16 @@ async function pollWallet(sub) {
 
       const typeLabel = ev.type === 'Redeemed' ? 'liquidated' : 'acquired';
       const shares = deposit?.shares || redemption?.shares || '0';
-      const subject = `IntuRank: ${sender.label || sender.id.slice(0, 8)} ${typeLabel} in ${marketLabel}`;
+      const subject = `Holdings alert: ${sender.label || sender.id.slice(0, 8)} ${typeLabel} in ${marketLabel}`;
       const message = `${sender.label || sender.id} ${typeLabel} ${shares} shares in ${marketLabel}.\nTx: ${
         ev.transaction_hash || ev.id
       }`;
 
-      await sendEmail({ to, subject, message });
+      if (daily) {
+        appendDailyDigest(wallet, `${subject}\n${message}`);
+        continue;
+      }
+      await sendEmail({ to, subject: `IntuRank: ${sender.label || sender.id.slice(0, 8)} ${typeLabel} in ${marketLabel}`, message });
     }
 
     state.set(wallet, now.toISOString());
@@ -250,6 +290,7 @@ async function pollFollowActivity(sub) {
   const to = sub.email;
   const follows = Array.isArray(sub.follows) ? sub.follows.filter((f) => f.emailAlerts !== false) : [];
   if (!wallet || !to || !follows.length) return;
+  const daily = String(sub.alertFrequency || 'per_tx').toLowerCase() === 'daily';
 
   const identityIds = follows.map((f) => f.identityId).filter(Boolean);
   const allIds = identityIds.flatMap((id) => prepareQueryIds(id));
@@ -327,7 +368,11 @@ async function pollFollowActivity(sub) {
       const subject = `IntuRank: ${label} ${typeLabel} in ${marketLabel}`;
       const message = `${label} ${typeLabel} ${shares} shares in ${marketLabel}.\nTx: ${ev.transaction_hash || ev.id}`;
 
-      await sendEmail({ to, subject, message });
+      if (daily) {
+        appendDailyDigest(wallet, `${subject}\n${message}`);
+      } else {
+        await sendEmail({ to, subject, message });
+      }
       notified.add(ev.id);
       if (notified.size > 500) {
         const arr = Array.from(notified);
@@ -348,6 +393,7 @@ async function tick() {
   }
   await Promise.all(subs.map((sub) => pollWallet(sub)));
   await Promise.all(subs.map((sub) => pollFollowActivity(sub)));
+  await flushDailyDigests();
 }
 
 console.log('[email-worker] Started email worker.');

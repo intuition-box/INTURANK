@@ -7,7 +7,8 @@ import ActivityRow from '../components/ActivityRow';
 import { playClick, playHover } from '../services/audio';
 import { formatEther } from 'viem';
 import { getFollowedIdentities } from '../services/follows';
-import { resolveENS, toAddress, isGraphResolvableAddress } from '../services/web3';
+import { toAddress, isGraphResolvableAddress } from '../services/web3';
+import { resolveFollowIdentityToAddress } from '../services/tns';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue, formatDisplayedShares } from '../services/analytics';
 import {
@@ -245,7 +246,7 @@ const Feed: React.FC = () => {
                             follows.map(async (f) => {
                                 const addr = toAddress(f.identityId);
                                 if (addr) return addr;
-                                const resolved = await resolveENS(f.identityId);
+                                const resolved = await resolveFollowIdentityToAddress(f.identityId);
                                 if (!resolved) return null;
                                 return toAddress(resolved) || (isGraphResolvableAddress(resolved) ? resolved : null);
                             })
@@ -307,7 +308,8 @@ const Feed: React.FC = () => {
                             <h1 className={PAGE_HERO_TITLE}>Live feed</h1>
                             <p className={`${PAGE_HERO_BODY} max-w-2xl font-sans`}>
                                 Trades, deposits, and new claims across the network—plus your holdings, follows, and wallet
-                                history in the sidebar.
+                                history in the sidebar. Rows labeled “Bought” are vault deposits; optional Arena personal-tag
+                                sentences are separate on-chain triples and often won’t show up as those deposit lines.
                             </p>
                         </div>
                     </div>

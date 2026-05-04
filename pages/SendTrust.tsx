@@ -4,11 +4,21 @@ import { useAccount, useBalance } from 'wagmi';
 import { parseEther, formatEther, isAddress } from 'viem';
 import { Send, Coins, ArrowLeft, Loader2, AlertTriangle, User, CheckCircle2, ExternalLink, Copy } from 'lucide-react';
 import { resolveENS, sendNativeTransfer } from '../services/web3';
+import { resolveTrustNameToAddress } from '../services/tns';
 import { notifyProtocolXpEarned } from '../services/protocolXp';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
-import { CHAIN_ID, EXPLORER_URL, PAGE_HERO_EYEBROW, PAGE_HERO_TITLE, PAGE_HERO_BODY, PROTOCOL_XP_SEND_TRUST } from '../constants';
+import {
+  CHAIN_ID,
+  EXPLORER_URL,
+  PAGE_HERO_EYEBROW,
+  PAGE_HERO_TITLE,
+  PAGE_HERO_BODY,
+  PROTOCOL_XP_SEND_TRUST,
+  PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS,
+} from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
+import { XpEarnHint } from '../components/XpEarnHint';
 
 const SendTrust: React.FC = () => {
   const { address: walletAddress, chainId, isConnected } = useAccount();
@@ -62,8 +72,20 @@ const SendTrust: React.FC = () => {
       }
       return;
     }
-    setResolvedAddress(null);
-    setResolveError('Enter a valid address (0x...) or ENS name (e.g. name.eth)');
+    setResolveError(null);
+    try {
+      const addr = await resolveTrustNameToAddress(raw);
+      if (addr) {
+        setResolvedAddress(addr);
+        setResolveError(null);
+      } else {
+        setResolvedAddress(null);
+        setResolveError('TNS name not found');
+      }
+    } catch {
+      setResolvedAddress(null);
+      setResolveError('Failed to resolve TNS');
+    }
   }, [recipientInput]);
 
   React.useEffect(() => {
@@ -81,7 +103,7 @@ const SendTrust: React.FC = () => {
 
   const handleSend = async () => {
     if (!walletAddress || !resolvedAddress) {
-      toast.error('Enter a valid recipient address or ENS');
+      toast.error('Enter a valid recipient (address, name.trust, or name.eth)');
       return;
     }
     if (walletAddress.toLowerCase() === resolvedAddress.toLowerCase()) {
@@ -111,12 +133,15 @@ const SendTrust: React.FC = () => {
         resolvedAddress as `0x${string}`,
         value
       );
-      notifyProtocolXpEarned({
-        address: walletAddress,
-        amount: PROTOCOL_XP_SEND_TRUST,
-        reasonKey: 'send_trust',
-        txHash: hash,
-      });
+      const minXpWei = parseEther(String(PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS));
+      if (value >= minXpWei) {
+        notifyProtocolXpEarned({
+          address: walletAddress,
+          reasonKey: 'send_trust',
+          txHash: hash,
+          sendTrustFixedAmount: PROTOCOL_XP_SEND_TRUST,
+        });
+      }
       setConfirmedAmountTrust(formatEther(value));
       setAmountInput('');
       refetchBalance();
@@ -266,9 +291,10 @@ const SendTrust: React.FC = () => {
           <p className={PAGE_HERO_EYEBROW}>Native transfer</p>
           <h1 className={PAGE_HERO_TITLE}>Send to any address</h1>
           <p className={`${PAGE_HERO_BODY} max-w-md`}>
-            Enter a wallet address or ENS name and an amount. Your wallet will ask you to confirm. Connect first if you
+            Enter a wallet address or name (.trust / .eth) and an amount. Your wallet will ask you to confirm. Connect first if you
             haven&apos;t already.
           </p>
+          <XpEarnHint variant="send_trust" className="mt-3 max-w-md" />
         </div>
 
         {/* Form card */}
@@ -298,13 +324,13 @@ const SendTrust: React.FC = () => {
             <div className="space-y-8">
               <div>
                 <label className="block text-[10px] font-black font-mono text-[#F0C14B]/90 uppercase tracking-[0.2em] mb-3">
-                  Recipient (address or ENS)
+                  Recipient (address, name.trust, or ENS)
                 </label>
                 <input
                   type="text"
                   value={recipientInput}
                   onChange={(e) => setRecipientInput(e.target.value)}
-                  placeholder="0x... or name.eth"
+                  placeholder="0x… · alice.trust · name.eth"
                   className="w-full px-4 py-4 rounded-lg bg-[#080808] border border-[#F0C14B]/30 text-white font-mono text-sm placeholder:text-slate-600 focus:border-[#F0C14B]/60 focus:outline-none transition-colors"
                 />
                 {resolveError && (

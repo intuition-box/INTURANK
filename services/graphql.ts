@@ -10,6 +10,7 @@ import {
   OFFSET_PROGRESSIVE_CURVE_ID,
   ARENA_ATTRIBUTION_MIN_BLOCK,
   ARENA_XP_PER_RANK_PICK,
+  ARENA_PORTAL_LISTS_FETCH_LIMIT,
 } from '../constants';
 import { Account, Transaction, Claim, Triple } from '../types';
 import { hexToString, formatEther, parseEther, getAddress, isAddress } from 'viem';
@@ -645,6 +646,27 @@ export async function getAccountsByIds(addresses: string[]): Promise<Map<string,
     return map;
   } catch {
     return new Map();
+  }
+}
+
+/** Prefer indexer rows whose label ends with `.trust` for this wallet (badges when reverse / addr records are unset). */
+export async function getAccountTrustNameLabelForWallet(walletAddress: string): Promise<string | null> {
+  const ids = accountVariantsForGraph(walletAddress).slice(0, 24);
+  if (!ids.length) return null;
+  const q = `query AccountTrustLabel($ids: [String!]!) {
+    accounts(where: { id: { _in: $ids }, label: { _ilike: "%.trust" } }, limit: 6) {
+      label
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { ids });
+    const rows = (res?.accounts || []) as { label?: string | null }[];
+    const labels = rows.map((r) => String(r.label ?? '').trim()).filter(Boolean);
+    if (!labels.length) return null;
+    labels.sort((a, b) => a.length - b.length);
+    return labels[0] ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -2104,6 +2126,81 @@ export const searchAccountsByLabel = async (term: string) => {
   }
 };
 
+/** Rank `.trust` / label rows so prefix matches beat incidental substring hits after widening ILIKE (see below). */
+function rankTrustLabelStemMatch(label: string | null, stem: string): number {
+  if (!label || !stem) return 500;
+  const l = label.toLowerCase();
+  const base = l.endsWith('.trust') ? l.slice(0, -'.trust'.length) : l;
+  const s = stem.toLowerCase();
+  if (base === s) return 0;
+  if (base.startsWith(s)) return 4 + base.length * 0.001;
+  const idx = base.indexOf(s);
+  if (idx >= 0) return 40 + idx + base.length * 0.001;
+  if (l.includes(s)) return 80;
+  return 200;
+}
+
+/**
+ * Leaderboard profile search: plain `%term%` misses names where typing diverges before the full label
+ * (e.g. `dappes` vs `dappestdev.trust`). We OR several truncated-prefix `%…%` clauses, then rank client-side.
+ */
+export const searchAccountsByLabelSuggest = async (term: string) => {
+  const raw = term.trim();
+  if (!raw) return [];
+  if (isAddress(raw)) return [];
+
+  const lower = raw.toLowerCase();
+  if (lower.includes('.eth')) {
+    return searchAccountsByLabel(raw);
+  }
+
+  const withoutTrust = lower.endsWith('.trust') ? lower.slice(0, -'.trust'.length) : lower;
+  const stem = withoutTrust.replace(/[^a-z0-9-]/g, '');
+  if (!stem) return [];
+
+  const MIN_PREFIX_LEN = stem.length <= 2 ? stem.length : 3;
+  const MAX_OR_CLAUSES = 8;
+  const ilikes: string[] = [];
+  for (let len = stem.length; len >= MIN_PREFIX_LEN && ilikes.length < MAX_OR_CLAUSES; len--) {
+    ilikes.push(`%${stem.slice(0, len)}%`);
+  }
+
+  const where = { _or: ilikes.map((pat) => ({ label: { _ilike: pat } })) };
+
+  const q = `query SearchAccountsSuggest($where: accounts_bool_exp!) {
+      accounts(where: $where, limit: 24, order_by: [{ label: asc }]) {
+        id
+        label
+        image
+      }
+    }`;
+
+  try {
+    const res = await fetchGraphQL(q, { where });
+    const rows = (res?.accounts || []) as { id: string; label: string | null; image: string | null }[];
+
+    const ranked = [...rows].sort((a, b) => {
+      const ra = rankTrustLabelStemMatch(a.label, stem);
+      const rb = rankTrustLabelStemMatch(b.label, stem);
+      if (ra !== rb) return ra - rb;
+      return (a.label || '').localeCompare(b.label || '');
+    });
+
+    const seen = new Set<string>();
+    const deduped: typeof rows = [];
+    for (const r of ranked) {
+      const k = r.id.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      deduped.push(r);
+    }
+    return deduped.slice(0, 12);
+  } catch (e) {
+    console.warn('searchAccountsByLabelSuggest error', e);
+    return [];
+  }
+};
+
 export const getLists = async (limit: number = 40, offset: number = 0, orderBy?: { total_market_cap?: 'asc' | 'desc'; triple_count?: 'asc' | 'desc'; total_position_count?: 'asc' | 'desc' }[]) => {
   const orderByArg = orderBy || [{ total_market_cap: 'desc' as const }];
   const q = `query GetLists($limit: Int, $offset: Int, $where: predicate_objects_bool_exp = {}, $orderBy: [predicate_objects_order_by!] = {}) {
@@ -2200,6 +2297,24 @@ async function getArenaPortalRankingAllowlist(): Promise<Set<string>> {
     }
   } catch {
     /* extras-only fallback */
+  }
+  return s;
+}
+
+/**
+ * Portal lists merged into Arena browse (same query as `/climb`) plus URL/session-indexed list terms.
+ * Explorer feed only — keeps rankings scoped to IntuRank-surfaced portal lists, not a broad portal scrape.
+ */
+async function getArenaExplorerFeedAllowlist(): Promise<Set<string>> {
+  const s = new Set<string>(arenaRankingAllowlistExtras);
+  try {
+    const { items } = await getLists(ARENA_PORTAL_LISTS_FETCH_LIMIT, 0, [{ total_position_count: 'desc' }]);
+    for (const it of items || []) {
+      const id = (it as any)?.id;
+      if (id) s.add(normalize(id));
+    }
+  } catch {
+    /* extras-only */
   }
   return s;
 }
@@ -2319,6 +2434,77 @@ export async function getListMemberSubjectsForObject(
   } catch (e) {
     console.warn('[getListMemberSubjectsForObject]', e);
     return [];
+  }
+}
+
+/**
+ * Canonical vault triple id for “subject belongs on list” (LIST_PREDICATE → list object).
+ * Portal Arena members are sourced from this triple; staking YES must deposit here, not createTriples again.
+ */
+export async function getListMembershipTripleTermId(
+  memberSubjectTermId: string,
+  listObjectTermId: string
+): Promise<string | null> {
+  const subs = prepareQueryIds(memberSubjectTermId);
+  const objs = prepareQueryIds(listObjectTermId);
+  if (!subs.length || !objs.length) return null;
+  const q = `query ListMembershipTriple($subs: [String!]!, $pred: String!, $objs: [String!]!) {
+    triples(
+      where: {
+        subject_id: { _in: $subs }
+        predicate_id: { _eq: $pred }
+        object_id: { _in: $objs }
+      }
+      limit: 1
+    ) {
+      term_id
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, {
+      subs,
+      pred: LIST_PREDICATE_ID,
+      objs,
+    });
+    const tid = res?.triples?.[0]?.term_id;
+    return typeof tid === 'string' && tid.trim() ? tid.trim() : null;
+  } catch (e) {
+    console.warn('[getListMembershipTripleTermId]', e);
+    return null;
+  }
+}
+
+/**
+ * Vault triple id for “subject rejects list” shape indexed as (subject, predicate=list term, object=distrust).
+ * When present, NO should deposit here instead of createTriples (avoids TripleExists revert).
+ */
+export async function getListNegativeStanceTripleTermId(
+  memberSubjectTermId: string,
+  listObjectTermId: string
+): Promise<string | null> {
+  const subs = prepareQueryIds(memberSubjectTermId);
+  const preds = prepareQueryIds(listObjectTermId);
+  const objs = prepareQueryIds(DISTRUST_ATOM_ID);
+  if (!subs.length || !preds.length || !objs.length) return null;
+  const q = `query ListNegativeTriple($subs: [String!]!, $preds: [String!]!, $objs: [String!]!) {
+    triples(
+      where: {
+        subject_id: { _in: $subs }
+        predicate_id: { _in: $preds }
+        object_id: { _in: $objs }
+      }
+      limit: 1
+    ) {
+      term_id
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { subs, preds, objs });
+    const tid = res?.triples?.[0]?.term_id;
+    return typeof tid === 'string' && tid.trim() ? tid.trim() : null;
+  } catch (e) {
+    console.warn('[getListNegativeStanceTripleTermId]', e);
+    return null;
   }
 }
 
@@ -2508,6 +2694,100 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
     return out;
   } catch (e) {
     console.warn('[fetchArenaLeaderboardXpRowsFromGraph]', e);
+    return [];
+  }
+}
+
+/** One ranking event from Intuition index (portal list YES / NO vault semantics). */
+export type ArenaPortalRankingFeedItem = {
+  claimTermId: string;
+  creatorId: string;
+  creatorLabel: string;
+  subjectLabel: string;
+  listTermId: string;
+  listLabel: string;
+  support: boolean;
+  blockNumber: number;
+};
+
+function arenaFeedCreatorLabel(triple: any, creatorId: string): string {
+  const raw = typeof triple?.creator?.label === 'string' ? triple.creator.label.trim() : '';
+  if (raw && raw !== '0x' && !/^0x[0-9a-fA-F]{40}$/.test(raw)) return raw;
+  const id = creatorId.trim();
+  if (id.length >= 12) return `${id.slice(0, 6)}…${id.slice(-4)}`;
+  return id || 'Unknown';
+}
+
+/**
+ * Recent portal YES / NO rankings on **IntuRank-surfaced** lists only (Arena browse cap + indexed extras), newest first.
+ * YES ≡ list-membership triple; NO ≡ (subject, list, distrust)—explorer may render NO as deposit-only elsewhere.
+ * @param opts.onlyCreators If set, only rows whose triple creator matches one of these wallets (after {@link prepareQueryIds}).
+ */
+export async function fetchRecentArenaPortalRankingFeed(
+  limit = 28,
+  opts?: { onlyCreators?: string[] },
+): Promise<ArenaPortalRankingFeedItem[]> {
+  const allow = await getArenaExplorerFeedAllowlist();
+  if (allow.size === 0) return [];
+
+  let creatorAllow: Set<string> | null = null;
+  const rawCreators = opts?.onlyCreators?.map((c) => c.trim()).filter(Boolean) ?? [];
+  if (rawCreators.length > 0) {
+    const variants = rawCreators.flatMap((w) => prepareQueryIds(w));
+    creatorAllow = new Set(variants.map((v) => normalize(v)));
+  }
+
+  const fetchLimit = Math.min(
+    creatorAllow ? 500 : 200,
+    Math.max(limit * (creatorAllow ? 14 : 4), creatorAllow ? 140 : 48),
+  );
+  const q = `query ArenaPortalRankingFeed($listPred: String!, $distrust: String!, $limit: Int!) {
+    triples(
+      where: {
+        _or: [{ predicate_id: { _eq: $listPred } }, { object_id: { _eq: $distrust } }]
+      }
+      order_by: { block_number: desc }
+      limit: $limit
+    ) {
+      term_id
+      block_number
+      creator { id label }
+      subject { term_id label image }
+      predicate { term_id label }
+      object { term_id label image }
+    }
+  }`;
+
+  try {
+    const res = await fetchGraphQL(q, {
+      listPred: LIST_PREDICATE_ID,
+      distrust: DISTRUST_ATOM_ID,
+      limit: fetchLimit,
+    });
+    const minBn = ARENA_ATTRIBUTION_MIN_BLOCK;
+    const out: ArenaPortalRankingFeedItem[] = [];
+    for (const t of res?.triples || []) {
+      const parsed = arenaTriplesResponseToPortalStances([t]);
+      if (parsed.length !== 1) continue;
+      const s = parsed[0];
+      if (!allow.has(normalize(s.listTermId))) continue;
+      if (creatorAllow && !creatorAllow.has(normalize(s.creatorId))) continue;
+      if (minBn != null && s.blockNumber > 0 && s.blockNumber < minBn) continue;
+      out.push({
+        claimTermId: s.claimTermId,
+        creatorId: s.creatorId,
+        creatorLabel: arenaFeedCreatorLabel(t, s.creatorId),
+        subjectLabel: s.subjectLabel,
+        listTermId: s.listTermId,
+        listLabel: s.listLabel,
+        support: s.support,
+        blockNumber: s.blockNumber,
+      });
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch (e) {
+    console.warn('[fetchRecentArenaPortalRankingFeed]', e);
     return [];
   }
 }

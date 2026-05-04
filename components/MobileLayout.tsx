@@ -19,7 +19,7 @@ import {
 import {
   switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef,
 } from '../services/web3';
-import { CHAIN_ID } from '../constants';
+import { ARENA_BATCH_MODE, CHAIN_ID } from '../constants';
 import { playHover, playClick } from '../services/audio';
 import Logo from './Logo';
 import NotificationBar from './NotificationBar';
@@ -28,7 +28,8 @@ import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailN
 import { mergeFollowsFromServer } from '../services/follows';
 import MobileNavSheet from './MobileNavSheet';
 import ArenaBatchFab from './ArenaBatchFab';
-import { ARENA_BATCH_MODE } from '../constants';
+import { useWalletDisplayMeta } from '../hooks/useWalletDisplayMeta';
+import { formatWalletHeadlineForUi } from '../services/analytics';
 
 interface Props {
   children: React.ReactNode;
@@ -50,11 +51,6 @@ const DOCK: { left: DockItem[]; right: DockItem[] } = {
     { label: 'You', path: '/account', icon: <UserCircle size={20} strokeWidth={2.2} /> },
   ],
 };
-
-function shortAddr(a: string): string {
-  if (!a || a.length < 10) return a;
-  return `${a.slice(0, 4)}…${a.slice(-4)}`;
-}
 
 const DockButton = memo(function DockButton({
   item,
@@ -111,6 +107,8 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
   const { address: walletAddress, isConnected, chainId = 0 } = useAccount();
   const { disconnect } = useDisconnect();
   const wagmiConfig = useConfig();
+  const walletHead = useWalletDisplayMeta(walletAddress ?? null);
+  const walletHeaderLabel = walletAddress ? formatWalletHeadlineForUi(walletHead, walletAddress) : '';
 
   const pathname = location.pathname;
 
@@ -241,7 +239,7 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
                   className="h-10 px-2.5 flex items-center gap-1.5 rounded-full border border-intuition-primary/30 bg-intuition-primary/8 text-intuition-primary text-[11px] font-mono font-black tracking-[0.12em] active:scale-95 transition-transform"
                 >
                   <span className="h-2 w-2 rounded-full bg-intuition-success shadow-[0_0_6px_rgba(0,255,157,0.7)]" />
-                  {shortAddr(walletAddress)}
+                  {walletHeaderLabel}
                   <ChevronDown size={12} />
                 </button>
                 {walletDropOpen && (

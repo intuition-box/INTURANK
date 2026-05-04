@@ -16,8 +16,10 @@ export function purgeLegacyArenaXpLocalStorage(): void {
 }
 
 /** Optional mirror POST for analytics / your own leaderboard service (still backed by indexer reads in-app). */
+import { getArenaLeaderboardMirrorUrl } from '../constants';
+
 export function postArenaTotalsMirrorOptional(address: string, rec: import('./graphql').ArenaXpRecord): void {
-  const url = (import.meta.env.VITE_ARENA_LEADERBOARD_URL as string | undefined)?.trim();
+  const url = getArenaLeaderboardMirrorUrl();
   if (!url || !address?.trim()) return;
   fetch(url, {
     method: 'POST',

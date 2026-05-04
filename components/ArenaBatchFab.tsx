@@ -5,9 +5,6 @@ import { Layers } from 'lucide-react';
 import { getFirstListIdWithPending, getTotalPendingCount } from '../services/arenaPendingBatch';
 import { playClick } from '../services/audio';
 
-const INTURANK_CYAN = '#00f3ff';
-const INTURANK_MAGENTA = '#ff1e6d';
-
 /**
  * Fixed bottom-right batch queue control (viewport-anchored).
  * Inline `right`/`left` so layout never mirrors to the wrong corner; renders to `document.body`.
@@ -18,10 +15,7 @@ const ArenaBatchFab: React.FC = () => {
   const loc = useLocation();
   const navigate = useNavigate();
 
-  const safeBottom = useMemo(
-    () => `max(1.25rem, env(safe-area-inset-bottom, 0px))`,
-    []
-  );
+  const safeBottom = useMemo(() => `max(1.25rem, env(safe-area-inset-bottom, 0px))`, []);
   const safeRight = useMemo(() => `max(1.25rem, env(safe-area-inset-right, 0px))`, []);
 
   useEffect(() => {
@@ -58,7 +52,6 @@ const ArenaBatchFab: React.FC = () => {
       onClick={onOpen}
       style={{
         position: 'fixed',
-        /** Always clickable, including when batch popover is expanded. */
         zIndex: 760,
         left: 'auto',
         right: safeRight,
@@ -66,33 +59,19 @@ const ArenaBatchFab: React.FC = () => {
         width: '3.5rem',
         height: '3.5rem',
       }}
-      className="sm:w-[3.35rem] sm:h-[3.35rem] rounded-2xl flex items-center justify-center
-        border border-cyan-400/45
-        shadow-[0_0_0_1px_rgba(0,243,255,0.12),0_16px_48px_rgba(0,0,0,0.55),0_0_40px_rgba(255,30,109,0.15)]
-        bg-gradient-to-br from-[#0a1624]/95 via-[#080c14]/98 to-[#120818]/95
-        backdrop-blur-xl backdrop-saturate-150
-        hover:brightness-110 active:scale-[0.97] transition-[transform,box-shadow,filter]"
+      className="sm:w-[3.35rem] sm:h-[3.35rem] rounded-2xl flex items-center justify-center border-2 border-slate-700 bg-slate-950/95 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-intuition-primary/45 hover:shadow-[0_20px_52px_rgba(0,0,0,0.65),0_0_28px_rgba(34,211,238,0.12)] active:scale-[0.97] transition-[transform,box-shadow,border-color]"
       aria-label={`Review ${count} queued stance${count === 1 ? '' : 's'}`}
     >
       <span
-        className="pointer-events-none absolute inset-0 rounded-2xl opacity-90"
-        style={{
-          background: `linear-gradient(135deg, ${INTURANK_CYAN}22 0%, transparent 42%, ${INTURANK_MAGENTA}18 100%)`,
-        }}
+        className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle,rgba(0,243,255,0.06)_1px,transparent_1px)] bg-[size:14px_14px] opacity-50"
         aria-hidden
       />
-      <Layers className="relative w-6 h-6" style={{ color: INTURANK_CYAN }} strokeWidth={2.2} aria-hidden />
-      <span
-        className="absolute -top-1 -right-1 min-w-[1.35rem] h-5 px-1 rounded-lg text-white text-[11px] font-bold flex items-center justify-center border shadow-md"
-        style={{
-          background: `linear-gradient(135deg, ${INTURANK_MAGENTA}, #c4124a)`,
-          borderColor: 'rgba(255,255,255,0.25)',
-        }}
-      >
+      <Layers className="relative w-6 h-6 text-intuition-primary" strokeWidth={2.2} aria-hidden />
+      <span className="absolute -top-1 -right-1 min-w-[1.35rem] h-5 px-1 rounded-lg text-white text-[11px] font-black flex items-center justify-center border border-white/20 bg-rose-600 shadow-md tabular-nums">
         {count > 99 ? '99+' : count}
       </span>
     </button>,
-    document.body
+    document.body,
   );
 };
 

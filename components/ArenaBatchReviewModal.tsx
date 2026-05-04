@@ -11,9 +11,6 @@ export type ArenaBatchModalRow = ArenaPendingRow & {
   sourceListTitle?: string;
 };
 
-const CY = '#00f3ff';
-const MG = '#ff1e6d';
-
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -37,11 +34,11 @@ type Props = {
 function kindIcon(kind: ArenaPendingRow['item']['kind']) {
   switch (kind) {
     case 'token':
-      return <Coins size={14} className="text-amber-200/90" strokeWidth={2.2} />;
+      return <Coins size={14} className="text-amber-300/95" strokeWidth={2.2} />;
     case 'atom':
-      return <Flame size={14} className="text-[#7afcff]/90" strokeWidth={2.2} />;
+      return <Flame size={14} className="text-intuition-primary/95" strokeWidth={2.2} />;
     default:
-      return <FileText size={14} className="text-cyan-200/90" strokeWidth={2.2} />;
+      return <FileText size={14} className="text-slate-300/95" strokeWidth={2.2} />;
   }
 }
 
@@ -82,7 +79,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
 
   const rowBelowMinimum = useCallback(
     (units: number) => minClaim > 0 && stakeN * units < minClaim - 1e-12,
-    [minClaim, stakeN]
+    [minClaim, stakeN],
   );
 
   const rowsNeedAttention = depositBlocked || rows.some((r) => rowBelowMinimum(r.units));
@@ -149,10 +146,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
             aria-modal="true"
             aria-labelledby="arena-batch-title"
             aria-describedby="arena-batch-desc"
-            className="pointer-events-auto fixed right-[max(1rem,env(safe-area-inset-right,0px))] bottom-[calc(max(1rem,env(safe-area-inset-bottom,0px))+4.5rem)] z-10 w-[min(92vw,430px)] max-h-[min(74dvh,640px)] flex flex-col overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_0_0_1px_rgba(0,243,255,0.08),0_24px_80px_rgba(0,0,0,0.75),0_0_100px_rgba(0,243,255,0.12)]"
-            style={{
-              background: 'linear-gradient(165deg, rgba(8,12,24,0.98) 0%, rgba(5,6,14,0.99) 50%, rgba(16,4,12,0.97) 100%)',
-            }}
+            className="pointer-events-auto fixed right-[max(1rem,env(safe-area-inset-right,0px))] bottom-[calc(max(1rem,env(safe-area-inset-bottom,0px))+4.5rem)] z-10 w-[min(92vw,440px)] max-h-[min(74dvh,640px)] flex flex-col overflow-hidden rounded-3xl border-2 border-slate-800 bg-slate-950/92 backdrop-blur-xl shadow-[0_28px_72px_rgba(0,0,0,0.78)]"
             initial={reduceMotion ? { opacity: 0, scale: 0.98 } : { opacity: 0, scale: 0.88, y: 34, x: 8 }}
             animate={reduceMotion ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, y: 0, x: 0 }}
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 26, x: 8 }}
@@ -160,10 +154,11 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div
-              className="pointer-events-none absolute inset-0 opacity-[0.5] rounded-2xl"
-              style={{
-                background: `linear-gradient(135deg, ${CY}12 0%, transparent 45%, ${MG}10 100%)`,
-              }}
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.03)_1px,transparent_1px)] bg-[size:18px_18px] opacity-40 rounded-3xl"
+              aria-hidden
+            />
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-intuition-primary/35 to-transparent rounded-t-3xl"
               aria-hidden
             />
 
@@ -174,22 +169,21 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                 : ''}
             </p>
 
-            <div className="relative flex items-start justify-between gap-2 px-4 pt-3 pb-3 border-b border-white/[0.06] shrink-0 z-10">
-              <div className="min-w-0 flex items-start gap-2.5">
-                <div
-                  className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border"
-                  style={{ borderColor: `${CY}44`, background: `linear-gradient(135deg, ${CY}18, ${MG}12)` }}
-                >
-                  <Layers className="w-5 h-5" style={{ color: CY }} strokeWidth={2.2} />
+            <div className="relative flex items-start justify-between gap-2 px-4 pt-3.5 pb-3 border-b border-white/[0.07] shrink-0 z-10">
+              <div className="min-w-0 flex items-start gap-3">
+                <div className="shrink-0 w-10 h-10 rounded-xl border-2 border-slate-700 bg-black/70 flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                  <Layers className="w-[18px] h-[18px] text-intuition-primary" strokeWidth={2.2} aria-hidden />
                 </div>
-                <div>
-                  <h2 id="arena-batch-title" className="text-base font-bold text-white tracking-tight leading-tight">
-                    Your batch
-                    <span className="text-slate-500 font-mono font-normal"> · </span>
-                    <span className="font-medium" style={{ color: CY }}>
-                      {contextSuffix}
-                    </span>
+                <div className="min-w-0 pt-0.5">
+                  <h2
+                    id="arena-batch-title"
+                    className="text-sm font-black font-display text-white uppercase tracking-tight leading-tight"
+                  >
+                    Conviction cart
                   </h2>
+                  <p className="text-[10px] text-slate-500 font-mono mt-1 truncate">
+                    Review batch · <span className="text-intuition-primary/90">{contextSuffix}</span>
+                  </p>
                 </div>
               </div>
               <button
@@ -199,7 +193,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                   playClick();
                   requestClose();
                 }}
-                className="shrink-0 p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:border-[#00f3ff]/35 hover:bg-white/[0.04] transition-colors z-20"
+                className="shrink-0 p-2 rounded-xl border border-slate-700 bg-black/40 text-slate-400 hover:text-white hover:border-intuition-primary/35 hover:bg-white/[0.04] transition-colors z-20"
                 aria-label="Close"
               >
                 <X size={18} strokeWidth={2.2} />
@@ -209,7 +203,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
             {rows.length > 0 && onClearAll ? (
               <div className="relative px-4 pb-2 shrink-0 z-10">
                 {confirmClearAll ? (
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-rose-500/40 bg-rose-950/35 px-3 py-2.5">
                     <span className="text-[11px] text-slate-300 pr-2">
                       Remove all {rows.length} queued stance{rows.length === 1 ? '' : 's'}?
                     </span>
@@ -251,9 +245,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                         playClick();
                         setConfirmClearAll(true);
                       }}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold
-                    text-slate-400 hover:text-rose-300 border border-transparent hover:border-rose-500/35 hover:bg-rose-500/10
-                    disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-500 hover:text-rose-300 border border-transparent hover:border-rose-500/35 hover:bg-rose-500/10 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                       aria-label={`Clear all ${rows.length} queued stances`}
                     >
                       <Trash2 size={13} strokeWidth={2.2} aria-hidden />
@@ -275,27 +267,29 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                   return (
                     <div
                       key={rowKey}
-                      className={`rounded-xl border backdrop-blur-md px-2.5 py-2.5 flex flex-col gap-2 ${
-                        belowMin ? 'border-amber-500/55 bg-amber-500/[0.08]' : 'border-white/[0.08] bg-white/[0.04]'
+                      className={`rounded-2xl border px-3 py-2.5 flex flex-col gap-2 ${
+                        belowMin
+                          ? 'border-amber-500/45 bg-amber-950/20'
+                          : 'border-white/10 bg-black/65'
                       }`}
-                      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' }}
+                      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}
                     >
-                      <div className="flex items-start gap-2">
-                        <div className="mt-0.5 p-1.5 rounded-lg bg-black/40 border border-white/10 shrink-0">
+                      <div className="flex items-start gap-2.5">
+                        <div className="mt-0.5 p-1.5 rounded-xl bg-black/50 border border-white/10 shrink-0">
                           {kindIcon(row.item.kind)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-semibold text-white leading-snug line-clamp-2">{row.item.label}</p>
-                          <p className="text-[9px] text-slate-500 mt-0.5 font-mono truncate">
+                          <p className="text-[13px] font-bold text-white leading-snug line-clamp-2">{row.item.label}</p>
+                          <p className="text-[9px] text-slate-500 mt-0.5 font-mono uppercase tracking-wide truncate">
                             {row.item.pairKind}
                             {row.sourceListTitle ? (
-                              <span className="text-slate-600"> · {row.sourceListTitle}</span>
+                              <span className="text-slate-600 normal-case"> · {row.sourceListTitle}</span>
                             ) : null}
                           </p>
-                          <p className="text-[10px] font-mono font-bold mt-1.5" style={{ color: CY }}>
+                          <p className="text-[10px] font-mono font-bold mt-1.5 text-intuition-primary tabular-nums">
                             {lineTrust.toFixed(2)} TRUST
                             {belowMin ? (
-                              <span className="ml-2 text-amber-200 normal-case tracking-normal">
+                              <span className="ml-2 text-amber-200/95 normal-case tracking-normal font-semibold">
                                 (need ≥ {minDepositLabel ?? '…'} TRUST)
                               </span>
                             ) : null}
@@ -311,12 +305,11 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                               playClick();
                               onToggleSupport(row.sourceListId, row.key);
                             }}
-                            className="rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-wide"
-                            style={
+                            className={`rounded-lg px-2 py-0.5 text-[9px] font-black uppercase tracking-wide border ${
                               row.support
-                                ? { background: `linear-gradient(135deg, ${CY}cc, #0891b2)`, color: '#020308' }
-                                : { background: 'rgba(255,30,109,0.2)', color: '#fecdd3', border: '1px solid rgba(255,30,109,0.4)' }
-                            }
+                                ? 'border-intuition-primary/45 bg-intuition-primary/15 text-cyan-100'
+                                : 'border-[#a855f7]/45 bg-[#a855f7]/12 text-violet-200'
+                            }`}
                           >
                             {row.support ? 'Yes' : 'No'}
                           </button>
@@ -326,35 +319,37 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                               playClick();
                               onRemove(row.sourceListId, row.key);
                             }}
-                            className="p-1 rounded-md text-slate-500 hover:text-rose-300 hover:bg-rose-500/10"
+                            className="p-1 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/25"
                             aria-label="Remove from batch"
                           >
                             <X size={15} />
                           </button>
                         </div>
                       </div>
-                      <div className="flex items-center justify-center gap-2 pl-0.5 pt-1 border-t border-white/[0.05]">
-                        <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">Weight</span>
+                      <div className="flex items-center justify-center gap-2 pl-0.5 pt-1.5 border-t border-white/[0.06]">
+                        <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider mr-1">Weight</span>
                         <button
                           type="button"
                           disabled={row.units <= 1}
-                            onClick={() => {
+                          onClick={() => {
                             playClick();
                             onUpdateUnits(row.sourceListId, row.key, Math.max(1, row.units - 1));
                           }}
-                          className="h-8 w-8 rounded-lg border border-white/15 bg-black/50 text-slate-200 disabled:opacity-35 flex items-center justify-center"
+                          className="h-8 w-8 rounded-lg border border-slate-600 bg-black/55 text-slate-200 disabled:opacity-35 hover:border-intuition-primary/30 flex items-center justify-center transition-colors"
                         >
                           <Minus size={15} />
                         </button>
-                        <span className="text-sm font-bold tabular-nums min-w-[2.5rem] text-center text-white">{row.units}×</span>
+                        <span className="text-sm font-bold tabular-nums min-w-[2.5rem] text-center text-white">
+                          {row.units}×
+                        </span>
                         <button
                           type="button"
                           disabled={row.units >= 99}
-                            onClick={() => {
+                          onClick={() => {
                             playClick();
                             onUpdateUnits(row.sourceListId, row.key, Math.min(99, row.units + 1));
                           }}
-                          className="h-8 w-8 rounded-lg border border-white/15 bg-black/50 text-slate-200 disabled:opacity-35 flex items-center justify-center"
+                          className="h-8 w-8 rounded-lg border border-slate-600 bg-black/55 text-slate-200 disabled:opacity-35 hover:border-intuition-primary/30 flex items-center justify-center transition-colors"
                         >
                           <Plus size={15} />
                         </button>
@@ -366,7 +361,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
             </div>
 
             {rowsNeedAttention && minDepositLabel ? (
-              <div className="mx-3 mb-2 shrink-0 z-10 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-2">
+              <div className="mx-3 mb-2 shrink-0 z-10 rounded-xl border border-amber-500/40 bg-amber-950/25 px-3 py-2">
                 <p className="text-[11px] text-amber-100/95 leading-snug">
                   Each row needs <span className="font-bold text-white">≥ {minDepositLabel} TRUST</span> (raise stake or
                   weight).
@@ -374,7 +369,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
               </div>
             ) : null}
 
-            <div className="p-3 border-t border-white/[0.08] shrink-0 z-10 bg-gradient-to-t from-black/60 to-transparent">
+            <div className="p-3 border-t border-white/[0.08] shrink-0 z-10 bg-black/45">
               <button
                 type="button"
                 disabled={rows.length === 0 || submitting || rowsNeedAttention}
@@ -382,17 +377,18 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                   playClick();
                   onSubmit();
                 }}
-                className="w-full rounded-xl py-3.5 px-3 text-center text-sm font-black text-[#020308] disabled:opacity-40 disabled:cursor-not-allowed transition-transform active:scale-[0.99] flex items-center justify-center gap-2"
-                style={{
-                  background: `linear-gradient(100deg, ${CY} 0%, #5ee7ff 38%, #fda4c8 70%, ${MG} 100%)`,
-                  boxShadow: '0 0 32px rgba(0,243,255,0.3), inset 0 1px 0 rgba(255,255,255,0.35)',
-                }}
+                className="w-full rounded-2xl py-3.5 px-3 text-center text-sm font-black disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.99] flex items-center justify-center gap-2 border-2 border-intuition-primary/50 bg-gradient-to-b from-intuition-primary/32 to-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_0_24px_rgba(34,211,238,0.12)] hover:border-intuition-primary/65 hover:from-intuition-primary/40 disabled:hover:from-intuition-primary/32"
               >
                 {submitting ? (
-                  <>
-                    <Loader2 className="animate-spin" size={18} />
-                    Sending…
-                  </>
+                  <div className="flex flex-col items-center gap-1 py-0.5 w-full">
+                    <span className="flex items-center justify-center gap-2 text-sm font-black">
+                      <Loader2 className="animate-spin shrink-0" size={18} />
+                      Submitting…
+                    </span>
+                    <span className="text-[10px] font-semibold text-slate-400 leading-snug text-center px-1">
+                      Vault lookup runs first; your wallet opens when a signature is needed.
+                    </span>
+                  </div>
                 ) : (
                   <>Confirm · {trustTotal.toFixed(2)} TRUST</>
                 )}
@@ -402,7 +398,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
         </motion.div>
       ) : null}
     </AnimatePresence>,
-    document.body
+    document.body,
   );
 };
 

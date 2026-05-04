@@ -8,7 +8,7 @@ import { portalListIdFromTermId } from '../services/arenaListsRegistry';
 
 function climbQueryForListTermId(listTermId: string): string {
   const id = /^0x[0-9a-fA-F]{64}$/.test(listTermId) ? portalListIdFromTermId(listTermId) : listTermId;
-  return `/climb?listId=${encodeURIComponent(id)}`;
+  return `/climb?list=${encodeURIComponent(id)}`;
 }
 
 type AggregatedRow = Pick<

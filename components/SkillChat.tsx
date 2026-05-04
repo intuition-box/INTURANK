@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router-dom';
 import { Terminal, Send, Loader2, CheckCircle2, Zap, User, Bot, XCircle, ExternalLink, ShieldCheck, Layers, ChevronsDown } from 'lucide-react';
 import { useAccount } from 'wagmi';
-import { getAddress, isAddress, isHex } from 'viem';
+import { getAddress, isAddress, isHex, parseEther } from 'viem';
 import {
   broadcastTransaction,
   intuitionChain,
@@ -42,7 +42,7 @@ import { maybeFetchSkillLiveContext } from '../services/skillLiveContext';
 import { logSkillEvent } from '../services/skillTelemetry';
 import { toast } from './Toast';
 import { playClick, playHover } from '../services/audio';
-import { notifyProtocolXpEarned, protocolXpAmountFor } from '../services/protocolXp';
+import { notifyProtocolXpEarned } from '../services/protocolXp';
 
 type TxBroadcastOutcome = 'pending' | 'success' | 'rejected' | 'failed';
 
@@ -605,9 +605,9 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
                 toast.success("Triple broadcast confirmed.");
                 notifyProtocolXpEarned({
                   address,
-                  amount: protocolXpAmountFor('skill_onchain'),
                   reasonKey: 'skill_onchain',
                   txHash: result.tripleHash,
+                  depositTrustWei: parseEther(String(intent.depositTrust ?? '0.5')),
                 });
                 logSkillEvent({
                     level: 'info',
@@ -738,27 +738,40 @@ const SkillChat: React.FC<SkillChatProps> = ({ className = '' }) => {
         try {
             const hash = await broadcastTransaction(address, to as `0x${string}`, valueWei, dataRaw as `0x${string}`);
             toast.success("Transaction broadcasted!");
+            let depositTrustWei: bigint | null = null;
+            if (action === 'deposit') {
+              depositTrustWei = valueWei;
+            } else {
+              const depRaw = intent?.builtinDepositTrust ?? intent?.depositTrust;
+              if (typeof depRaw === 'string' && depRaw.trim()) {
+                try {
+                  depositTrustWei = parseEther(depRaw.trim());
+                } catch {
+                  depositTrustWei = null;
+                }
+              }
+            }
             if (targetsFeeProxy) {
               if (action === 'deposit') {
                 notifyProtocolXpEarned({
                   address,
-                  amount: protocolXpAmountFor('market_acquire'),
                   reasonKey: 'market_acquire',
                   txHash: hash,
+                  depositTrustWei: depositTrustWei ?? undefined,
                 });
               } else if (action === 'createAtoms') {
                 notifyProtocolXpEarned({
                   address,
-                  amount: protocolXpAmountFor('create_atom'),
                   reasonKey: 'create_atom',
                   txHash: hash,
+                  depositTrustWei: depositTrustWei ?? undefined,
                 });
               } else if (action === 'createTriples') {
                 notifyProtocolXpEarned({
                   address,
-                  amount: protocolXpAmountFor('create_claim'),
                   reasonKey: 'create_claim',
                   txHash: hash,
+                  depositTrustWei: depositTrustWei ?? undefined,
                 });
               }
             }

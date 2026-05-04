@@ -9,11 +9,12 @@ import { uploadImageToIpfs, ensureIpfsUploadConfigured } from '../services/ipfs'
 import { searchGlobalAgents, getAllAgents } from '../services/graphql';
 import { playClick, playHover } from '../services/audio';
 import { toast } from '../components/Toast';
-import { formatEther } from 'viem';
-import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL, PAGE_HERO_TITLE, PAGE_HERO_BODY, PROTOCOL_XP_CREATE_ATOM, PROTOCOL_XP_CREATE_CLAIM } from '../constants';
+import { formatEther, parseEther } from 'viem';
+import { APP_VERSION_DISPLAY, CURRENCY_SYMBOL, EXPLORER_URL, PAGE_HERO_TITLE, PAGE_HERO_BODY } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { formatMarketValue } from '../services/analytics';
 import { notifyProtocolXpEarned } from '../services/protocolXp';
+import { XpEarnHint } from '../components/XpEarnHint';
 
 type View = 'root' | 'identity_choice' | 'identity_manual' | 'identity_review' | 'claim' | 'claim_review' | 'construct_atom' | 'sdk' | 'manual_pathway' | 'establish_synapse' | 'ingress';
 
@@ -215,9 +216,9 @@ const CreateSignal: React.FC = () => {
       setSuccessModal({ termId: termId ?? null, type: 'atom', txHash: atomTxHash });
       notifyProtocolXpEarned({
         address: account,
-        amount: PROTOCOL_XP_CREATE_ATOM,
         reasonKey: 'create_atom',
         txHash: atomTxHash,
+        depositTrustWei: parseEther(atomDeposit || '0.5'),
       });
       toast.success('ATOM_ESTABLISHED');
     } catch (err: any) {
@@ -250,9 +251,9 @@ const CreateSignal: React.FC = () => {
       setSuccessModal({ termId: termId as Hex, type: 'synapse', txHash: synapseTxHash });
       notifyProtocolXpEarned({
         address: account,
-        amount: PROTOCOL_XP_CREATE_CLAIM,
         reasonKey: 'create_claim',
         txHash: synapseTxHash,
+        depositTrustWei: parseEther(depositAmount),
       });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
@@ -508,9 +509,9 @@ const CreateSignal: React.FC = () => {
       setSuccessModal({ termId: termId ?? null, type: 'atom', txHash: atomTxHash });
       notifyProtocolXpEarned({
         address: account,
-        amount: PROTOCOL_XP_CREATE_ATOM,
         reasonKey: 'create_atom',
         txHash: atomTxHash,
+        depositTrustWei: parseEther(deposit),
       });
       toast.success('ATOM_ESTABLISHED');
     } catch (err: any) {
@@ -545,9 +546,9 @@ const CreateSignal: React.FC = () => {
       setSuccessModal({ termId: termId as Hex, type: 'synapse', txHash: synapseTxHash });
       notifyProtocolXpEarned({
         address: account,
-        amount: PROTOCOL_XP_CREATE_CLAIM,
         reasonKey: 'create_claim',
         txHash: synapseTxHash,
+        depositTrustWei: parseEther(depositAmount),
       });
       toast.success('SYNAPSE_ESTABLISHED');
       setSubjectId('');
@@ -688,6 +689,7 @@ const CreateSignal: React.FC = () => {
               <p className={`${PAGE_HERO_BODY} text-center mb-10 max-w-lg mx-auto`}>
                 Anchor a new identity on the graph or attest a semantic claim (triple).
               </p>
+              <XpEarnHint variant="create_hub" className="mb-8 max-w-lg mx-auto justify-center text-center" />
               <div className="w-full grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
                 <button
                   type="button"

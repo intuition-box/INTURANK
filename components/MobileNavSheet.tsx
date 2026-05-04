@@ -7,8 +7,10 @@ import { Link } from 'react-router-dom';
 import {
   X, TrendingUp, Users, Activity, Send, UserCircle, Cpu, Globe, FileText,
   BarChart2, HeartPulse, Coins, Plus, Swords, Wallet, LogOut, ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { playClick, playHover } from '../services/audio';
+import { FLAGSHIP_ARENA_LIST_ID } from '../services/intuRankProductSpec';
 
 const TRUST_SWAP_URL = 'https://aero.drome.eth.limo/swap?from=0x833589fcd6edb6e08f4c7c32d4f71b54bda02913&to=0x6cd905df2ed214b22e0d48ff17cd4200c1c6d8a3&chain0=8453&chain1=8453';
 
@@ -42,6 +44,7 @@ const SECTIONS: Array<{ heading: string; items: SheetItem[] }> = [
     heading: 'Play',
     items: [
       { label: 'The Arena', desc: 'Climb the ranks', to: '/climb', icon: <Activity size={20} />, accent: 'magenta' },
+      { label: 'Trust picks', desc: 'Arena · tools list intro', to: `/climb?list=${FLAGSHIP_ARENA_LIST_ID}&onboard=1`, icon: <Sparkles size={20} />, accent: 'cyan' },
       { label: 'Leaderboard', desc: 'Top rankers', to: '/stats', icon: <BarChart2 size={20} />, accent: 'gold' },
       { label: 'Skill Agent', desc: 'Intuition AI', to: '/skill-playground', icon: <Cpu size={20} />, accent: 'purple' },
     ],

@@ -16,6 +16,7 @@ import SkillChat from '../components/SkillChat';
 import { SkillErrorBoundary } from '../components/SkillErrorBoundary';
 import { playClick, playHover } from '../services/audio';
 import { CURRENCY_SYMBOL, PAGE_HERO_TITLE } from '../constants';
+import { XpEarnHint } from '../components/XpEarnHint';
 
 const useInView = (options: { once?: boolean; threshold?: number } = {}) => {
     const [isInView, setIsInView] = useState(false);
@@ -226,6 +227,8 @@ const SkillPlayground: React.FC = () => {
                                         <span className="text-slate-500">Vault deposit</span>
                                         <span className="font-medium text-slate-300">Varies</span>
                                     </div>
+
+                                    <XpEarnHint variant="skill" className="mt-3" />
 
                                     <div className="mt-4 border-t border-white/10 pt-4">
                                         <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-400/90">

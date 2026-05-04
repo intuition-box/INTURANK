@@ -10,10 +10,11 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { Trophy, Crown, ArrowUpRight, Award, Sparkles, Loader2 } from 'lucide-react';
 import type { ArenaPlayerRow } from '../services/arenaLeaderboard';
 import { playClick, playHover } from '../services/audio';
+import { ARENA_THEME } from '../services/arenaUiTheme';
 
-const CY = '#00f3ff';
-const MG = '#ff1e6d';
-const GOLD = '#fbbf24';
+const CY = ARENA_THEME.cyan;
+const MG = ARENA_THEME.violetDeep;
+const GOLD = ARENA_THEME.gold;
 const SILVER = '#cbd5e1';
 const BRONZE = '#fb923c';
 
@@ -21,9 +22,10 @@ type Props = {
   players: ArenaPlayerRow[];
   loading: boolean;
   myAddress?: string;
-  myXp: number;
-  /** Optional tooltip explaining how `myXp` is composed (e.g. arena + activity ledger). */
-  myXpTitle?: string;
+  /** Indexed Arena XP (graph / leaderboard mirror). */
+  myArenaXp: number;
+  /** Protocol activity XP ledger on this browser only. */
+  myActivityXp: number;
 };
 
 function avatarGlyph(label: string): string {
@@ -32,7 +34,7 @@ function avatarGlyph(label: string): string {
   return m ? m[0].toUpperCase() : '?';
 }
 
-const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, myXp, myXpTitle }) => {
+const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, myArenaXp, myActivityXp }) => {
   const reduceMotion = useReducedMotion();
   const myAddrLc = myAddress?.toLowerCase();
   const myRow = useMemo(
@@ -46,12 +48,12 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       to="/stats?tab=rankers"
       onClick={playClick}
       onMouseEnter={playHover}
-      className="group block rounded-2xl border border-white/[0.08] overflow-hidden transition-all duration-300 hover:border-[#00f3ff]/40 hover:-translate-y-0.5"
+      className="group block rounded-3xl border border-white/[0.08] overflow-hidden transition-all duration-300 hover:border-[#00f3ff]/40 hover:-translate-y-0.5"
       style={{
         background:
-          'linear-gradient(165deg, rgba(8,12,22,0.96) 0%, rgba(5,7,14,0.98) 50%, rgba(20,4,20,0.94) 100%)',
+          'linear-gradient(165deg, rgba(10,10,12,0.97) 0%, rgba(5,6,8,0.99) 52%, rgba(16,12,24,0.92) 100%)',
         boxShadow:
-          '0 0 0 1px rgba(0,243,255,0.04), 0 16px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)',
+          '0 0 0 1px rgba(56,232,255,0.06), 0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px rgba(232,197,71,0.04)',
       }}
     >
       {/* Header */}
@@ -59,7 +61,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
         <div
           className="absolute inset-0 opacity-[0.4] pointer-events-none"
           style={{
-            background: `linear-gradient(135deg, ${CY}10 0%, transparent 50%, ${MG}08 100%)`,
+            background: `linear-gradient(135deg, ${ARENA_THEME.gold}12 0%, transparent 50%, ${MG}10 100%)`,
           }}
           aria-hidden
         />
@@ -67,7 +69,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
           <div className="flex items-center gap-2 min-w-0">
             <div
               className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border"
-              style={{ borderColor: `${CY}50`, background: `linear-gradient(135deg, ${CY}20, ${MG}15)` }}
+              style={{ borderColor: `${CY}55`, background: `linear-gradient(135deg, ${CY}22, ${ARENA_THEME.gold}18)` }}
             >
               <Trophy size={14} style={{ color: CY }} strokeWidth={2.4} />
             </div>
@@ -203,18 +205,24 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                 </p>
               ) : (
                 <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
-                  {myXp > 0 ? 'Not on board yet' : 'Vote to enter'}
+                  {myArenaXp > 0 ? 'Not on board yet' : 'Vote to enter'}
                 </p>
               )}
             </div>
-            <div className="text-right shrink-0" title={myXpTitle}>
-              <p className="text-[9px] font-mono uppercase tracking-wider text-amber-400/90 font-bold">XP</p>
-              <p
-                className="text-base font-black tabular-nums leading-none mt-0.5"
-                style={{ color: GOLD, textShadow: `0 0 8px ${GOLD}40` }}
-              >
-                {myXp.toLocaleString()}
-              </p>
+            <div className="text-right shrink-0 space-y-1.5 tabular-nums">
+              <div title="Arena XP from indexer (leaderboard pool)">
+                <p className="text-[8px] font-mono uppercase tracking-wider text-cyan-300/85 font-bold leading-none">Arena</p>
+                <p
+                  className="text-base font-black leading-none mt-0.5"
+                  style={{ color: GOLD, textShadow: `0 0 8px ${GOLD}40` }}
+                >
+                  {myArenaXp.toLocaleString()}
+                </p>
+              </div>
+              <div title="Activity XP on this device only (markets, creates, sends — not the leaderboard total)">
+                <p className="text-[8px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Activity</p>
+                <p className="text-sm font-black text-slate-400 leading-none mt-0.5">{myActivityXp.toLocaleString()}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -223,7 +231,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       {/* Footer CTA */}
       <div
         className="px-3.5 py-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2"
-        style={{ background: 'rgba(0,243,255,0.04)' }}
+        style={{ background: `linear-gradient(90deg, ${ARENA_THEME.gold}08, ${CY}06)` }}
       >
         <span className="text-[10px] font-bold text-cyan-200 inline-flex items-center gap-1.5">
           <Award size={11} />

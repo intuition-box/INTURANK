@@ -1,9 +1,27 @@
+import { parseEther } from 'viem';
 import {
+  getArenaLeaderboardMirrorUrl,
   PROTOCOL_XP_ADD_TO_LIST,
+  PROTOCOL_XP_ADD_TO_LIST_MIN_DEPOSIT_TRUST_UNITS,
+  PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_CREATE_ATOM,
+  PROTOCOL_XP_CREATE_ATOM_MIN_DEPOSIT_TRUST_UNITS,
+  PROTOCOL_XP_CREATE_ATOM_REFERENCE_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_CREATE_CLAIM,
+  PROTOCOL_XP_CREATE_CLAIM_MIN_DEPOSIT_TRUST_UNITS,
+  PROTOCOL_XP_CREATE_CLAIM_REFERENCE_DEPOSIT_TRUST_UNITS,
+  PROTOCOL_XP_DAILY_CAP_ADD_TO_LIST,
+  PROTOCOL_XP_DAILY_CAP_CREATE_ATOM,
+  PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM,
+  PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE,
+  PROTOCOL_XP_DAILY_CAP_SEND_TRUST,
+  PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN,
   PROTOCOL_XP_MARKET_ACQUIRE,
+  PROTOCOL_XP_MARKET_ACQUIRE_MIN_DEPOSIT_TRUST_UNITS,
+  PROTOCOL_XP_MARKET_ACQUIRE_REFERENCE_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_SEND_TRUST,
+  PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS,
+  PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_SKILL_TRIPLE,
 } from '../constants';
 import { toast } from '../components/Toast';
@@ -23,12 +41,46 @@ export type ProtocolXpReasonKey =
   | 'send_trust'
   | 'skill_onchain';
 
+type DailyBucket = Partial<Record<ProtocolXpReasonKey, number>>;
+
 type PerAddress = {
   total: number;
   seenHashes: Record<string, true>;
+  /** UTC date YYYY-MM-DD → XP granted that day per reason (anti-farming caps). */
+  dailyByReason?: Record<string, DailyBucket>;
 };
 
 type LedgerFile = Record<string, PerAddress>;
+
+const DAILY_CAP_BY_REASON: Record<ProtocolXpReasonKey, number> = {
+  market_acquire: PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE,
+  create_atom: PROTOCOL_XP_DAILY_CAP_CREATE_ATOM,
+  create_claim: PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM,
+  add_to_list: PROTOCOL_XP_DAILY_CAP_ADD_TO_LIST,
+  skill_onchain: PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN,
+  send_trust: PROTOCOL_XP_DAILY_CAP_SEND_TRUST,
+};
+
+function utcDayKey(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function utcYesterdayKey(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Keep two UTC days so we don’t grow localStorage forever. */
+function pruneDailyMap(map: Record<string, DailyBucket> | undefined): Record<string, DailyBucket> {
+  const keep = new Set([utcDayKey(), utcYesterdayKey()]);
+  const next: Record<string, DailyBucket> = {};
+  if (!map) return next;
+  for (const k of Object.keys(map)) {
+    if (keep.has(k)) next[k] = map[k];
+  }
+  return next;
+}
 
 function loadLedger(): LedgerFile {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return {};
@@ -98,7 +150,7 @@ function postMirrorOptional(opts: {
   reasonKey: ProtocolXpReasonKey;
   txHash?: string | null;
 }): void {
-  const url = (import.meta.env.VITE_ARENA_LEADERBOARD_URL as string | undefined)?.trim();
+  const url = getArenaLeaderboardMirrorUrl();
   if (!url) return;
   fetch(url, {
     method: 'POST',
@@ -115,6 +167,80 @@ function postMirrorOptional(opts: {
   }).catch(() => {});
 }
 
+/** Linear scale: 0 below minWei; full baseXp at refWei and above; between → proportional to deposit/ref. */
+export function scaleProtocolXpByDeposit(
+  baseXp: number,
+  depositWei: bigint,
+  minTrustUnits: number,
+  referenceTrustUnits: number,
+): number {
+  if (!Number.isFinite(baseXp) || baseXp <= 0 || depositWei <= 0n) return 0;
+  const minWei = parseEther(String(minTrustUnits));
+  const refWei = parseEther(String(referenceTrustUnits));
+  if (refWei <= 0n) return 0;
+  if (depositWei < minWei) return 0;
+  const full = BigInt(Math.floor(baseXp));
+  let scaled = (full * depositWei) / refWei;
+  if (scaled > full) scaled = full;
+  return Number(scaled);
+}
+
+/** Gross XP before daily cap (send_trust uses fixed amount after caller-side min-send gate). */
+export function computeGrossProtocolXp(opts: {
+  reasonKey: ProtocolXpReasonKey;
+  depositTrustWei?: bigint | null;
+  /** Only for send_trust — fixed reward when qualifying send (≥ min TRUST). */
+  sendTrustFixedAmount?: number;
+}): number {
+  const { reasonKey, depositTrustWei, sendTrustFixedAmount } = opts;
+  if (reasonKey === 'send_trust') {
+    const a = sendTrustFixedAmount ?? PROTOCOL_XP_SEND_TRUST;
+    return Number.isFinite(a) && a > 0 ? Math.floor(a) : 0;
+  }
+  const wei = depositTrustWei ?? null;
+  if (wei === null || wei <= 0n) return 0;
+
+  switch (reasonKey) {
+    case 'market_acquire':
+      return scaleProtocolXpByDeposit(
+        PROTOCOL_XP_MARKET_ACQUIRE,
+        wei,
+        PROTOCOL_XP_MARKET_ACQUIRE_MIN_DEPOSIT_TRUST_UNITS,
+        PROTOCOL_XP_MARKET_ACQUIRE_REFERENCE_DEPOSIT_TRUST_UNITS,
+      );
+    case 'create_atom':
+      return scaleProtocolXpByDeposit(
+        PROTOCOL_XP_CREATE_ATOM,
+        wei,
+        PROTOCOL_XP_CREATE_ATOM_MIN_DEPOSIT_TRUST_UNITS,
+        PROTOCOL_XP_CREATE_ATOM_REFERENCE_DEPOSIT_TRUST_UNITS,
+      );
+    case 'create_claim':
+      return scaleProtocolXpByDeposit(
+        PROTOCOL_XP_CREATE_CLAIM,
+        wei,
+        PROTOCOL_XP_CREATE_CLAIM_MIN_DEPOSIT_TRUST_UNITS,
+        PROTOCOL_XP_CREATE_CLAIM_REFERENCE_DEPOSIT_TRUST_UNITS,
+      );
+    case 'add_to_list':
+      return scaleProtocolXpByDeposit(
+        PROTOCOL_XP_ADD_TO_LIST,
+        wei,
+        PROTOCOL_XP_ADD_TO_LIST_MIN_DEPOSIT_TRUST_UNITS,
+        PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS,
+      );
+    case 'skill_onchain':
+      return scaleProtocolXpByDeposit(
+        PROTOCOL_XP_SKILL_TRIPLE,
+        wei,
+        PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS,
+        PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS,
+      );
+    default:
+      return 0;
+  }
+}
+
 /** Local activity XP total for a wallet (not Arena indexer XP). */
 export function getProtocolXpTotal(address: string | null | undefined): number {
   if (!address?.trim()) return 0;
@@ -124,25 +250,53 @@ export function getProtocolXpTotal(address: string | null | undefined): number {
 }
 
 /**
- * Persist + UX for a qualifying on-chain action. Dedupes by `txHash` when provided.
- * Does not replace Arena XP; combine in UI where you want “total motivating” XP.
+ * Persist + UX for a qualifying on-chain action.
+ * Dedupes by `txHash`. Deposit-sized categories require `depositTrustWei` (spam-safe scaling + daily caps).
  */
 export function notifyProtocolXpEarned(opts: {
   address: string | null | undefined;
-  amount: number;
   reasonKey: ProtocolXpReasonKey;
   txHash?: string | null;
+  depositTrustWei?: bigint | null;
+  /** Only send_trust — pass fixed XP after min-send gate at callsite. */
+  sendTrustFixedAmount?: number;
 }): boolean {
-  const { address, amount, reasonKey, txHash } = opts;
-  if (!address?.trim() || !Number.isFinite(amount) || amount <= 0) return false;
+  const { address, reasonKey, txHash, depositTrustWei, sendTrustFixedAmount } = opts;
+  if (!address?.trim()) return false;
+
+  const gross = computeGrossProtocolXp({
+    reasonKey,
+    depositTrustWei,
+    sendTrustFixedAmount,
+  });
+  if (!Number.isFinite(gross) || gross <= 0) return false;
 
   const addrLc = address.toLowerCase();
   const h = typeof txHash === 'string' && txHash.startsWith('0x') ? txHash.toLowerCase() : null;
 
   const ledger = loadLedger();
-  let entry = ledger[addrLc] ?? { total: 0, seenHashes: {} };
+  let entry: PerAddress = ledger[addrLc] ?? { total: 0, seenHashes: {} };
 
   if (h && entry.seenHashes[h]) {
+    return false;
+  }
+
+  const cap = DAILY_CAP_BY_REASON[reasonKey];
+  const dayKey = utcDayKey();
+  let dailyByReason = pruneDailyMap(entry.dailyByReason);
+  const todayBucket: DailyBucket = { ...(dailyByReason[dayKey] ?? {}) };
+  const usedToday = todayBucket[reasonKey] ?? 0;
+  const room = Number.isFinite(cap) ? Math.max(0, cap - usedToday) : gross;
+  const award = Math.min(gross, room);
+
+  if (award <= 0) {
+    toast.info(`Daily XP limit reached for ${REASON_LABEL[reasonKey]} — resets at UTC midnight.`);
+    if (h) {
+      entry.seenHashes = { ...entry.seenHashes, [h]: true };
+      entry.seenHashes = pruneHashes(entry.seenHashes);
+      ledger[addrLc] = entry;
+      saveLedger(ledger);
+    }
     return false;
   }
 
@@ -151,24 +305,26 @@ export function notifyProtocolXpEarned(opts: {
     entry.seenHashes = pruneHashes(entry.seenHashes);
   }
 
-  entry = { ...entry, total: entry.total + Math.floor(amount) };
+  todayBucket[reasonKey] = usedToday + award;
+  dailyByReason = { ...dailyByReason, [dayKey]: todayBucket };
+  entry = { ...entry, total: entry.total + award, dailyByReason };
   ledger[addrLc] = entry;
   saveLedger(ledger);
 
   playXpChime();
-  toast.success(`+${Math.floor(amount)} XP — ${REASON_LABEL[reasonKey]}`);
+  toast.success(`+${award} XP — ${REASON_LABEL[reasonKey]}`);
   emitUpdated(addrLc);
   postMirrorOptional({
     address: addrLc,
     total: entry.total,
-    delta: Math.floor(amount),
+    delta: award,
     reasonKey,
     txHash: h ?? undefined,
   });
   return true;
 }
 
-/** Map env-friendly reason strings to canonical XP amounts for Skill / shared call sites. */
+/** Map env-friendly reason strings to canonical max XP amounts (before scaling / caps). */
 export function protocolXpAmountFor(reasonKey: ProtocolXpReasonKey): number {
   switch (reasonKey) {
     case 'market_acquire':

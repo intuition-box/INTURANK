@@ -1,7 +1,7 @@
 /** Arena: local stance grid + arena points. Vaults: /markets/:id */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { parseEther, formatEther, getAddress } from 'viem';
 import {
@@ -22,25 +22,48 @@ import {
   List,
   ArrowLeft,
   Check,
-  Star,
+  Share2,
+  ExternalLink,
 } from 'lucide-react';
 import {
   getTopClaims,
   getLists,
   getListMemberSubjectsForObject,
+  getListMembershipTripleTermId,
+  getListNegativeStanceTripleTermId,
   predicateIsSocialTagNoise,
   predicateLooksLikeBattlePredicateLoose,
   resolveMetadata,
   registerArenaPortalListTermsForIndexing,
 } from '../services/graphql';
-import { createSemanticTriplesBatch, createTripleFromLabels, sendNativeTransfer } from '../services/web3';
+import {
+  calculateTripleId,
+  createSemanticTriple,
+  createSemanticTriplesBatch,
+  createTripleFromLabels,
+  depositToVault,
+  getProxyApprovalStatus,
+  grantProxyApproval,
+  isTermCreatedOnChain,
+  arenaPersonalAttestationFootnote,
+  parseProtocolError,
+  sendNativeTransfer,
+} from '../services/web3';
 import { playClick, playHover, playSuccess } from '../services/audio';
 import { toast } from '../components/Toast';
+import { recordArenaRankingPicks, arenaPickCreditXp, clearArenaPickCreditLedger } from '../services/arenaPickCredit';
 import { fetchArenaXpRecordForWallet, postArenaTotalsMirrorOptional } from '../services/arenaXp';
-import { getProtocolXpTotal, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
+import { clearProtocolXpLedger, getProtocolXpTotal, notifyProtocolXpEarned, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
-import { ARENA_BATCH_MODE, ARENA_XP_PER_RANK_PICK } from '../constants';
-import { CURVE_OFFSET, DISTRUST_ATOM_ID, LIST_PREDICATE_ID } from '../constants';
+import {
+  ARENA_BATCH_MODE,
+  ARENA_PORTAL_LISTS_FETCH_LIMIT,
+  ARENA_PERSONAL_ATTESTATION_TRIPLES,
+  ARENA_XP_PER_RANK_PICK,
+  CURVE_OFFSET,
+  DISTRUST_ATOM_ID,
+} from '../constants';
+import { bestWalletDisplayLabel } from '../services/tns';
 import {
   clearPendingForList,
   clearPendingStorage,
@@ -63,12 +86,27 @@ import {
   portalListIdFromTermId,
   type ArenaListEntry,
 } from '../services/arenaListsRegistry';
-import { loadArenaFavoriteListIds, saveArenaFavoriteListIds } from '../services/arenaFavorites';
+import { hydrateArenaFavoritesFromServer, loadArenaFavoriteListIds, pushArenaFavoriteListIdsRemote, saveArenaFavoriteListIds } from '../services/arenaFavorites';
 import ArenaBatchReviewModal from '../components/ArenaBatchReviewModal';
+import ArenaBatchSuccessModal, {
+  type ArenaBatchSuccessPayload,
+} from '../components/ArenaBatchSuccessModal';
 import ArenaListCard from '../components/ArenaListCard';
 import ArenaLeaderboardGlance from '../components/ArenaLeaderboardGlance';
+import ArenaRankingPulse from '../components/ArenaRankingPulse';
 import ArenaListQuickPick from '../components/ArenaListQuickPick';
 import ArenaClimbTerrace from '../components/ArenaClimbTerrace';
+import ArenaStarredRail from '../components/ArenaStarredRail';
+import { XpEarnHint } from '../components/XpEarnHint';
+import {
+  ArenaBrowseLaneHud,
+  ArenaSidebarBrowseFoot,
+  ArenaSidebarDeck,
+  ArenaSidebarSessionStrip,
+} from '../components/ArenaSidebarPanels';
+import { FLAGSHIP_ARENA_LIST_ID } from '../services/intuRankProductSpec';
+import { ARENA_THEME } from '../services/arenaUiTheme';
+import { copyTextToClipboard, getArenaListShareUrl } from '../services/arenaShareLink';
 export type ArenaTheme = 'claims' | 'narratives' | 'tokens' | 'passion';
 
 export type RankItemKind = 'claim' | 'atom' | 'token';
@@ -109,6 +147,53 @@ const ARENA_CARDS_PER_ROUND = 3;
  */
 const ARENA_SHOW_LEADERBOARD = true;
 const TERM_ID_RE = /^0x[0-9a-fA-F]{64}$/;
+
+function readArenaListIdFromWindowSearch(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const u = new URLSearchParams(window.location.search);
+    const lid = (u.get('list') || u.get('listId'))?.trim();
+    if (lid && getArenaListById(lid)) return lid;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** Perceived-performance placeholder while a list pool loads — matches lane grid. */
+function ArenaPoolSkeleton({ lanes }: { lanes: number }) {
+  const cols =
+    lanes >= 3 ? 'sm:grid-cols-2 xl:grid-cols-3' : lanes === 2 ? 'sm:grid-cols-2' : 'grid-cols-1';
+  return (
+    <div
+      className="rounded-2xl border border-cyan-500/12 bg-[#05080f]/90 p-4 sm:p-5 w-full"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <p className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-slate-600 mb-4">Loading stance pool</p>
+      <div className={`grid grid-cols-1 gap-3 md:gap-4 ${cols} w-full items-stretch animate-pulse`}>
+        {Array.from({ length: Math.max(1, lanes) }).map((_, i) => (
+          <div
+            key={i}
+            className="rounded-2xl border border-white/[0.07] bg-gradient-to-br from-slate-800/40 to-slate-950/80 min-h-[200px] overflow-hidden"
+          >
+            <div className="aspect-[4/3] bg-slate-800/50" />
+            <div className="p-3 space-y-2">
+              <div className="h-4 bg-slate-700/50 rounded w-4/5" />
+              <div className="h-3 bg-slate-800/60 rounded w-full" />
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="h-10 bg-cyan-950/40 rounded-lg border border-cyan-500/10" />
+                <div className="h-10 bg-fuchsia-950/40 rounded-lg border border-fuchsia-500/10" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[9px] text-slate-600 text-center mt-4 font-mono uppercase tracking-wider">Fetching from graph</p>
+    </div>
+  );
+}
 
 function pickSingleItem(pool: RankItem[], lastId: string | null): RankItem | null {
   if (pool.length === 0) return null;
@@ -390,57 +475,40 @@ function patchArenaPersistedScore(listId: string | null | undefined, itemId: str
   savePersistedForList(listId, { ...persisted, [itemId]: R + delta });
 }
 
-/** Versus-style claim: subject vs object with optional images (e.g. Claude | Gemini). */
-function ArenaVsHeroImages({
-  leftSrc,
-  rightSrc,
-  leftName,
-  rightName,
-}: {
-  leftSrc?: string;
-  rightSrc?: string;
-  leftName?: string;
-  rightName?: string;
-}) {
-  const [badL, setBadL] = useState(false);
-  const [badR, setBadR] = useState(false);
-  const li = (leftName || '?').trim().charAt(0).toUpperCase() || '?';
-  const ri = (rightName || '?').trim().charAt(0).toUpperCase() || '?';
-  return (
-    <div className="relative grid h-full min-h-[140px] w-full grid-cols-2 bg-[#0a0d12]">
-      <div className="relative h-full min-h-[140px] overflow-hidden bg-gradient-to-br from-cyan-950/40 to-[#0a0f14]">
-        {leftSrc && !badL ? (
-          <img src={leftSrc} alt="" className="h-full w-full object-cover" onError={() => setBadL(true)} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-4xl font-black text-white/30">{li}</div>
-        )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-2 pb-2 pt-8">
-          <p className="truncate text-center text-[10px] font-bold text-white/95 drop-shadow-sm">{leftName || '—'}</p>
-        </div>
-      </div>
-      <div className="relative h-full min-h-[140px] overflow-hidden border-l border-white/10 bg-gradient-to-br from-fuchsia-950/40 to-[#0a0f14]">
-        {rightSrc && !badR ? (
-          <img src={rightSrc} alt="" className="h-full w-full object-cover" onError={() => setBadR(true)} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-4xl font-black text-white/30">{ri}</div>
-        )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent px-2 pb-2 pt-8">
-          <p className="truncate text-center text-[10px] font-bold text-white/95 drop-shadow-sm">{rightName || '—'}</p>
-        </div>
-      </div>
-      <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-lg ring-1 ring-white/25">
-        VS
-      </div>
-    </div>
-  );
+/** Entry motion when a lane’s subject changes (vote refill / skip); shell stays mounted via stable slot keys. */
+function arenaLaneContentEnter(
+  laneIndex: number,
+  lanesInRound: number,
+  reduceMotion: boolean | null
+): false | { opacity: number; x?: number; y?: number; scale?: number } {
+  if (reduceMotion) return false;
+  if (lanesInRound <= 1) {
+    return { opacity: 0, scale: 0.94 };
+  }
+  const last = lanesInRound - 1;
+  if (lanesInRound >= 3 && laneIndex === 1) {
+    return { opacity: 0, scale: 0.93, y: 14 };
+  }
+  if (laneIndex === 0) {
+    return { opacity: 0, x: -44 };
+  }
+  if (laneIndex === last) {
+    return { opacity: 0, x: 44 };
+  }
+  return { opacity: 0, x: -36 };
 }
 
+/** Vote lane card — Markets-style metrics strip + Yes/No actions. */
 function ArenaLaneCard({
   item,
   activeList,
   stakingTx,
   reduceMotion,
   emphasized,
+  marketHref,
+  laneIndex,
+  lanesInRound,
+  xpRoundTotal,
   onYesNo,
 }: {
   item: RankItem;
@@ -448,123 +516,212 @@ function ArenaLaneCard({
   stakingTx: boolean;
   reduceMotion: boolean | null;
   emphasized: boolean;
+  marketHref?: string | null;
+  laneIndex: number;
+  lanesInRound: number;
+  xpRoundTotal: number;
   onYesNo: (support: boolean) => void;
 }) {
+  const [vsBadL, setVsBadL] = useState(false);
+  const [vsBadR, setVsBadR] = useState(false);
+  const [soloBad, setSoloBad] = useState(false);
+
+  useEffect(() => {
+    setVsBadL(false);
+    setVsBadR(false);
+    setSoloBad(false);
+  }, [item.id]);
+
   let questionLine = '';
   if (activeList) {
     questionLine =
       typeof activeList.itemQuestion === 'function' ? activeList.itemQuestion(item) : buildArenaItemQuestion(activeList, item);
   }
 
+  const isClaimVs = item.kind === 'claim' && item.pairKind === 'claim-vs';
+  const idShort = item.id.length > 12 ? `${item.id.slice(0, 10)}…` : item.id;
+  const li = (item.versusLeftLabel || '?').trim().charAt(0).toUpperCase() || '?';
+  const ri = (item.versusRightLabel || '?').trim().charAt(0).toUpperCase() || '?';
+  const soloLetter = (item.label || '?').trim().charAt(0).toUpperCase() || '?';
+
+  const shellBorder = emphasized
+    ? 'border-intuition-warning/45 hover:border-intuition-warning/70 shadow-[0_0_28px_rgba(234,179,8,0.12)]'
+    : 'border-slate-800 hover:border-intuition-primary/50';
+
+  const contentEnter = arenaLaneContentEnter(laneIndex, lanesInRound, reduceMotion);
+
   return (
-    <motion.article
-      layout={!reduceMotion}
-      initial={reduceMotion ? false : { opacity: 0, x: 22, scale: 0.98 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={reduceMotion ? undefined : { opacity: 0, x: -16 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-      className={`group relative flex flex-col rounded-2xl border overflow-hidden bg-gradient-to-br from-[#060a14]/95 via-[#080c18]/95 to-[#0c0814]/92 ${
-        emphasized
-          ? 'border-[#00f3ff]/40 shadow-[0_0_44px_rgba(0,243,255,0.18),inset_0_1px_0_rgba(255,255,255,0.06)] md:scale-[1.02] md:z-[2]'
-          : 'border-white/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_40px_rgba(0,0,0,0.45)]'
-      }`}
-      style={{
-        background:
-          emphasized && !reduceMotion
-            ? 'linear-gradient(155deg, rgba(0,243,255,0.12) 0%, rgba(6,10,20,0.96) 40%, rgba(16,8,22,0.92) 100%)'
-            : undefined,
-      }}
+    <article
+      className={`group relative flex flex-col rounded-3xl bg-gradient-to-br from-[#08080c] via-black to-black ${shellBorder} border-2 transition-colors duration-300 overflow-hidden shadow-[0_18px_45px_rgba(0,0,0,0.88)]`}
     >
-      <div className="relative aspect-[4/3] min-h-[120px] sm:min-h-[132px] w-full bg-[#030508] overflow-hidden">
-        {item.kind === 'claim' && item.pairKind === 'claim-vs' ? (
-          <ArenaVsHeroImages
-            leftSrc={item.image}
-            rightSrc={item.imageSecondary}
-            leftName={item.versusLeftLabel}
-            rightName={item.versusRightLabel}
-          />
-        ) : item.image ? (
-          <img src={item.image} alt="" className="h-full w-full object-cover" loading="lazy" />
-        ) : (
-          <div
-            className="absolute inset-0 flex items-center justify-center text-3xl font-black font-display"
-            style={{
-              background: 'radial-gradient(circle at 30% 20%, rgba(0,243,255,0.2) 0%, transparent 50%), #050a12',
-              color: 'rgba(0,243,255,0.25)',
-            }}
-          >
-            {(item.label || '?').charAt(0).toUpperCase()}
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.05),transparent_55%)] opacity-90"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.035)_1px,transparent_1px)] bg-[size:18px_18px] opacity-25"
+        aria-hidden
+      />
+
+      <motion.div
+        key={item.id}
+        className="relative z-10 flex flex-col h-full p-3 sm:p-4"
+        initial={contentEnter}
+        animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 440, damping: 34 }}
+      >
+        <div className="flex items-start gap-2.5 sm:gap-3 mb-3">
+          <div className="relative shrink-0">
+            {isClaimVs ? (
+              <div className="flex items-center -space-x-2.5">
+                <div className="relative z-[2] w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 border-slate-800 bg-black/80 overflow-hidden shadow-[0_8px_22px_rgba(0,0,0,0.85)]">
+                  {item.image && !vsBadL ? (
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                      loading="lazy"
+                      onError={() => setVsBadL(true)}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-lg font-black text-slate-600">{li}</div>
+                  )}
+                </div>
+                <div className="relative z-[1] w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 border-slate-800 bg-black/80 overflow-hidden shadow-[0_8px_22px_rgba(0,0,0,0.85)]">
+                  {item.imageSecondary && !vsBadR ? (
+                    <img
+                      src={item.imageSecondary}
+                      alt=""
+                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                      loading="lazy"
+                      onError={() => setVsBadR(true)}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-lg font-black text-slate-600">{ri}</div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="relative w-11 h-11 sm:w-14 sm:h-14 rounded-xl border-2 border-slate-800 bg-black/80 overflow-hidden shadow-[0_10px_26px_rgba(0,0,0,0.9)]">
+                {item.image && !soloBad ? (
+                  <img
+                    src={item.image}
+                    alt=""
+                    className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700"
+                    loading="lazy"
+                    onError={() => setSoloBad(true)}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-xl sm:text-2xl font-black text-intuition-primary/80">{soloLetter}</div>
+                )}
+              </div>
+            )}
           </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#020308] via-[#020308]/35 to-transparent opacity-92 pointer-events-none" />
-        {item.pairKind ? (
-          <div className="absolute bottom-2 left-2">
-            <span className="rounded-lg bg-black/55 backdrop-blur-sm px-2 py-0.5 text-[7px] sm:text-[8px] font-bold uppercase tracking-wider text-[#00f3ff]/90 ring-1 ring-[#00f3ff]/25">
-              {item.pairKind}
+
+          <div className="flex-1 min-w-0 pt-0">
+            <div className="flex flex-wrap items-center gap-1 mb-1">
+              {item.pairKind ? (
+                <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[8px] font-mono font-black uppercase tracking-[0.22em] text-slate-300">
+                  {item.pairKind}
+                </span>
+              ) : null}
+              <span className="px-2 py-0.5 rounded-full bg-intuition-warning/10 border border-intuition-warning/35 text-[8px] font-black font-mono uppercase tracking-widest text-amber-200/95">
+                Climb
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-intuition-primary/10 border border-intuition-primary/35 text-[8px] font-black font-mono uppercase tracking-widest text-intuition-primary/95">
+                {item.kind}
+              </span>
+            </div>
+            <h3 className="text-white font-black font-display text-[13px] sm:text-[15px] leading-tight line-clamp-2 uppercase tracking-tight group-hover:text-intuition-primary transition-colors">
+              {item.label}
+            </h3>
+            {item.subtitle ? (
+              <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wide mt-0.5 line-clamp-1">{item.subtitle}</p>
+            ) : null}
+            <p className="text-[9px] font-mono text-slate-500 uppercase tracking-[0.16em] mt-0.5">ID: {idShort}</p>
+          </div>
+
+          <div className="flex flex-col items-end gap-0 shrink-0 ml-0.5">
+            <span className={`text-lg sm:text-xl font-black font-display leading-none ${emphasized ? 'text-intuition-warning' : 'text-intuition-primary'}`}>
+              {laneIndex + 1}
+            </span>
+            <span className="text-[7px] font-mono text-slate-500 uppercase tracking-[0.26em]">Lane</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="rounded-xl bg-black/70 border border-white/10 px-2.5 py-2">
+            <span className="text-[8px] text-slate-400 font-black uppercase tracking-wider mb-0.5 block">Round XP</span>
+            <span className="text-xs font-mono font-black text-white tabular-nums inline-flex items-baseline gap-1">
+              <Zap size={12} className="text-amber-400 shrink-0 opacity-90" aria-hidden />
+              +{xpRoundTotal}
             </span>
           </div>
-        ) : null}
-      </div>
-      <div className="px-2 sm:px-3 pt-2 pb-1 relative shrink-0 min-h-0">
-        <p className="text-sm sm:text-[15px] font-bold text-white leading-tight line-clamp-2">{item.label}</p>
-        {item.subtitle ? (
-          <p className="text-[9px] sm:text-[10px] text-slate-500 mt-1 font-mono uppercase tracking-wide line-clamp-1">
-            {item.subtitle}
-          </p>
-        ) : null}
+          <div className="rounded-xl bg-black/70 border border-white/10 px-2.5 py-2">
+            <span className="text-[8px] text-slate-400 font-black uppercase tracking-wider mb-0.5 block">Open lanes</span>
+            <span className="text-xs font-mono font-black text-white tabular-nums">
+              {laneIndex + 1}/{lanesInRound}
+            </span>
+          </div>
+        </div>
+
         {questionLine ? (
-          <p className="text-[9px] sm:text-[10px] text-[#89faff]/95 mt-2 leading-snug line-clamp-3 border border-[#00f3ff]/20 rounded-lg px-2 py-1 bg-[#00f3ff]/6">
-            {questionLine}
-          </p>
+          <div className="rounded-xl bg-black/65 border border-white/8 px-2.5 py-2 mb-3">
+            <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-500 mb-0.5">Prompt</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-200 leading-snug line-clamp-3">{questionLine}</p>
+          </div>
         ) : null}
-      </div>
-      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 px-2 sm:px-3 pb-2.5 sm:pb-3 mt-auto">
-        <motion.button
-          type="button"
-          onClick={() => onYesNo(true)}
-          disabled={stakingTx}
-          onMouseEnter={playHover}
-          whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-          whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 450, damping: 22 }}
-          className="relative rounded-lg sm:rounded-xl py-2.5 text-center disabled:opacity-45 disabled:pointer-events-none overflow-hidden"
-          style={{
-            border: '1px solid rgba(0,243,255,0.45)',
-            background: 'linear-gradient(180deg, rgba(0,243,255,0.22) 0%, rgba(4,20,32,0.97) 100%)',
-            boxShadow: '0 0 20px rgba(0,243,255,0.1), inset 0 1px 0 rgba(255,255,255,0.18)',
-          }}
-        >
-          <span className="inline-flex items-center justify-center gap-1 relative z-10">
-            <Check className="w-4 h-4 sm:w-[18px] sm:h-[18px]" style={{ color: '#7afcff' }} strokeWidth={2.5} />
-            <span className="text-sm font-black tracking-tight" style={{ color: '#e0fffe', textShadow: '0 0 16px rgba(0,243,255,0.45)' }}>
-              Yes
-            </span>
-          </span>
-        </motion.button>
-        <motion.button
-          type="button"
-          onClick={() => onYesNo(false)}
-          disabled={stakingTx}
-          onMouseEnter={playHover}
-          whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
-          whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 450, damping: 22 }}
-          className="relative rounded-lg sm:rounded-xl py-2.5 text-center disabled:opacity-45 disabled:pointer-events-none overflow-hidden"
-          style={{
-            border: '1px solid rgba(255,30,109,0.45)',
-            background: 'linear-gradient(180deg, rgba(255,30,109,0.2) 0%, rgba(24,4,16,0.97) 100%)',
-            boxShadow: '0 0 18px rgba(255,30,109,0.08), inset 0 1px 0 rgba(255,255,255,0.11)',
-          }}
-        >
-          <span className="inline-flex items-center justify-center gap-1 relative z-10">
-            <X className="w-4 h-4 sm:w-[18px] sm:h-[18px]" style={{ color: '#ff9ec4' }} strokeWidth={2.5} />
-            <span className="text-sm font-black tracking-tight" style={{ color: '#ffe0ec', textShadow: '0 0 14px rgba(255,30,109,0.3)' }}>
-              No
-            </span>
-          </span>
-        </motion.button>
-      </div>
-    </motion.article>
+
+        <div className="mt-auto pt-0.5">
+          <div className="grid grid-cols-2 gap-2">
+            <motion.button
+              type="button"
+              onClick={() => onYesNo(true)}
+              disabled={stakingTx}
+              onMouseEnter={playHover}
+              whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+              whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 520, damping: 26 }}
+              className="rounded-xl py-2.5 text-center disabled:opacity-45 disabled:pointer-events-none border-2 border-intuition-primary/45 bg-gradient-to-b from-intuition-primary/25 to-black/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Check className="w-[16px] h-[16px] text-cyan-200" strokeWidth={2.5} />
+                <span className="text-xs sm:text-sm font-black tracking-tight text-white">Yes</span>
+              </span>
+            </motion.button>
+            <motion.button
+              type="button"
+              onClick={() => onYesNo(false)}
+              disabled={stakingTx}
+              onMouseEnter={playHover}
+              whileHover={reduceMotion || stakingTx ? undefined : { scale: 1.02 }}
+              whileTap={reduceMotion || stakingTx ? undefined : { scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 520, damping: 26 }}
+              className="rounded-xl py-2.5 text-center disabled:opacity-45 disabled:pointer-events-none border-2 border-[#a855f7]/50 bg-gradient-to-b from-[#a855f7]/18 to-black/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <X className="w-[16px] h-[16px] text-violet-200" strokeWidth={2.5} />
+                <span className="text-xs sm:text-sm font-black tracking-tight text-white">No</span>
+              </span>
+            </motion.button>
+          </div>
+        </div>
+
+        {marketHref ? (
+          <div className="mt-3 pt-2 border-t border-white/[0.06]">
+            <Link
+              to={marketHref}
+              onClick={() => playClick()}
+              className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400 hover:text-intuition-primary hover:border-intuition-primary/35 transition-colors"
+            >
+              <ExternalLink size={12} strokeWidth={2.4} />
+              Crowd &amp; vault
+              <ChevronRight size={12} />
+            </Link>
+          </div>
+        ) : null}
+      </motion.div>
+    </article>
   );
 }
 
@@ -606,6 +763,8 @@ function defaultStakePresetIndex(): number {
 const RankedList: React.FC = () => {
   const { address, isConnected } = useAccount();
   const [listId, setListId] = useState<string | null>(() => {
+    const fromUrl = readArenaListIdFromWindowSearch();
+    if (fromUrl) return fromUrl;
     try {
       const v = sessionStorage.getItem('inturank-arena-last-list');
       return v && getArenaListById(v) ? v : null;
@@ -624,14 +783,55 @@ const RankedList: React.FC = () => {
   const [arenaCategoryId, setArenaCategoryId] = useState<string>('all');
   const [openBatchAfterLoad, setOpenBatchAfterLoad] = useState(false);
   const [showAllLists, setShowAllLists] = useState(false);
+  /** Starred rail starts collapsed — expands from the right column. */
+  const [starredRailCollapsed, setStarredRailCollapsed] = useState(false);
   const [favoriteListIds, setFavoriteListIds] = useState<string[]>(() => loadArenaFavoriteListIds());
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const showOnboardTip = searchParams.get('onboard') === '1';
+  const climbViewMode = searchParams.get('view') === 'explorer' ? 'explorer' : 'arena';
+
+  const setClimbViewMode = useCallback(
+    (mode: 'arena' | 'explorer') => {
+      playClick();
+      setSearchParams(
+        (p) => {
+          const next = new URLSearchParams(p);
+          if (mode === 'explorer') next.set('view', 'explorer');
+          else next.delete('view');
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const dismissOnboardTip = useCallback(() => {
+    setSearchParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        next.delete('onboard');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
   const openBatchParamHandled = useRef(false);
+  /** Avoid clearing session-restored list on first `/climb` mount when the URL has no `list` param. */
+  const urlSyncSkipInitialClearRef = useRef(true);
+  const graphReturnNudgeDone = useRef(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [arenaBatchSuccess, setArenaBatchSuccess] = useState<ArenaBatchSuccessPayload | null>(null);
   const [pendingRows, setPendingRows] = useState<ArenaPendingRow[]>([]);
   const [players, setPlayers] = useState<ArenaPlayerRow[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const reduceMotion = useReducedMotion();
+  /** After user has opened any list once, "Browse lists" slide-in feels intentional (skip on cold land). */
+  const [arenaPickerEnterPrimed, setArenaPickerEnterPrimed] = useState(false);
+  useEffect(() => {
+    if (listId) setArenaPickerEnterPrimed(true);
+  }, [listId]);
 
   const batchModalRows = useMemo(
     () => loadAllPendingRowsLive(listId, pendingRows),
@@ -697,8 +897,21 @@ const RankedList: React.FC = () => {
     void refreshPlayers();
   }, [refreshPlayers]);
 
+  useEffect(() => {
+    const w = address?.trim();
+    if (!w?.toLowerCase().startsWith('0x')) return;
+    let cancelled = false;
+    void hydrateArenaFavoritesFromServer(w).then((merged) => {
+      if (!cancelled && merged) setFavoriteListIds(merged);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
   const [graphArenaXp, setGraphArenaXp] = useState(0);
   const [protocolLedgerTick, setProtocolLedgerTick] = useState(0);
+  const [pickCreditTick, setPickCreditTick] = useState(0);
 
   useEffect(() => {
     const onProto = () => setProtocolLedgerTick((n) => n + 1);
@@ -710,7 +923,10 @@ const RankedList: React.FC = () => {
     () => (address ? getProtocolXpTotal(address) : 0),
     [address, protocolLedgerTick]
   );
-  const xpDisplayTarget = graphArenaXp + myProtocolXp;
+  const arenaPickXp = useMemo(() => arenaPickCreditXp(address), [address, pickCreditTick]);
+  /** Indexer rarely credits vault-only stakes to `triple.creator`; pick credit bridges until subgraph matches your wallet. */
+  const arenaXpUi = Math.max(graphArenaXp, arenaPickXp);
+  const xpDisplayTarget = arenaXpUi + myProtocolXp;
 
   /** Slot-style counting — animates when XP changes after indexer-derived updates. */
   const xpAnimRef = useRef<number | null>(null);
@@ -810,7 +1026,7 @@ const RankedList: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const { items } = await getLists(48, 0, [{ total_position_count: 'desc' }]);
+        const { items } = await getLists(ARENA_PORTAL_LISTS_FETCH_LIMIT, 0, [{ total_position_count: 'desc' }]);
         if (cancelled) return;
         const entries: Extract<ArenaListEntry, { source: 'portal' }>[] = items.map((row: any) => {
           const subs = (row.items || []) as { termId?: string; label?: string; image?: string }[];
@@ -857,7 +1073,7 @@ const RankedList: React.FC = () => {
   }, [arenaCategoryId, portalListEntries]);
 
   const groupedArenaLists = useMemo(() => {
-    const order = ['network', 'ecosystem', 'identities', 'graph', 'macro'] as const;
+    const order = ['daily', 'network', 'ecosystem', 'identities', 'graph', 'macro'] as const;
     const groups = order
       .map((id) => ({
         id,
@@ -875,14 +1091,17 @@ const RankedList: React.FC = () => {
     if (!k || !getArenaListById(k)) return;
     playClick();
     setFavoriteListIds((prev) => {
-      let next: string[];
       const i = prev.findIndex((x) => x === k);
-      if (i >= 0) next = prev.filter((_, j) => j !== i);
-      else next = [...prev, k];
+      const next = i >= 0 ? prev.filter((_, j) => j !== i) : [...prev, k];
       saveArenaFavoriteListIds(next);
+      const addrLc = address?.trim().toLowerCase();
+      queueMicrotask(() => {
+        if (addrLc?.startsWith('0x')) pushArenaFavoriteListIdsRemote(addrLc, next);
+        if (i < 0) setStarredRailCollapsed(false);
+      });
       return next;
     });
-  }, []);
+  }, [address]);
 
   const allArenaListsFlat = useMemo(() => dedupeArenaEntries([...ARENA_LISTS, ...portalListEntries]), [portalListEntries]);
 
@@ -901,8 +1120,21 @@ const RankedList: React.FC = () => {
       [...listsForCategory]
         .filter((l) => favoriteSet.has(l.id))
         .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })),
-    [listsForCategory, favoriteSet]
+    [listsForCategory, favoriteSet],
   );
+
+  const starredRailRows = useMemo(
+    () =>
+      favoriteListsInLane.map((L) => ({
+        id: L.id,
+        title: L.title,
+        tag: L.tag,
+        listGlyph: L.listGlyph,
+      })),
+    [favoriteListsInLane],
+  );
+
+  const arenaLaneLabelShort = ARENA_CATEGORY_PILLS.find((p) => p.id === arenaCategoryId)?.label ?? 'lane';
 
   const quickPickFavoriteRows = useMemo(
     () => quickSwitchSortedLists.filter((l) => favoriteSet.has(l.id)),
@@ -944,25 +1176,56 @@ const RankedList: React.FC = () => {
     if (openBatchParamHandled.current) return;
     openBatchParamHandled.current = true;
     const lid = searchParams.get('listId') || getFirstListIdWithPending();
-    setSearchParams(
-      (p) => {
-        const n = new URLSearchParams(p);
-        n.delete('openBatch');
-        n.delete('listId');
-        return n;
-      },
-      { replace: true }
-    );
     if (lid && getArenaListById(lid)) {
-      setListId(lid);
+      navigate(`/climb?list=${encodeURIComponent(lid)}`, { replace: true });
       try {
         sessionStorage.setItem('inturank-arena-last-list', lid);
       } catch {
         /* ignore */
       }
+      setListId(lid);
       setOpenBatchAfterLoad(true);
+    } else {
+      navigate('/climb', { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, navigate]);
+
+  /** Sync list selection with `?list=` so browser Back returns to browse mode on /climb instead of leaving the Arena. */
+  useEffect(() => {
+    if (searchParams.get('openBatch') === '1') return;
+    const lid = (searchParams.get('list') || searchParams.get('listId'))?.trim();
+    const valid = lid && getArenaListById(lid) ? lid : null;
+
+    if (valid) {
+      urlSyncSkipInitialClearRef.current = false;
+      setListId(valid);
+      try {
+        sessionStorage.setItem('inturank-arena-last-list', valid);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    if (urlSyncSkipInitialClearRef.current) {
+      urlSyncSkipInitialClearRef.current = false;
+      return;
+    }
+
+    setListId(null);
+    try {
+      sessionStorage.removeItem('inturank-arena-last-list');
+    } catch {
+      /* ignore */
+    }
+  }, [searchParams]);
+
+  /** Return-trigger nudge — pair with bookmarks like `?ref=graph`. */
+  useEffect(() => {
+    if (searchParams.get('ref') !== 'graph' || graphReturnNudgeDone.current) return;
+    graphReturnNudgeDone.current = true;
+    toast.info('Crowd stakes on this list may have moved — worth another pass when you’re ready.');
+  }, [searchParams]);
 
   useEffect(() => {
     if (!openBatchAfterLoad) return;
@@ -984,6 +1247,7 @@ const RankedList: React.FC = () => {
       if (!listId) {
         const lid = getFirstListIdWithPending();
         if (lid && getArenaListById(lid)) {
+          navigate(`/climb?list=${encodeURIComponent(lid)}`, { replace: true });
           setListId(lid);
           setOpenBatchAfterLoad(true);
         }
@@ -994,7 +1258,7 @@ const RankedList: React.FC = () => {
     };
     window.addEventListener('arena-batch-fab-toggle', onFabToggle as EventListener);
     return () => window.removeEventListener('arena-batch-fab-toggle', onFabToggle as EventListener);
-  }, [listId]);
+  }, [listId, navigate]);
 
   const initScoresForPool = useCallback(
     (items: RankItem[]) => {
@@ -1131,8 +1395,18 @@ const RankedList: React.FC = () => {
 
     setStakingTx(true);
     let sent = false;
+    let attestFootnote: string | undefined;
     const totalWei = rowsToSend.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
     try {
+      const awardArenaStakeXp = (txHash: string, depositWei: bigint) => {
+        notifyProtocolXpEarned({
+          address: address!,
+          reasonKey: 'add_to_list',
+          txHash,
+          depositTrustWei: depositWei,
+        });
+      };
+
       const byList = new Map<string, typeof rowsToSend>();
       for (const row of rowsToSend) {
         const lid = row.sourceListId;
@@ -1140,50 +1414,210 @@ const RankedList: React.FC = () => {
         byList.get(lid)!.push(row);
       }
 
-      for (const [, listRows] of byList) {
-        const listEntry = getArenaListById(listRows[0]!.sourceListId);
+      type PortalBatchJob = {
+        portalListObjectId: string;
+        listRows: typeof rowsToSend;
+        listEntry: NonNullable<ReturnType<typeof getArenaListById>>;
+      };
+
+      const portalJobs: PortalBatchJob[] = [];
+      const legacyJobs: Array<{ listRows: typeof rowsToSend; listEntry: ReturnType<typeof getArenaListById> }> =
+        [];
+
+      for (const [, lr] of byList) {
+        const listEntry = getArenaListById(lr[0]!.sourceListId);
         const portalListObjectId =
           listEntry?.source === 'portal' && TERM_ID_RE.test(listEntry.listObjectTermId)
             ? listEntry.listObjectTermId
             : null;
 
-        if (portalListObjectId && listRows.every((row) => TERM_ID_RE.test(row.item.id))) {
-          const triples = listRows.map((row) => {
-            const subjectId = row.item.id;
-            const predicateId = row.support ? LIST_PREDICATE_ID : portalListObjectId;
-            const objectId = row.support ? portalListObjectId : DISTRUST_ATOM_ID;
-            return {
-              subjectId,
-              predicateId,
-              objectId,
-              assetsWei: baseWei * BigInt(row.units),
-            };
-          });
-          await createSemanticTriplesBatch(triples, address);
+        if (portalListObjectId && lr.every((row) => TERM_ID_RE.test(row.item.id))) {
+          if (!listEntry) continue;
+          portalJobs.push({ portalListObjectId, listRows: lr, listEntry });
         } else {
-          const listLabel = listEntry?.title || 'Arena list';
-          for (const row of listRows) {
-            const rowTrust = formatEther(baseWei * BigInt(row.units));
-            const subjectRef = TERM_ID_RE.test(row.item.id) ? row.item.id : (row.item.label || row.item.id);
-            const predicateRef = row.support ? `belongs in ${listLabel}` : `does not belong in ${listLabel}`;
-            const objectRef = listLabel;
-            await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
+          legacyJobs.push({ listRows: lr, listEntry });
+        }
+      }
+
+      if (portalJobs.length > 0 || legacyJobs.length > 0) {
+        const checksumReceiver = getAddress(address);
+        const proxyOk = await getProxyApprovalStatus(checksumReceiver, { readRetries: 2, readDelayMs: 120 });
+        if (!proxyOk) await grantProxyApproval(checksumReceiver);
+      }
+
+      for (const { portalListObjectId, listRows, listEntry } of portalJobs) {
+        /**
+         * Portal list: YES = deposit into existing list-membership vault; NO = deposit into existing distrust triple or create once.
+         */
+        const yesRows = listRows.filter((r) => r.support);
+        const noRows = listRows.filter((r) => !r.support);
+
+        const noResolved = await Promise.all(
+          noRows.map(async (row) => {
+            const rowWei = baseWei * BigInt(row.units);
+            const amt = formatEther(rowWei);
+            let negStakeVault = await getListNegativeStanceTripleTermId(row.item.id, portalListObjectId);
+            if (!negStakeVault) {
+              const deterministicTripleId = calculateTripleId(row.item.id, portalListObjectId, DISTRUST_ATOM_ID);
+              if (await isTermCreatedOnChain(deterministicTripleId)) {
+                negStakeVault = deterministicTripleId;
+              }
+            }
+            return { row, rowWei, amt, negStakeVault };
+          }),
+        );
+
+        const noCreates: { subjectId: string; predicateId: string; objectId: string; assetsWei: bigint }[] = [];
+
+        for (const n of noResolved) {
+          if (n.negStakeVault) {
+            const dep = await depositToVault(n.amt, n.negStakeVault, address);
+            awardArenaStakeXp(dep.hash, n.rowWei);
+          } else {
+            noCreates.push({
+              subjectId: n.row.item.id,
+              predicateId: portalListObjectId,
+              objectId: DISTRUST_ATOM_ID,
+              assetsWei: n.rowWei,
+            });
           }
+        }
+
+        if (noCreates.length === 1) {
+          const t = noCreates[0]!;
+          try {
+            const tripleHash = await createSemanticTriple(
+              t.subjectId,
+              t.predicateId,
+              t.objectId,
+              formatEther(t.assetsWei),
+              address,
+              undefined,
+              false
+            );
+            awardArenaStakeXp(tripleHash, t.assetsWei);
+          } catch (noTripleErr: unknown) {
+            const det = calculateTripleId(t.subjectId, t.predicateId, t.objectId);
+            let exists = await isTermCreatedOnChain(det);
+            for (let poll = 0; !exists && poll < 12; poll++) {
+              await new Promise((r) => setTimeout(r, 220));
+              exists = await isTermCreatedOnChain(det);
+            }
+            if (exists) {
+              const dep = await depositToVault(formatEther(t.assetsWei), det, address);
+              awardArenaStakeXp(dep.hash, t.assetsWei);
+            } else {
+              throw noTripleErr;
+            }
+          }
+        } else if (noCreates.length > 1) {
+          const batchHash = await createSemanticTriplesBatch(noCreates, address);
+          const totalDep = noCreates.reduce((acc, c) => acc + c.assetsWei, 0n);
+          awardArenaStakeXp(batchHash, totalDep);
+        }
+
+        const yesVaultResolved = await Promise.all(
+          yesRows.map(async (row) => {
+            const rowWei = baseWei * BigInt(row.units);
+            const amt = formatEther(rowWei);
+            const vaultTermId = await getListMembershipTripleTermId(row.item.id, portalListObjectId);
+            return { row, rowWei, amt, vaultTermId };
+          }),
+        );
+
+        for (const y of yesVaultResolved) {
+          if (!y.vaultTermId) {
+            throw new Error(
+              `Could not resolve list-membership vault for "${y.row.item.label}". ` +
+                `If this identity is new on-chain, wait for the indexer or retry; otherwise pick another member.`
+            );
+          }
+          const dep = await depositToVault(y.amt, y.vaultTermId, address);
+          awardArenaStakeXp(dep.hash, y.rowWei);
+        }
+
+        if (ARENA_PERSONAL_ATTESTATION_TRIPLES && listEntry?.title) {
+          try {
+            const listTitle = listEntry.title;
+            const arenaSpeakerLabel = await bestWalletDisplayLabel(address);
+            for (const row of listRows) {
+              const rowTrust = formatEther(baseWei * BigInt(row.units));
+              const sideWord = row.support ? 'YES' : 'NO';
+              const stance = `${arenaSpeakerLabel} chose ${sideWord} for “${row.item.label}” in list “${listTitle}” (${rowTrust} TRUST)`;
+              await createTripleFromLabels(address, stance, row.item.id, rowTrust, address);
+            }
+          } catch (attestErr: unknown) {
+            console.warn('Arena personal attestation triple failed (stakes may already be on-chain):', attestErr);
+            attestFootnote = arenaPersonalAttestationFootnote(attestErr);
+          }
+        }
+      }
+
+      for (const { listRows, listEntry } of legacyJobs) {
+        const listLabel = listEntry?.title || 'Arena list';
+        for (const row of listRows) {
+          const rowTrust = formatEther(baseWei * BigInt(row.units));
+          const subjectRef = TERM_ID_RE.test(row.item.id) ? row.item.id : (row.item.label || row.item.id);
+          const predicateRef = row.support ? `belongs in ${listLabel}` : `does not belong in ${listLabel}`;
+          const objectRef = listLabel;
+          const created = await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
+          awardArenaStakeXp(created.tripleHash, parseEther(rowTrust));
         }
       }
       sent = true;
     } catch (e: any) {
-      const msg = e?.shortMessage ?? e?.message ?? 'Transaction failed';
-      toast.error(msg);
+      console.error('[Arena batch submit]', e);
+      let msg = parseProtocolError(e);
+      if (!msg?.trim()) msg = e?.shortMessage ?? e?.message ?? 'Transaction failed';
+      toast.error(msg.length > 420 ? `${msg.slice(0, 417)}…` : msg);
     } finally {
       setStakingTx(false);
     }
     if (!sent) return;
 
     if (address) {
-      toast.success(
-        `Claims written on Intuition · ${rowsToSend.length} item${rowsToSend.length === 1 ? '' : 's'} · ${formatEther(totalWei)} TRUST`
-      );
+      recordArenaRankingPicks(address, rowsToSend.length);
+      setPickCreditTick((n) => n + 1);
+    }
+
+    const successListIds = [...new Set(rowsToSend.map((r) => r.sourceListId))];
+    let successThemeShort = 'Arena';
+    let successContextSuffix = 'live';
+    if (successListIds.length === 1) {
+      const e = getArenaListById(successListIds[0]!);
+      successContextSuffix = e?.tag ?? 'list';
+      successThemeShort = e?.title ?? 'Arena';
+    } else if (successListIds.length > 1) {
+      successContextSuffix = `${successListIds.length} lists`;
+      successThemeShort = 'All queued picks';
+    }
+
+    if (address) {
+      let humanLine: string | undefined;
+      try {
+        const who = await bestWalletDisplayLabel(address);
+        const rowSummaries = rowsToSend.map((r) => {
+          const lt = getArenaListById(r.sourceListId)?.title ?? 'list';
+          const side = r.support ? 'YES' : 'NO';
+          return `${side} for “${r.item.label}” in “${lt}”`;
+        });
+        humanLine = `${who} — ${rowSummaries.join(' · ')}`;
+      } catch {
+        /* ignore */
+      }
+      try {
+        playSuccess();
+      } catch {
+        /* ignore */
+      }
+      setArenaBatchSuccess({
+        itemCount: rowsToSend.length,
+        trustLabel: formatEther(totalWei),
+        themeShort: successThemeShort,
+        contextSuffix: successContextSuffix,
+        ...(humanLine ? { humanLine } : {}),
+        ...(attestFootnote ? { footnote: attestFootnote } : {}),
+      });
       void refreshPlayers({ silent: true });
       void refreshArenaXpSelf();
       try {
@@ -1410,16 +1844,42 @@ const RankedList: React.FC = () => {
 
   const streakTier = getStreakTier(streak);
   const minPoolNeeded = 1;
-  const quickStartList = listsForCategory[0] ?? ARENA_LISTS[0];
+  const quickStartList = useMemo(() => {
+    const flagship = getArenaListById(FLAGSHIP_ARENA_LIST_ID);
+    const flagshipInLane = listsForCategory.some((l) => l.id === FLAGSHIP_ARENA_LIST_ID);
+    if (flagship && (arenaCategoryId === 'all' || flagshipInLane)) return flagship;
+    return listsForCategory[0] ?? ARENA_LISTS[0];
+  }, [listsForCategory, arenaCategoryId]);
 
-  const startListRun = useCallback((id: string) => {
-    setListId(id);
+  const startListRun = useCallback(
+    (id: string) => {
+      setListId(id);
+      try {
+        sessionStorage.setItem('inturank-arena-last-list', id);
+      } catch {
+        /* ignore */
+      }
+      const hasListInUrl = Boolean((searchParams.get('list') || searchParams.get('listId'))?.trim());
+      const next = new URLSearchParams(searchParams);
+      next.set('list', id);
+      next.delete('listId');
+      next.delete('view');
+      navigate(`/climb?${next.toString()}`, { replace: hasListInUrl });
+    },
+    [navigate, searchParams],
+  );
+
+  const exitToArenaBrowse = useCallback(() => {
+    playClick();
+    setListId(null);
+    setRound(null);
     try {
-      sessionStorage.setItem('inturank-arena-last-list', id);
+      sessionStorage.removeItem('inturank-arena-last-list');
     } catch {
       /* ignore */
     }
-  }, []);
+    navigate('/climb', { replace: true });
+  }, [navigate]);
 
   const onQuickStart = useCallback(() => {
     if (!quickStartList) return;
@@ -1427,121 +1887,345 @@ const RankedList: React.FC = () => {
     startListRun(quickStartList.id);
   }, [quickStartList, startListRun]);
 
+  const pickerListContainerVariants = useMemo(
+    () => ({
+      hidden: {},
+      visible: {
+        transition: { staggerChildren: 0.042, delayChildren: 0.04 },
+      },
+    }),
+    [],
+  );
+
+  const pickerCardItemVariants = useMemo(
+    () => ({
+      hidden: reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 },
+      visible: reduceMotion
+        ? { opacity: 1, transition: { duration: 0.2 } }
+        : {
+            opacity: 1,
+            y: 0,
+            transition: { type: 'spring' as const, stiffness: 430, damping: 34 },
+          },
+    }),
+    [reduceMotion],
+  );
+
+  const arenaPickerTransition = useMemo(
+    () =>
+      reduceMotion
+        ? { duration: 0.2, ease: [0.4, 0, 0.2, 1] as const }
+        : { type: 'spring' as const, stiffness: 280, damping: 34 },
+    [reduceMotion],
+  );
+
+  const arenaRunTransition = useMemo(
+    () =>
+      reduceMotion
+        ? { duration: 0.24, ease: [0.4, 0, 0.2, 1] as const }
+        : { type: 'spring' as const, stiffness: 300, damping: 36, mass: 0.72 },
+    [reduceMotion],
+  );
+
   return (
-    <div className="relative isolate z-10 min-h-screen bg-[#03050d] w-full min-w-0 overflow-x-hidden pb-16 sm:pb-20 font-sans text-slate-300 selection:bg-[#00f3ff]/20 selection:text-white">
-      <section className="relative z-10 border-b border-[#00f3ff]/10 overflow-hidden">
-        <div
-          className="h-1.5 w-full"
-          style={{
-            background: 'linear-gradient(90deg, #00f3ff 0%, #ff1e6d 45%, rgba(0,243,255,0.35) 100%)',
-          }}
-        />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.5]"
-          style={{
-            background:
-              'radial-gradient(ellipse 100% 80% at 10% 0%, rgba(0,243,255,0.12) 0%, transparent 55%), radial-gradient(ellipse 80% 60% at 90% 20%, rgba(255,30,109,0.1) 0%, transparent 50%)',
-          }}
-        />
+    <div
+      className={`relative isolate z-10 min-h-screen w-full min-w-0 overflow-x-hidden font-sans text-slate-300 selection:bg-[#38e8ff]/25 selection:text-white ${listId ? 'pb-6 sm:pb-8' : 'pb-16 sm:pb-20'}`}
+      style={{ backgroundColor: ARENA_THEME.bgPage }}
+    >
+      <section className="relative z-10 border-b border-white/[0.06] overflow-hidden">
+        <div className="h-1.5 w-full" style={{ background: ARENA_THEME.topAccentBar }} />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.55]" style={{ background: ARENA_THEME.heroGlow }} />
         <div className="w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pt-5 pb-4 md:pt-6 md:pb-5 relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div>
-              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.45em] text-[#00f3ff]/90 mb-1.5">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-[0.45em] mb-1.5" style={{ color: `${ARENA_THEME.cyan}cc` }}>
                 IntuRank · Climb
               </p>
               <h1
                 className="text-3xl sm:text-4xl md:text-5xl font-black font-display tracking-tight bg-clip-text text-transparent"
-                style={{
-                  backgroundImage: 'linear-gradient(120deg, #ecfeff 0%, #00f3ff 35%, #fda4c6 60%, #ff1e6d 100%)',
-                }}
+                style={{ backgroundImage: ARENA_THEME.heroTitle }}
               >
                 THE ARENA
               </h1>
-              <p className="text-sm text-slate-500 mt-2 max-w-lg leading-relaxed">
-                {listId
-                  ? 'Read each card · Yes / No · queue cuts when you are ready.'
-                  : 'Pick a lane, pick a list, then rank with fast Yes/No decisions.'}
+              <p className="text-sm text-slate-500 mt-2 max-w-md leading-snug">
+                {climbViewMode === 'explorer' ? (
+                  <>
+                    Browse recent Yes / No rankings from Arena portal lists — flip back to{' '}
+                    <span className="text-slate-400 font-semibold">Arena</span> to vote.
+                  </>
+                ) : listId ? (
+                  address ? (
+                    <>
+                      <span style={{ color: ARENA_THEME.cyanMuted }} className="font-semibold">Yes</span>
+                      {' / '}
+                      <span style={{ color: ARENA_THEME.roseNo }} className="font-semibold">No</span>
+                      {' · Batch when ready.'}
+                    </>
+                  ) : (
+                    'Try picks now — wallet only if you stake on-chain.'
+                  )
+                ) : (
+                  'Lane → list → vote. Starred lists & trade shortcuts: Explorer.'
+                )}
               </p>
-            </div>
-            {listId ? (
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-xs rounded-xl border border-white/[0.08] bg-black/25 px-3 py-2">
-                <span className="text-slate-500">Rounds <span className="text-white font-mono font-bold tabular-nums ml-1">{duels}</span></span>
-                <span className="text-slate-700">•</span>
-                <span className="text-slate-500">Streak <span className="text-fuchsia-300 font-mono font-bold tabular-nums ml-1">{streak}</span></span>
-                {address ? <><span className="text-slate-700">•</span><span className="text-slate-500" title={`Arena ${graphArenaXp.toLocaleString()} · Activity ${myProtocolXp.toLocaleString()} · Total (this browser)`}>XP <span className="text-amber-300 font-mono font-bold tabular-nums ml-1 arena-xp-roll">{xpRoll.toLocaleString()}</span></span></> : null}
-                <div className="h-1 w-16 rounded-full bg-slate-800 overflow-hidden sm:ml-1">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-500"
-                    style={{ width: `${(progressToMilestone / 5) * 100}%` }}
-                  />
+              {showOnboardTip ? (
+                <div className="mt-3 max-w-md rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 flex items-center gap-3">
+                  <Sparkles size={14} className="text-cyan-300 shrink-0" aria-hidden />
+                  <p className="text-[11px] text-slate-300 leading-snug flex-1">
+                    Tap <strong className="text-white">Quick start</strong>. Toggle <strong className="text-white">Explorer</strong> for stars, leaderboard & feed.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClick();
+                      dismissOnboardTip();
+                    }}
+                    className="shrink-0 rounded-md bg-cyan-500/15 border border-cyan-400/30 px-2 py-1 text-[10px] font-bold text-cyan-200 hover:bg-cyan-500/25"
+                  >
+                    OK
+                  </button>
                 </div>
+              ) : null}
+            </div>
+            <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
+              <div
+                className="inline-flex rounded-xl border border-white/[0.12] bg-black/40 p-0.5 backdrop-blur-md self-end"
+                role="group"
+                aria-label="Arena or Explorer view"
+              >
+                <button
+                  type="button"
+                  onClick={() => setClimbViewMode('arena')}
+                  aria-pressed={climbViewMode === 'arena'}
+                  className={`rounded-[10px] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
+                    climbViewMode === 'arena'
+                      ? 'bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Arena
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClimbViewMode('explorer')}
+                  aria-pressed={climbViewMode === 'explorer'}
+                  className={`rounded-[10px] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] transition-colors ${
+                    climbViewMode === 'explorer'
+                      ? 'bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Explorer
+                </button>
               </div>
-            ) : null}
+              {listId && climbViewMode === 'arena' ? (
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-xs rounded-xl border border-white/[0.1] px-3 py-2 backdrop-blur-md" style={{ background: 'rgba(8,8,10,0.75)', boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), 0 0 24px ${ARENA_THEME.goldDim}` }}>
+                  <span className="text-slate-500">Rounds <span className="text-white font-mono font-bold tabular-nums ml-1">{duels}</span></span>
+                  <span className="text-slate-700">•</span>
+                  <span className="text-slate-500">Streak <span className="font-mono font-bold tabular-nums ml-1 text-[#fcd34d]">{streak}</span></span>
+                  {address ? <><span className="text-slate-700">•</span><span className="text-slate-500" title={`Arena ${arenaXpUi.toLocaleString()} (indexer ${graphArenaXp.toLocaleString()} · this device picks ${arenaPickXp.toLocaleString()}) · Activity ${myProtocolXp.toLocaleString()} · Total`}>XP <span className="text-[#fde68a] font-mono font-bold tabular-nums ml-1 arena-xp-roll">{xpRoll.toLocaleString()}</span></span></> : null}
+                  <div className="h-1 w-16 rounded-full bg-slate-800 overflow-hidden sm:ml-1 ring-1 ring-white/[0.06]">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${(progressToMilestone / 5) * 100}%`,
+                        background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.gold})`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>
 
-      <div className="relative z-10 w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pb-10 pt-0">
+      {climbViewMode === 'explorer' ? (
+        <div className="relative z-10 w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pt-4 pb-16 sm:pb-20 min-w-0">
+          <motion.div
+            className="rounded-[1.75rem] border border-white/[0.07] backdrop-blur-2xl backdrop-saturate-150 overflow-hidden"
+            style={{
+              background: ARENA_THEME.shellGlass,
+              boxShadow: ARENA_THEME.shellShadow,
+            }}
+            initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <div className="p-4 sm:p-5 md:p-6 lg:p-7 xl:p-8">
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] gap-6 xl:gap-8 xl:items-start">
+                <aside
+                  className="flex flex-col gap-4 min-w-0 w-full p-4 sm:p-5 rounded-3xl border border-white/[0.07] backdrop-blur-md [scrollbar-width:thin] xl:sticky xl:top-24 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:overscroll-auto order-2 xl:order-1"
+                  style={{
+                    background: 'linear-gradient(165deg, rgba(12,12,16,0.75) 0%, rgba(8,8,10,0.82) 100%)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px rgba(232,197,71,0.04)',
+                  }}
+                >
+                  <ArenaBrowseLaneHud laneLabel={arenaLaneLabelShort} listCount={listsForCategory.length} />
+                  <ArenaSidebarSessionStrip
+                    duels={duels}
+                    streak={streak}
+                    xpRoll={xpRoll}
+                    connected={Boolean(address)}
+                  />
+                  <ArenaStarredRail
+                    items={starredRailRows}
+                    collapsed={starredRailCollapsed}
+                    onToggleCollapsed={() => setStarredRailCollapsed((v) => !v)}
+                    onOpen={(id) => startListRun(id)}
+                    onUnstar={(id) => toggleListFavorite(id)}
+                    laneLabel={arenaLaneLabelShort}
+                  />
+                  <div className="shrink-0 space-y-2">
+                    <ArenaLeaderboardGlance
+                      players={players}
+                      loading={playersLoading}
+                      myAddress={address}
+                      myArenaXp={arenaXpUi}
+                      myActivityXp={myProtocolXp}
+                    />
+                    {address ? (
+                      <div className="flex justify-center px-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClick();
+                            clearProtocolXpLedger();
+                            clearArenaPickCreditLedger();
+                            setPickCreditTick((n) => n + 1);
+                            toast.success(
+                              'Cleared activity XP and device Arena pick credit on this browser.',
+                            );
+                          }}
+                          className="text-[9px] font-bold uppercase tracking-wider text-slate-600 hover:text-slate-400 underline-offset-2 hover:underline transition-colors"
+                        >
+                          Clear device XP (activity + Arena picks)
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <ArenaSidebarDeck flagshipListId={FLAGSHIP_ARENA_LIST_ID} />
+                  <ArenaSidebarBrowseFoot />
+                </aside>
+                <div className="min-w-0 order-1 xl:order-2">
+                  <ArenaRankingPulse variant="explorer" viewerAddress={address ?? undefined} />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      ) : (
+      <div className={`relative z-10 w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pt-0 ${listId ? 'pb-4 sm:pb-5' : 'pb-10'}`}>
         <motion.div
-          className="rounded-[1.75rem] border border-white/[0.08] bg-[#05070d]/80 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_24px_80px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.06),0_0_0_1px_rgba(0,243,255,0.04)] overflow-x-hidden lg:overflow-visible"
+          className="rounded-[1.75rem] border border-white/[0.07] backdrop-blur-2xl backdrop-saturate-150 overflow-x-hidden lg:overflow-visible"
           style={{
-            background:
-              'linear-gradient(160deg, rgba(10,20,32,0.92) 0%, rgba(5,8,15,0.88) 40%, rgba(20,6,18,0.5) 100%)',
-            boxShadow:
-              '0 28px 90px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 80px rgba(0,243,255,0.04)',
+            background: ARENA_THEME.shellGlass,
+            boxShadow: ARENA_THEME.shellShadow,
           }}
           initial={reduceMotion ? false : { opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
         >
         <div
-          className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,28vw)] xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-0 items-stretch divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80"
+          className={`grid grid-cols-1 gap-0 divide-y divide-slate-800/80 ${
+            listId
+              ? 'lg:grid-cols-[minmax(0,1fr)_minmax(328px,28vw)] xl:grid-cols-[minmax(0,1fr)_392px] 2xl:grid-cols-[minmax(0,1fr)_416px] lg:divide-y-0 lg:divide-x lg:items-start'
+              : 'items-stretch'
+          }`}
         >
         <div
-          className={
-            listId
-              ? 'min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 flex flex-col gap-4 lg:min-h-[calc(100vh-12rem)]'
-              : 'min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 space-y-4'
-          }
+          className={`min-w-0 p-3 sm:p-4 md:p-5 lg:p-6 flex flex-col ${listId ? 'lg:min-h-0 lg:self-start' : 'lg:min-h-[calc(100vh-12rem)]'}`}
         >
-          {!listId ? (
-            <div className="rounded-2xl border border-white/[0.07] bg-gradient-to-b from-white/[0.04] to-transparent p-4 sm:p-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <div
+            className={`relative min-w-0 isolate overflow-hidden rounded-xl grid grid-cols-1 ${
+              listId
+                ? 'min-h-0 auto-rows-min'
+                : 'flex-1 min-h-[min(520px,calc(100vh-13rem))] lg:min-h-[min(560px,calc(100vh-12rem))] grid-rows-1'
+            }`}
+          >
+            <AnimatePresence initial={false} mode="sync">
+              {!listId ? (
+                <motion.div
+                  key="arena-picker"
+                  role="tabpanel"
+                  aria-label="Browse Arena lists"
+                  className="col-start-1 row-start-1 z-[1] min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-auto pr-1 [scrollbar-gutter:stable]"
+                  initial={
+                    arenaPickerEnterPrimed && !reduceMotion ? { opacity: 0, x: -28 } : false
+                  }
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0.55, x: -36 }}
+                  transition={arenaPickerTransition}
+                >
+            <div className="rounded-2xl border border-white/[0.08] p-4 sm:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_18px_56px_rgba(0,0,0,0.45)] relative overflow-hidden backdrop-blur-md" style={{ background: 'linear-gradient(175deg, rgba(18,18,22,0.92) 0%, rgba(6,7,10,0.94) 55%)' }}>
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-80" style={{ background: ARENA_THEME.rimBar }} aria-hidden />
+              <div className="relative z-10">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">Pick a list</h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Opens with a slide — tap a row to climb</p>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                  <span
+                    className="flex items-center gap-1 rounded-full border px-2.5 py-1"
+                    style={{ borderColor: `${ARENA_THEME.cyan}40`, background: `${ARENA_THEME.cyan}10` }}
+                  >
+                    <span className="font-black tabular-nums" style={{ color: ARENA_THEME.cyanMuted }}>
+                      1
+                    </span>{' '}
+                    Lane
+                  </span>
+                  <ChevronRight size={12} className="text-slate-600 shrink-0" />
+                  <span
+                    className="flex items-center gap-1 rounded-full border px-2.5 py-1"
+                    style={{ borderColor: `${ARENA_THEME.gold}40`, background: `${ARENA_THEME.gold}12` }}
+                  >
+                    <span className="font-black tabular-nums text-[#fcd34d]">2</span> List
+                  </span>
+                  <ChevronRight size={12} className="text-slate-600 shrink-0" />
+                  <span
+                    className="flex items-center gap-1 rounded-full border px-2.5 py-1"
+                    style={{ borderColor: `${ARENA_THEME.violet}44`, background: `${ARENA_THEME.violet}12` }}
+                  >
+                    <span className="font-black tabular-nums text-[#ddd6fe]">3</span> Vote
+                  </span>
+                </div>
+              </div>
               <div
-                className="rounded-2xl border border-[#00f3ff]/20 px-4 py-3.5 sm:px-5 mb-5 backdrop-blur-md"
+                className="mb-4 rounded-xl border p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 relative overflow-hidden"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(0,243,255,0.1) 0%, rgba(8,10,20,0.9) 45%, rgba(255,30,109,0.06) 100%)',
-                  boxShadow: '0 0 40px rgba(0,243,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                  borderColor: `${ARENA_THEME.gold}40`,
+                  background: `linear-gradient(105deg, ${ARENA_THEME.gold}14 0%, transparent 42%, ${ARENA_THEME.cyan}10 100%)`,
+                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 28px ${ARENA_THEME.goldDim}`,
                 }}
               >
-                <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-[#00f3ff] mb-2">Run · Pick a lane</p>
-                <p className="text-base sm:text-lg text-slate-100 font-semibold leading-snug">
-                  Does this entry belong on the list you are curating?
-                </p>
-              </div>
-              <p className="text-xs text-slate-500 mb-4 max-w-2xl leading-relaxed">
-                Go straight into ranking with Quick Start, or pick a lane below. Network lists are live from Intuition.
-              </p>
-              <div className="mb-4 flex flex-wrap items-center gap-2 text-[10px]">
-                <span className="rounded-full border border-[#00f3ff]/30 bg-[#00f3ff]/10 px-3 py-1 text-[#9ef9ff] font-semibold">1. Choose lane</span>
-                <ChevronRight size={12} className="text-slate-600" />
-                <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1 text-fuchsia-200 font-semibold">2. Open list</span>
-                <ChevronRight size={12} className="text-slate-600" />
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-200 font-semibold">3. Vote yes/no</span>
-              </div>
-              <div className="mb-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-300/90 font-black">Quick start</p>
-                  <p className="text-xs text-slate-300 mt-1">
-                    Recommended now: <span className="text-white font-semibold">{quickStartList?.title ?? '—'}</span>
-                  </p>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center border"
+                    style={{
+                      borderColor: `${ARENA_THEME.gold}50`,
+                      background: `linear-gradient(145deg, ${ARENA_THEME.gold}22, ${ARENA_THEME.cyan}12)`,
+                    }}
+                  >
+                    <Sparkles size={18} style={{ color: ARENA_THEME.goldBright }} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.2em] font-black" style={{ color: ARENA_THEME.goldBright }}>
+                      Jump in
+                    </p>
+                    <p className="text-sm font-bold text-white truncate">{quickStartList?.title ?? '—'}</p>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={onQuickStart}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-4 py-2.5 text-[11px] font-black text-cyan-100 hover:bg-cyan-500/25 transition-colors"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider text-black shadow-[0_0_28px_rgba(232,197,71,0.35)] hover:brightness-110 transition-[filter]"
+                  style={{
+                    background: `linear-gradient(90deg, ${ARENA_THEME.gold}, ${ARENA_THEME.cyan})`,
+                  }}
                 >
-                  Start Ranking
-                  <ChevronRight size={14} />
+                  Go
+                  <ChevronRight size={16} strokeWidth={2.8} />
                 </button>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 [scrollbar-width:thin]">
@@ -1556,13 +2240,14 @@ const RankedList: React.FC = () => {
                     onMouseEnter={playHover}
                     className={`shrink-0 rounded-full px-3.5 py-1.5 text-[11px] font-bold transition-all border ${
                       arenaCategoryId === c.id
-                        ? 'text-white border-[#00f3ff]/55 shadow-[0_0_20px_rgba(0,243,255,0.2)]'
-                        : 'bg-slate-950/60 text-slate-500 border-slate-700/80 hover:border-[#00f3ff]/25 hover:text-slate-300'
+                        ? 'text-white shadow-[0_0_22px_rgba(232,197,71,0.18)]'
+                        : 'bg-slate-950/60 text-slate-500 border-slate-700/80 hover:border-[#38e8ff]/22 hover:text-slate-300'
                     }`}
                     style={
                       arenaCategoryId === c.id
                         ? {
-                            background: 'linear-gradient(135deg, rgba(0,243,255,0.2), rgba(255,30,109,0.12))',
+                            borderColor: `${ARENA_THEME.cyan}66`,
+                            background: `linear-gradient(135deg, ${ARENA_THEME.gold}28, ${ARENA_THEME.cyan}18, ${ARENA_THEME.violet}14)`,
                           }
                         : undefined
                     }
@@ -1574,52 +2259,24 @@ const RankedList: React.FC = () => {
               <p className="text-[10px] text-slate-500 mt-2 mb-1 font-mono tabular-nums">
                 {listsForCategory.length} list{listsForCategory.length === 1 ? '' : 's'} in this lane
               </p>
-              {favoriteListsInLane.length > 0 ? (
-                <div
-                  className="mb-5 rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-500/[0.06] to-[#050a12]/80 p-4 sm:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                >
-                  <div className="flex flex-wrap items-center gap-2 mb-3">
-                    <Star className="w-4 h-4 text-amber-300 fill-amber-400/35" strokeWidth={2} />
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-200/95">Starred in this lane</p>
-                    <span className="text-[10px] text-slate-500 font-mono tabular-nums ml-auto">{favoriteListsInLane.length}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                    {favoriteListsInLane.map((L) => (
-                      <ArenaListCard
-                        key={`fav-${L.id}`}
-                        title={L.title}
-                        description={L.description}
-                        tag={L.tag}
-                        categoryLabel={
-                          ARENA_CATEGORY_PILLS.find((p) => p.id === L.arenaCategory)?.label ?? L.tag
-                        }
-                        listGlyph={L.listGlyph}
-                        constituentCount={getArenaListConstituents(L)}
-                        previewItems={getArenaPreviewItems(L, [])}
-                        reduceMotion={reduceMotion}
-                        isFavorite
-                        onFavoriteToggle={() => toggleListFavorite(L.id)}
-                        onSelect={() => {
-                          startListRun(L.id);
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {groupedArenaLists.map((group) => {
                   const visible = showAllLists ? group.lists : group.lists.slice(0, 4);
                   return (
                     <div key={group.id}>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{group.label}</p>
-                        <span className="text-[10px] text-slate-600">{group.lists.length}</span>
+                      <div className="flex items-center justify-between mb-2.5 gap-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-300">{group.label}</p>
+                        <span className="text-[10px] text-slate-600 tabular-nums">{group.lists.length}</span>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                      <motion.div
+                        className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-3.5"
+                        variants={pickerListContainerVariants}
+                        initial="hidden"
+                        animate="visible"
+                      >
                         {visible.map((L) => (
+                          <motion.div key={L.id} variants={pickerCardItemVariants}>
                           <ArenaListCard
-                            key={L.id}
                             title={L.title}
                             description={L.description}
                             tag={L.tag}
@@ -1636,8 +2293,9 @@ const RankedList: React.FC = () => {
                               startListRun(L.id);
                             }}
                           />
+                          </motion.div>
                         ))}
-                      </div>
+                      </motion.div>
                     </div>
                   );
                 })}
@@ -1657,32 +2315,79 @@ const RankedList: React.FC = () => {
                   </button>
                 </div>
               )}
-              <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-white/[0.06]">
-                <p className="text-[11px] text-slate-500 max-w-md">
-                  Want deeper context before ranking? Open Markets for vaults, depth, and history.
-                </p>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
                 <Link
                   to="/markets"
                   onClick={() => playClick()}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#00f3ff]/35 bg-[#00f3ff]/10 px-4 py-2.5 text-[11px] font-bold text-[#a5fcff] hover:bg-[#00f3ff]/20 transition-colors shrink-0"
+                  className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-[#a5fcff] transition-colors inline-flex items-center gap-1"
                 >
-                  Open Markets
-                  <ChevronRight size={14} className="opacity-90" />
+                  Markets
+                  <ChevronRight size={12} />
+                </Link>
+                <span className="text-slate-700 hidden sm:inline">|</span>
+                <Link
+                  to={`/climb?list=${FLAGSHIP_ARENA_LIST_ID}&onboard=1`}
+                  onClick={() => playClick()}
+                  className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-cyan-300/90 transition-colors"
+                >
+                  Tools list tip
                 </Link>
               </div>
+              <XpEarnHint variant="arena" presentation="arena-deck" className="mt-3 w-full max-w-md mx-auto" />
+              </div>
             </div>
-          ) : (
+                </motion.div>
+              ) : (
+                <motion.div
+                  key={`arena-run-${listId}`}
+                  role="tabpanel"
+                  aria-label="Arena voting"
+                  className="col-start-1 row-start-1 z-[2] min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-auto flex flex-col gap-3 pb-2 pr-1 [scrollbar-gutter:stable]"
+                  style={{
+                    background: ARENA_THEME.runPanelBg,
+                    boxShadow: ARENA_THEME.runPanelShadow,
+                  }}
+                  initial={reduceMotion ? false : { opacity: 0.94, x: '104%' }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={reduceMotion ? { opacity: 0 } : { opacity: 1, x: '104%' }}
+                  transition={arenaRunTransition}
+                >
             <>
+              {listId && !address ? (
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.05] px-3 py-2 mb-4 text-[11px] text-slate-400">
+                  Guest — connects only if you stake
+                </div>
+              ) : null}
           <div
-            className="rounded-3xl border border-white/[0.08] p-4 sm:p-5 backdrop-blur-xl"
+            className="rounded-3xl border border-white/[0.1] p-4 sm:p-5 backdrop-blur-xl relative overflow-hidden"
             style={{
-              background: 'linear-gradient(145deg, rgba(0,243,255,0.07) 0%, rgba(8,10,18,0.92) 38%, rgba(255,30,109,0.05) 100%)',
-              boxShadow: '0 0 60px rgba(0,243,255,0.05), inset 0 1px 0 rgba(255,255,255,0.07)',
+              background: ARENA_THEME.currentRunCard,
+              boxShadow: '0 0 48px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)',
             }}
           >
-            <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-5 lg:justify-between">
-              <div className="flex flex-wrap items-center gap-2 lg:min-h-[52px]">
-                <span className="rounded-full border border-[#00f3ff]/25 bg-[#00f3ff]/8 px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-[0.28em] text-[#9ef9ff]">
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-90 rounded-t-3xl" style={{ background: ARENA_THEME.rimBar }} aria-hidden />
+            <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+              <button
+                type="button"
+                onClick={exitToArenaBrowse}
+                onMouseEnter={playHover}
+                aria-label="Back to Arena lists"
+                title="Back"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.14] bg-black/45 text-slate-200 transition-all hover:border-[#38e8ff]/45 hover:text-white hover:bg-black/55 self-start"
+                style={{ boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06)` }}
+              >
+                <ArrowLeft size={18} strokeWidth={2.5} style={{ color: ARENA_THEME.cyanMuted }} />
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1 lg:min-h-[40px]">
+                <span
+                  className="rounded-full border px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-[0.28em]"
+                  style={{
+                    borderColor: `${ARENA_THEME.cyan}44`,
+                    background: `linear-gradient(135deg, ${ARENA_THEME.gold}18, ${ARENA_THEME.cyan}12)`,
+                    color: ARENA_THEME.goldBright,
+                  }}
+                >
                   Current run
                 </span>
                 <div className="hidden sm:flex items-center gap-1 text-[10px] text-slate-500">
@@ -1694,37 +2399,13 @@ const RankedList: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row flex-wrap gap-2.5 lg:max-w-[min(760px,100%)] lg:ml-auto w-full lg:w-auto lg:justify-end flex-1 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    playClick();
-                    setListId(null);
-                    setRound(null);
-                    try {
-                      sessionStorage.removeItem('inturank-arena-last-list');
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                  className="group inline-flex items-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] pl-2 pr-3 py-2.5 text-left hover:border-[#00f3ff]/35 hover:bg-[#00f3ff]/10 transition-all shrink-0 sm:self-start"
-                >
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#00f3ff]/20 to-[#ff1e6d]/20 border border-white/10 text-[#a5fcff] group-hover:scale-105 transition-transform">
-                    <ArrowLeft size={16} strokeWidth={2.5} />
-                  </span>
-                  <span>
-                    <span className="block text-[9px] font-mono uppercase tracking-widest text-slate-500">Back</span>
-                    <span className="text-xs font-bold text-slate-100 group-hover:text-white">Browse lists</span>
-                  </span>
-                </button>
-                <ArenaListQuickPick
-                  activeListId={listId ?? ''}
-                  favorites={quickPickFavoriteRows}
-                  others={quickPickOtherRows}
-                  onSelectList={startListRun}
-                  className="flex-1 min-w-[200px]"
-                />
-              </div>
+              <ArenaListQuickPick
+                activeListId={listId ?? ''}
+                favorites={quickPickFavoriteRows}
+                others={quickPickOtherRows}
+                onSelectList={startListRun}
+                className="w-full lg:flex-1 lg:min-w-[min(100%,220px)] lg:max-w-xl xl:max-w-2xl lg:ml-auto"
+              />
             </div>
 
             {activeList ? (
@@ -1736,9 +2417,13 @@ const RankedList: React.FC = () => {
                   {stanceSummary.total > 0 ? (
                     <p className="text-[11px] text-slate-500 shrink-0 tabular-nums sm:text-right">
                       {stanceSummary.total} indexed ·{' '}
-                      <span className="text-[#4ade80] font-semibold">yes {stanceSummary.yes}</span>
+                      <span className="font-semibold" style={{ color: ARENA_THEME.cyan }}>
+                        yes {stanceSummary.yes}
+                      </span>
                       {' · '}
-                      <span className="text-[#ff8bb0] font-semibold">no {stanceSummary.no}</span>
+                      <span className="font-semibold" style={{ color: ARENA_THEME.violet }}>
+                        no {stanceSummary.no}
+                      </span>
                     </p>
                   ) : null}
                 </div>
@@ -1775,18 +2460,20 @@ const RankedList: React.FC = () => {
                   playClick();
                   setBatchModalOpen(true);
                 }}
-                className="mt-3 w-full text-center text-[11px] font-bold text-[#a5fcff] border border-[#00f3ff]/35 rounded-xl py-2.5 bg-[#00f3ff]/5 hover:bg-[#00f3ff]/10 transition-colors"
+                className="mt-3 w-full text-center border border-[#00f3ff]/35 rounded-xl py-2.5 px-3 bg-[#00f3ff]/5 hover:bg-[#00f3ff]/10 transition-colors"
               >
-                Review batch ({batchModalRows.length} queued) — TRUST on submit
+                <span className="block text-[11px] font-bold text-[#a5fcff]">
+                  Review conviction cart ({batchModalRows.length} queued)
+                </span>
+                <span className="block text-[9px] text-slate-500 mt-1 font-semibold uppercase tracking-wide">
+                  TRUST settles when you submit the batch
+                </span>
               </button>
             ) : null}
           </div>
 
           {loading ? (
-            <div className="rounded-xl border border-cyan-500/15 bg-slate-900/25 py-20 flex flex-col items-center justify-center">
-              <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-3" />
-              <div className="text-xs font-mono uppercase tracking-[0.15em] text-slate-500">Loading pool...</div>
-            </div>
+            <ArenaPoolSkeleton lanes={ARENA_CARDS_PER_ROUND} />
           ) : pool.length < minPoolNeeded ? (
             <div className="rounded-xl border border-dashed border-slate-700 py-16 text-center text-sm text-slate-500">
               Not enough items. Try another list.
@@ -1797,22 +2484,21 @@ const RankedList: React.FC = () => {
               <p className="text-slate-500 text-sm">Next item…</p>
             </div>
           ) : (
-            <motion.div className="space-y-5 w-full mx-auto lg:mx-0" initial={false}>
-              <div
-                className="rounded-2xl w-full p-[3px]"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(0,243,255,0.3) 0%, rgba(255,30,109,0.16) 50%, rgba(0,243,255,0.12) 100%)',
-                  boxShadow: '0 20px 56px rgba(0,0,0,0.5), 0 0 40px rgba(0,243,255,0.05)',
-                }}
-              >
-                <div className="rounded-[0.95rem] border border-white/[0.07] bg-[#05080f]/95 p-3 sm:p-5 backdrop-blur-2xl ring-1 ring-white/[0.04]">
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-slate-500">
+            <motion.div className="space-y-3 w-full mx-auto lg:mx-0" initial={false}>
+              <div className="relative rounded-3xl w-full border-2 border-slate-800 bg-slate-950/55 backdrop-blur-md shadow-[0_24px_56px_rgba(0,0,0,0.55)] overflow-hidden">
+                <div
+                  className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgba(0,243,255,0.028)_1px,transparent_1px)] bg-[size:20px_20px] opacity-35"
+                  aria-hidden
+                />
+                <div className="pointer-events-none absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-intuition-primary/35 to-transparent" aria-hidden />
+                <div className="relative z-10 p-3 sm:p-4 pb-2 sm:pb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-slate-400">
                     <span className="inline-flex items-center gap-2">
                       <span
                         className="h-2 w-2 rounded-full shadow-[0_0_12px_rgba(0,243,255,0.9)]"
-                        style={{ background: '#00f3ff' }}
+                        style={{ background: ARENA_THEME.cyan, boxShadow: `0 0 14px ${ARENA_THEME.cyan}66` }}
                       />
-                      <span className="text-slate-400">Round {duels + 1}</span>
+                      <span className="text-slate-300">Round {duels + 1}</span>
                       {streakTier.label ? (
                         <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-sans font-black normal-case text-white ${streakTier.className}`}>
                           <Flame size={10} />
@@ -1820,8 +2506,8 @@ const RankedList: React.FC = () => {
                         </span>
                       ) : null}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 text-[#ffd89a]">
-                      <Zap size={12} className="text-[#fbbf24]" />
+                    <span className="inline-flex items-center gap-1.5 text-amber-200/95">
+                      <Zap size={12} className="text-amber-400" />
                       +{xpPickPreview} XP
                       {round.items.length > 1 ? (
                         <span className="ml-1.5 rounded-md bg-white/[0.06] px-2 py-0.5 font-sans tabular-nums normal-case tracking-normal text-[9px] text-slate-400">
@@ -1831,26 +2517,27 @@ const RankedList: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4 w-full items-stretch">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 md:gap-3 w-full items-stretch">
                     <div className="contents">
-                      <AnimatePresence initial={false} mode="popLayout">
-                        {round.items.map((item, slotIdx) => (
-                          <ArenaLaneCard
-                            key={item.id}
-                            item={item}
-                            activeList={activeList ?? undefined}
-                            stakingTx={stakingTx}
-                            reduceMotion={reduceMotion}
-                            emphasized={round.items.length >= 3 ? slotIdx === 1 : round.items.length === 1}
-                            onYesNo={(support) => onYesNo(item, support)}
-                          />
-                        ))}
-                      </AnimatePresence>
+                      {round.items.map((item, slotIdx) => (
+                        <ArenaLaneCard
+                          key={`arena-lane-${slotIdx}`}
+                          item={item}
+                          activeList={activeList ?? undefined}
+                          stakingTx={stakingTx}
+                          reduceMotion={reduceMotion}
+                          emphasized={round.items.length >= 3 ? slotIdx === 1 : round.items.length === 1}
+                          marketHref={itemHref(item)}
+                          laneIndex={slotIdx}
+                          lanesInRound={round.items.length}
+                          xpRoundTotal={xpPickPreview}
+                          onYesNo={(support) => onYesNo(item, support)}
+                        />
+                      ))}
                     </div>
                   </div>
 
-                  <div className="mt-4 flex flex-col items-center gap-2">
-                    <p className="text-[9px] text-slate-500 text-center">Local session only — not on-chain odds.</p>
+                  <div className="mt-2 flex flex-col items-center gap-2 pb-0">
                     <motion.button
                       type="button"
                       onClick={onSkip}
@@ -1863,13 +2550,13 @@ const RankedList: React.FC = () => {
                       <SkipForward size={14} />
                       Skip
                     </motion.button>
+                    <XpEarnHint variant="arena" presentation="arena-deck" className="w-full max-w-2xl mx-auto" />
                   </div>
                 </div>
               </div>
             </motion.div>
           )}
           <ArenaClimbTerrace
-            pinBottom
             queuedBatchCount={ARENA_BATCH_MODE ? batchModalRows.length : 0}
             onReviewBatch={
               ARENA_BATCH_MODE
@@ -1881,34 +2568,65 @@ const RankedList: React.FC = () => {
             }
           />
             </>
-          )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
-        <aside className="lg:sticky lg:top-6 lg:self-start flex flex-col gap-3 min-w-0 w-full p-3 sm:p-4 md:p-5 lg:p-5 bg-[#03080e]/60">
-          <ArenaLeaderboardGlance
-            players={players}
-            loading={playersLoading}
-            myAddress={address}
-            myXp={xpDisplayTarget}
-            myXpTitle={`Arena ${graphArenaXp.toLocaleString()} · Activity ${myProtocolXp.toLocaleString()} (stored in this browser)`}
-          />
-          {listId ? (
+        {listId ? (
+        <aside
+          className="flex flex-col gap-4 min-w-0 w-full p-4 sm:p-5 rounded-3xl border border-white/[0.07] backdrop-blur-md [scrollbar-width:thin] lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto lg:overscroll-auto"
+          style={{ background: 'linear-gradient(165deg, rgba(12,12,16,0.75) 0%, rgba(8,8,10,0.82) 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px rgba(232,197,71,0.04)' }}
+        >
+          <div className="shrink-0 space-y-2">
+            <ArenaLeaderboardGlance
+              players={players}
+              loading={playersLoading}
+              myAddress={address}
+              myArenaXp={arenaXpUi}
+              myActivityXp={myProtocolXp}
+            />
+            {address ? (
+              <div className="flex justify-center px-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClick();
+                    clearProtocolXpLedger();
+                    clearArenaPickCreditLedger();
+                    setPickCreditTick((n) => n + 1);
+                    toast.success('Cleared activity XP and device Arena pick credit on this browser.');
+                  }}
+                  className="text-[9px] font-bold uppercase tracking-wider text-slate-600 hover:text-slate-400 underline-offset-2 hover:underline transition-colors"
+                >
+                  Clear device XP (activity + Arena picks)
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <>
+            <div className="hidden lg:block h-3 shrink-0 min-h-0" aria-hidden />
             <motion.div
-              className="relative rounded-2xl border border-fuchsia-500/20 bg-gradient-to-br from-[#070a14]/95 via-[#050914]/98 to-[#120618]/95 p-3 sm:p-3.5 shadow-[0_16px_40px_rgba(0,0,0,0.45),0_0_32px_rgba(255,30,109,0.06),inset_0_1px_0_rgba(255,255,255,0.05)] overflow-hidden"
+              className="relative shrink-0 rounded-3xl border border-white/[0.1] bg-gradient-to-br from-[#070a12]/96 via-[#050810]/98 to-[#100818]/95 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.48),0_0_28px_rgba(192,132,252,0.08),inset_0_1px_0_rgba(255,255,255,0.05)] overflow-hidden"
               initial={reduceMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#00f3ff]/35 to-transparent pointer-events-none" aria-hidden />
-              <p className="text-[9px] font-black uppercase tracking-[0.34em] text-cyan-300/95 mb-2">Arena controls</p>
-              <p className="text-[10px] text-slate-500 leading-relaxed mb-2.5 line-clamp-3">
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#38e8ff]/38 to-transparent pointer-events-none" aria-hidden />
+              <p className="text-[9px] font-black uppercase tracking-[0.34em] text-cyan-300/95 mb-3">Arena controls</p>
+              <p className="text-[11px] text-slate-500 leading-relaxed mb-4">
                 {ARENA_BATCH_MODE ? (
                   <>
-                    TRUST preset for cuts. Claims need ≥{' '}
-                    <span className="text-amber-200/90 tabular-nums">{PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL}</span> TRUST.
+                    TRUST preset for queued stances in your cart (claims need ≥{' '}
+                    <span className="text-amber-200/90 tabular-nums">{PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL}</span> TRUST).
+                    Arena XP tracks rhythm and stakes — not factual correctness.
                   </>
                 ) : (
-                  <>Tip intensity preset while you rank.</>
+                  <>
+                    Tip intensity per pick. Arena XP tracks streaks and stakes — not whether you&apos;re &quot;right&quot; on facts.
+                  </>
                 )}
               </p>
 
@@ -1922,11 +2640,11 @@ const RankedList: React.FC = () => {
                 >
                   −
                 </button>
-                <div className="flex-1 min-w-0 rounded-xl border border-fuchsia-500/30 bg-black/55 px-2.5 py-1 text-center backdrop-blur-sm">
-                  <div className="text-[9px] uppercase tracking-[0.18em] text-fuchsia-300/95 font-black truncate">{ARENA_STAKE_TITLES[stakePresetIdx]}</div>
+                <div className="flex-1 min-w-0 rounded-xl border border-[#c084fc]/35 bg-black/55 px-2.5 py-1 text-center backdrop-blur-sm">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-violet-200/95 font-black truncate">{ARENA_STAKE_TITLES[stakePresetIdx]}</div>
                   <div className="text-lg font-black tabular-nums text-white leading-tight mt-0.5 truncate">
                     {ARENA_STAKE_PRESETS[stakePresetIdx]}{' '}
-                    <span className="text-cyan-200/95 text-[11px] font-bold">TRUST</span>
+                    <span className="text-[#7af0ff] text-[11px] font-bold">TRUST</span>
                   </div>
                 </div>
                 <button
@@ -1974,21 +2692,38 @@ const RankedList: React.FC = () => {
                 <div className="mt-2.5 pt-2.5 border-t border-white/[0.06]">
                   <span className="text-[9px] text-amber-400/95 flex items-center gap-1 leading-snug">
                     <Wallet size={11} className="shrink-0" />
-                    Connect to submit cuts on-chain
+                    Connect when you&apos;re ready to submit the cart on-chain
                   </span>
                 </div>
               ) : null}
+              <motion.button
+                type="button"
+                onClick={() => {
+                  playClick();
+                  if (!listId) return;
+                  void copyTextToClipboard(getArenaListShareUrl(listId)).then(
+                    () => toast.success('Copied Arena link — friends open this same list.'),
+                    () => toast.error('Could not copy link.'),
+                  );
+                }}
+                whileHover={reduceMotion ? undefined : { scale: 1.02 }}
+                className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] py-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-200 hover:border-[#00f3ff]/30 hover:text-[#89faff] transition-colors"
+              >
+                <Share2 size={12} strokeWidth={2.2} className="text-cyan-300/90" aria-hidden />
+                Copy stance link
+              </motion.button>
               <Link
                 to="/portfolio#arena-rankings"
                 onClick={() => playClick()}
-                className="mt-2.5 flex items-center justify-center gap-1 rounded-xl border border-[#00f3ff]/20 bg-[#00f3ff]/6 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-[#9ef9ff] hover:border-[#00f3ff]/40 hover:bg-[#00f3ff]/10 transition-colors"
+                className="mt-2.5 flex items-center justify-center gap-1 rounded-xl border border-[#38e8ff]/22 bg-[#38e8ff]/8 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-[#9ef9ff] hover:border-[#38e8ff]/40 hover:bg-[#38e8ff]/12 transition-colors"
               >
                 My ranked lists
                 <ChevronRight className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
               </Link>
             </motion.div>
-          ) : null}
+          </>
         </aside>
+        ) : null}
         </div>
         </motion.div>
 
@@ -2253,6 +2988,7 @@ const RankedList: React.FC = () => {
         </motion.section>
         )}
       </div>
+      )}
 
       {ARENA_BATCH_MODE && listId && (
         <ArenaBatchReviewModal
@@ -2272,6 +3008,12 @@ const RankedList: React.FC = () => {
           minDepositLabel={ARENA_BATCH_MODE ? PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL : undefined}
         />
       )}
+
+      <ArenaBatchSuccessModal
+        open={arenaBatchSuccess != null}
+        payload={arenaBatchSuccess}
+        onClose={() => setArenaBatchSuccess(null)}
+      />
 
       <style>{`
         @keyframes arena-row-in {

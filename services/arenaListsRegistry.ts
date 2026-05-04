@@ -10,6 +10,7 @@ const GRAPH_POOL_SIZE = 28;
 /** Filter chips on Arena home (Wispear-style). */
 export const ARENA_CATEGORY_PILLS: { id: string; label: string }[] = [
   { id: 'all', label: 'All' },
+  { id: 'daily', label: 'Daily life' },
   { id: 'network', label: 'Network' },
   { id: 'ecosystem', label: 'Ecosystem' },
   { id: 'identities', label: 'Identities' },
@@ -35,7 +36,7 @@ export type ArenaListEntry =
       description: string;
       tag: string;
       /** Category id for filter pills (see `ARENA_CATEGORY_PILLS`). */
-      arenaCategory: 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
+      arenaCategory: 'daily' | 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
       /** Center tile on the list card (emoji or short glyph) */
       listGlyph?: string;
       /**
@@ -51,7 +52,7 @@ export type ArenaListEntry =
       title: string;
       description: string;
       tag: string;
-      arenaCategory: 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
+      arenaCategory: 'daily' | 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
       listGlyph?: string;
       itemQuestion?: (item: RankItem) => string;
       source: 'graphql';
@@ -62,7 +63,7 @@ export type ArenaListEntry =
       title: string;
       description: string;
       tag: string;
-      arenaCategory: 'network';
+      arenaCategory: 'daily' | 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
       listGlyph?: string;
       itemQuestion?: (item: RankItem) => string;
       /** List object `term_id` (Intuition "list" as object in list triples). */
@@ -109,6 +110,26 @@ export function buildArenaItemQuestion(entry: ArenaListEntry, item: RankItem): s
 
 /** Intuition ecosystem & community-style lists (extend with real term ids later). */
 export const ARENA_LISTS: ArenaListEntry[] = [
+  {
+    id: 'trust-your-tools',
+    title: 'Tools you’d bet your workflow on',
+    description:
+      'Everyday software people actually live in — no wallet required to browse picks. Stake later if you want your vote on-chain.',
+    tag: 'Daily',
+    arenaCategory: 'daily',
+    listGlyph: '◎',
+    itemQuestion: (item) =>
+      `If you had to rely on ${item.label} for something important tomorrow, would you trust it — yes or no?`,
+    source: 'static',
+    items: [
+      atom('arena-tool-cursor', 'Cursor', 'Editor / agent', 'daily-tool'),
+      atom('arena-tool-notion', 'Notion', 'Docs & wiki', 'daily-tool'),
+      atom('arena-tool-slack', 'Slack', 'Team chat', 'daily-tool'),
+      atom('arena-tool-figma', 'Figma', 'Design', 'daily-tool'),
+      atom('arena-tool-linear', 'Linear', 'Issues', 'daily-tool'),
+      atom('arena-tool-apple-notes', 'Apple Notes', 'Quick capture', 'daily-tool'),
+    ],
+  },
   {
     id: 'built-on-intuition',
     title: 'Built on Intuition',

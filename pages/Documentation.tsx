@@ -24,13 +24,14 @@ import {
   FileText,
   ArrowLeft,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { playClick, playHover } from '../services/audio';
 import {
   APP_VERSION,
   APP_VERSION_DISPLAY,
   ARENA_ENABLED,
   ARENA_UI_VISIBLE,
+  ARENA_XP_PER_RANK_PICK,
   CHAIN_ID,
   CURRENCY_SYMBOL,
   EXPLORER_URL,
@@ -40,6 +41,13 @@ import {
   NETWORK_NAME,
   OFFSET_PROGRESSIVE_CURVE_ID,
   PAGE_HERO_TITLE,
+  PROTOCOL_XP_ADD_TO_LIST,
+  PROTOCOL_XP_CREATE_ATOM,
+  PROTOCOL_XP_CREATE_CLAIM,
+  PROTOCOL_XP_MARKET_ACQUIRE,
+  PROTOCOL_XP_SEND_TRUST,
+  PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS,
+  PROTOCOL_XP_SKILL_TRIPLE,
 } from '../constants';
 
 type SectionDef = {
@@ -56,6 +64,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'ares', navLabel: 'ARES layer', icon: Sparkles },
   { id: 'skill', navLabel: 'Intuition Skill', icon: Cpu },
   { id: 'leaderboards', navLabel: 'Leaderboards', icon: Trophy },
+  { id: 'activity-xp', navLabel: 'How XP works', icon: Zap },
   { id: 'create-flows', navLabel: 'Create & Send TRUST', icon: PlusCircle },
   { id: 'portfolio-profile', navLabel: 'Portfolio & profile', icon: Wallet },
   { id: 'guide', navLabel: 'How to use IntuRank', icon: Command },
@@ -104,6 +113,7 @@ function sectionTopInScrollContainer(el: HTMLElement, scrollRoot: HTMLElement): 
 }
 
 const Documentation: React.FC = () => {
+  const location = useLocation();
   const [activeSection, setActiveSection] = useState(SECTIONS[0].id);
   const mainRef = useRef<HTMLDivElement>(null);
   /** While set, scroll-based highlighting is frozen so TOC clicks are not overwritten mid-smooth-scroll. */
@@ -197,6 +207,39 @@ const Documentation: React.FC = () => {
     };
   }, [syncActiveFromScroll]);
 
+  /** Scroll docs column (or window on mobile) to a section — shared by TOC clicks and deep links (`/documentation#activity-xp`). */
+  const applySectionScroll = useCallback((id: string, behavior: ScrollBehavior) => {
+    const target = document.getElementById(id);
+    if (!target) return false;
+
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const main = mainRef.current;
+    if (mq.matches && main) {
+      if (id === 'intro') {
+        main.scrollTo({ top: 0, behavior });
+      } else {
+        const y = sectionTopInScrollContainer(target, main) - DOC_ANCHOR_SCROLL_MARGIN_PX;
+        main.scrollTo({ top: Math.max(0, y), behavior });
+      }
+    } else if (id === 'intro') {
+      window.scrollTo({ top: 0, behavior });
+    } else {
+      target.scrollIntoView({ behavior, block: 'start' });
+    }
+    return true;
+  }, []);
+
+  /** Deep link / hash: jump to "How XP works" etc. without firing TOC click sound. */
+  useLayoutEffect(() => {
+    if (location.pathname !== '/documentation') return;
+    const raw = (location.hash || '').replace(/^#/, '').trim();
+    if (!raw || !SECTIONS.some((s) => s.id === raw)) return;
+    setActiveSection(raw);
+    requestAnimationFrame(() => {
+      applySectionScroll(raw, 'auto');
+    });
+  }, [location.pathname, location.hash, applySectionScroll]);
+
   const scrollTo = (id: string) => {
     playClick();
     const target = document.getElementById(id);
@@ -206,23 +249,7 @@ const Documentation: React.FC = () => {
     pendingSectionRef.current = id;
     setActiveSection(id);
 
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const main = mainRef.current;
-    // scrollIntoView scrolls every scrollable ancestor (including the window), which shifts the whole layout on desktop.
-    // Only the docs column should move: scroll the inner main explicitly.
-    // "Introduction" maps to #intro, but the hero (title + blurb) lives above that section. Scroll the column to top.
-    if (mq.matches && main) {
-      if (id === 'intro') {
-        main.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
-        const y = sectionTopInScrollContainer(target, main) - DOC_ANCHOR_SCROLL_MARGIN_PX;
-        main.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-      }
-    } else if (id === 'intro') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    applySectionScroll(id, 'smooth');
 
     let released = false;
     const releaseLock = () => {
@@ -235,6 +262,8 @@ const Documentation: React.FC = () => {
 
     scrollLockTimerRef.current = setTimeout(releaseLock, 700);
 
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const main = mainRef.current;
     const scrollEndTarget: HTMLElement | Window = mq.matches && main ? main : window;
     const onScrollEnd = () => {
       if (scrollLockTimerRef.current) clearTimeout(scrollLockTimerRef.current);
@@ -957,6 +986,94 @@ const Documentation: React.FC = () => {
               </div>
             </DocSection>
 
+            <DocSection id="activity-xp" title="How XP works">
+              <p>
+                There are <strong className="text-slate-100 font-semibold">two kinds of XP</strong>.{' '}
+                <strong className="text-slate-100 font-semibold">Arena XP</strong> is what you get from playing the Arena — the fast voting flow on{' '}
+                <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>.{' '}
+                <strong className="text-slate-100 font-semibold">Activity XP</strong> is extra credit for things you do on-chain (markets, create flows, sending TRUST, and so on). The app adds it when your wallet qualifies; numbers stay in sync with the little hints on each page.
+              </p>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                These amounts can change when the product updates; they all come from one place in the code so nothing drifts.
+              </p>
+
+              <div className="not-prose overflow-x-auto rounded-xl border border-white/10 bg-[#0a0d14] my-4">
+                <table className="w-full min-w-[280px] text-left text-sm text-slate-300">
+                  <thead>
+                    <tr className="border-b border-white/[0.08] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      <th className="px-4 py-3 font-semibold">What you did</th>
+                      <th className="px-4 py-3 font-semibold">Typical max XP</th>
+                      <th className="px-4 py-3 font-semibold">In plain terms</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Voted in the Arena (Climb)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">≥ {ARENA_XP_PER_RANK_PICK}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Arena XP — not chain trading. You get more when you turn up the stake on your picks.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Bought into a market (deposit TRUST)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_MARKET_ACQUIRE}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — scales with how much {CURRENCY_SYMBOL} you deposit on that buy. Dust-sized buys earn little or none; big buys earn up to this max.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Created an atom</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_CREATE_ATOM}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — scales with your vault deposit on create; protocol minimum alone usually isn’t enough for the full amount.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Created a claim (triple)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_CREATE_CLAIM}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — scales with triple deposit; small deposits earn a fraction of this max.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Added something to a list</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_ADD_TO_LIST}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — scales with list triple deposit (often the protocol floor unless you raise it).
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Used Skill to publish a triple</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_SKILL_TRIPLE}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — scales with the triple deposit you passed into Skill; tiny deposits earn little or none.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Sent TRUST (wallet to wallet)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_SEND_TRUST}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — only if this send is <strong className="text-slate-400 font-semibold">{PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS} TRUST or more</strong> in one go. Daily caps still apply. Not the same as buying market shares.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="not-prose rounded-xl border border-white/[0.06] bg-[#080a12]/90 p-4 sm:p-5 text-[13px] leading-relaxed text-slate-400 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Keeping it honest</p>
+                <p>
+                  Activity XP is meant to reward real use, not scripted spam. In the app we combine three simple rules: you need a{' '}
+                  <strong className="text-slate-200">meaningful-sized TRUST deposit</strong> before anything counts; between that floor and a reference size your XP{' '}
+                  <strong className="text-slate-200">ramps up smoothly</strong> toward the max in the table; and each row also has a{' '}
+                  <strong className="text-slate-200">daily ceiling</strong> (UTC midnight) so endless tiny repeats stop paying off.
+                </p>
+                <p className="text-slate-500 text-xs">
+                  Exact floors, reference sizes, and caps live in <code className="bg-white/5 px-1 rounded text-slate-400">constants.ts</code> next to the XP numbers — tune them as the product evolves.
+                </p>
+              </div>
+            </DocSection>
+
             <DocSection id="create-flows" title="Create atom, Send TRUST, and Arena">
               <h3 className="text-base font-semibold text-slate-100 mt-0 mb-3 flex items-center gap-2">
                 <PlusCircle className="w-5 h-5 text-intuition-primary shrink-0" aria-hidden />
@@ -998,7 +1115,9 @@ const Documentation: React.FC = () => {
                 TRUST reserve for future gas on {NETWORK_NAME}. Sending to yourself is blocked. After broadcast,
                 you get a confirmation with a link to the transaction on the explorer. This is{' '}
                 <strong className="text-slate-100 font-semibold">not</strong> a MultiVault deposit: it does not open or close
-                a market position by itself.
+                a market position by itself. For <strong className="text-slate-100 font-semibold">activity XP</strong>, the app
+                only counts sends of <strong className="text-slate-100 font-semibold">{PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS} TRUST or more</strong> in one go (
+                <strong className="text-slate-100 font-semibold">+{PROTOCOL_XP_SEND_TRUST} XP</strong>).
               </p>
 
               <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3 flex items-center gap-2">

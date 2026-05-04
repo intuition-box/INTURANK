@@ -1,7 +1,7 @@
 /**
  * Arena rankers leaderboard.
  * - Default: no global graph scan (that mixed in every Intuition portal user, not Arena testers).
- * - Optional: GET `VITE_ARENA_LEADERBOARD_URL` returning JSON `{ leaderboard: [...] }` or `[{ address, xp, ... }]`.
+ * - Optional: GET arena mirror URL — `VITE_ARENA_LEADERBOARD_URL` or `${VITE_INTURANK_API_URL|VITE_EMAIL_API_URL}/api/arena-leaderboard` returning `{ leaderboard }` or an array.
  * - Opt-in: `VITE_ARENA_USE_GLOBAL_GRAPH_LEADERBOARD=true` restores indexer-wide aggregation (intentionally broad).
  *
  * Portfolio / personal XP still come from subgraph (see graphql); POST mirror from `postArenaTotalsMirrorOptional` is optional telemetry.
@@ -11,7 +11,7 @@ import {
   getAccountsByIds,
   resolveIntuitionAccountForWallet,
 } from './graphql';
-import { ARENA_USE_GLOBAL_GRAPH_LEADERBOARD } from '../constants';
+import { ARENA_USE_GLOBAL_GRAPH_LEADERBOARD, getArenaLeaderboardMirrorUrl } from '../constants';
 
 export interface ArenaPlayerRow {
   rank: number;
@@ -41,7 +41,7 @@ function normWallet(a: unknown): string | null {
 }
 
 async function fetchArenaLeaderboardMirrorRows(): Promise<RawLb[] | null> {
-  const url = (import.meta.env.VITE_ARENA_LEADERBOARD_URL as string | undefined)?.trim();
+  const url = getArenaLeaderboardMirrorUrl();
   if (!url) return null;
   try {
     const res = await fetch(url, {
