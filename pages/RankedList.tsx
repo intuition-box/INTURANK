@@ -30,28 +30,33 @@ import {
   getLists,
   getListMemberSubjectsForObject,
   getListMembershipTripleTermId,
-  getListNegativeStanceTripleTermId,
   predicateIsSocialTagNoise,
   predicateLooksLikeBattlePredicateLoose,
   resolveMetadata,
   registerArenaPortalListTermsForIndexing,
 } from '../services/graphql';
 import {
-  calculateTripleId,
-  createSemanticTriple,
-  createSemanticTriplesBatch,
+  calculateCounterTripleId,
   createTripleFromLabels,
   depositToVault,
   getProxyApprovalStatus,
+  getRawShareBalance,
   grantProxyApproval,
-  isTermCreatedOnChain,
   arenaPersonalAttestationFootnote,
   parseProtocolError,
   sendNativeTransfer,
 } from '../services/web3';
 import { playClick, playHover, playSuccess } from '../services/audio';
 import { toast } from '../components/Toast';
-import { recordArenaRankingPicks, arenaPickCreditXp, clearArenaPickCreditLedger } from '../services/arenaPickCredit';
+import {
+  recordArenaRankingPicks,
+  arenaPickCreditXp,
+  clearArenaPickCreditLedger,
+  recordArenaStreakPicks,
+  getArenaCurrentStreak,
+  getArenaRankingPickCount,
+} from '../services/arenaPickCredit';
+import { recordArenaCurationPicks } from '../services/arenaCurations';
 import { fetchArenaXpRecordForWallet, postArenaTotalsMirrorOptional } from '../services/arenaXp';
 import { clearProtocolXpLedger, getProtocolXpTotal, notifyProtocolXpEarned, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
@@ -61,7 +66,8 @@ import {
   ARENA_PERSONAL_ATTESTATION_TRIPLES,
   ARENA_XP_PER_RANK_PICK,
   CURVE_OFFSET,
-  DISTRUST_ATOM_ID,
+  LINEAR_CURVE_ID,
+  OFFSET_PROGRESSIVE_CURVE_ID,
 } from '../constants';
 import { bestWalletDisplayLabel } from '../services/tns';
 import {
@@ -100,7 +106,6 @@ import ArenaStarredRail from '../components/ArenaStarredRail';
 import { XpEarnHint } from '../components/XpEarnHint';
 import {
   ArenaBrowseLaneHud,
-  ArenaSidebarBrowseFoot,
   ArenaSidebarDeck,
   ArenaSidebarSessionStrip,
 } from '../components/ArenaSidebarPanels';
@@ -897,6 +902,27 @@ const RankedList: React.FC = () => {
     void refreshPlayers();
   }, [refreshPlayers]);
 
+  /**
+   * Burst-poll the leaderboard after a successful Arena batch — the subgraph attribution path
+   * (FeeProxy → depositor via vault positions) needs ~30s to catch up so the user actually
+   * appears on the board instead of the empty splash.
+   */
+  useEffect(() => {
+    let burstTimers: number[] = [];
+    const onUp = () => {
+      void refreshPlayers({ silent: true });
+      burstTimers.forEach((t) => window.clearTimeout(t));
+      burstTimers = [4_000, 12_000, 25_000, 45_000].map((ms) =>
+        window.setTimeout(() => void refreshPlayers({ silent: true }), ms),
+      );
+    };
+    window.addEventListener('inturank-arena-onchain-updated', onUp);
+    return () => {
+      burstTimers.forEach((t) => window.clearTimeout(t));
+      window.removeEventListener('inturank-arena-onchain-updated', onUp);
+    };
+  }, [refreshPlayers]);
+
   useEffect(() => {
     const w = address?.trim();
     if (!w?.toLowerCase().startsWith('0x')) return;
@@ -924,6 +950,15 @@ const RankedList: React.FC = () => {
     [address, protocolLedgerTick]
   );
   const arenaPickXp = useMemo(() => arenaPickCreditXp(address), [address, pickCreditTick]);
+  /** Lifetime ranks confirmed through IntuRank from this device, by wallet. Drives the Session strip. */
+  const lifetimeRoundsForWallet = useMemo(
+    () => (address ? getArenaRankingPickCount(address) : 0),
+    [address, pickCreditTick],
+  );
+  const currentStreakForWallet = useMemo(
+    () => (address ? getArenaCurrentStreak(address) : 0),
+    [address, pickCreditTick],
+  );
   /** Indexer rarely credits vault-only stakes to `triple.creator`; pick credit bridges until subgraph matches your wallet. */
   const arenaXpUi = Math.max(graphArenaXp, arenaPickXp);
   const xpDisplayTarget = arenaXpUi + myProtocolXp;
@@ -1397,6 +1432,8 @@ const RankedList: React.FC = () => {
     let sent = false;
     let attestFootnote: string | undefined;
     const totalWei = rowsToSend.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
+    /** Captured per-row tx hashes so we can record curations + streak with the real txHash after success. */
+    const txByRowKey = new Map<string, string>();
     try {
       const awardArenaStakeXp = (txHash: string, depositWei: bigint) => {
         notifyProtocolXpEarned({
@@ -1447,93 +1484,53 @@ const RankedList: React.FC = () => {
 
       for (const { portalListObjectId, listRows, listEntry } of portalJobs) {
         /**
-         * Portal list: YES = deposit into existing list-membership vault; NO = deposit into existing distrust triple or create once.
+         * Canonical Intuition flow per row in a portal list:
+         *   YES = deposit into membership triple vault (subject, LIST_PREDICATE, list_object).
+         *   NO  = deposit into the **counter-triple** of that membership vault (auto-created on-chain).
+         * Pre-check share balances on both sides — protocol reverts `MultiVault_HasCounterStake()` if the user already holds the opposite side.
          */
-        const yesRows = listRows.filter((r) => r.support);
-        const noRows = listRows.filter((r) => !r.support);
+        const checkBothCurves = async (account: string, termId: string): Promise<bigint> => {
+          const [a, b] = await Promise.all([
+            getRawShareBalance(account, termId, LINEAR_CURVE_ID),
+            getRawShareBalance(account, termId, OFFSET_PROGRESSIVE_CURVE_ID),
+          ]);
+          return a > b ? a : b;
+        };
 
-        const noResolved = await Promise.all(
-          noRows.map(async (row) => {
+        const resolved = await Promise.all(
+          listRows.map(async (row) => {
             const rowWei = baseWei * BigInt(row.units);
             const amt = formatEther(rowWei);
-            let negStakeVault = await getListNegativeStanceTripleTermId(row.item.id, portalListObjectId);
-            if (!negStakeVault) {
-              const deterministicTripleId = calculateTripleId(row.item.id, portalListObjectId, DISTRUST_ATOM_ID);
-              if (await isTermCreatedOnChain(deterministicTripleId)) {
-                negStakeVault = deterministicTripleId;
-              }
-            }
-            return { row, rowWei, amt, negStakeVault };
+            const membershipVault = await getListMembershipTripleTermId(row.item.id, portalListObjectId);
+            return { row, rowWei, amt, membershipVault };
           }),
         );
 
-        const noCreates: { subjectId: string; predicateId: string; objectId: string; assetsWei: bigint }[] = [];
-
-        for (const n of noResolved) {
-          if (n.negStakeVault) {
-            const dep = await depositToVault(n.amt, n.negStakeVault, address);
-            awardArenaStakeXp(dep.hash, n.rowWei);
-          } else {
-            noCreates.push({
-              subjectId: n.row.item.id,
-              predicateId: portalListObjectId,
-              objectId: DISTRUST_ATOM_ID,
-              assetsWei: n.rowWei,
-            });
-          }
-        }
-
-        if (noCreates.length === 1) {
-          const t = noCreates[0]!;
-          try {
-            const tripleHash = await createSemanticTriple(
-              t.subjectId,
-              t.predicateId,
-              t.objectId,
-              formatEther(t.assetsWei),
-              address,
-              undefined,
-              false
-            );
-            awardArenaStakeXp(tripleHash, t.assetsWei);
-          } catch (noTripleErr: unknown) {
-            const det = calculateTripleId(t.subjectId, t.predicateId, t.objectId);
-            let exists = await isTermCreatedOnChain(det);
-            for (let poll = 0; !exists && poll < 12; poll++) {
-              await new Promise((r) => setTimeout(r, 220));
-              exists = await isTermCreatedOnChain(det);
-            }
-            if (exists) {
-              const dep = await depositToVault(formatEther(t.assetsWei), det, address);
-              awardArenaStakeXp(dep.hash, t.assetsWei);
-            } else {
-              throw noTripleErr;
-            }
-          }
-        } else if (noCreates.length > 1) {
-          const batchHash = await createSemanticTriplesBatch(noCreates, address);
-          const totalDep = noCreates.reduce((acc, c) => acc + c.assetsWei, 0n);
-          awardArenaStakeXp(batchHash, totalDep);
-        }
-
-        const yesVaultResolved = await Promise.all(
-          yesRows.map(async (row) => {
-            const rowWei = baseWei * BigInt(row.units);
-            const amt = formatEther(rowWei);
-            const vaultTermId = await getListMembershipTripleTermId(row.item.id, portalListObjectId);
-            return { row, rowWei, amt, vaultTermId };
-          }),
-        );
-
-        for (const y of yesVaultResolved) {
-          if (!y.vaultTermId) {
+        for (const r of resolved) {
+          if (!r.membershipVault) {
             throw new Error(
-              `Could not resolve list-membership vault for "${y.row.item.label}". ` +
-                `If this identity is new on-chain, wait for the indexer or retry; otherwise pick another member.`
+              `Could not resolve list-membership vault for "${r.row.item.label}". ` +
+                `If this identity is new on-chain, wait for the indexer to sync or pick another member.`
             );
           }
-          const dep = await depositToVault(y.amt, y.vaultTermId, address);
-          awardArenaStakeXp(dep.hash, y.rowWei);
+          const yesVault = r.membershipVault;
+          const noVault = calculateCounterTripleId(yesVault);
+          const targetVault = r.row.support ? yesVault : noVault;
+          const oppositeVault = r.row.support ? noVault : yesVault;
+
+          const counterShares = await checkBothCurves(address, oppositeVault);
+          if (counterShares > 0n) {
+            const sideWord = r.row.support ? 'NO' : 'YES';
+            const newSideWord = r.row.support ? 'YES' : 'NO';
+            throw new Error(
+              `STANCE_CONFLICT for "${r.row.item.label}": you already hold a ${sideWord} position on this claim. ` +
+                `Withdraw it from your portfolio before voting ${newSideWord} (protocol blocks counter-stakes on the same triple).`,
+            );
+          }
+
+          const dep = await depositToVault(r.amt, targetVault, address);
+          awardArenaStakeXp(dep.hash, r.rowWei);
+          txByRowKey.set(r.row.key, dep.hash);
         }
 
         if (ARENA_PERSONAL_ATTESTATION_TRIPLES && listEntry?.title) {
@@ -1562,6 +1559,7 @@ const RankedList: React.FC = () => {
           const objectRef = listLabel;
           const created = await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
           awardArenaStakeXp(created.tripleHash, parseEther(rowTrust));
+          txByRowKey.set(row.key, created.tripleHash);
         }
       }
       sent = true;
@@ -1577,6 +1575,28 @@ const RankedList: React.FC = () => {
 
     if (address) {
       recordArenaRankingPicks(address, rowsToSend.length);
+      recordArenaStreakPicks(address, rowsToSend.length);
+      // Snapshot every confirmed pick into the wallet's curation ledger so the Portfolio renders instantly.
+      try {
+        const curationPicks = rowsToSend.map((row) => {
+          const entry = getArenaListById(row.sourceListId);
+          const trustLabel = formatEther(baseWei * BigInt(row.units));
+          const txHash = txByRowKey.get(row.key);
+          return {
+            listId: row.sourceListId,
+            listTitle: entry?.title ?? 'Arena list',
+            itemId: row.item.id,
+            itemLabel: row.item.label,
+            ...(row.item.image ? { itemImage: row.item.image } : {}),
+            support: row.support,
+            trustLabel,
+            ...(txHash ? { txHash } : {}),
+          };
+        });
+        recordArenaCurationPicks(address, curationPicks);
+      } catch (err) {
+        console.warn('[Arena] failed to record curation picks locally', err);
+      }
       setPickCreditTick((n) => n + 1);
     }
 
@@ -1950,7 +1970,7 @@ const RankedList: React.FC = () => {
               <p className="text-sm text-slate-500 mt-2 max-w-md leading-snug">
                 {climbViewMode === 'explorer' ? (
                   <>
-                    Browse recent Yes / No rankings from Arena portal lists — flip back to{' '}
+                    Recent ranks through IntuRank. Switch to{' '}
                     <span className="text-slate-400 font-semibold">Arena</span> to vote.
                   </>
                 ) : listId ? (
@@ -1959,13 +1979,13 @@ const RankedList: React.FC = () => {
                       <span style={{ color: ARENA_THEME.cyanMuted }} className="font-semibold">Yes</span>
                       {' / '}
                       <span style={{ color: ARENA_THEME.roseNo }} className="font-semibold">No</span>
-                      {' · Batch when ready.'}
+                      {' · batch when ready.'}
                     </>
                   ) : (
-                    'Try picks now — wallet only if you stake on-chain.'
+                    'Pick now — wallet only on stake.'
                   )
                 ) : (
-                  'Lane → list → vote. Starred lists & trade shortcuts: Explorer.'
+                  'Pick a lane, then a list.'
                 )}
               </p>
               {showOnboardTip ? (
@@ -2061,21 +2081,6 @@ const RankedList: React.FC = () => {
                     boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px rgba(232,197,71,0.04)',
                   }}
                 >
-                  <ArenaBrowseLaneHud laneLabel={arenaLaneLabelShort} listCount={listsForCategory.length} />
-                  <ArenaSidebarSessionStrip
-                    duels={duels}
-                    streak={streak}
-                    xpRoll={xpRoll}
-                    connected={Boolean(address)}
-                  />
-                  <ArenaStarredRail
-                    items={starredRailRows}
-                    collapsed={starredRailCollapsed}
-                    onToggleCollapsed={() => setStarredRailCollapsed((v) => !v)}
-                    onOpen={(id) => startListRun(id)}
-                    onUnstar={(id) => toggleListFavorite(id)}
-                    laneLabel={arenaLaneLabelShort}
-                  />
                   <div className="shrink-0 space-y-2">
                     <ArenaLeaderboardGlance
                       players={players}
@@ -2104,8 +2109,22 @@ const RankedList: React.FC = () => {
                       </div>
                     ) : null}
                   </div>
+                  <ArenaBrowseLaneHud laneLabel={arenaLaneLabelShort} listCount={listsForCategory.length} />
+                  <ArenaSidebarSessionStrip
+                    duels={lifetimeRoundsForWallet}
+                    streak={currentStreakForWallet}
+                    xpRoll={xpRoll}
+                    connected={Boolean(address)}
+                  />
+                  <ArenaStarredRail
+                    items={starredRailRows}
+                    collapsed={starredRailCollapsed}
+                    onToggleCollapsed={() => setStarredRailCollapsed((v) => !v)}
+                    onOpen={(id) => startListRun(id)}
+                    onUnstar={(id) => toggleListFavorite(id)}
+                    laneLabel={arenaLaneLabelShort}
+                  />
                   <ArenaSidebarDeck flagshipListId={FLAGSHIP_ARENA_LIST_ID} />
-                  <ArenaSidebarBrowseFoot />
                 </aside>
                 <div className="min-w-0 order-1 xl:order-2">
                   <ArenaRankingPulse variant="explorer" viewerAddress={address ?? undefined} />
@@ -2315,25 +2334,6 @@ const RankedList: React.FC = () => {
                   </button>
                 </div>
               )}
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-                <Link
-                  to="/markets"
-                  onClick={() => playClick()}
-                  className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-[#a5fcff] transition-colors inline-flex items-center gap-1"
-                >
-                  Markets
-                  <ChevronRight size={12} />
-                </Link>
-                <span className="text-slate-700 hidden sm:inline">|</span>
-                <Link
-                  to={`/climb?list=${FLAGSHIP_ARENA_LIST_ID}&onboard=1`}
-                  onClick={() => playClick()}
-                  className="text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-cyan-300/90 transition-colors"
-                >
-                  Tools list tip
-                </Link>
-              </div>
-              <XpEarnHint variant="arena" presentation="arena-deck" className="mt-3 w-full max-w-md mx-auto" />
               </div>
             </div>
                 </motion.div>
@@ -2713,11 +2713,15 @@ const RankedList: React.FC = () => {
                 Copy stance link
               </motion.button>
               <Link
-                to="/portfolio#arena-rankings"
+                to={
+                  listId
+                    ? `/climb?list=${encodeURIComponent(listId)}&view=explorer`
+                    : '/climb?view=explorer'
+                }
                 onClick={() => playClick()}
                 className="mt-2.5 flex items-center justify-center gap-1 rounded-xl border border-[#38e8ff]/22 bg-[#38e8ff]/8 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-[#9ef9ff] hover:border-[#38e8ff]/40 hover:bg-[#38e8ff]/12 transition-colors"
               >
-                My ranked lists
+                Arena explorer (your rankings)
                 <ChevronRight className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
               </Link>
             </motion.div>

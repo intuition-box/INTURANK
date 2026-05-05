@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink, Loader2, Radio, RefreshCw, Users } from 'lucide-react';
-import { isAddress } from 'viem';
+import { getAddress, isAddress } from 'viem';
 import { playClick, playHover } from '../services/audio';
 import { fetchRecentArenaPortalRankingFeed, type ArenaPortalRankingFeedItem } from '../services/graphql';
 import { EXPLORER_URL } from '../constants';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
 import { portalListIdFromTermId } from '../services/arenaListsRegistry';
+import { bestWalletDisplayLabel } from '../services/tns';
 
 function climbHrefForListTerm(listTermId: string): string {
   const id = /^0x[0-9a-fA-F]{64}$/.test(listTermId) ? portalListIdFromTermId(listTermId) : listTermId;
@@ -16,6 +17,18 @@ function climbHrefForListTerm(listTermId: string): string {
 function formatFeedWhen(blockNumber: number): string {
   if (!blockNumber) return '—';
   return `#${blockNumber.toLocaleString()}`;
+}
+
+const SHORT_ADDR = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+
+/** A creator label is "raw" (needs TNS/ENS lookup) when it's just a hex address or our own short hex placeholder. */
+function isRawAddressLabel(label: string, creatorId: string): boolean {
+  const trimmed = label.trim();
+  if (!trimmed) return true;
+  if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return true;
+  if (/^0x[0-9a-fA-F]{4,6}…[0-9a-fA-F]{2,6}$/.test(trimmed)) return true;
+  if (creatorId && trimmed.toLowerCase() === creatorId.toLowerCase()) return true;
+  return false;
 }
 
 export type ArenaRankingPulseVariant = 'compact' | 'explorer';
@@ -36,7 +49,13 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
   const [items, setItems] = useState<ArenaPortalRankingFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAllRankers, setShowAllRankers] = useState(false);
+  /** Default = chain-wide IntuRank activity ("All rankers") so the explorer never opens onto an
+   *  empty splash; toggle narrows to the connected wallet's own rows. */
+  const [showAllRankers, setShowAllRankers] = useState(true);
+  /** TNS / ENS overrides keyed by lowercased wallet — `bestWalletDisplayLabel` returns `name.trust` / `name.eth` / shortened hex. */
+  const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
+  /** Set briefly after a successful Arena batch so the user gets a visible "syncing" hint while the subgraph catches up. */
+  const [syncingRecent, setSyncingRecent] = useState(false);
 
   const fetchLimit = variant === 'explorer' ? 48 : 26;
 
@@ -68,13 +87,95 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
 
   useEffect(() => {
     const stopInterval = subscribeVisibilityAwareInterval(() => void load(), 50_000);
-    const onChainUp = () => void load();
+    /**
+     * After a successful Arena batch the subgraph needs a few seconds to index the FeeProxy deposit
+     * before the viewer's row shows up. Burst-poll for ~45s instead of waiting on the 50s interval
+     * so the just-completed rank appears in the explorer without a manual refresh.
+     */
+    let burstTimers: number[] = [];
+    let syncOff: number | null = null;
+    const onChainUp = () => {
+      setSyncingRecent(true);
+      if (syncOff != null) window.clearTimeout(syncOff);
+      syncOff = window.setTimeout(() => setSyncingRecent(false), 50_000);
+      void load();
+      burstTimers.forEach((t) => window.clearTimeout(t));
+      burstTimers = [2_500, 6_000, 12_000, 22_000, 38_000].map((ms) =>
+        window.setTimeout(() => void load(), ms),
+      );
+    };
     window.addEventListener('inturank-arena-onchain-updated', onChainUp);
     return () => {
       stopInterval();
+      burstTimers.forEach((t) => window.clearTimeout(t));
+      if (syncOff != null) window.clearTimeout(syncOff);
       window.removeEventListener('inturank-arena-onchain-updated', onChainUp);
     };
   }, [load]);
+
+  /** Backfill `name.trust` / `name.eth` for rows whose subgraph label is just a hex address — Wispear-style names matter for Arena. */
+  useEffect(() => {
+    let cancelled = false;
+    const targets = Array.from(
+      new Set(
+        items
+          .filter((row) => isAddress(row.creatorId as `0x${string}`) && isRawAddressLabel(row.creatorLabel, row.creatorId))
+          .map((row) => {
+            try {
+              return getAddress(row.creatorId as `0x${string}`);
+            } catch {
+              return row.creatorId;
+            }
+          })
+          .filter((addr) => !resolvedNames[addr.toLowerCase()]),
+      ),
+    );
+    if (targets.length === 0) return;
+    const CONCURRENCY = 4;
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, async () => {
+      while (!cancelled) {
+        const i = cursor++;
+        if (i >= targets.length) return;
+        const addr = targets[i]!;
+        try {
+          const label = await bestWalletDisplayLabel(addr);
+          if (cancelled || !label) continue;
+          if (isRawAddressLabel(label, addr)) continue;
+          setResolvedNames((prev) =>
+            prev[addr.toLowerCase()] ? prev : { ...prev, [addr.toLowerCase()]: label },
+          );
+        } catch {
+          /* leave label as-is — falls back to short hex */
+        }
+      }
+    });
+    void Promise.all(workers);
+    return () => {
+      cancelled = true;
+    };
+  }, [items, resolvedNames]);
+
+  /** Items rendered with TNS/ENS replacements when available; preserves on-chain creatorId for routing. */
+  const renderedItems = useMemo(() => {
+    if (Object.keys(resolvedNames).length === 0) return items;
+    return items.map((row) => {
+      if (!isAddress(row.creatorId as `0x${string}`)) return row;
+      const key = row.creatorId.toLowerCase();
+      const better = resolvedNames[key];
+      if (!better) {
+        if (isRawAddressLabel(row.creatorLabel, row.creatorId)) {
+          try {
+            return { ...row, creatorLabel: SHORT_ADDR(getAddress(row.creatorId as `0x${string}`)) };
+          } catch {
+            return row;
+          }
+        }
+        return row;
+      }
+      return { ...row, creatorLabel: better };
+    });
+  }, [items, resolvedNames]);
 
   const shell =
     variant === 'explorer'
@@ -84,17 +185,15 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
   const explorerSubtitle =
     variant === 'explorer' && showAllRankers ? (
       <>
-        Everyone staking on <span className="text-slate-400 font-medium">portal lists IntuRank shows in Arena</span> — same activity you’d see on the wider Intuition graph for those lists.
+        Live ranks <span className="text-slate-400 font-medium">through IntuRank</span>.
       </>
     ) : variant === 'explorer' ? (
       <>
-        Your wallet’s YES / NO stakes on{' '}
-        <span className="text-slate-400 font-medium">portal lists IntuRank shows in Arena</span>. Toggle “All rankers” to see everyone on-chain for those lists.
+        Your ranks <span className="text-slate-400 font-medium">through IntuRank</span>. Toggle <em>All rankers</em> for everyone.
       </>
     ) : (
       <>
-        Rankings from wallets on <span className="text-slate-400 font-medium">portal lists IntuRank shows in Arena</span>{' '}
-        (same live lists as browse). Full sentences here even when the Intuition portal explorer only shows deposits for some NO vaults.
+        Recent ranks <span className="text-slate-400 font-medium">through IntuRank</span>.
       </>
     );
 
@@ -116,8 +215,14 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
             />
           </div>
           <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.22em] text-emerald-400/90">
+            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.22em] text-emerald-400/90 inline-flex items-center gap-1.5">
               {variant === 'explorer' ? 'Arena explorer' : 'Arena pulse'}
+              {syncingRecent ? (
+                <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.18em] text-emerald-200 normal-case">
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" aria-hidden />
+                  Syncing your latest rank…
+                </span>
+              ) : null}
             </p>
             <p className="text-[11px] sm:text-sm text-slate-500 leading-snug mt-0.5 max-w-2xl">{explorerSubtitle}</p>
           </div>
@@ -175,13 +280,19 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
           </p>
         ) : items.length === 0 ? (
           <p className="text-[11px] text-slate-500 px-1 py-6 text-center leading-relaxed">
-            {variant === 'explorer' && !showAllRankers && viewerAddress?.trim()
-              ? 'No indexed stakes from your wallet on these lists yet. After you submit a batch, lines appear when the subgraph syncs — or open All rankers to verify on-chain activity.'
-              : 'No indexed Arena rankings yet. Submit a batch on a portal list — lines appear after the subgraph syncs.'}
+            {variant === 'explorer' && !showAllRankers && viewerAddress?.trim() ? (
+              <>
+                Indexing your latest batch — your rows appear here within a minute of the wallet
+                signature. Use <span className="text-slate-300 font-semibold">All rankers</span> to
+                see chain-wide Arena activity in the meantime, or hit the refresh icon above.
+              </>
+            ) : (
+              'No indexed Arena rankings yet. Submit a batch on a portal list — lines appear after the subgraph syncs.'
+            )}
           </p>
         ) : (
           <ul className="space-y-2.5">
-            {items.map((row) => (
+            {renderedItems.map((row) => (
               <li
                 key={`${row.claimTermId}-${row.blockNumber}`}
                 className="rounded-xl border border-white/[0.06] bg-slate-950/55 px-2.5 py-2 hover:border-emerald-500/20 transition-colors"
@@ -201,15 +312,16 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
                       {row.creatorLabel}
                     </span>
                   )}{' '}
-                  <span className="text-slate-500 font-medium">ranked</span>{' '}
+                  <span className="text-slate-500 font-medium">just ranked</span>{' '}
                   <span
                     className={`font-black uppercase text-[10px] px-1.5 py-0.5 rounded-md ${
-                      row.support ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/18 text-rose-300'
+                      row.support
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-rose-500/18 text-rose-300'
                     }`}
                   >
-                    {row.support ? 'Yes' : 'No'}
+                    {row.support ? 'in support of' : 'against'}
                   </span>{' '}
-                  <span className="text-slate-500 font-medium">for</span>{' '}
                   <span className="font-semibold text-white">{row.subjectLabel}</span>{' '}
                   <span className="text-slate-500 font-medium">in</span>{' '}
                   <Link

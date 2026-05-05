@@ -36,10 +36,10 @@ import {
 } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { PageLoadingSpinner } from '../components/PageLoading';
-import ArenaMyRankingsPanel from '../components/ArenaMyRankingsPanel';
 import { Link } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import logo from '../logo.png';
+import ArenaCurationsPanel from '../components/ArenaCurationsPanel';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
@@ -687,8 +687,6 @@ const Portfolio: React.FC = () => {
       </div>
       </div>
 
-      <ArenaMyRankingsPanel wallet={account} />
-
       {sharePosition && (
         <div className="fixed inset-0 z-[200] flex items-start justify-center bg-black/80 backdrop-blur-md px-4 pt-20 sm:pt-28">
           <div className="w-full max-w-xl bg-[#020308] border border-white/10 rounded-[32px] shadow-[0_0_120px_rgba(0,0,0,1)] p-6 sm:p-8 relative overflow-hidden">
@@ -1279,6 +1277,8 @@ const Portfolio: React.FC = () => {
             </div>
         </div>
         </div>
+        {/* Arena curations: every YES/NO pick this wallet has confirmed through IntuRank, grouped by list. */}
+        <ArenaCurationsPanel address={account ?? null} />
       </div>
     </div>
   );

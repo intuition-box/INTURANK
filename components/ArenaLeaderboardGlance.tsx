@@ -37,11 +37,35 @@ function avatarGlyph(label: string): string {
 const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, myArenaXp, myActivityXp }) => {
   const reduceMotion = useReducedMotion();
   const myAddrLc = myAddress?.toLowerCase();
+
+  /**
+   * Subgraph attribution lags real-time Arena stakes (and FeeProxy batches need re-attribution).
+   * Inject an optimistic "you" row whenever the viewer has earned Arena XP locally so the board
+   * reflects the just-completed batch instead of the empty "Be the first ranker" splash.
+   */
+  const augmentedPlayers = useMemo<ArenaPlayerRow[]>(() => {
+    if (!myAddrLc || myArenaXp <= 0) return players;
+    const exists = players.some((p) => p.address === myAddrLc);
+    if (exists) return players;
+    const synthetic: ArenaPlayerRow = {
+      rank: 0,
+      address: myAddrLc,
+      label: 'You',
+      arenaXp: myArenaXp,
+      duels: 0,
+      atomsRanked: 0,
+      listsPlayed: 0,
+      updatedAt: 0,
+    };
+    const merged = [...players, synthetic].sort((a, b) => b.arenaXp - a.arenaXp);
+    return merged.map((m, i) => ({ ...m, rank: i + 1 }));
+  }, [players, myAddrLc, myArenaXp]);
+
   const myRow = useMemo(
-    () => (myAddrLc ? players.find((p) => p.address === myAddrLc) ?? null : null),
-    [players, myAddrLc],
+    () => (myAddrLc ? augmentedPlayers.find((p) => p.address === myAddrLc) ?? null : null),
+    [augmentedPlayers, myAddrLc],
   );
-  const top3 = players.slice(0, 3);
+  const top3 = augmentedPlayers.slice(0, 3);
 
   return (
     <Link
@@ -193,16 +217,16 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                 You
               </p>
               {myRow ? (
-                <p className="text-[12px] font-bold text-white leading-tight mt-0.5">
-                  Rank{' '}
-                  <span
-                    className="text-base font-black tabular-nums ml-0.5"
-                    style={{ color: CY, textShadow: `0 0 10px ${CY}40` }}
-                  >
-                    #{myRow.rank}
-                  </span>
-                  <span className="text-slate-500 font-normal text-[10px]"> · {players.length}</span>
-                </p>
+                  <p className="text-[12px] font-bold text-white leading-tight mt-0.5">
+                    Rank{' '}
+                    <span
+                      className="text-base font-black tabular-nums ml-0.5"
+                      style={{ color: CY, textShadow: `0 0 10px ${CY}40` }}
+                    >
+                      #{myRow.rank}
+                    </span>
+                    <span className="text-slate-500 font-normal text-[10px]"> · {augmentedPlayers.length}</span>
+                  </p>
               ) : (
                 <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
                   {myArenaXp > 0 ? 'Not on board yet' : 'Vote to enter'}

@@ -68,7 +68,8 @@ export const PROTOCOL_XP_CREATE_CLAIM_REFERENCE_DEPOSIT_TRUST_UNITS = 25;
 
 /** 0 = any on-chain deposit counts; XP still scales (protocol floor deposits stay tiny). */
 export const PROTOCOL_XP_ADD_TO_LIST_MIN_DEPOSIT_TRUST_UNITS = 0;
-export const PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS = 15;
+/** Arena list stakes are often ~0.5 TRUST/row; 15 TRUST reference made protocol XP look like “1 pt”. Align reference to 1 TRUST so typical stakes earn meaningful activity XP. */
+export const PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS = 1;
 
 /** Match triple Skill deposits — min 0 scales everything sub-reference (raise deposit for meaningful XP). */
 export const PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS = 0;
@@ -460,7 +461,21 @@ export const FEE_PROXY_ABI = [
   // Custom errors for createTriples revert decoding (0xd335ef46 and related)
   { "type": "error", "name": "InsufficientDepositAmountToCoverFees", "inputs": [] },
   { "type": "error", "name": "AtomDoesNotExist", "inputs": [{ "name": "atomId", "type": "bytes32" }] },
+  /** Legacy / alternate wiring — selector 0x86d94276 */
   { "type": "error", "name": "TripleExists", "inputs": [{ "name": "s", "type": "bytes32" }, { "name": "p", "type": "bytes32" }, { "name": "o", "type": "bytes32" }] },
+  /** Current MultiVault — selector 0x22319959 (FeeProxy createTriples simulation) */
+  {
+    "type": "error",
+    "name": "MultiVault_TripleExists",
+    "inputs": [
+      { "name": "termId", "type": "bytes32" },
+      { "name": "subjectId", "type": "bytes32" },
+      { "name": "predicateId", "type": "bytes32" },
+      { "name": "objectId", "type": "bytes32" }
+    ]
+  },
+  /** Selector 0x332c26cd — deposit blocked because the user already holds shares on the counter-triple of the target. */
+  { "type": "error", "name": "MultiVault_HasCounterStake", "inputs": [] },
   { "type": "error", "name": "MinimumDeposit", "inputs": [] },
   /** Forwarded from MultiVault — selector 0xb4856ebc; enables viem to decode createAtoms simulation reverts. */
   { "type": "error", "name": "MultiVault_AtomExists", "inputs": [{ "name": "atomData", "type": "bytes" }] }
@@ -599,5 +614,16 @@ export const MULTI_VAULT_ABI = [
     "name": "TripleCreated",
     "type": "event"
   },
-  { "type": "error", "name": "MultiVault_AtomExists", "inputs": [{ "name": "atomData", "type": "bytes" }] }
+  { "type": "error", "name": "MultiVault_AtomExists", "inputs": [{ "name": "atomData", "type": "bytes" }] },
+  {
+    "type": "error",
+    "name": "MultiVault_TripleExists",
+    "inputs": [
+      { "name": "termId", "type": "bytes32" },
+      { "name": "subjectId", "type": "bytes32" },
+      { "name": "predicateId", "type": "bytes32" },
+      { "name": "objectId", "type": "bytes32" }
+    ]
+  },
+  { "type": "error", "name": "MultiVault_HasCounterStake", "inputs": [] }
 ] as const;

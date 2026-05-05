@@ -132,6 +132,67 @@ export async function resolveTrustNameToAddress(rawInput: string): Promise<strin
   return null;
 }
 
+/**
+ * Send TRUST — strict resolution only (no subgraph suggest, no bare labels, no `resolveName` heuristics).
+ * Requires a complete `0x…` wallet address, `name.eth`, or `name.trust`. ENS/TNS are checked before interpreting `0x…` as hex so labels like `0xbilly.eth` work.
+ * Partial names without `.eth` / `.trust` are still not auto-filled.
+ */
+export async function resolveSendTrustRecipient(query: string): Promise<{ address: string | null; error?: string }> {
+  const q = query.trim();
+  if (!q) return { address: null };
+
+  const lower = q.toLowerCase();
+
+  // Names may legitimately start with "0x" (e.g. 0xbilly.eth) — resolve ENS/TNS before raw-address parsing.
+  if (lower.endsWith('.eth')) {
+    const label = q.slice(0, q.length - 4).trim();
+    if (!label || /\s/.test(label) || label.includes('..'))
+      return { address: null, error: 'Enter a complete ENS name (e.g. vitalik.eth).' };
+    const resolved = await resolveENS(q);
+    if (!resolved) return { address: null, error: 'ENS name not found' };
+    const t = toAddress(resolved);
+    if (t && isGraphResolvableAddress(t)) {
+      try {
+        return { address: getAddress(t as `0x${string}`) };
+      } catch {
+        return { address: null, error: 'ENS resolved to an invalid address' };
+      }
+    }
+    return { address: null, error: 'ENS did not resolve to a valid address' };
+  }
+
+  if (lower.endsWith('.trust')) {
+    const inner = q.slice(0, q.length - '.trust'.length).trim();
+    if (!inner || /\s/.test(inner) || inner.endsWith('.'))
+      return {
+        address: null,
+        error: 'Enter a complete TNS name ending in .trust (e.g. alice.trust).',
+      };
+    const trustResolved = await resolveTrustNameToAddress(q);
+    if (trustResolved) return { address: trustResolved };
+    return {
+      address: null,
+      error: 'TNS name not found or has no wallet set on-chain yet.',
+    };
+  }
+
+  if (q.startsWith('0x')) {
+    try {
+      if (isAddress(q)) return { address: getAddress(q as `0x${string}`) };
+    } catch {
+      /* ignore */
+    }
+    return { address: null, error: 'Incomplete or invalid address — use 0x + 40 hex characters.' };
+  }
+
+  return {
+    address: null,
+    error:
+      'Finish the full recipient: paste a 0x… address, or type name.trust / name.eth — partial names are not auto-filled here.',
+  };
+}
+
+
 /** Subgraph `accounts.label` when it’s useful for display (not redundant hex / “Trader 0x…” placeholders). */
 function graphPreferredWalletLabel(lab: string | undefined | null): string | null {
   const t = lab?.trim();

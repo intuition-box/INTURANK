@@ -27,7 +27,7 @@ type SessionStripProps = {
   connected: boolean;
 };
 
-/** Session snapshot while browsing — header HUD handles this during an active run. */
+/** Lifetime IntuRank ranks for the connected wallet — header HUD handles per-run counters during an active list. */
 export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
   duels,
   streak,
@@ -39,13 +39,13 @@ export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
     <div className="rounded-3xl border border-white/[0.08] bg-black/45 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
       <div className="px-4 pt-3 pb-2.5 border-b border-white/[0.06]">
         <p className="text-[8px] font-mono font-black uppercase tracking-[0.26em] text-slate-500">
-          Session
+          Through IntuRank
         </p>
-        <p className="text-[12px] font-bold text-slate-100 mt-0.5">This lane</p>
+        <p className="text-[12px] font-bold text-slate-100 mt-0.5">Your wallet</p>
       </div>
       <div className="grid grid-cols-3 gap-px bg-white/[0.05]">
         {[
-          { k: 'Rounds', v: String(duels), accent: 'text-white' },
+          { k: 'Ranks', v: String(duels), accent: 'text-white' },
           { k: 'Streak', v: String(streak), accent: 'text-[#fcd34d]' },
           {
             k: 'XP',
@@ -62,7 +62,7 @@ export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
       <div className="px-4 py-3 bg-black/30 border-t border-white/[0.05]">
         <div className="flex items-center justify-between gap-2 mb-2">
           <span className="text-[8px] font-mono uppercase tracking-wider text-slate-600">
-            Next burst
+            Next milestone
           </span>
           <span className="text-[9px] font-mono tabular-nums text-slate-500">{progressToMilestone}/5</span>
         </div>
@@ -75,6 +75,14 @@ export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
             }}
           />
         </div>
+        <Link
+          to="/documentation#activity-xp"
+          onClick={playClick}
+          onMouseEnter={playHover}
+          className="mt-2 inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 hover:text-intuition-primary transition-colors"
+        >
+          How XP works →
+        </Link>
       </div>
     </div>
   );

@@ -66,7 +66,7 @@ const ArenaStarredRail: React.FC<Props> = ({
         >
           {items.length === 0 ? (
             <p className="px-3 py-3 text-[10px] text-slate-500 leading-relaxed">
-              Pin lists with the star on each card — they stay here while you browse this lane.
+              Tap the star on any list card to pin it here.
             </p>
           ) : (
             <ul className="py-1">

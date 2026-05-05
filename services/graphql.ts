@@ -2610,62 +2610,50 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
     updatedAt: number;
   }>
 > {
-  const allow = await getArenaPortalRankingAllowlist();
-  if (allow.size === 0) return [];
-
-  const q = `query ArenaPortalRankingTriples($listPred: String!, $distrust: String!, $limit: Int!) {
-    triples(
-      where: {
-        _or: [{ predicate_id: { _eq: $listPred } }, { object_id: { _eq: $distrust } }]
-      }
-      order_by: { block_number: desc }
-      limit: $limit
-    ) {
-      term_id
-      block_number
-      creator { id }
-      subject { term_id label image }
-      predicate { term_id label }
-      object { term_id label image }
-    }
-  }`;
+  /**
+   * "Ranked through IntuRank" = a deposit whose `sender` is our FeeProxy/MultiVault contract.
+   * We aggregate those deposits by receiver (the actual ranker) and join each deposit's vault
+   * onto the corresponding triple (member or counter) so we can derive listsPlayed / atomsRanked
+   * for the leaderboard. Direct stakes from other apps using portals are excluded.
+   */
+  const operatorCreators = protocolOperatorCreatorIdsNormalized();
+  const minBnLb = ARENA_ATTRIBUTION_MIN_BLOCK;
 
   try {
-    const res = await fetchGraphQL(q, {
-      listPred: LIST_PREDICATE_ID,
-      distrust: DISTRUST_ATOM_ID,
-      limit: maxTriples,
-    });
-    const minBnLb = ARENA_ATTRIBUTION_MIN_BLOCK;
-    let stances = arenaTriplesResponseToPortalStances(res?.triples || []).filter((s) => {
-      if (!allow.has(normalize(s.listTermId))) return false;
-      if (minBnLb != null && s.blockNumber > 0 && s.blockNumber < minBnLb) return false;
-      return true;
-    });
+    const deposits = await fetchProxyArenaRankDeposits(Math.max(maxTriples, 1500));
+    if (deposits.length === 0) return [];
 
-    const best = new Map<string, ArenaGraphTripleStanceRow>();
-    for (const r of stances) {
-      const k = `${r.creatorId}:${normalize(r.listTermId)}:${normalize(r.subjectId)}`;
-      const prev = best.get(k);
-      if (!prev || r.blockNumber >= prev.blockNumber) best.set(k, r);
-    }
-    stances = Array.from(best.values());
+    const vaultIds = Array.from(new Set(deposits.map((d) => d.vaultTermId)));
+    const stanceByVault = await fetchArenaVaultStanceMap(vaultIds);
+    if (stanceByVault.size === 0) return [];
 
     const byWallet = new Map<
       string,
       { stakes: ArenaGraphTripleStanceRow[]; lists: Set<string>; maxBn: number }
     >();
 
-    for (const s of stances) {
-      const w = s.creatorId;
-      let g = byWallet.get(w);
+    const seenWalletStake = new Set<string>();
+    for (const dep of deposits) {
+      const stance = stanceByVault.get(dep.vaultTermId);
+      if (!stance) continue;
+      if (minBnLb != null && stance.stance.blockNumber > 0 && stance.stance.blockNumber < minBnLb) continue;
+
+      const recvLc = normalize(dep.receiverId);
+      if (!recvLc || operatorCreators.has(recvLc)) continue;
+
+      const stakeKey = `${recvLc}:${dep.vaultTermId}:${stance.support ? 'y' : 'n'}`;
+      if (seenWalletStake.has(stakeKey)) continue;
+      seenWalletStake.add(stakeKey);
+
+      let g = byWallet.get(recvLc);
       if (!g) {
         g = { stakes: [], lists: new Set(), maxBn: 0 };
-        byWallet.set(w, g);
+        byWallet.set(recvLc, g);
       }
-      g.stakes.push(s);
-      g.lists.add(normalize(s.listTermId));
-      if (s.blockNumber > g.maxBn) g.maxBn = s.blockNumber;
+      g.stakes.push({ ...stance.stance, creatorId: recvLc, support: stance.support });
+      g.lists.add(normalize(stance.stance.listTermId));
+      const bn = stance.stance.blockNumber || dep.createdAt;
+      if (bn > g.maxBn) g.maxBn = bn;
     }
 
     const out: Array<{
@@ -2718,38 +2706,100 @@ function arenaFeedCreatorLabel(triple: any, creatorId: string): string {
   return id || 'Unknown';
 }
 
-/**
- * Recent portal YES / NO rankings on **IntuRank-surfaced** lists only (Arena browse cap + indexed extras), newest first.
- * YES ≡ list-membership triple; NO ≡ (subject, list, distrust)—explorer may render NO as deposit-only elsewhere.
- * @param opts.onlyCreators If set, only rows whose triple creator matches one of these wallets (after {@link prepareQueryIds}).
- */
-export async function fetchRecentArenaPortalRankingFeed(
-  limit = 28,
-  opts?: { onlyCreators?: string[] },
-): Promise<ArenaPortalRankingFeedItem[]> {
-  const allow = await getArenaExplorerFeedAllowlist();
-  if (allow.size === 0) return [];
-
-  let creatorAllow: Set<string> | null = null;
-  const rawCreators = opts?.onlyCreators?.map((c) => c.trim()).filter(Boolean) ?? [];
-  if (rawCreators.length > 0) {
-    const variants = rawCreators.flatMap((w) => prepareQueryIds(w));
-    creatorAllow = new Set(variants.map((v) => normalize(v)));
+/** Triple rows created via FeeProxy/MultiVault index `creator` as the operator, not the user wallet. */
+function protocolOperatorCreatorIdsNormalized(): Set<string> {
+  const s = new Set<string>();
+  for (const a of [FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS]) {
+    for (const v of prepareQueryIds(a)) s.add(normalize(v));
   }
+  return s;
+}
 
-  const fetchLimit = Math.min(
-    creatorAllow ? 500 : 200,
-    Math.max(limit * (creatorAllow ? 14 : 4), creatorAllow ? 140 : 48),
+type ArenaProxyDepositRow = {
+  vaultTermId: string;
+  receiverId: string;
+  receiverLabel?: string;
+  receiverImage?: string;
+  createdAt: number;
+  transactionHash?: string;
+};
+
+/**
+ * Recent deposits routed through IntuRank's FeeProxy/MultiVault — the canonical "ranked through IntuRank" signal.
+ * `sender_id` on the deposit row pins us as the originator regardless of when/who first created the triple.
+ */
+async function fetchProxyArenaRankDeposits(limit = 800): Promise<ArenaProxyDepositRow[]> {
+  const proxyIds = Array.from(
+    new Set([FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS].flatMap((a) => prepareQueryIds(a))),
   );
-  const q = `query ArenaPortalRankingFeed($listPred: String!, $distrust: String!, $limit: Int!) {
-    triples(
-      where: {
-        _or: [{ predicate_id: { _eq: $listPred } }, { object_id: { _eq: $distrust } }]
-      }
-      order_by: { block_number: desc }
+  const q = `query ArenaProxyDeposits($proxyIds: [String!]!, $limit: Int!) {
+    deposits(
+      where: { sender_id: { _in: $proxyIds } }
+      order_by: { created_at: desc }
       limit: $limit
     ) {
+      created_at
+      transaction_hash
+      receiver { id label image }
+      vault { term_id }
+    }
+  }`;
+  try {
+    const res = await fetchGraphQL(q, { proxyIds, limit });
+    const out: ArenaProxyDepositRow[] = [];
+    for (const d of res?.deposits ?? []) {
+      const tid = d?.vault?.term_id ? normalize(d.vault.term_id) : '';
+      const recv = d?.receiver?.id ? String(d.receiver.id) : '';
+      if (!tid || !recv) continue;
+      const createdAt = (() => {
+        const v = d?.created_at;
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string') return parseInt(v, 10) || 0;
+        return 0;
+      })();
+      out.push({
+        vaultTermId: tid,
+        receiverId: recv,
+        receiverLabel: d?.receiver?.label || undefined,
+        receiverImage: d?.receiver?.image || undefined,
+        createdAt,
+        transactionHash: d?.transaction_hash || undefined,
+      });
+    }
+    return out;
+  } catch (e) {
+    console.warn('[fetchProxyArenaRankDeposits]', e);
+    return [];
+  }
+}
+
+type ArenaVaultStance = {
+  stance: ArenaGraphTripleStanceRow;
+  /** True when the deposit hit the membership triple vault (YES); false for counter-triple (NO). */
+  support: boolean;
+};
+
+/**
+ * Map vault term-id → triple stance for ANY triple a FeeProxy deposit landed on. We deliberately
+ * accept all predicates because IntuRank's legacy / portal / batch paths all produce different
+ * predicate atoms (canonical `LIST_PREDICATE`, custom `belongs in <list>`, freeform claims, etc.) —
+ * the deposit's `sender = FeeProxy` is what proves it was an IntuRank rank, so the explorer should
+ * surface every one regardless of predicate shape. We still surface YES (member) and NO (counter)
+ * vault sides distinctly.
+ */
+async function fetchArenaVaultStanceMap(
+  vaultTermIds: string[],
+): Promise<Map<string, ArenaVaultStance>> {
+  const ids = Array.from(new Set(vaultTermIds.flatMap((id) => prepareQueryIds(id).map(normalize)))).slice(0, 480);
+  if (ids.length === 0) return new Map();
+  const idSet = new Set(ids);
+  const q = `query ArenaVaultTriples($ids: [String!]!) {
+    triples(
+      where: { _or: [{ term_id: { _in: $ids } }, { counter_term_id: { _in: $ids } }] }
+      limit: 1000
+    ) {
       term_id
+      counter_term_id
       block_number
       creator { id label }
       subject { term_id label image }
@@ -2757,39 +2807,136 @@ export async function fetchRecentArenaPortalRankingFeed(
       object { term_id label image }
     }
   }`;
-
   try {
-    const res = await fetchGraphQL(q, {
-      listPred: LIST_PREDICATE_ID,
-      distrust: DISTRUST_ATOM_ID,
-      limit: fetchLimit,
-    });
-    const minBn = ARENA_ATTRIBUTION_MIN_BLOCK;
-    const out: ArenaPortalRankingFeedItem[] = [];
-    for (const t of res?.triples || []) {
-      const parsed = arenaTriplesResponseToPortalStances([t]);
-      if (parsed.length !== 1) continue;
-      const s = parsed[0];
-      if (!allow.has(normalize(s.listTermId))) continue;
-      if (creatorAllow && !creatorAllow.has(normalize(s.creatorId))) continue;
-      if (minBn != null && s.blockNumber > 0 && s.blockNumber < minBn) continue;
-      out.push({
-        claimTermId: s.claimTermId,
-        creatorId: s.creatorId,
-        creatorLabel: arenaFeedCreatorLabel(t, s.creatorId),
-        subjectLabel: s.subjectLabel,
-        listTermId: s.listTermId,
-        listLabel: s.listLabel,
-        support: s.support,
-        blockNumber: s.blockNumber,
-      });
-      if (out.length >= limit) break;
+    const res = await fetchGraphQL(q, { ids });
+    const triples = res?.triples ?? [];
+    const distLc = DISTRUST_ATOM_ID.toLowerCase();
+    const map = new Map<string, ArenaVaultStance>();
+    for (const t of triples) {
+      const sub = t?.subject;
+      const obj = t?.object;
+      const pred = t?.predicate;
+      if (!sub?.term_id) continue;
+      // Pull a sentence-friendly stance row regardless of predicate shape.
+      const subjectLabel =
+        resolveMetadata(sub).label || sub.label || String(sub.term_id).slice(0, 10);
+      const subjectImage = resolveMetadata(sub).image || sub.image || sub.cached_image?.url;
+      // Prefer the object atom as the "list / context"; fall back to predicate label when the
+      // triple is shaped like (subject, "is", listLabel) without a list-style object.
+      const isDistrustObj = normalize(obj?.term_id || '') === distLc;
+      const listAtom = isDistrustObj ? pred : obj;
+      const listTermId = listAtom?.term_id || obj?.term_id || '';
+      const listLabel =
+        resolveMetadata(listAtom).label || listAtom?.label || obj?.label || pred?.label || 'Claim';
+      const bn = (() => {
+        const v = t?.block_number;
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string') return parseInt(v, 10) || 0;
+        return 0;
+      })();
+
+      const memberTid = normalize(t.term_id || '');
+      const counterTid = normalize(t.counter_term_id || '');
+
+      const baseStance: ArenaGraphTripleStanceRow = {
+        creatorId: normalize(t?.creator?.id || ''),
+        claimTermId: t.term_id,
+        subjectId: sub.term_id,
+        subjectLabel,
+        subjectImage: subjectImage as string | undefined,
+        listTermId,
+        listLabel,
+        support: true,
+        blockNumber: bn,
+      };
+
+      if (memberTid && idSet.has(memberTid)) {
+        map.set(memberTid, { stance: { ...baseStance, support: true }, support: true });
+      }
+      if (counterTid && idSet.has(counterTid)) {
+        map.set(counterTid, { stance: { ...baseStance, support: false }, support: false });
+      }
     }
-    return out;
+    return map;
   } catch (e) {
-    console.warn('[fetchRecentArenaPortalRankingFeed]', e);
-    return [];
+    console.warn('[fetchArenaVaultStanceMap]', e);
+    return new Map();
   }
+}
+
+/**
+ * Recent Arena rankings done **through IntuRank** — anchored to deposits where our FeeProxy is the
+ * `sender`, then mapped onto either the membership triple (YES) or its counter-triple (NO) for the
+ * Arena allowlisted lists. Receiver is the actual ranker; their label / TNS resolves client-side.
+ *
+ * @param opts.onlyCreators "My rankings" filter — narrow to a single wallet (still requires the
+ *   deposit to have flowed through IntuRank's FeeProxy).
+ */
+export async function fetchRecentArenaPortalRankingFeed(
+  limit = 28,
+  opts?: { onlyCreators?: string[] },
+): Promise<ArenaPortalRankingFeedItem[]> {
+  let viewerAllow: Set<string> | null = null;
+  const rawCreators = opts?.onlyCreators?.map((c) => c.trim()).filter(Boolean) ?? [];
+  if (rawCreators.length > 0) {
+    const variants = rawCreators.flatMap((w) => prepareQueryIds(w));
+    viewerAllow = new Set(variants.map((v) => normalize(v)));
+  }
+
+  const minBn = ARENA_ATTRIBUTION_MIN_BLOCK;
+  const operatorCreators = protocolOperatorCreatorIdsNormalized();
+
+  const deposits = await fetchProxyArenaRankDeposits(Math.max(limit * 12, 600));
+  if (deposits.length === 0) return [];
+
+  const vaultIds = Array.from(new Set(deposits.map((d) => d.vaultTermId)));
+  const stanceByVault = await fetchArenaVaultStanceMap(vaultIds);
+  if (stanceByVault.size === 0) return [];
+
+  const out: ArenaPortalRankingFeedItem[] = [];
+  const seen = new Set<string>();
+  for (const dep of deposits) {
+    const stance = stanceByVault.get(dep.vaultTermId);
+    if (!stance) continue;
+    if (minBn != null && stance.stance.blockNumber > 0 && stance.stance.blockNumber < minBn) continue;
+
+    const recvLc = normalize(dep.receiverId);
+    if (operatorCreators.has(recvLc)) continue;
+    if (viewerAllow && !viewerAllow.has(recvLc)) continue;
+
+    const key = `${dep.vaultTermId}|${recvLc}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    let receiverDisplayId = dep.receiverId;
+    try {
+      receiverDisplayId = getAddress(dep.receiverId as `0x${string}`);
+    } catch {
+      /* leave as-is for non-checksum identifiers */
+    }
+    const cleanedLabel = dep.receiverLabel?.trim();
+    const fallbackShort = receiverDisplayId.length >= 12
+      ? `${receiverDisplayId.slice(0, 6)}…${receiverDisplayId.slice(-4)}`
+      : receiverDisplayId;
+    const label = cleanedLabel && cleanedLabel.length > 0 && cleanedLabel.length <= 64
+      ? cleanedLabel
+      : fallbackShort;
+
+    out.push({
+      claimTermId: stance.stance.claimTermId,
+      creatorId: receiverDisplayId,
+      creatorLabel: label,
+      subjectLabel: stance.stance.subjectLabel,
+      listTermId: stance.stance.listTermId,
+      listLabel: stance.stance.listLabel,
+      support: stance.support,
+      blockNumber: stance.stance.blockNumber || dep.createdAt,
+    });
+
+    if (out.length >= limit) break;
+  }
+
+  return out;
 }
 
 /** Prefer ENS / account name; avoid showing subgraph hex snippets or duplicate address as "label". */

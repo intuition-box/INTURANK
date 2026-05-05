@@ -341,6 +341,26 @@ export const getShareBalance = async (account: string, termId: string, curveId: 
   } catch { return "0"; }
 };
 
+/** Raw `getShares` (wei) — used to enforce protocol's “no counter-stake on the same triple” invariant before deposits. */
+export const getRawShareBalance = async (
+  account: string,
+  termId: string,
+  curveId: number = LINEAR_CURVE_ID,
+): Promise<bigint> => {
+  try {
+    const tid = padBytes32Term(termId);
+    const shares = await publicClient.readContract({
+      address: MULTI_VAULT_ADDRESS as `0x${string}`,
+      abi: MULTI_VAULT_ABI,
+      functionName: 'getShares',
+      args: [getAddress(account), tid, BigInt(curveId)],
+    } as any);
+    return shares as bigint;
+  } catch {
+    return 0n;
+  }
+};
+
 /** RPC getShares merged with subgraph positions — avoids 0 balance when indexer has your deposit but the vault read disagrees. */
 export const getShareBalanceEffective = async (account: string, termId: string, curveId: number = OFFSET_PROGRESSIVE_CURVE_ID) => {
   const rpc = await getShareBalance(account, termId, curveId);
@@ -859,7 +879,7 @@ function parseProtocolErrorRaw(error: any): string {
         return `MINIMUM_DEPOSIT: The protocol requires at least ${formatEther(CURVE_OFFSET)} TRUST as vault deposit (same as claims).`;
     }
     // FeeProxy MultiVault custom errors (human-readable when RPC forwards data)
-    if (msg.includes("0x86d94276") || /TripleExists/i.test(msg)) {
+    if (msg.includes("0x86d94276") || msg.includes("0x22319959") || /MultiVault_TripleExists/i.test(msg) || /TripleExists/i.test(msg)) {
         return "This stance triple already exists on-chain — stake via the existing vault instead of creating it again (retry submit after refreshing).";
     }
     if (msg.includes("0x3f1472eb") || /AtomDoesNotExist/i.test(msg)) {
@@ -868,6 +888,10 @@ function parseProtocolErrorRaw(error: any): string {
     // MultiVault_AtomExists(bytes) — duplicate createAtoms while the atom is already registered (RPC lag or duplicate cart lines).
     if (msg.includes("0xb4856ebc") || /MultiVault_AtomExists/i.test(msg)) {
         return "That atom already exists on-chain. Retry submit — the app now reuses existing atoms. Remove duplicate rows (same tool twice) if this keeps happening.";
+    }
+    // MultiVault_HasCounterStake() — depositing on a triple while you hold shares on its counter-triple (Arena YES vs NO on the same claim).
+    if (msg.includes("0x332c26cd") || /MultiVault_HasCounterStake/i.test(msg)) {
+        return "STANCE_CONFLICT: You already hold the opposite side of this claim. Withdraw your existing position from your portfolio before voting the other way.";
     }
     if (msg.includes("insufficient funds") || msg.includes("exceeds the balance")) return "INSUFFICIENT_TRUST_BALANCE";
 
@@ -947,7 +971,7 @@ export function arenaPersonalAttestationFootnote(err: unknown): string {
             "and deposits are unaffected — tags are bonus metadata on the graph, not required for Arena."
         );
     }
-    if (lower.includes("0x86d94276") || /tripleexists/i.test(combined)) {
+    if (lower.includes("0x86d94276") || lower.includes("0x22319959") || /multivault_tripleexists/i.test(combined) || /tripleexists/i.test(combined)) {
         return (
             "Optional personal-tags triple already existed on-chain (repeating nearly the same stance text). " +
             "Arena stakes finished normally; duplicate tag lines are harmless."
@@ -1804,7 +1828,12 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
             console.warn("SIMULATION_FAILED:", simulationError);
             const parsed = parseProtocolError(simulationError);
             const upper = parsed.toUpperCase();
-            if (upper.includes("REVERTED") || upper.includes("BALANCE") || upper.includes("FEE")) {
+            if (
+                upper.includes("REVERTED") ||
+                upper.includes("BALANCE") ||
+                upper.includes("FEE") ||
+                /already exists on-chain/i.test(parsed)
+            ) {
                 throw new Error(parsed);
             }
             throw simulationError;
@@ -1819,7 +1848,12 @@ export const createSemanticTriple = async (subjectId: string, predicateId: strin
         console.error('createSemanticTriple failed:', error?.message || error);
         const parsed = parseProtocolError(error);
         const upper = parsed.toUpperCase();
-        if (upper.includes("REVERTED") || upper.includes("BALANCE") || upper.includes("FEE")) {
+        if (
+            upper.includes("REVERTED") ||
+            upper.includes("BALANCE") ||
+            upper.includes("FEE") ||
+            /already exists on-chain/i.test(parsed)
+        ) {
             throw new Error(parsed);
         }
         throw error;

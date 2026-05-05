@@ -1,8 +1,11 @@
 /**
  * Arena rankers leaderboard.
- * - Default: no global graph scan (that mixed in every Intuition portal user, not Arena testers).
- * - Optional: GET arena mirror URL — `VITE_ARENA_LEADERBOARD_URL` or `${VITE_INTURANK_API_URL|VITE_EMAIL_API_URL}/api/arena-leaderboard` returning `{ leaderboard }` or an array.
- * - Opt-in: `VITE_ARENA_USE_GLOBAL_GRAPH_LEADERBOARD=true` restores indexer-wide aggregation (intentionally broad).
+ * - Source priority: configured mirror URL → portal-list-scoped subgraph aggregation.
+ *   The graph scan is now restricted to portal lists IntuRank surfaces in Arena and re-attributes
+ *   FeeProxy/MultiVault batch creators back to the actual depositor (vault `positions` lookup).
+ * - Mirror URL: `VITE_ARENA_LEADERBOARD_URL` or `${VITE_INTURANK_API_URL|VITE_EMAIL_API_URL}/api/arena-leaderboard`
+ *   returning `{ leaderboard }` or an array.
+ * - Opt-out: `VITE_ARENA_USE_GLOBAL_GRAPH_LEADERBOARD=false` → mirror-only (returns []).
  *
  * Portfolio / personal XP still come from subgraph (see graphql); POST mirror from `postArenaTotalsMirrorOptional` is optional telemetry.
  */
@@ -89,8 +92,12 @@ async function leaderboardSourceRows(): Promise<RawLb[]> {
   const mirror = await fetchArenaLeaderboardMirrorRows();
   if (mirror && mirror.length > 0) return mirror;
 
-  if (!ARENA_USE_GLOBAL_GRAPH_LEADERBOARD) return [];
-
+  /**
+   * Portal-scoped subgraph aggregation is the canonical fallback — it now filters by Arena lists
+   * and re-attributes FeeProxy/MultiVault batch creators back to the depositor (vault `positions`
+   * lookup). Legacy env flag is kept as a noop reference for migration tracking.
+   */
+  void ARENA_USE_GLOBAL_GRAPH_LEADERBOARD;
   return fetchArenaLeaderboardXpRowsFromGraph(4200);
 }
 
