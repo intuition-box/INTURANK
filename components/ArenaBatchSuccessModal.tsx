@@ -14,6 +14,10 @@ export type ArenaBatchSuccessPayload = {
   humanLine?: string;
   /** Shown when optional attestation failed but stakes succeeded. */
   footnote?: string;
+  /** Activity XP delta awarded across this batch (after daily caps & dedupe). */
+  activityXpEarned?: number;
+  /** Arena XP delta from this batch (lifetime pick-credit additions). */
+  arenaXpEarned?: number;
 };
 
 type Props = {
@@ -148,7 +152,7 @@ const ArenaBatchSuccessModal: React.FC<Props> = ({ open, payload, onClose }) => 
             </div>
 
             <div id="arena-success-desc" className="relative px-5 py-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className={`grid gap-3 ${(p.activityXpEarned ?? 0) > 0 || (p.arenaXpEarned ?? 0) > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <div className="rounded-2xl border border-white/[0.08] bg-black/40 px-3 py-3">
                   <p className="text-[9px] font-mono uppercase tracking-widest text-slate-500 mb-1">Items</p>
                   <p className="text-xl font-black font-mono tabular-nums text-white">{p.itemCount}</p>
@@ -160,6 +164,19 @@ const ArenaBatchSuccessModal: React.FC<Props> = ({ open, payload, onClose }) => 
                   </p>
                   <p className="text-[9px] font-mono text-amber-600/90 mt-0.5 uppercase tracking-wide">TRUST</p>
                 </div>
+                {(p.activityXpEarned ?? 0) > 0 || (p.arenaXpEarned ?? 0) > 0 ? (
+                  <div className="rounded-2xl border border-intuition-primary/30 bg-cyan-950/25 px-3 py-3">
+                    <p className="text-[9px] font-mono uppercase tracking-widest text-intuition-primary/80 mb-1">XP earned</p>
+                    <p className="text-xl font-black font-mono tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-cyan-200 to-intuition-primary">
+                      +{(p.activityXpEarned ?? 0) + (p.arenaXpEarned ?? 0)}
+                    </p>
+                    <p className="text-[9px] font-mono text-intuition-primary/85 mt-0.5 uppercase tracking-wide">
+                      {(p.arenaXpEarned ?? 0) > 0 ? `Arena +${p.arenaXpEarned}` : ''}
+                      {(p.activityXpEarned ?? 0) > 0 && (p.arenaXpEarned ?? 0) > 0 ? ' · ' : ''}
+                      {(p.activityXpEarned ?? 0) > 0 ? `Activity +${p.activityXpEarned}` : ''}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               {p.humanLine ? (

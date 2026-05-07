@@ -40,6 +40,7 @@ import {
   createTripleFromLabels,
   depositToVault,
   getProxyApprovalStatus,
+  hasCachedProxyApproval,
   getRawShareBalance,
   grantProxyApproval,
   arenaPersonalAttestationFootnote,
@@ -104,6 +105,7 @@ import ArenaListQuickPick from '../components/ArenaListQuickPick';
 import ArenaClimbTerrace from '../components/ArenaClimbTerrace';
 import ArenaStarredRail from '../components/ArenaStarredRail';
 import { XpEarnHint } from '../components/XpEarnHint';
+import IntuRankXpBadge from '../components/IntuRankXpBadge';
 import {
   ArenaBrowseLaneHud,
   ArenaSidebarDeck,
@@ -785,6 +787,7 @@ const RankedList: React.FC = () => {
   const [streak, setStreak] = useState(0);
   const [stakePresetIdx, setStakePresetIdx] = useState(defaultStakePresetIndex);
   const [stakingTx, setStakingTx] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState<string | null>(null);
   const [arenaCategoryId, setArenaCategoryId] = useState<string>('all');
   const [openBatchAfterLoad, setOpenBatchAfterLoad] = useState(false);
   const [showAllLists, setShowAllLists] = useState(false);
@@ -1429,19 +1432,23 @@ const RankedList: React.FC = () => {
     }
 
     setStakingTx(true);
+    setSubmitProgress('Reviewing batch…');
     let sent = false;
     let attestFootnote: string | undefined;
     const totalWei = rowsToSend.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
     /** Captured per-row tx hashes so we can record curations + streak with the real txHash after success. */
     const txByRowKey = new Map<string, string>();
+    /** Activity XP awarded across this batch (sum of `notifyProtocolXpEarned` returns). */
+    let activityXpDelta = 0;
     try {
       const awardArenaStakeXp = (txHash: string, depositWei: bigint) => {
-        notifyProtocolXpEarned({
+        const granted = notifyProtocolXpEarned({
           address: address!,
           reasonKey: 'add_to_list',
           txHash,
           depositTrustWei: depositWei,
         });
+        if (typeof granted === 'number' && granted > 0) activityXpDelta += granted;
       };
 
       const byList = new Map<string, typeof rowsToSend>();
@@ -1478,8 +1485,16 @@ const RankedList: React.FC = () => {
 
       if (portalJobs.length > 0 || legacyJobs.length > 0) {
         const checksumReceiver = getAddress(address);
-        const proxyOk = await getProxyApprovalStatus(checksumReceiver, { readRetries: 2, readDelayMs: 120 });
-        if (!proxyOk) await grantProxyApproval(checksumReceiver);
+        // Cache-first: skip the on-chain read if we recorded a successful approval before.
+        let proxyOk = hasCachedProxyApproval(checksumReceiver);
+        if (!proxyOk) {
+          setSubmitProgress('Checking proxy approval…');
+          proxyOk = await getProxyApprovalStatus(checksumReceiver);
+        }
+        if (!proxyOk) {
+          setSubmitProgress('Approving IntuRank proxy…');
+          await grantProxyApproval(checksumReceiver);
+        }
       }
 
       for (const { portalListObjectId, listRows, listEntry } of portalJobs) {
@@ -1497,12 +1512,21 @@ const RankedList: React.FC = () => {
           return a > b ? a : b;
         };
 
+        // Resolve membership vaults + run counter-stake checks fully in parallel — saves ~N×RPC seconds vs the previous serial loop.
+        setSubmitProgress(
+          listRows.length > 1 ? `Resolving ${listRows.length} vaults…` : 'Resolving vault…',
+        );
         const resolved = await Promise.all(
           listRows.map(async (row) => {
             const rowWei = baseWei * BigInt(row.units);
             const amt = formatEther(rowWei);
             const membershipVault = await getListMembershipTripleTermId(row.item.id, portalListObjectId);
-            return { row, rowWei, amt, membershipVault };
+            if (!membershipVault) return { row, rowWei, amt, membershipVault: null, counterShares: 0n };
+            const yesVault = membershipVault;
+            const noVault = calculateCounterTripleId(yesVault);
+            const oppositeVault = row.support ? noVault : yesVault;
+            const counterShares = await checkBothCurves(address, oppositeVault);
+            return { row, rowWei, amt, membershipVault, counterShares };
           }),
         );
 
@@ -1513,13 +1537,7 @@ const RankedList: React.FC = () => {
                 `If this identity is new on-chain, wait for the indexer to sync or pick another member.`
             );
           }
-          const yesVault = r.membershipVault;
-          const noVault = calculateCounterTripleId(yesVault);
-          const targetVault = r.row.support ? yesVault : noVault;
-          const oppositeVault = r.row.support ? noVault : yesVault;
-
-          const counterShares = await checkBothCurves(address, oppositeVault);
-          if (counterShares > 0n) {
+          if (r.counterShares > 0n) {
             const sideWord = r.row.support ? 'NO' : 'YES';
             const newSideWord = r.row.support ? 'YES' : 'NO';
             throw new Error(
@@ -1527,7 +1545,15 @@ const RankedList: React.FC = () => {
                 `Withdraw it from your portfolio before voting ${newSideWord} (protocol blocks counter-stakes on the same triple).`,
             );
           }
+          const yesVault = r.membershipVault;
+          const noVault = calculateCounterTripleId(yesVault);
+          const targetVault = r.row.support ? yesVault : noVault;
 
+          setSubmitProgress(
+            listRows.length > 1
+              ? `Awaiting wallet · ${r.row.item.label} (${listRows.indexOf(r.row) + 1}/${listRows.length})`
+              : `Awaiting wallet · ${r.row.item.label}`,
+          );
           const dep = await depositToVault(r.amt, targetVault, address);
           awardArenaStakeXp(dep.hash, r.rowWei);
           txByRowKey.set(r.row.key, dep.hash);
@@ -1570,6 +1596,7 @@ const RankedList: React.FC = () => {
       toast.error(msg.length > 420 ? `${msg.slice(0, 417)}…` : msg);
     } finally {
       setStakingTx(false);
+      setSubmitProgress(null);
     }
     if (!sent) return;
 
@@ -1630,6 +1657,7 @@ const RankedList: React.FC = () => {
       } catch {
         /* ignore */
       }
+      const arenaXpDelta = rowsToSend.length * ARENA_XP_PER_RANK_PICK;
       setArenaBatchSuccess({
         itemCount: rowsToSend.length,
         trustLabel: formatEther(totalWei),
@@ -1637,6 +1665,8 @@ const RankedList: React.FC = () => {
         contextSuffix: successContextSuffix,
         ...(humanLine ? { humanLine } : {}),
         ...(attestFootnote ? { footnote: attestFootnote } : {}),
+        ...(activityXpDelta > 0 ? { activityXpEarned: activityXpDelta } : {}),
+        ...(arenaXpDelta > 0 ? { arenaXpEarned: arenaXpDelta } : {}),
       });
       void refreshPlayers({ silent: true });
       void refreshArenaXpSelf();
@@ -2038,6 +2068,14 @@ const RankedList: React.FC = () => {
                   Explorer
                 </button>
               </div>
+              {address ? (
+                <IntuRankXpBadge
+                  arenaXp={arenaXpUi}
+                  activityXp={myProtocolXp}
+                  size="md"
+                  className="w-full sm:min-w-[260px] sm:max-w-[320px]"
+                />
+              ) : null}
               {listId && climbViewMode === 'arena' ? (
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-xs rounded-xl border border-white/[0.1] px-3 py-2 backdrop-blur-md" style={{ background: 'rgba(8,8,10,0.75)', boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), 0 0 24px ${ARENA_THEME.goldDim}` }}>
                   <span className="text-slate-500">Rounds <span className="text-white font-mono font-bold tabular-nums ml-1">{duels}</span></span>
@@ -3008,6 +3046,7 @@ const RankedList: React.FC = () => {
           onClearAll={clearAllArenaBatch}
           onSubmit={() => void submitArenaBatch()}
           submitting={stakingTx}
+          submitProgress={submitProgress}
           depositBlocked={batchDepositBelowProtocol}
           minDepositLabel={ARENA_BATCH_MODE ? PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL : undefined}
         />

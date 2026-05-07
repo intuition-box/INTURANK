@@ -192,6 +192,9 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                   >
                     {p.arenaXp.toLocaleString()}
                   </span>
+                  <span className="text-[7px] font-mono font-bold uppercase tracking-wider text-slate-500 mt-1 leading-none">
+                    Arena XP
+                  </span>
                 </motion.div>
               );
             })}

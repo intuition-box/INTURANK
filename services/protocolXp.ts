@@ -167,7 +167,10 @@ function postMirrorOptional(opts: {
   }).catch(() => {});
 }
 
-/** Linear scale: 0 below minWei; full baseXp at refWei and above; between → proportional to deposit/ref. */
+/**
+ * Linear scale: 0 below minWei; full baseXp at refWei and above; between → proportional to deposit/ref.
+ * Any qualifying deposit (≥ minWei) earns at least 1 XP — guarantees activity always feels rewarded.
+ */
 export function scaleProtocolXpByDeposit(
   baseXp: number,
   depositWei: bigint,
@@ -182,6 +185,7 @@ export function scaleProtocolXpByDeposit(
   const full = BigInt(Math.floor(baseXp));
   let scaled = (full * depositWei) / refWei;
   if (scaled > full) scaled = full;
+  if (scaled <= 0n) scaled = 1n;
   return Number(scaled);
 }
 
@@ -252,6 +256,9 @@ export function getProtocolXpTotal(address: string | null | undefined): number {
 /**
  * Persist + UX for a qualifying on-chain action.
  * Dedupes by `txHash`. Deposit-sized categories require `depositTrustWei` (spam-safe scaling + daily caps).
+ *
+ * Back-compat: returns truthy (the awarded amount) when XP was granted, falsy otherwise.
+ * Callers that previously checked `if (notifyProtocolXpEarned(...)) ...` keep working.
  */
 export function notifyProtocolXpEarned(opts: {
   address: string | null | undefined;
@@ -260,16 +267,16 @@ export function notifyProtocolXpEarned(opts: {
   depositTrustWei?: bigint | null;
   /** Only send_trust — pass fixed XP after min-send gate at callsite. */
   sendTrustFixedAmount?: number;
-}): boolean {
+}): number {
   const { address, reasonKey, txHash, depositTrustWei, sendTrustFixedAmount } = opts;
-  if (!address?.trim()) return false;
+  if (!address?.trim()) return 0;
 
   const gross = computeGrossProtocolXp({
     reasonKey,
     depositTrustWei,
     sendTrustFixedAmount,
   });
-  if (!Number.isFinite(gross) || gross <= 0) return false;
+  if (!Number.isFinite(gross) || gross <= 0) return 0;
 
   const addrLc = address.toLowerCase();
   const h = typeof txHash === 'string' && txHash.startsWith('0x') ? txHash.toLowerCase() : null;
@@ -278,7 +285,7 @@ export function notifyProtocolXpEarned(opts: {
   let entry: PerAddress = ledger[addrLc] ?? { total: 0, seenHashes: {} };
 
   if (h && entry.seenHashes[h]) {
-    return false;
+    return 0;
   }
 
   const cap = DAILY_CAP_BY_REASON[reasonKey];
@@ -297,7 +304,7 @@ export function notifyProtocolXpEarned(opts: {
       ledger[addrLc] = entry;
       saveLedger(ledger);
     }
-    return false;
+    return 0;
   }
 
   if (h) {
@@ -321,7 +328,7 @@ export function notifyProtocolXpEarned(opts: {
     reasonKey,
     txHash: h ?? undefined,
   });
-  return true;
+  return award;
 }
 
 /** Map env-friendly reason strings to canonical max XP amounts (before scaling / caps). */

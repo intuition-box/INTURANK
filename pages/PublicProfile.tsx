@@ -47,7 +47,10 @@ import { isFollowing, addFollow, removeFollow, setFollowEmailAlerts, type Follow
 import { getEmailSubscription, removeEmailSubscription, setEmailAlertFrequency, type EmailAlertFrequency } from '../services/emailNotifications';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import ProfileShareCard from '../components/ProfileShareCard';
+import IntuRankXpBadge from '../components/IntuRankXpBadge';
 import { getProtocolXpTotal, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
+import { fetchArenaXpRecordForWallet } from '../services/arenaXp';
+import { arenaPickCreditXp } from '../services/arenaPickCredit';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#ff0055', '#facc15', '#94a3b8'];
 
@@ -142,6 +145,9 @@ const PublicProfile: React.FC = () => {
   }, [activeHoldingsCount]);
 
   const [protocolXpTotal, setProtocolXpTotal] = useState(0);
+  /** Arena XP for the address being viewed — pulled from indexer (`fetchArenaXpRecordForWallet`),
+   * with an optional floor from the connected wallet's local pick credit if it's the same address. */
+  const [arenaXpTotal, setArenaXpTotal] = useState(0);
 
   const refreshSubscription = useCallback((addr: string | null) => {
     if (!addr) {
@@ -202,6 +208,37 @@ const PublicProfile: React.FC = () => {
     window.addEventListener(PROTOCOL_XP_UPDATED_EVENT, refresh as EventListener);
     return () => window.removeEventListener(PROTOCOL_XP_UPDATED_EVENT, refresh as EventListener);
   }, [address]);
+
+  /**
+   * Resolve Arena XP for this profile. Indexer is the source of truth; for the connected wallet
+   * we floor at local pick credit so freshly confirmed picks aren't invisible while the indexer syncs.
+   */
+  useEffect(() => {
+    if (!address) {
+      setArenaXpTotal(0);
+      return;
+    }
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const rec = await fetchArenaXpRecordForWallet(address);
+        if (cancelled) return;
+        const local = isOwnProfile ? arenaPickCreditXp(address) : 0;
+        setArenaXpTotal(Math.max(rec.xp ?? 0, local));
+      } catch {
+        if (cancelled) return;
+        const local = isOwnProfile ? arenaPickCreditXp(address) : 0;
+        setArenaXpTotal(local);
+      }
+    };
+    void sync();
+    const onChain = () => void sync();
+    window.addEventListener('inturank-arena-onchain-updated', onChain);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('inturank-arena-onchain-updated', onChain);
+    };
+  }, [address, isOwnProfile]);
 
   useEffect(() => {
     if (positionsPage > totalPositionPages) setPositionsPage(totalPositionPages);
@@ -606,20 +643,7 @@ const PublicProfile: React.FC = () => {
       )}
 
       <div className="mb-10 sm:mb-12 rounded-[1.75rem] bg-gradient-to-r from-intuition-primary/45 via-cyan-200/15 to-intuition-primary/40 p-[1px] shadow-[0_0_50px_rgba(0,243,255,0.14)] sm:rounded-[2rem]">
-        <div className="relative flex flex-col items-center gap-8 overflow-hidden rounded-[1.7rem] bg-gradient-to-b from-[#0c101c]/[0.97] to-[#05070d]/[0.98] p-8 sm:p-10 md:flex-row md:items-center md:gap-10 sm:rounded-[1.95rem]">
-          {address && profileShareUrl && (
-            <button
-              type="button"
-              className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-xl border border-white/15 bg-black/55 px-3 py-2 font-sans text-xs font-semibold text-slate-200 shadow-[0_0_20px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-colors hover:border-intuition-primary hover:text-intuition-primary sm:top-5 sm:right-6"
-              onClick={() => {
-                playClick();
-                setShowProfileShareModal(true);
-              }}
-              onMouseEnter={playHover}
-            >
-              <Share2 size={14} strokeWidth={2} /> Share profile
-            </button>
-          )}
+        <div className="relative flex flex-col items-center gap-8 overflow-hidden rounded-[1.7rem] bg-gradient-to-b from-[#0c101c]/[0.97] to-[#05070d]/[0.98] px-8 pt-8 pb-6 sm:px-10 sm:pt-9 sm:pb-7 md:flex-row md:items-start md:gap-8 lg:gap-10 sm:rounded-[1.95rem] md:pb-6">
           <div className="pointer-events-none absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04]" />
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.55]"
@@ -633,109 +657,136 @@ const PublicProfile: React.FC = () => {
               className="relative z-10 h-full w-full object-cover"
             />
           </div>
-          <div className="relative z-10 min-w-0 flex-1 text-center md:text-left">
-            <p className="mb-2 font-sans text-sm text-slate-500">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
-            <h2 className="mb-1 break-words font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              {address ? displayHeadline || maskedWalletDisplay : 'Unknown address'}
-            </h2>
-            {profileAlias?.isNamed && address && maskedWalletDisplay && (
-                <div className="mx-auto mb-6 w-fit rounded-xl border border-intuition-primary/35 bg-black/50 px-3 py-1.5 font-mono text-xs font-black tracking-widest text-intuition-primary/90 antialiased backdrop-blur-sm md:mx-0">
-                    {maskedWalletDisplay}
+          <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-6 md:flex-row md:items-start md:gap-0 md:pl-1">
+            <div className="min-w-0 flex-1 text-center md:pt-1 md:text-left md:pr-8 lg:pr-10">
+              <p className="mb-2 font-sans text-sm text-slate-500">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
+              <h2 className="mb-1 break-words font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                {address ? displayHeadline || maskedWalletDisplay : 'Unknown address'}
+              </h2>
+              {profileAlias?.isNamed && address && maskedWalletDisplay && (
+                  <div className="mx-auto mb-5 w-fit rounded-xl border border-intuition-primary/35 bg-black/50 px-3 py-1.5 font-mono text-xs font-black tracking-widest text-intuition-primary/90 antialiased backdrop-blur-sm md:mx-0">
+                      {maskedWalletDisplay}
+                  </div>
+              )}
+              {!profileAlias?.isNamed && <div className="mb-4"></div>}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start sm:gap-3">
+                  {/* {address && <BadgesSection address={address} compact />} */}
+                  <span className="rounded-full border border-intuition-primary/40 bg-gradient-to-r from-intuition-primary/25 to-intuition-primary/10 px-3.5 py-2 font-sans text-xs font-semibold text-intuition-primary shadow-[0_0_24px_rgba(0,243,255,0.12)] [text-rendering:geometricPrecision]">
+                    {activeHoldingsCount > 50 ? 'Level · Elite' : activeHoldingsCount > 10 ? 'Level · Pro' : 'Level · Explorer'}
+                  </span>
+                  <span className="rounded-full border border-white/15 bg-white/[0.06] px-3.5 py-2 font-sans text-xs font-medium text-slate-200 backdrop-blur-sm [text-rendering:geometricPrecision]">
+                    {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} open positions
+                  </span>
+                  <span className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3.5 py-2 font-sans text-xs font-medium text-slate-200 ring-1 ring-inset ring-white/5 [text-rendering:geometricPrecision]">
+                      <Wallet size={12} className="text-intuition-primary" /> {ethBalance} {CURRENCY_SYMBOL}
+                  </span>
                 </div>
-            )}
-            {!profileAlias?.isNamed && <div className="mb-4"></div>}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start sm:gap-3">
-                {/* {address && <BadgesSection address={address} compact />} */}
-                <span className="rounded-full border border-intuition-primary/40 bg-gradient-to-r from-intuition-primary/25 to-intuition-primary/10 px-3.5 py-2 font-sans text-xs font-semibold text-intuition-primary shadow-[0_0_24px_rgba(0,243,255,0.12)] [text-rendering:geometricPrecision]">
-                  {activeHoldingsCount > 50 ? 'Level · Elite' : activeHoldingsCount > 10 ? 'Level · Pro' : 'Level · Explorer'}
-                </span>
-                <span className="rounded-full border border-white/15 bg-white/[0.06] px-3.5 py-2 font-sans text-xs font-medium text-slate-200 backdrop-blur-sm [text-rendering:geometricPrecision]">
-                  {activeHoldingsCount >= 100 ? `${activeHoldingsCount}+` : activeHoldingsCount} open positions
-                </span>
-                <span className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3.5 py-2 font-sans text-xs font-medium text-slate-200 ring-1 ring-inset ring-white/5 [text-rendering:geometricPrecision]">
-                    <Wallet size={12} className="text-intuition-primary" /> {ethBalance} {CURRENCY_SYMBOL}
-                </span>
-              </div>
-              {connectedAddress && address && (address.toLowerCase() !== connectedAddress.toLowerCase()) && (
-                <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 shrink-0">
-                  {followEntry ? (
-                    <>
-                      <span className="flex items-center gap-1.5 rounded-full border border-intuition-success/40 bg-intuition-success/15 px-3 py-2 font-sans text-xs font-semibold text-intuition-success [text-rendering:geometricPrecision]">
-                        <UserMinus size={12} /> Following
-                      </span>
+                {connectedAddress && address && (address.toLowerCase() !== connectedAddress.toLowerCase()) && (
+                  <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 shrink-0">
+                    {followEntry ? (
+                      <>
+                        <span className="flex items-center gap-1.5 rounded-full border border-intuition-success/40 bg-intuition-success/15 px-3 py-2 font-sans text-xs font-semibold text-intuition-success [text-rendering:geometricPrecision]">
+                          <UserMinus size={12} /> Following
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playClick();
+                            removeFollow(connectedAddress, address);
+                            setFollowEntry(null);
+                            toast.success('Unfollowed');
+                          }}
+                          className="rounded-xl border-2 border-slate-500 px-3 py-2 font-sans text-xs font-semibold text-slate-200 transition-colors hover:border-slate-400 hover:text-white"
+                        >
+                          Unfollow
+                        </button>
+                        <label
+                          className="flex cursor-pointer items-center gap-2 rounded-xl border-2 border-slate-600 px-3 py-2 transition-all duration-200 hover:border-amber-500/50 hover:text-amber-400/90"
+                          title="Email when they buy or sell"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={followEntry.emailAlerts && !!getEmailSubscription(connectedAddress)}
+                            onChange={(e) => {
+                              playClick();
+                              const wantOn = e.target.checked;
+                              const hasEmail = !!getEmailSubscription(connectedAddress);
+                              if (wantOn && !hasEmail) {
+                                openEmailNotify();
+                                toast.info('Add your email to receive alerts when they buy or sell');
+                                return; // don't persist emailAlerts until they have an email
+                              }
+                              setFollowEmailAlerts(connectedAddress, address, wantOn);
+                              setFollowEntry((prev) => (prev ? { ...prev, emailAlerts: wantOn } : null));
+                            }}
+                            className="sr-only"
+                          />
+                          <span className={`flex items-center justify-center w-5 h-5 border-2 rounded-sm shrink-0 ${(followEntry.emailAlerts && getEmailSubscription(connectedAddress)) ? 'bg-amber-500 border-amber-400 text-black' : 'bg-black border-slate-500 text-transparent'}`}>
+                            {(followEntry.emailAlerts && getEmailSubscription(connectedAddress)) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </span>
+                          <Mail size={14} className={followEntry.emailAlerts ? 'text-amber-400' : 'text-slate-400'} />
+                          <span className="text-xs font-semibold tracking-normal text-slate-200 antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                            Email alerts
+                          </span>
+                        </label>
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
                           playClick();
-                          removeFollow(connectedAddress, address);
-                          setFollowEntry(null);
-                          toast.success('Unfollowed');
+                          const addr = toAddress(address || '');
+                          const idToStore = addr || (await resolveENS(address || '').then((r) => toAddress(r) || r)) || address;
+                          const label = displayHeadline || maskedWalletDisplay;
+                          const hasEmail = !!getEmailSubscription(connectedAddress);
+                          addFollow(connectedAddress, idToStore, { label, emailAlerts: hasEmail });
+                          setFollowEntry(isFollowing(connectedAddress, idToStore) ?? null);
+                          if (hasEmail) {
+                            toast.success('Following — you’ll get alerts when they buy');
+                          } else {
+                            openEmailNotify();
+                            toast.info('Add your email to get alerts when they buy or sell');
+                          }
                         }}
-                        className="rounded-xl border-2 border-slate-500 px-3 py-2 font-sans text-xs font-semibold text-slate-200 transition-colors hover:border-slate-400 hover:text-white"
+                        className="flex items-center gap-2.5 rounded-2xl border-2 border-amber-400 bg-black/60 px-4 py-2.5 text-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.35)] backdrop-blur-sm transition-all duration-200 hover:border-amber-300 hover:text-amber-300 hover:shadow-[0_0_28px_rgba(251,191,36,0.45)]"
+                        title="Get email when they buy or sell"
                       >
-                        Unfollow
+                        <UserPlus size={16} strokeWidth={2} className="shrink-0" />
+                        <span className="text-sm font-semibold tracking-normal antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                          Follow · Email when they buy
+                        </span>
                       </button>
-                      <label
-                        className="flex cursor-pointer items-center gap-2 rounded-xl border-2 border-slate-600 px-3 py-2 transition-all duration-200 hover:border-amber-500/50 hover:text-amber-400/90"
-                        title="Email when they buy or sell"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={followEntry.emailAlerts && !!getEmailSubscription(connectedAddress)}
-                          onChange={(e) => {
-                            playClick();
-                            const wantOn = e.target.checked;
-                            const hasEmail = !!getEmailSubscription(connectedAddress);
-                            if (wantOn && !hasEmail) {
-                              openEmailNotify();
-                              toast.info('Add your email to receive alerts when they buy or sell');
-                              return; // don't persist emailAlerts until they have an email
-                            }
-                            setFollowEmailAlerts(connectedAddress, address, wantOn);
-                            setFollowEntry((prev) => (prev ? { ...prev, emailAlerts: wantOn } : null));
-                          }}
-                          className="sr-only"
-                        />
-                        <span className={`flex items-center justify-center w-5 h-5 border-2 rounded-sm shrink-0 ${(followEntry.emailAlerts && getEmailSubscription(connectedAddress)) ? 'bg-amber-500 border-amber-400 text-black' : 'bg-black border-slate-500 text-transparent'}`}>
-                          {(followEntry.emailAlerts && getEmailSubscription(connectedAddress)) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                        </span>
-                        <Mail size={14} className={followEntry.emailAlerts ? 'text-amber-400' : 'text-slate-400'} />
-                        <span className="text-xs font-semibold tracking-normal text-slate-200 antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-                          Email alerts
-                        </span>
-                      </label>
-                    </>
-                  ) : (
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            {address ? (
+              <div className="relative z-10 flex w-full shrink-0 flex-col justify-start border-t border-white/[0.08] pt-5 md:mt-0 md:w-[min(100%,340px)] md:border-l md:border-t-0 md:pl-8 md:pt-1 lg:w-[min(100%,360px)] lg:pl-10">
+                {profileShareUrl ? (
+                  <div className="mb-2 flex w-full shrink-0 justify-center md:justify-end">
                     <button
                       type="button"
-                      onClick={async () => {
+                      className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/55 px-3 py-2 font-sans text-xs font-semibold text-slate-200 shadow-[0_0_20px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-colors hover:border-intuition-primary hover:text-intuition-primary"
+                      onClick={() => {
                         playClick();
-                        const addr = toAddress(address || '');
-                        const idToStore = addr || (await resolveENS(address || '').then((r) => toAddress(r) || r)) || address;
-                        const label = displayHeadline || maskedWalletDisplay;
-                        const hasEmail = !!getEmailSubscription(connectedAddress);
-                        addFollow(connectedAddress, idToStore, { label, emailAlerts: hasEmail });
-                        setFollowEntry(isFollowing(connectedAddress, idToStore) ?? null);
-                        if (hasEmail) {
-                          toast.success('Following — you’ll get alerts when they buy');
-                        } else {
-                          openEmailNotify();
-                          toast.info('Add your email to get alerts when they buy or sell');
-                        }
+                        setShowProfileShareModal(true);
                       }}
-                      className="flex items-center gap-2.5 rounded-2xl border-2 border-amber-400 bg-black/60 px-4 py-2.5 text-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.35)] backdrop-blur-sm transition-all duration-200 hover:border-amber-300 hover:text-amber-300 hover:shadow-[0_0_28px_rgba(251,191,36,0.45)]"
-                      title="Get email when they buy or sell"
+                      onMouseEnter={playHover}
                     >
-                      <UserPlus size={16} strokeWidth={2} className="shrink-0" />
-                      <span className="text-sm font-semibold tracking-normal antialiased" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-                        Follow · Email when they buy
-                      </span>
+                      <Share2 size={14} strokeWidth={2} /> Share profile
                     </button>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                ) : null}
+                <IntuRankXpBadge
+                  arenaXp={arenaXpTotal}
+                  activityXp={protocolXpTotal}
+                  size="lg"
+                  className="w-full shadow-[0_0_32px_rgba(0,243,255,0.08)]"
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1222,6 +1273,7 @@ const PublicProfile: React.FC = () => {
                 trustPct={sentimentBias.trust}
                 portfolioMix={sharePortfolioMix}
                 protocolXpTotal={protocolXpTotal}
+                arenaXpTotal={arenaXpTotal}
                 traderStatusLabel={traderStatusLabel}
               />
               <p className="text-center mt-6 text-slate-600 text-[8px] font-black font-mono uppercase tracking-[0.8em] animate-pulse">

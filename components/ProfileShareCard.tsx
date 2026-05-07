@@ -25,7 +25,10 @@ interface ProfileShareCardProps {
   transactionCount: number;
   trustPct: number;
   portfolioMix: ProfileShareMixSlice[];
+  /** Activity XP from on-chain protocol actions (market buys, sends, claims, etc.). */
   protocolXpTotal: number;
+  /** Arena XP from confirmed YES/NO ranks. Optional for back-compat. */
+  arenaXpTotal?: number;
   traderStatusLabel: string;
 }
 
@@ -53,8 +56,11 @@ export default function ProfileShareCard({
   trustPct,
   portfolioMix,
   protocolXpTotal,
+  arenaXpTotal = 0,
   traderStatusLabel,
 }: ProfileShareCardProps) {
+  /** Single source of truth for the IntuRank XP number — Arena ranks + Activity protocol XP. */
+  const totalIntuRankXp = Math.max(0, Math.round((arenaXpTotal || 0) + (protocolXpTotal || 0)));
   const cardRef = useRef<HTMLDivElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
@@ -216,8 +222,15 @@ export default function ProfileShareCard({
                 IntuRank XP
               </p>
               <p className="mt-1 font-display text-2xl sm:text-3xl font-black tabular-nums text-white tracking-tight">
-                {protocolXpTotal.toLocaleString()}
+                {totalIntuRankXp.toLocaleString()}
               </p>
+              {arenaXpTotal > 0 || protocolXpTotal > 0 ? (
+                <p className="mt-1 font-mono text-[10px] sm:text-[11px] font-semibold text-slate-400 antialiased [text-rendering:geometricPrecision]">
+                  <span className="text-intuition-primary/85">Arena {arenaXpTotal.toLocaleString()}</span>
+                  <span className="text-slate-600 mx-1.5">·</span>
+                  <span className="text-amber-300/85">Activity {protocolXpTotal.toLocaleString()}</span>
+                </p>
+              ) : null}
             </div>
           </div>
 

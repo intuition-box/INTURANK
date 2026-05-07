@@ -25,6 +25,8 @@ type Props = {
   onClearAll?: () => void;
   onSubmit: () => void;
   submitting: boolean;
+  /** Live status text shown under the spinner (e.g. "Resolving 3 vaults…"). */
+  submitProgress?: string | null;
   /** True when stake × units is below curve minimum on any row — submit would revert. */
   depositBlocked?: boolean;
   /** Protocol minimum TRUST label (e.g. "0.5") from `CURVE_OFFSET`. */
@@ -55,6 +57,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
   onClearAll,
   onSubmit,
   submitting,
+  submitProgress,
   depositBlocked = false,
   minDepositLabel,
 }) => {
@@ -383,10 +386,12 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                   <div className="flex flex-col items-center gap-1 py-0.5 w-full">
                     <span className="flex items-center justify-center gap-2 text-sm font-black">
                       <Loader2 className="animate-spin shrink-0" size={18} />
-                      Submitting…
+                      {submitProgress ?? 'Submitting…'}
                     </span>
                     <span className="text-[10px] font-semibold text-slate-400 leading-snug text-center px-1">
-                      Vault lookup runs first; your wallet opens when a signature is needed.
+                      {submitProgress
+                        ? 'Hold tight — wallet opens when a signature is needed.'
+                        : 'Vault lookup runs first; your wallet opens when a signature is needed.'}
                     </span>
                   </div>
                 ) : (

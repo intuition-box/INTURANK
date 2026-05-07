@@ -75,13 +75,17 @@ export const PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS = 1;
 export const PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS = 0;
 export const PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS = 15;
 
-/** Max activity XP points creditable per UTC calendar day per bucket (stops infinite micro-tx loops). */
-export const PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE = 200;
-export const PROTOCOL_XP_DAILY_CAP_CREATE_ATOM = 135;
-export const PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM = 135;
-export const PROTOCOL_XP_DAILY_CAP_ADD_TO_LIST = 120;
-export const PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN = 135;
-export const PROTOCOL_XP_DAILY_CAP_SEND_TRUST = 50;
+/**
+ * Max activity XP creditable per UTC calendar day per bucket — anti-spam ceiling.
+ * Tuned so a normal Arena/markets day never silently zero-outs: ~50 ranks ($0.5 TRUST each ≈ 1000 XP)
+ * before add_to_list caps; market buys & creates similarly generous.
+ */
+export const PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE = 1000;
+export const PROTOCOL_XP_DAILY_CAP_CREATE_ATOM = 600;
+export const PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM = 600;
+export const PROTOCOL_XP_DAILY_CAP_ADD_TO_LIST = 1000;
+export const PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN = 600;
+export const PROTOCOL_XP_DAILY_CAP_SEND_TRUST = 250;
 /**
  * When set (positive integer chain block), portfolio + personal Arena XP ignore triples older than this `block_number`.
  * Cuts unrelated Intuition list activity that predates your Arena rollout (predicates match other apps too).

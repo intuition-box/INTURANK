@@ -2331,6 +2331,34 @@ function emptyArenaXpRecord(): ArenaXpRecord {
   return { xp: 0, duels: 0, atomsRanked: 0, listsPlayed: 0, updatedAt: 0 };
 }
 
+/** Portal-list allowlist with id variants (padded ↔ unpadded). */
+function arenaListIdMatchesAllowlist(allow: Set<string>, listTermId: string): boolean {
+  if (allow.size === 0) return false;
+  for (const v of prepareQueryIds(String(listTermId || ''))) {
+    if (allow.has(normalize(v))) return true;
+  }
+  return false;
+}
+
+/**
+ * One Arena slot per list+subject. Uses the smallest normalized id variant so subgraph rows do not
+ * split a single rank across padded vs unpadded bytes32 strings.
+ */
+function arenaRankSlotKey(listTermId: string, subjectId: string): string | null {
+  const lists = prepareQueryIds(String(listTermId || ''))
+    .map(normalize)
+    .filter(Boolean)
+    .sort();
+  const subs = prepareQueryIds(String(subjectId || ''))
+    .map(normalize)
+    .filter(Boolean)
+    .sort();
+  const lk = lists[0];
+  const sk = subs[0];
+  if (!lk || !sk) return null;
+  return `${lk}:${sk}`;
+}
+
 type ArenaGraphTripleStanceRow = {
   creatorId: string;
   claimTermId: string;
@@ -2582,9 +2610,28 @@ export async function fetchUserArenaRankingClaims(creatorWallet: string): Promis
   }
 }
 
-/** XP derived from finalized portal-list triples on the indexer — no browser persistence. */
+/** XP derived from FeeProxy-routed ranks (same aggregation as the live leaderboard). */
 export async function fetchArenaXpRecordForWallet(address: string | null | undefined): Promise<ArenaXpRecord> {
-  const claims = await fetchUserArenaRankingClaims(address ?? '');
+  const raw = (address ?? '').trim();
+  if (!raw) return emptyArenaXpRecord();
+
+  try {
+    const rows = await fetchArenaLeaderboardXpRowsFromGraph(4200);
+    const hit = rows.find((r) => normalize(r.address) === normalize(raw));
+    if (hit && hit.xp > 0) {
+      return {
+        xp: hit.xp,
+        duels: hit.duels,
+        atomsRanked: hit.atomsRanked,
+        listsPlayed: hit.listsPlayed,
+        updatedAt: hit.updatedAt,
+      };
+    }
+  } catch {
+    /* fall back below */
+  }
+
+  const claims = await fetchUserArenaRankingClaims(raw);
   if (claims.length === 0) return emptyArenaXpRecord();
   const listsPlayed = new Set(claims.map((c) => normalize(c.listTermId))).size;
   const atomsRanked = new Set(claims.map((c) => normalize(c.subjectId))).size;
@@ -2620,6 +2667,7 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
   const minBnLb = ARENA_ATTRIBUTION_MIN_BLOCK;
 
   try {
+    const allow = await getArenaPortalRankingAllowlist();
     const deposits = await fetchProxyArenaRankDeposits(Math.max(maxTriples, 1500));
     if (deposits.length === 0) return [];
 
@@ -2627,16 +2675,23 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
     const stanceByVault = await fetchArenaVaultStanceMap(vaultIds);
     if (stanceByVault.size === 0) return [];
 
-    const byWallet = new Map<
-      string,
-      { stakes: ArenaGraphTripleStanceRow[]; lists: Set<string>; maxBn: number }
-    >();
+    /**
+     * Collapse stakes to **one slot per (list, subject)** — same rule as `fetchUserArenaRankingClaims`
+     * (latest block wins). Without this, the same rank can appear twice when balances moved across
+     * the member vault vs counter vault, multiple curve vaults, or YES→NO history — inflating Arena
+     * XP on the leaderboard (e.g. 425 vs 175) while the profile shows the deduped total.
+     *
+     * Only counts stakes on **portal lists IntuRank surfaces** (`getArenaPortalRankingAllowlist`), so
+     * unrelated FeeProxy activity does not inflate Arena XP.
+     */
+    const byWallet = new Map<string, ArenaGraphTripleStanceRow[]>();
 
     const seenWalletStake = new Set<string>();
     for (const dep of deposits) {
       const stance = stanceByVault.get(dep.vaultTermId);
       if (!stance) continue;
       if (minBnLb != null && stance.stance.blockNumber > 0 && stance.stance.blockNumber < minBnLb) continue;
+      if (!arenaListIdMatchesAllowlist(allow, stance.stance.listTermId)) continue;
 
       const recvLc = normalize(dep.receiverId);
       if (!recvLc || operatorCreators.has(recvLc)) continue;
@@ -2645,15 +2700,12 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
       if (seenWalletStake.has(stakeKey)) continue;
       seenWalletStake.add(stakeKey);
 
-      let g = byWallet.get(recvLc);
-      if (!g) {
-        g = { stakes: [], lists: new Set(), maxBn: 0 };
-        byWallet.set(recvLc, g);
+      let arr = byWallet.get(recvLc);
+      if (!arr) {
+        arr = [];
+        byWallet.set(recvLc, arr);
       }
-      g.stakes.push({ ...stance.stance, creatorId: recvLc, support: stance.support });
-      g.lists.add(normalize(stance.stance.listTermId));
-      const bn = stance.stance.blockNumber || dep.createdAt;
-      if (bn > g.maxBn) g.maxBn = bn;
+      arr.push({ ...stance.stance, creatorId: recvLc, support: stance.support });
     }
 
     const out: Array<{
@@ -2665,17 +2717,31 @@ export async function fetchArenaLeaderboardXpRowsFromGraph(maxTriples = 4200): P
       updatedAt: number;
     }> = [];
 
-    for (const [walletAddr, pack] of byWallet.entries()) {
-      const n = pack.stakes.length;
+    for (const [walletAddr, rawStakes] of byWallet.entries()) {
+      const bySlot = new Map<string, ArenaGraphTripleStanceRow>();
+      for (const s of rawStakes) {
+        const slotKey = arenaRankSlotKey(s.listTermId, s.subjectId);
+        if (!slotKey) continue;
+        const prev = bySlot.get(slotKey);
+        if (!prev || s.blockNumber >= prev.blockNumber) bySlot.set(slotKey, s);
+      }
+      const stakes = Array.from(bySlot.values());
+      const n = stakes.length;
       if (n === 0) continue;
-      const distinctSubjects = new Set(pack.stakes.map((s) => normalize(s.subjectId))).size;
+      const listsPlayed = new Set(
+        stakes.map((s) => arenaRankSlotKey(s.listTermId, s.subjectId)!.split(':')[0]),
+      ).size;
+      const distinctSubjects = new Set(
+        stakes.map((s) => arenaRankSlotKey(s.listTermId, s.subjectId)!.split(':')[1]),
+      ).size;
+      const maxBn = stakes.reduce((m, s) => Math.max(m, s.blockNumber || 0), 0);
       out.push({
         address: walletAddr,
         xp: n * ARENA_XP_PER_RANK_PICK,
         duels: n,
         atomsRanked: distinctSubjects,
-        listsPlayed: pack.lists.size,
-        updatedAt: pack.maxBn || 0,
+        listsPlayed,
+        updatedAt: maxBn || 0,
       });
     }
     out.sort((a, b) => b.xp - a.xp);
