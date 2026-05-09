@@ -1,20 +1,26 @@
 /**
- * MobileLayout — top app-bar + floating bottom dock with center FAB.
+ * MobileLayout — top app-bar + floating pill bottom nav (five primary tabs).
  * Used in place of the desktop `Layout` chrome whenever `useIsMobile()` is true.
  *
- * Bottom dock slots (left → right):
- *   Home · Markets · ⊕ FAB (opens MobileNavSheet) · Arena · Profile
- *
- * The center FAB intentionally surfaces every other destination via a sheet so
- * the dock stays clean and finger-friendly, per spec.
+ * Dock: Home · Markets · Skill · Compare · Portfolio (all in-app routes).
+ * Header “Menu” opens a sheet with Activity, Arena, Trust tools, docs, Create, etc.
  */
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useConfig } from 'wagmi';
 import { getWalletClient } from '@wagmi/core';
 import {
-  Home, TrendingUp, Activity, UserCircle, Plus, Wallet, Search, ChevronDown,
+  Home,
+  TrendingUp,
+  Cpu,
+  Swords,
+  Users,
+  Search,
+  Wallet,
+  ChevronDown,
+  LayoutGrid,
 } from 'lucide-react';
 import {
   switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef,
@@ -26,74 +32,71 @@ import NotificationBar from './NotificationBar';
 import { toast } from './Toast';
 import { setEmailFailureHandler, maybeSendDailyDigest } from '../services/emailNotifications';
 import { mergeFollowsFromServer } from '../services/follows';
+import { useEffectiveChainId } from '../hooks/useEffectiveChainId';
 import MobileNavSheet from './MobileNavSheet';
 import ArenaBatchFab from './ArenaBatchFab';
 import { useWalletDisplayMeta } from '../hooks/useWalletDisplayMeta';
 import { formatWalletHeadlineForUi } from '../services/analytics';
+import { isNavPathActive } from '../services/navActive';
+import SiteFooter from './SiteFooter';
 
 interface Props {
   children: React.ReactNode;
 }
 
-interface DockItem {
+interface BottomTab {
   label: string;
   path: string;
   icon: React.ReactNode;
 }
 
-const DOCK: { left: DockItem[]; right: DockItem[] } = {
-  left: [
-    { label: 'Home', path: '/', icon: <Home size={20} strokeWidth={2.2} /> },
-    { label: 'Markets', path: '/markets', icon: <TrendingUp size={20} strokeWidth={2.2} /> },
-  ],
-  right: [
-    { label: 'Arena', path: '/climb', icon: <Activity size={20} strokeWidth={2.2} /> },
-    { label: 'You', path: '/account', icon: <UserCircle size={20} strokeWidth={2.2} /> },
-  ],
-};
+const BOTTOM_TABS: BottomTab[] = [
+  { label: 'Home', path: '/', icon: <Home size={22} strokeWidth={2} /> },
+  { label: 'Markets', path: '/markets', icon: <TrendingUp size={22} strokeWidth={2} /> },
+  { label: 'Skill', path: '/skill-playground', icon: <Cpu size={22} strokeWidth={2} /> },
+  { label: 'Compare', path: '/compare', icon: <Swords size={22} strokeWidth={2} /> },
+  { label: 'Portfolio', path: '/portfolio', icon: <Users size={22} strokeWidth={2} /> },
+];
 
-const DockButton = memo(function DockButton({
+const BottomNavTab = memo(function BottomNavTab({
   item,
   active,
-  onSelect,
+  onNavigate,
 }: {
-  item: DockItem;
+  item: BottomTab;
   active: boolean;
-  onSelect: () => void;
+  onNavigate: () => void;
 }) {
+  const chipClass = `flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[1.35rem] px-1.5 py-2 transition-[background-color,color,transform] duration-200 ease-out ${
+    active ? 'bg-white/[0.14] text-white' : 'text-zinc-400 active:bg-white/[0.06]'
+  }`;
+
+  const label = (
+    <span className={`max-w-full truncate text-center text-[11px] font-semibold font-sans leading-tight tracking-tight ${active ? 'text-white' : 'text-zinc-500'}`}>
+      {item.label}
+    </span>
+  );
+
   return (
     <Link
       to={item.path}
       onClick={() => {
         playClick();
-        onSelect();
+        onNavigate();
       }}
       onMouseEnter={playHover}
       aria-label={item.label}
       aria-current={active ? 'page' : undefined}
-      className={`group flex flex-col items-center justify-center gap-0.5 min-w-[3.5rem] py-1.5 rounded-2xl transition-colors ${
-        active ? 'text-intuition-primary' : 'text-slate-500 active:text-slate-200'
-      }`}
+      className={`${chipClass} no-underline`}
     >
-      <span
-        className={`relative flex h-9 w-9 items-center justify-center rounded-2xl transition-all ${
-          active
-            ? 'bg-intuition-primary/15 ring-1 ring-intuition-primary/40 shadow-[0_0_18px_rgba(0,243,255,0.25)]'
-            : 'group-active:bg-white/5'
-        }`}
+      <motion.span
+        className="flex w-full flex-col items-center justify-center gap-1"
+        whileTap={{ scale: 0.94 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 28 }}
       >
-        {item.icon}
-        {active && (
-          <span className="absolute -bottom-1.5 h-1 w-1 rounded-full bg-intuition-primary shadow-[0_0_8px_rgba(0,243,255,0.8)]" />
-        )}
-      </span>
-      <span
-        className={`text-[10px] font-mono font-black tracking-[0.18em] uppercase leading-none ${
-          active ? 'text-intuition-primary' : 'text-slate-500'
-        }`}
-      >
-        {item.label}
-      </span>
+        <span className="flex h-[22px] items-center justify-center [&>svg]:shrink-0">{item.icon}</span>
+        {label}
+      </motion.span>
     </Link>
   );
 });
@@ -104,21 +107,14 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { openConnectModal } = useConnectModal();
-  const { address: walletAddress, isConnected, chainId = 0 } = useAccount();
+  const { address: walletAddress, isConnected } = useAccount();
+  const chainId = useEffectiveChainId();
   const { disconnect } = useDisconnect();
   const wagmiConfig = useConfig();
   const walletHead = useWalletDisplayMeta(walletAddress ?? null);
   const walletHeaderLabel = walletAddress ? formatWalletHeadlineForUi(walletHead, walletAddress) : '';
 
   const pathname = location.pathname;
-
-  const isActive = useCallback(
-    (path: string) => {
-      if (path === '/') return pathname === '/';
-      return pathname.startsWith(path);
-    },
-    [pathname],
-  );
 
   // Mirror Layout.tsx: wire wagmi → web3 service so legacy code paths still work.
   useEffect(() => {
@@ -194,7 +190,7 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-intuition-dark text-slate-200 font-sans selection:bg-intuition-primary selection:text-black">
+    <div className="mobile-app-shell min-h-screen bg-intuition-dark text-slate-200 font-sans selection:bg-intuition-primary selection:text-black">
       {/* Top app bar */}
       <header
         className="fixed top-0 inset-x-0 z-[150] backdrop-blur-xl bg-[#03050d]/82 border-b border-white/[0.06]"
@@ -219,11 +215,23 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
           </Link>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                playClick();
+                setSheetOpen(true);
+              }}
+              aria-label="More navigation"
+              aria-expanded={sheetOpen}
+              className="h-10 w-10 flex items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-200 transition-transform duration-200 ease-out active:scale-95"
+            >
+              <LayoutGrid size={20} strokeWidth={2} />
+            </button>
             <Link
               to="/markets"
               onClick={() => playClick()}
               aria-label="Search markets"
-              className="h-10 w-10 flex items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 active:scale-95 transition-transform"
+              className="h-10 w-10 flex items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-300 transition-transform duration-200 ease-out active:scale-95"
             >
               <Search size={18} />
             </Link>
@@ -236,21 +244,32 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
                     playClick();
                     setWalletDropOpen((p) => !p);
                   }}
-                  className="h-10 px-2.5 flex items-center gap-1.5 rounded-full border border-intuition-primary/30 bg-intuition-primary/8 text-intuition-primary text-[11px] font-mono font-black tracking-[0.12em] active:scale-95 transition-transform"
+                  className="h-10 px-2.5 flex items-center gap-1.5 rounded-full border border-intuition-primary/30 bg-intuition-primary/8 text-intuition-primary text-[11px] font-mono font-black tracking-[0.12em] transition-transform duration-200 ease-out active:scale-95"
                 >
                   <span className="h-2 w-2 rounded-full bg-intuition-success shadow-[0_0_6px_rgba(0,255,157,0.7)]" />
                   {walletHeaderLabel}
                   <ChevronDown size={12} />
                 </button>
+                <AnimatePresence>
                 {walletDropOpen && (
                   <>
-                    <button
+                    <motion.button
                       type="button"
                       aria-label="Close wallet menu"
                       className="fixed inset-0 z-[160]"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
                       onClick={() => setWalletDropOpen(false)}
                     />
-                    <div className="absolute right-0 mt-2 z-[170] w-56 rounded-2xl border border-intuition-primary/30 bg-[#03050d]/97 shadow-[0_24px_60px_rgba(0,0,0,0.7)] backdrop-blur-2xl overflow-hidden">
+                    <motion.div
+                      className="absolute right-0 mt-2 z-[170] w-56 rounded-2xl border border-intuition-primary/35 bg-[#020308] shadow-[0_24px_60px_rgba(0,0,0,0.92)] overflow-hidden"
+                      initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -282,15 +301,16 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
                       >
                         Disconnect
                       </button>
-                    </div>
+                    </motion.div>
                   </>
                 )}
+                </AnimatePresence>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={handleConnect}
-                className="h-10 px-3 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-intuition-primary to-cyan-300 text-black text-[11px] font-mono font-black tracking-[0.16em] uppercase shadow-[0_8px_22px_rgba(0,243,255,0.3)] active:scale-95 transition-transform"
+                className="h-10 px-3 flex items-center gap-1.5 rounded-full bg-gradient-to-r from-intuition-primary to-cyan-300 text-black text-[11px] font-mono font-black tracking-[0.16em] uppercase shadow-[0_8px_22px_rgba(0,243,255,0.3)] transition-transform duration-200 ease-out active:scale-95"
               >
                 <Wallet size={14} /> Connect
               </button>
@@ -317,65 +337,37 @@ const MobileLayout: React.FC<Props> = ({ children }) => {
         className="relative mobile-contain min-w-0 w-full max-w-full overflow-x-clip"
         style={{
           paddingTop: 'calc(3.5rem + env(safe-area-inset-top))',
-          paddingBottom: 'calc(6.5rem + env(safe-area-inset-bottom))',
+          /* Extra clearance so long pages (e.g. market detail) never finish under the floating dock */
+          paddingBottom: 'calc(8.75rem + env(safe-area-inset-bottom))',
         }}
       >
-        <div key={location.pathname} className="animate-page-enter min-h-full min-w-0 w-full">
-          {children}
-        </div>
+        <div className="min-h-full min-w-0 w-full">{children}</div>
+        <SiteFooter compact />
       </main>
 
       {ARENA_BATCH_MODE && <ArenaBatchFab />}
 
-      {/* Floating bottom dock */}
+      {/* Floating bottom tab bar — pill, five equal tabs (matches mobile reference pattern). */}
       <nav
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-[180] flex items-end justify-center pointer-events-none"
-        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+        style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
       >
-        <div className="pointer-events-auto relative mx-3 w-full max-w-[26rem]">
-          <div className="grid grid-cols-5 items-end gap-1 rounded-[1.75rem] border border-white/10 bg-[#06080f]/95 backdrop-blur-2xl px-2 pt-2 pb-2 shadow-[0_24px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(0,243,255,0.06),inset_0_1px_0_rgba(255,255,255,0.06)]">
-            {DOCK.left.map((it) => (
-              <DockButton
-                key={it.path}
-                item={it}
-                active={isActive(it.path)}
-                onSelect={() => setSheetOpen(false)}
+        <div className="pointer-events-auto mx-3 w-full max-w-lg">
+          <motion.div
+            layout
+            className="flex items-stretch rounded-[999px] border border-white/12 bg-[#1a1a1c] px-1.5 py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.06)]"
+            transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+          >
+            {BOTTOM_TABS.map((item) => (
+              <BottomNavTab
+                key={item.path}
+                item={item}
+                active={isNavPathActive(item.path, pathname)}
+                onNavigate={() => setSheetOpen(false)}
               />
             ))}
-
-            {/* Center FAB */}
-            <div className="flex items-end justify-center">
-              <button
-                type="button"
-                aria-label={sheetOpen ? 'Close menu' : 'Open menu'}
-                onClick={() => {
-                  playClick();
-                  setSheetOpen((p) => !p);
-                }}
-                className={`relative -mt-7 h-16 w-16 rounded-full flex items-center justify-center transition-all duration-300 active:scale-95 ${
-                  sheetOpen
-                    ? 'bg-gradient-to-br from-intuition-primary to-cyan-300 text-black rotate-45 shadow-[0_18px_40px_rgba(0,243,255,0.45),0_0_0_4px_rgba(0,243,255,0.18)]'
-                    : 'bg-gradient-to-br from-intuition-secondary via-intuition-secondary to-intuition-purple text-white shadow-[0_18px_40px_rgba(255,30,109,0.45),0_0_0_4px_rgba(255,30,109,0.16)]'
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className="absolute inset-0 rounded-full ring-1 ring-white/20 pointer-events-none"
-                />
-                <Plus size={26} strokeWidth={2.5} />
-              </button>
-            </div>
-
-            {DOCK.right.map((it) => (
-              <DockButton
-                key={it.path}
-                item={it}
-                active={isActive(it.path)}
-                onSelect={() => setSheetOpen(false)}
-              />
-            ))}
-          </div>
+          </motion.div>
         </div>
       </nav>
 

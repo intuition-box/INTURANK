@@ -60,7 +60,7 @@ import {
 import { recordArenaCurationPicks } from '../services/arenaCurations';
 import { fetchArenaXpRecordForWallet, postArenaTotalsMirrorOptional } from '../services/arenaXp';
 import { clearProtocolXpLedger, getProtocolXpTotal, notifyProtocolXpEarned, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
-import { fetchArenaPlayerLeaderboard, type ArenaPlayerRow } from '../services/arenaLeaderboard';
+import { fetchArenaPlayerLeaderboard, inturankLeaderboardTotalXp, type ArenaPlayerRow } from '../services/arenaLeaderboard';
 import {
   ARENA_BATCH_MODE,
   ARENA_PORTAL_LISTS_FETCH_LIMIT,
@@ -892,14 +892,14 @@ const RankedList: React.FC = () => {
     const silent = opts?.silent === true;
     if (!silent) setPlayersLoading(true);
     try {
-      const rows = await fetchArenaPlayerLeaderboard();
+      const rows = await fetchArenaPlayerLeaderboard(address ?? undefined);
       setPlayers(rows);
     } catch {
       setPlayers([]);
     } finally {
       if (!silent) setPlayersLoading(false);
     }
-  }, []);
+  }, [address]);
 
   useEffect(() => {
     void refreshPlayers();
@@ -1037,7 +1037,7 @@ const RankedList: React.FC = () => {
 
   const playersMaxXp = useMemo(() => {
     if (!players.length) return 1;
-    return Math.max(1, ...players.map((p) => p.arenaXp));
+    return Math.max(1, ...players.map((p) => inturankLeaderboardTotalXp(p)));
   }, [players]);
 
   const myLadderPosition = useMemo(() => {
@@ -1438,8 +1438,11 @@ const RankedList: React.FC = () => {
     const totalWei = rowsToSend.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
     /** Captured per-row tx hashes so we can record curations + streak with the real txHash after success. */
     const txByRowKey = new Map<string, string>();
-    /** Activity XP awarded across this batch (sum of `notifyProtocolXpEarned` returns). */
+    /** Lowercased tx hash → XPDN granted for that deposit (for curation ledger + explorer). */
+    const xpdnByTxHashLc = new Map<string, number>();
+    /** Activity XP (XPDN) awarded across this batch — sum and per-tx grants from `notifyProtocolXpEarned`. */
     let activityXpDelta = 0;
+    const xpdnGrantsPerTx: number[] = [];
     try {
       const awardArenaStakeXp = (txHash: string, depositWei: bigint) => {
         const granted = notifyProtocolXpEarned({
@@ -1448,7 +1451,12 @@ const RankedList: React.FC = () => {
           txHash,
           depositTrustWei: depositWei,
         });
-        if (typeof granted === 'number' && granted > 0) activityXpDelta += granted;
+        if (typeof granted === 'number' && granted > 0) {
+          activityXpDelta += granted;
+          xpdnGrantsPerTx.push(granted);
+          const h = txHash.trim().toLowerCase();
+          if (h.startsWith('0x')) xpdnByTxHashLc.set(h, granted);
+        }
       };
 
       const byList = new Map<string, typeof rowsToSend>();
@@ -1609,6 +1617,8 @@ const RankedList: React.FC = () => {
           const entry = getArenaListById(row.sourceListId);
           const trustLabel = formatEther(baseWei * BigInt(row.units));
           const txHash = txByRowKey.get(row.key);
+          const txLc = txHash?.trim().toLowerCase();
+          const xpdn = txLc?.startsWith('0x') ? xpdnByTxHashLc.get(txLc) : undefined;
           return {
             listId: row.sourceListId,
             listTitle: entry?.title ?? 'Arena list',
@@ -1617,6 +1627,8 @@ const RankedList: React.FC = () => {
             ...(row.item.image ? { itemImage: row.item.image } : {}),
             support: row.support,
             trustLabel,
+            arenaXpPick: ARENA_XP_PER_RANK_PICK,
+            ...(typeof xpdn === 'number' && xpdn > 0 ? { xpdnAward: xpdn } : {}),
             ...(txHash ? { txHash } : {}),
           };
         });
@@ -1657,6 +1669,7 @@ const RankedList: React.FC = () => {
       } catch {
         /* ignore */
       }
+      /** Arena XP: fixed pick credit per queued row (matches `arenaPickCreditXp` / indexer attribution). */
       const arenaXpDelta = rowsToSend.length * ARENA_XP_PER_RANK_PICK;
       setArenaBatchSuccess({
         itemCount: rowsToSend.length,
@@ -1667,6 +1680,7 @@ const RankedList: React.FC = () => {
         ...(attestFootnote ? { footnote: attestFootnote } : {}),
         ...(activityXpDelta > 0 ? { activityXpEarned: activityXpDelta } : {}),
         ...(arenaXpDelta > 0 ? { arenaXpEarned: arenaXpDelta } : {}),
+        ...(xpdnGrantsPerTx.length > 0 ? { xpdnByTx: xpdnGrantsPerTx } : {}),
       });
       void refreshPlayers({ silent: true });
       void refreshArenaXpSelf();
@@ -2200,7 +2214,7 @@ const RankedList: React.FC = () => {
                 : 'flex-1 min-h-[min(520px,calc(100vh-13rem))] lg:min-h-[min(560px,calc(100vh-12rem))] grid-rows-1'
             }`}
           >
-            <AnimatePresence initial={false} mode="sync">
+            <AnimatePresence initial={false} mode="wait">
               {!listId ? (
                 <motion.div
                   key="arena-picker"
@@ -2211,7 +2225,11 @@ const RankedList: React.FC = () => {
                     arenaPickerEnterPrimed && !reduceMotion ? { opacity: 0, x: -28 } : false
                   }
                   animate={{ opacity: 1, x: 0 }}
-                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0.55, x: -36 }}
+                  exit={
+                    reduceMotion
+                      ? { opacity: 0, transition: { duration: 0.2 } }
+                      : { opacity: 0, x: -40, transition: { duration: 0.32, ease: [0.4, 0, 0.2, 1] } }
+                  }
                   transition={arenaPickerTransition}
                 >
             <div className="rounded-2xl border border-white/[0.08] p-4 sm:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_18px_56px_rgba(0,0,0,0.45)] relative overflow-hidden backdrop-blur-md" style={{ background: 'linear-gradient(175deg, rgba(18,18,22,0.92) 0%, rgba(6,7,10,0.94) 55%)' }}>
@@ -2385,9 +2403,17 @@ const RankedList: React.FC = () => {
                     background: ARENA_THEME.runPanelBg,
                     boxShadow: ARENA_THEME.runPanelShadow,
                   }}
-                  initial={reduceMotion ? false : { opacity: 0.94, x: '104%' }}
+                  initial={reduceMotion ? false : { opacity: 0, x: '104%' }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={reduceMotion ? { opacity: 0 } : { opacity: 1, x: '104%' }}
+                  exit={
+                    reduceMotion
+                      ? { opacity: 0, transition: { duration: 0.2 } }
+                      : {
+                          opacity: 0,
+                          x: '104%',
+                          transition: { duration: 0.34, ease: [0.4, 0, 0.2, 1] },
+                        }
+                  }
                   transition={arenaRunTransition}
                 >
             <>
@@ -2855,7 +2881,7 @@ const RankedList: React.FC = () => {
                       const { idx, h, ring, label, showCrown } = slot;
                       const p = players[idx]!;
                       const isYou = address && p.address === address.toLowerCase();
-                      const xpPct = Math.min(100, Math.round((p.arenaXp / playersMaxXp) * 100));
+                      const xpPct = Math.min(100, Math.round((inturankLeaderboardTotalXp(p) / playersMaxXp) * 100));
                       return (
                         <motion.div
                           key={p.address}
@@ -2877,9 +2903,9 @@ const RankedList: React.FC = () => {
                               className={`rounded-t-[1.15rem] bg-gradient-to-b from-[#0c1520] to-[#060a10] ${h} flex flex-col items-center justify-end pb-2.5 px-2 border-b border-white/10`}
                             >
                               <span className="text-sm font-mono text-amber-100 tabular-nums font-black drop-shadow-[0_0_8px_rgba(251,191,36,0.35)]">
-                                {p.arenaXp}
+                                {inturankLeaderboardTotalXp(p)}
                               </span>
-                              <span className="text-[9px] text-amber-400/90 uppercase tracking-widest font-bold font-mono">XP</span>
+                              <span className="text-[9px] text-amber-400/90 uppercase tracking-widest font-bold font-mono">Total XP</span>
                               <span className="text-[9px] text-slate-400 font-mono font-semibold mt-1">{p.duels} picks</span>
                             </div>
                           </div>
@@ -2909,9 +2935,9 @@ const RankedList: React.FC = () => {
                   >
                     {players.map((p, rowIdx) => {
                       const isYou = address && p.address === address.toLowerCase();
-                      const xpPct = Math.min(100, Math.round((p.arenaXp / playersMaxXp) * 100));
+                      const xpPct = Math.min(100, Math.round((inturankLeaderboardTotalXp(p) / playersMaxXp) * 100));
                       const top = p.rank <= 3;
-                      const tier = arenaCombatTier(p.arenaXp);
+                      const tier = arenaCombatTier(inturankLeaderboardTotalXp(p));
                       const avgPick = p.duels > 0 ? Math.round(p.arenaXp / p.duels) : p.arenaXp;
                       const shortAddr = `${p.address.slice(0, 6)}…${p.address.slice(-4)}`;
                       const rankColor =
@@ -2999,10 +3025,10 @@ const RankedList: React.FC = () => {
                               </div>
                               <div className="shrink-0 text-right pl-1">
                                 <span className="font-mono text-lg sm:text-xl tabular-nums font-black leading-none text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500">
-                                  {p.arenaXp}
+                                  {inturankLeaderboardTotalXp(p)}
                                 </span>
                                 <div className="text-[8px] text-amber-400/90 uppercase tracking-[0.15em] font-bold mt-0.5">
-                                  XP
+                                  Total XP
                                 </div>
                               </div>
                             </div>

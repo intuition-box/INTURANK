@@ -2762,6 +2762,8 @@ export type ArenaPortalRankingFeedItem = {
   listLabel: string;
   support: boolean;
   blockNumber: number;
+  /** Intuition deposit tx when rank flowed through FeeProxy (for local XP lookup). */
+  transactionHash?: string;
 };
 
 function arenaFeedCreatorLabel(triple: any, creatorId: string): string {
@@ -2997,6 +2999,7 @@ export async function fetchRecentArenaPortalRankingFeed(
       listLabel: stance.stance.listLabel,
       support: stance.support,
       blockNumber: stance.stance.blockNumber || dep.createdAt,
+      transactionHash: dep.transactionHash?.startsWith('0x') ? dep.transactionHash : undefined,
     });
 
     if (out.length >= limit) break;

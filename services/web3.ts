@@ -1,8 +1,10 @@
 
-import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, isAddress, type Hex, stringToHex, toHex, keccak256, decodeEventLog, slice, encodeFunctionData, parseEventLogs, type TransactionReceipt } from 'viem';
+import { createPublicClient, createWalletClient, custom, http, parseEther, formatEther, pad, getAddress, isAddress, type Hex, stringToHex, toHex, keccak256, decodeEventLog, slice, encodeFunctionData, parseEventLogs, type TransactionReceipt, UserRejectedRequestError } from 'viem';
+import { switchChain as wagmiSwitchChain } from '@wagmi/core';
 import { mainnet } from 'viem/chains';
 import { normalize } from 'viem/ens';
 import { CHAIN_ID, NETWORK_NAME, RPC_URL, MULTI_VAULT_ABI, MULTI_VAULT_ADDRESS, EXPLORER_URL, FEE_PROXY_ADDRESS, FEE_PROXY_ABI, LINEAR_CURVE_ID, OFFSET_PROGRESSIVE_CURVE_ID, DISPLAY_DIVISOR, CURRENCY_SYMBOL, CURVE_OFFSET, DISTRUST_ATOM_ID, LIST_PREDICATE_ID, IS_PREDICATE_ID } from '../constants';
+import { wagmiConfig } from '../wagmi-config';
 import { getSubgraphPositionSharesForTerm, pickEffectiveShareBalance } from './graphql';
 import { Transaction } from '../types';
 import { toast } from '../components/Toast';
@@ -213,35 +215,101 @@ export const getConnectedAccount = async (): Promise<string | null> => {
   } catch { return null; }
 };
 
-export const switchNetwork = async () => {
-    const provider = getProvider();
-    if (!provider) return;
-    
+function isUserRejectedError(error: unknown): boolean {
+  if (error instanceof UserRejectedRequestError) return true;
+  if (typeof error === 'object' && error !== null) {
+    const e = error as { code?: number; name?: string };
+    if (e.code === 4001) return true;
+    if (e.name === 'UserRejectedRequestError') return true;
+  }
+  return false;
+}
+
+/** MetaMask validates the RPC when adding a chain; Intuition’s JSON-RPC is on `/http` (bare `/` often fails). */
+function rpcUrlForWalletChainPrompt(): string {
+  const raw = String(RPC_URL ?? '').trim();
+  const base = raw.replace(/\/+$/, '');
+  if (CHAIN_ID === 1155 || CHAIN_ID === 13579) {
+    if (base.toLowerCase().endsWith('/http')) return base;
+    return `${base}/http`;
+  }
+  return raw || base;
+}
+
+function walletAddEthereumChainPayload() {
+  const chainIdHex = `0x${CHAIN_ID.toString(16)}` as const;
+  return {
+    chainId: chainIdHex,
+    chainName: NETWORK_NAME,
+    nativeCurrency: { name: 'TRUST', symbol: 'TRUST', decimals: 18 },
+    rpcUrls: [rpcUrlForWalletChainPrompt()] as const,
+    blockExplorerUrls: [EXPLORER_URL] as const,
+  };
+}
+
+async function switchNetworkViaInjectedProvider(provider: NonNullable<ReturnType<typeof getProvider>>) {
+  const chainIdHex = `0x${CHAIN_ID.toString(16)}`;
+  const addParams = walletAddEthereumChainPayload();
+
+  const attemptSwitch = () =>
+    provider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: chainIdHex }],
+    });
+
+  try {
+    await attemptSwitch();
+    return;
+  } catch (error: unknown) {
+    if (isUserRejectedError(error)) return;
     try {
-        await provider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
-        });
-    } catch (error: any) {
-        if (error.code === 4902 || error?.data?.originalError?.code === 4902) {
-            try {
-                await provider.request({
-                    method: 'wallet_addEthereumChain',
-                    params: [
-                        {
-                            chainId: `0x${CHAIN_ID.toString(16)}`,
-                            chainName: NETWORK_NAME,
-                            nativeCurrency: { name: 'TRUST', symbol: 'TRUST', decimals: 18 },
-                            rpcUrls: [RPC_URL],
-                            blockExplorerUrls: [EXPLORER_URL],
-                        },
-                    ],
-                });
-            } catch (addError) { 
-                console.error("ADD_CHAIN_ERROR:", addError); 
-            }
-        }
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [addParams],
+      });
+    } catch (addError: unknown) {
+      if (isUserRejectedError(addError)) return;
+      // Chain may already be registered; still try switching again.
     }
+    try {
+      await attemptSwitch();
+    } catch (e2: unknown) {
+      if (isUserRejectedError(e2)) return;
+      console.error('SWITCH_NETWORK_ERROR:', error, e2);
+      toast.error('Could not switch network. Try switching to Intuition in your wallet.');
+    }
+  }
+}
+
+/** Prefer Wagmi `switchChain` so RainbowKit’s active connector prompts the wallet (EIP-1193 shim was a no-op in some cases). */
+export const switchNetwork = async () => {
+  const addEthereumChainParameter = {
+    chainName: NETWORK_NAME,
+    nativeCurrency: { name: 'TRUST', symbol: 'TRUST', decimals: 18 },
+    rpcUrls: [rpcUrlForWalletChainPrompt()],
+    blockExplorerUrls: [EXPLORER_URL],
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      await wagmiSwitchChain(wagmiConfig, {
+        chainId: CHAIN_ID,
+        addEthereumChainParameter,
+      });
+      return;
+    } catch (error: unknown) {
+      if (isUserRejectedError(error)) return;
+      console.warn('wagmi switchChain failed, falling back to injected provider:', error);
+    }
+  }
+
+  const provider = getProvider();
+  if (!provider) {
+    toast.error('Wallet not ready. Wait a moment and try again, or switch network in your wallet.');
+    return;
+  }
+
+  await switchNetworkViaInjectedProvider(provider);
 };
 
 export type WalletConnector = 'injected' | 'walletconnect';
@@ -997,6 +1065,18 @@ const FEE_PROXY_ALLOWED_SELECTORS = new Set([
     '0xbc2439e4', // createTriples(...)
     '0x58a19d5e', // deposit(...)
 ]);
+
+/**
+ * When the Skill LLM sends FeeProxy calldata but omits `action`, infer it for review UI and routing.
+ */
+export function inferFeeProxyActionFromCalldata(data: string | undefined): 'createAtoms' | 'createTriples' | 'deposit' | null {
+    if (!data || !data.startsWith('0x') || data.length < 10) return null;
+    const sel = data.slice(0, 10).toLowerCase();
+    if (sel === '0x8581c32f') return 'createAtoms';
+    if (sel === '0xbc2439e4') return 'createTriples';
+    if (sel === '0x58a19d5e') return 'deposit';
+    return null;
+}
 
 const PREFLIGHT_PREFIX =
     "Simulation failed — wallet was not opened because this call would revert on-chain. ";

@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Layers } from 'lucide-react';
 import { getFirstListIdWithPending, getTotalPendingCount } from '../services/arenaPendingBatch';
 import { playClick } from '../services/audio';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 /**
  * Fixed bottom-right batch queue control (viewport-anchored).
@@ -14,8 +15,15 @@ const ArenaBatchFab: React.FC = () => {
   const [mounted, setMounted] = useState(false);
   const loc = useLocation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
-  const safeBottom = useMemo(() => `max(1.25rem, env(safe-area-inset-bottom, 0px))`, []);
+  const safeBottom = useMemo(
+    () =>
+      isMobile
+        ? `max(calc(4.85rem + env(safe-area-inset-bottom, 0px)), 1.25rem)`
+        : `max(1.25rem, env(safe-area-inset-bottom, 0px))`,
+    [isMobile],
+  );
   const safeRight = useMemo(() => `max(1.25rem, env(safe-area-inset-right, 0px))`, []);
 
   useEffect(() => {

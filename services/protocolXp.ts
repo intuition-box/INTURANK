@@ -15,11 +15,14 @@ import {
   PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM,
   PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE,
   PROTOCOL_XP_DAILY_CAP_SEND_TRUST,
+  PROTOCOL_XP_DAILY_CAP_SKILL_CHAT,
   PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN,
   PROTOCOL_XP_MARKET_ACQUIRE,
   PROTOCOL_XP_MARKET_ACQUIRE_MIN_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_MARKET_ACQUIRE_REFERENCE_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_SEND_TRUST,
+  PROTOCOL_XP_SKILL_ATOM,
+  PROTOCOL_XP_SKILL_CHAT,
   PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS,
   PROTOCOL_XP_SKILL_TRIPLE,
@@ -39,13 +42,17 @@ export type ProtocolXpReasonKey =
   | 'create_claim'
   | 'add_to_list'
   | 'send_trust'
-  | 'skill_onchain';
+  | 'skill_chat'
+  | 'skill_atom'
+  | 'skill_triple';
 
 type DailyBucket = Partial<Record<ProtocolXpReasonKey, number>>;
 
 type PerAddress = {
   total: number;
   seenHashes: Record<string, true>;
+  /** Dedupe keys for awards without an on-chain tx hash (e.g. Skill chat message id). */
+  seenDedupeKeys?: Record<string, true>;
   /** UTC date YYYY-MM-DD → XP granted that day per reason (anti-farming caps). */
   dailyByReason?: Record<string, DailyBucket>;
 };
@@ -57,7 +64,9 @@ const DAILY_CAP_BY_REASON: Record<ProtocolXpReasonKey, number> = {
   create_atom: PROTOCOL_XP_DAILY_CAP_CREATE_ATOM,
   create_claim: PROTOCOL_XP_DAILY_CAP_CREATE_CLAIM,
   add_to_list: PROTOCOL_XP_DAILY_CAP_ADD_TO_LIST,
-  skill_onchain: PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN,
+  skill_chat: PROTOCOL_XP_DAILY_CAP_SKILL_CHAT,
+  skill_atom: PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN,
+  skill_triple: PROTOCOL_XP_DAILY_CAP_SKILL_ONCHAIN,
   send_trust: PROTOCOL_XP_DAILY_CAP_SEND_TRUST,
 };
 
@@ -125,13 +134,25 @@ function pruneHashes(seen: Record<string, true>, maxKeys = 400): Record<string, 
   return next;
 }
 
+function pruneDedupeKeys(seen: Record<string, true> | undefined, maxKeys = 400): Record<string, true> {
+  if (!seen || Object.keys(seen).length === 0) return {};
+  const keys = Object.keys(seen);
+  if (keys.length <= maxKeys) return seen;
+  const tail = keys.slice(-maxKeys);
+  const next: Record<string, true> = {};
+  for (const k of tail) next[k] = true;
+  return next;
+}
+
 const REASON_LABEL: Record<ProtocolXpReasonKey, string> = {
   market_acquire: 'Market purchase',
   create_atom: 'Atom created',
   create_claim: 'Claim created',
   add_to_list: 'Added to list',
   send_trust: 'TRUST sent',
-  skill_onchain: 'Intuition Skill',
+  skill_chat: 'Skill chat',
+  skill_atom: 'Skill · atom signed',
+  skill_triple: 'Skill · triple signed',
 };
 
 function emitUpdated(addressLc: string): void {
@@ -201,6 +222,10 @@ export function computeGrossProtocolXp(opts: {
     const a = sendTrustFixedAmount ?? PROTOCOL_XP_SEND_TRUST;
     return Number.isFinite(a) && a > 0 ? Math.floor(a) : 0;
   }
+  if (reasonKey === 'skill_chat') {
+    const n = PROTOCOL_XP_SKILL_CHAT;
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
   const wei = depositTrustWei ?? null;
   if (wei === null || wei <= 0n) return 0;
 
@@ -233,7 +258,14 @@ export function computeGrossProtocolXp(opts: {
         PROTOCOL_XP_ADD_TO_LIST_MIN_DEPOSIT_TRUST_UNITS,
         PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS,
       );
-    case 'skill_onchain':
+    case 'skill_atom':
+      return scaleProtocolXpByDeposit(
+        PROTOCOL_XP_SKILL_ATOM,
+        wei,
+        PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS,
+        PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS,
+      );
+    case 'skill_triple':
       return scaleProtocolXpByDeposit(
         PROTOCOL_XP_SKILL_TRIPLE,
         wei,
@@ -267,8 +299,10 @@ export function notifyProtocolXpEarned(opts: {
   depositTrustWei?: bigint | null;
   /** Only send_trust — pass fixed XP after min-send gate at callsite. */
   sendTrustFixedAmount?: number;
+  /** Dedupe non-tx awards (e.g. Skill assistant message id). */
+  dedupeKey?: string | null;
 }): number {
-  const { address, reasonKey, txHash, depositTrustWei, sendTrustFixedAmount } = opts;
+  const { address, reasonKey, txHash, depositTrustWei, sendTrustFixedAmount, dedupeKey } = opts;
   if (!address?.trim()) return 0;
 
   const gross = computeGrossProtocolXp({
@@ -280,9 +314,14 @@ export function notifyProtocolXpEarned(opts: {
 
   const addrLc = address.toLowerCase();
   const h = typeof txHash === 'string' && txHash.startsWith('0x') ? txHash.toLowerCase() : null;
+  const dedupe = typeof dedupeKey === 'string' && dedupeKey.trim() ? `dk:${dedupeKey.trim()}` : null;
 
   const ledger = loadLedger();
   let entry: PerAddress = ledger[addrLc] ?? { total: 0, seenHashes: {} };
+
+  if (dedupe && entry.seenDedupeKeys?.[dedupe]) {
+    return 0;
+  }
 
   if (h && entry.seenHashes[h]) {
     return 0;
@@ -305,6 +344,13 @@ export function notifyProtocolXpEarned(opts: {
       saveLedger(ledger);
     }
     return 0;
+  }
+
+  if (dedupe) {
+    entry = {
+      ...entry,
+      seenDedupeKeys: pruneDedupeKeys({ ...entry.seenDedupeKeys, [dedupe]: true }),
+    };
   }
 
   if (h) {
@@ -344,7 +390,11 @@ export function protocolXpAmountFor(reasonKey: ProtocolXpReasonKey): number {
       return PROTOCOL_XP_ADD_TO_LIST;
     case 'send_trust':
       return PROTOCOL_XP_SEND_TRUST;
-    case 'skill_onchain':
+    case 'skill_chat':
+      return PROTOCOL_XP_SKILL_CHAT;
+    case 'skill_atom':
+      return PROTOCOL_XP_SKILL_ATOM;
+    case 'skill_triple':
       return PROTOCOL_XP_SKILL_TRIPLE;
     default:
       return 0;

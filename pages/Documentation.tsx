@@ -23,6 +23,8 @@ import {
   UserCircle,
   FileText,
   ArrowLeft,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { playClick, playHover } from '../services/audio';
@@ -47,6 +49,8 @@ import {
   PROTOCOL_XP_MARKET_ACQUIRE,
   PROTOCOL_XP_SEND_TRUST,
   PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS,
+  PROTOCOL_XP_SKILL_ATOM,
+  PROTOCOL_XP_SKILL_CHAT,
   PROTOCOL_XP_SKILL_TRIPLE,
 } from '../constants';
 
@@ -99,6 +103,124 @@ function ProseLink({ href, children }: { href: string; children: React.ReactNode
       {children}
       <ExternalLink className="w-3.5 h-3.5 shrink-0 opacity-70" aria-hidden />
     </a>
+  );
+}
+
+function MobileDocSectionJump({
+  sections,
+  activeId,
+  onSelect,
+}: {
+  sections: SectionDef[];
+  activeId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const active = sections.find((s) => s.id === activeId) ?? sections[0];
+  const ActiveIcon = active.icon;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="lg:hidden mb-8 relative z-30">
+      <div className="rounded-2xl border border-intuition-primary/35 bg-gradient-to-br from-[#0a1018]/98 via-[#06080f]/95 to-black/90 p-[1px] shadow-[0_0_0_1px_rgba(0,243,255,0.08),0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="rounded-[0.9rem] bg-[#05070c]/90 backdrop-blur-md p-4">
+          <p className="text-[11px] font-semibold text-intuition-primary/90 uppercase tracking-[0.22em] mb-3 flex items-center gap-2">
+            <span className="inline-flex h-1.5 w-1.5 rounded-full bg-intuition-primary shadow-[0_0_10px_rgba(0,243,255,0.9)]" />
+            Jump to section
+          </p>
+          <button
+            type="button"
+            id="doc-section-jump-trigger"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-controls="doc-section-jump-list"
+            onClick={() => {
+              playClick();
+              setOpen((o) => !o);
+            }}
+            onMouseEnter={playHover}
+            className="w-full flex items-center gap-3 rounded-xl border border-intuition-primary/55 bg-black/65 px-4 py-3.5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_0_24px_rgba(0,243,255,0.08)] motion-safe:transition-[border-color,box-shadow,transform] motion-safe:duration-200 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-intuition-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#05070c]"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-intuition-primary/25 bg-intuition-primary/10">
+              <ActiveIcon
+                className="w-4 h-4 text-intuition-primary drop-shadow-[0_0_10px_rgba(0,243,255,0.5)]"
+                aria-hidden
+              />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-white leading-snug truncate">{active.navLabel}</span>
+              <span className="block text-[10px] font-mono uppercase tracking-wider text-slate-500 mt-0.5">
+                {sections.length} sections
+              </span>
+            </span>
+            <ChevronDown
+              className={`w-5 h-5 shrink-0 text-slate-400 motion-safe:transition-transform motion-safe:duration-200 ${
+                open ? 'rotate-180 text-intuition-primary' : ''
+              }`}
+              aria-hidden
+            />
+          </button>
+
+          <div
+            id="doc-section-jump-list"
+            role="listbox"
+            aria-labelledby="doc-section-jump-trigger"
+            className={`mt-3 overflow-hidden rounded-xl border border-white/[0.09] bg-[#070a12]/95 shadow-[0_20px_48px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.05)] motion-safe:transition-[max-height,opacity] motion-safe:duration-300 motion-reduce:transition-none ${
+              open ? 'max-h-[min(65vh,22rem)] opacity-100' : 'max-h-0 opacity-0 pointer-events-none border-transparent shadow-none'
+            }`}
+          >
+            <ul className="max-h-[min(65vh,22rem)] overflow-y-auto overscroll-contain py-2 px-2 space-y-0.5">
+              {sections.map((s) => {
+                const Icon = s.icon;
+                const selected = s.id === activeId;
+                return (
+                  <li key={s.id} role="presentation">
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onMouseEnter={playHover}
+                      onClick={() => {
+                        onSelect(s.id);
+                        setOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm motion-safe:transition-[background,box-shadow,transform,color] motion-safe:duration-200 ${
+                        selected
+                          ? 'bg-gradient-to-r from-intuition-primary/22 via-intuition-primary/10 to-transparent text-white shadow-[inset_0_0_0_1px_rgba(0,243,255,0.35),0_0_24px_rgba(0,243,255,0.12)]'
+                          : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.06] active:scale-[0.99]'
+                      }`}
+                    >
+                      <Icon
+                        className={`w-4 h-4 shrink-0 ${selected ? 'text-intuition-primary' : 'opacity-70'}`}
+                        aria-hidden
+                      />
+                      <span className="flex-1 min-w-0 leading-snug">{s.navLabel}</span>
+                      {selected && <Check className="w-4 h-4 shrink-0 text-intuition-primary" strokeWidth={2.5} aria-hidden />}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -412,22 +534,8 @@ const Documentation: React.FC = () => {
               </div>
             </div>
 
-            <div className="lg:hidden mb-8 rounded-xl border border-white/10 bg-[#0a0c12] p-4">
-              <label htmlFor="doc-section-jump" className="block text-xs font-medium text-slate-500 mb-2">
-                Jump to section
-              </label>
-              <select
-                id="doc-section-jump"
-                value={activeSection}
-                onChange={(e) => scrollTo(e.target.value)}
-                className="w-full rounded-lg bg-black/60 border border-white/10 text-slate-200 text-sm px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-intuition-primary/50"
-              >
-                {SECTIONS.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.navLabel}
-                  </option>
-                ))}
-              </select>
+            <div className="lg:hidden mb-8 max-w-[52rem]">
+              <MobileDocSectionJump sections={SECTIONS} activeId={activeSection} onSelect={scrollTo} />
             </div>
 
             <DocSection id="intro" title="Introduction">
@@ -702,6 +810,19 @@ const Documentation: React.FC = () => {
                 The chat needs the AI assistant to be enabled for this app (whoever runs IntuRank handles that on the server
                 or build). You can open the Playground and read replies without a wallet; connect on {NETWORK_NAME} (chain{' '}
                 {CHAIN_ID}) when you are ready to sign transactions and spend TRUST.
+              </p>
+              <p>
+                <strong className="text-slate-100 font-semibold">Activity XP</strong> (wallet connected): +{PROTOCOL_XP_SKILL_CHAT}{' '}
+                per assistant reply (daily cap). Signing a Skill-proposed <strong className="text-slate-200">atom</strong> adds
+                up to +{PROTOCOL_XP_SKILL_ATOM}; signing a <strong className="text-slate-200">triple</strong> adds up to +
+                {PROTOCOL_XP_SKILL_TRIPLE} — on-chain amounts scale with your vault deposit (see{' '}
+                <Link
+                  to="/documentation#activity-xp"
+                  className="text-intuition-primary hover:text-intuition-primary/90 underline-offset-2 hover:underline font-medium"
+                >
+                  How XP works
+                </Link>
+                ).
               </p>
               <p>
                 Typical actions include <strong className="text-slate-100 font-semibold">creating atoms</strong> (labels and
@@ -1043,10 +1164,24 @@ const Documentation: React.FC = () => {
                       </td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 text-slate-200">Used Skill to publish a triple</td>
+                      <td className="px-4 py-3 text-slate-200">Chatted with Skill agent</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_SKILL_CHAT}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — each assistant reply while your wallet is connected (deduped per message). Capped per day.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Used Skill to create an atom (signed)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_SKILL_ATOM}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — scales with vault deposit on that Skill-signed atom; small deposits earn a fraction of this max. Separate from the generic “Created an atom” row (Create flow).
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Used Skill to publish a triple (signed)</td>
                       <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_SKILL_TRIPLE}</td>
                       <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
-                        Activity XP — scales with the triple deposit you passed into Skill; tiny deposits earn little or none.
+                        Activity XP — scales with the triple deposit (label pipeline or FeeProxy createTriples from Skill). Higher cap than Skill atom; tiny deposits earn little or none.
                       </td>
                     </tr>
                     <tr>
@@ -1088,8 +1223,8 @@ const Documentation: React.FC = () => {
                 search-backed atom pickers, use a <strong className="text-slate-100 font-semibold">quick SDK string</strong>{' '}
                 path to broadcast a simple atom from text and deposit, or open{' '}
                 <strong className="text-slate-100 font-semibold">advanced pathways</strong>{' '}
-                for <strong className="text-slate-100 font-semibold">CONSTRUCT_ATOM</strong> and{' '}
-                <strong className="text-slate-100 font-semibold">ESTABLISH_SYNAPSE</strong> (manual triple) flows with explicit
+                for <strong className="text-slate-100 font-semibold">advanced atom creation</strong> and{' '}
+                <strong className="text-slate-100 font-semibold">manual triple</strong> flows with explicit
                 term IDs and deposits. Review screens estimate fees, enforce minimum deposits where the protocol requires
                 them, and may validate that referenced atoms exist before you confirm.
               </p>

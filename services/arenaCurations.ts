@@ -27,6 +27,10 @@ export type ArenaCurationPick = {
   trustLabel: string;
   /** Submission tx hash (best-effort, may be empty if we lost it). */
   txHash?: string;
+  /** Arena pick-credit XP for this row (usually 25). */
+  arenaXpPick?: number;
+  /** Protocol activity / XPDN granted for this tx on this device (if batch was submitted here). */
+  xpdnAward?: number;
   /** Wall-clock millis at confirmation time. */
   ts: number;
 };
@@ -121,6 +125,23 @@ export function getArenaCurationsForWallet(
   if (!wallet) return [];
   const file = loadFile();
   return Array.isArray(file[wallet]) ? [...file[wallet]!] : [];
+}
+
+/**
+ * Map lowercased tx hash → XP earned on this device for that rank (My rankings / explorer chips).
+ */
+export function getArenaLocalXpByTxHash(
+  address: string | null | undefined,
+): Map<string, { arenaXp: number; xpdn?: number }> {
+  const m = new Map<string, { arenaXp: number; xpdn?: number }>();
+  for (const p of getArenaCurationsForWallet(address)) {
+    const h = p.txHash?.trim().toLowerCase();
+    if (!h?.startsWith('0x')) continue;
+    const arenaXp = typeof p.arenaXpPick === 'number' && p.arenaXpPick > 0 ? p.arenaXpPick : 25;
+    const xpdn = typeof p.xpdnAward === 'number' && p.xpdnAward > 0 ? p.xpdnAward : undefined;
+    m.set(h, { arenaXp, ...(xpdn != null ? { xpdn } : {}) });
+  }
+  return m;
 }
 
 export type ArenaCurationGroup = {

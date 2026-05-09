@@ -118,7 +118,16 @@ function buildLeaderboardPayload(map) {
     const listsPlayed = Math.max(0, Math.floor(Number(r.listsPlayed) || 0));
     const updatedAt = Math.floor(Number(r.updatedAt) || 0);
     if (xp <= 0) continue;
-    rows.push({ address: addr, xp, duels, atomsRanked, listsPlayed, updatedAt });
+    rows.push({
+      address: addr,
+      xp,
+      arenaXp,
+      protocolXp,
+      duels,
+      atomsRanked,
+      listsPlayed,
+      updatedAt,
+    });
   }
   rows.sort((a, b) => b.xp - a.xp || b.updatedAt - a.updatedAt);
   return rows;

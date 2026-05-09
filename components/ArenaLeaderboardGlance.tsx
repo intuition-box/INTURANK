@@ -8,7 +8,7 @@ import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Trophy, Crown, ArrowUpRight, Award, Sparkles, Loader2 } from 'lucide-react';
-import type { ArenaPlayerRow } from '../services/arenaLeaderboard';
+import { inturankLeaderboardTotalXp, type ArenaPlayerRow } from '../services/arenaLeaderboard';
 import { playClick, playHover } from '../services/audio';
 import { ARENA_THEME } from '../services/arenaUiTheme';
 
@@ -44,7 +44,8 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
    * reflects the just-completed batch instead of the empty "Be the first ranker" splash.
    */
   const augmentedPlayers = useMemo<ArenaPlayerRow[]>(() => {
-    if (!myAddrLc || myArenaXp <= 0) return players;
+    const myTotal = inturankLeaderboardTotalXp({ arenaXp: myArenaXp, activityXp: myActivityXp });
+    if (!myAddrLc || myTotal <= 0) return players;
     const exists = players.some((p) => p.address === myAddrLc);
     if (exists) return players;
     const synthetic: ArenaPlayerRow = {
@@ -52,14 +53,17 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       address: myAddrLc,
       label: 'You',
       arenaXp: myArenaXp,
+      activityXp: myActivityXp,
       duels: 0,
       atomsRanked: 0,
       listsPlayed: 0,
       updatedAt: 0,
     };
-    const merged = [...players, synthetic].sort((a, b) => b.arenaXp - a.arenaXp);
+    const merged = [...players, synthetic].sort(
+      (a, b) => inturankLeaderboardTotalXp(b) - inturankLeaderboardTotalXp(a),
+    );
     return merged.map((m, i) => ({ ...m, rank: i + 1 }));
-  }, [players, myAddrLc, myArenaXp]);
+  }, [players, myAddrLc, myArenaXp, myActivityXp]);
 
   const myRow = useMemo(
     () => (myAddrLc ? augmentedPlayers.find((p) => p.address === myAddrLc) ?? null : null),
@@ -190,10 +194,10 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                     className="text-[10px] font-black tabular-nums leading-none mt-0.5"
                     style={{ color: slotColor, textShadow: `0 0 8px ${slotColor}50` }}
                   >
-                    {p.arenaXp.toLocaleString()}
+                    {inturankLeaderboardTotalXp(p).toLocaleString()}
                   </span>
                   <span className="text-[7px] font-mono font-bold uppercase tracking-wider text-slate-500 mt-1 leading-none">
-                    Arena XP
+                    Total XP
                   </span>
                 </motion.div>
               );
@@ -232,7 +236,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                   </p>
               ) : (
                 <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
-                  {myArenaXp > 0 ? 'Not on board yet' : 'Vote to enter'}
+                  {myArenaXp > 0 || myActivityXp > 0 ? 'Not on board yet' : 'Vote to enter'}
                 </p>
               )}
             </div>
@@ -246,7 +250,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                   {myArenaXp.toLocaleString()}
                 </p>
               </div>
-              <div title="Activity XP on this device only (markets, creates, sends — not the leaderboard total)">
+              <div title="Activity XP (IntuRank markets, creates, sends — counts toward leaderboard for you; others when mirrored)">
                 <p className="text-[8px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Activity</p>
                 <p className="text-sm font-black text-slate-400 leading-none mt-0.5">{myActivityXp.toLocaleString()}</p>
               </div>

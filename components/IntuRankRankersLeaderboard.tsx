@@ -8,6 +8,7 @@ import { Trophy, RefreshCw, Loader2, Sparkles, Zap, HelpCircle } from 'lucide-re
 import { useAccount } from 'wagmi';
 import {
   fetchArenaPlayerLeaderboard,
+  inturankLeaderboardTotalXp,
   type ArenaPlayerRow,
 } from '../services/arenaLeaderboard';
 import { ArenaXpToken } from './ArenaXpToken';
@@ -32,7 +33,7 @@ function avatarGlyph(label: string): string {
 const HINT_LISTS = 'Distinct portal lists represented in your finalized indexed claims (Arena + same Intuition predicates).';
 const HINT_ATOMS = 'Distinct subjects you have a latest on-chain stance for in those lists.';
 const HINT_XP =
-  'Total XP combines Arena XP from the indexer with activity XP from trades and creates in this browser on IntuRank.';
+  'Ranks by **total IntuRank XP**: Arena (indexed ranks) + Activity (markets, creates, sends). Others’ activity counts when mirrored from the API; yours includes this browser.';
 
 
 /** Column template: rank · player · lists · atoms · arena XP — match header row to body rows */
@@ -87,14 +88,14 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
     setLoading(true);
     setRefreshing(true);
     try {
-      setPlayers(await fetchArenaPlayerLeaderboard());
+      setPlayers(await fetchArenaPlayerLeaderboard(address ?? undefined));
     } catch {
       setPlayers([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [address]);
 
   const [myXpRec, setMyXpRec] = useState({
     xp: 0,
@@ -205,7 +206,7 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
                       backgroundClip: 'text',
                     }}
                   >
-                    Arena XP
+                    Rankers
                   </h3>
                 </div>
               </div>
@@ -329,7 +330,7 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
                         className="flex items-center justify-end gap-2 uppercase tracking-[0.14em] text-slate-300 font-bold text-[10px] sm:text-[11px] leading-snug text-right"
                         title={HINT_XP}
                       >
-                        Arena XP
+                        Total XP
                         <HelpCircle className="shrink-0 opacity-55 text-[#c4b5fd]" size={12} strokeWidth={2} aria-hidden />
                         <ArenaXpToken size={18} className="opacity-95 shrink-0 ml-0.5" aria-hidden />
                       </span>
@@ -423,8 +424,11 @@ export const IntuRankRankersLeaderboard: React.FC = () => {
                               </div>
 
                               <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 min-w-0 tabular-nums">
-                                <span className="text-lg sm:text-[1.35rem] font-black tabular-nums bg-clip-text text-transparent bg-gradient-to-br from-amber-200 via-amber-300 to-orange-400 leading-none">
-                                  {p.arenaXp.toLocaleString()}
+                                <span
+                                  className="text-lg sm:text-[1.35rem] font-black tabular-nums bg-clip-text text-transparent bg-gradient-to-br from-amber-200 via-amber-300 to-orange-400 leading-none"
+                                  title={`Arena ${p.arenaXp.toLocaleString()} · Activity ${p.activityXp.toLocaleString()}`}
+                                >
+                                  {inturankLeaderboardTotalXp(p).toLocaleString()}
                                 </span>
                                 <ArenaXpToken size={22} className="-mr-1" />
                               </div>

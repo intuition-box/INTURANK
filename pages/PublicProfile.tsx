@@ -73,7 +73,7 @@ const labelSm =
 const labelMuted =
   'font-sans text-[10px] font-medium text-slate-400 antialiased tracking-tight [text-rendering:geometricPrecision]';
 const statDisplay =
-  'font-display text-4xl font-black tracking-tight text-white antialiased [text-rendering:geometricPrecision] [text-shadow:none]';
+  'font-display text-2xl sm:text-3xl md:text-4xl font-black tracking-tight text-white antialiased [text-rendering:geometricPrecision] [text-shadow:none]';
 
 const POSITIONS_PER_PAGE = 10;
 /** Hard cap so a wedged RPC cannot leave "Loading positions…" forever. */
@@ -590,10 +590,10 @@ const PublicProfile: React.FC = () => {
       <div className="pointer-events-none absolute top-0 right-0 z-0 h-[min(70vw,560px)] w-[min(70vw,560px)] rounded-full bg-intuition-primary/6 blur-[120px]" />
       <div className="pointer-events-none absolute bottom-1/4 left-0 z-0 h-[min(55vw,480px)] w-[min(55vw,480px)] rounded-full bg-[#ff1e6d]/5 blur-[100px]" />
 
-      <div className="relative z-10 mx-auto max-w-7xl px-4 pb-20 pt-8 sm:px-5 lg:px-8">
-      <header className="mb-8 space-y-2 font-sans">
+      <div className="relative z-10 mx-auto max-w-7xl px-3 pb-28 pt-5 sm:px-5 sm:pb-20 sm:pt-8 lg:px-8">
+      <header className="mb-5 space-y-1.5 font-sans sm:mb-8 sm:space-y-2">
         <p className={PAGE_HERO_EYEBROW}>{isOwnProfile ? 'Your account' : 'Trader profile'}</p>
-        <h1 className={PAGE_HERO_TITLE}>Profile</h1>
+        <h1 className={`${PAGE_HERO_TITLE} max-md:text-2xl max-md:leading-tight`}>Profile</h1>
         <p className={`${PAGE_HERO_BODY} max-w-2xl`}>
           {isOwnProfile
             ? 'Balances, positions, and activity for your connected wallet.'
@@ -601,12 +601,12 @@ const PublicProfile: React.FC = () => {
         </p>
       </header>
 
-      <div className="relative z-20 mb-8 flex justify-end">
-          <div className="flex items-center gap-0 rounded-2xl border border-white/[0.1] bg-[#0a0c14]/80 py-1.5 pl-4 pr-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all focus-within:border-intuition-primary/45 focus-within:shadow-[0_0_0_1px_rgba(0,243,255,0.12),0_12px_40px_rgba(0,0,0,0.45)]">
+      <div className="relative z-20 mb-6 flex w-full justify-stretch sm:mb-8 sm:justify-end">
+          <div className="flex w-full min-w-0 items-center gap-0 rounded-2xl border border-white/[0.1] bg-[#0a0c14]/80 py-1.5 pl-3 pr-1 shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all focus-within:border-intuition-primary/45 focus-within:shadow-[0_0_0_1px_rgba(0,243,255,0.12),0_12px_40px_rgba(0,0,0,0.45)] sm:w-auto sm:pl-4 sm:pr-1.5">
               <input
                   type="text"
                   placeholder="Address, name.trust, or name.eth"
-                  className="w-60 bg-transparent font-sans text-sm text-slate-100 outline-none placeholder:text-slate-500 sm:w-72"
+                  className="min-w-0 flex-1 bg-transparent font-sans text-sm text-slate-100 outline-none placeholder:text-slate-500 sm:w-72 sm:flex-none"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -642,14 +642,14 @@ const PublicProfile: React.FC = () => {
         </div>
       )}
 
-      <div className="mb-10 sm:mb-12 rounded-[1.75rem] bg-gradient-to-r from-intuition-primary/45 via-cyan-200/15 to-intuition-primary/40 p-[1px] shadow-[0_0_50px_rgba(0,243,255,0.14)] sm:rounded-[2rem]">
-        <div className="relative flex flex-col items-center gap-8 overflow-hidden rounded-[1.7rem] bg-gradient-to-b from-[#0c101c]/[0.97] to-[#05070d]/[0.98] px-8 pt-8 pb-6 sm:px-10 sm:pt-9 sm:pb-7 md:flex-row md:items-start md:gap-8 lg:gap-10 sm:rounded-[1.95rem] md:pb-6">
+      <div className="mb-8 rounded-[1.5rem] bg-gradient-to-r from-intuition-primary/45 via-cyan-200/15 to-intuition-primary/40 p-[1px] shadow-[0_0_50px_rgba(0,243,255,0.14)] sm:mb-12 sm:rounded-[2rem]">
+        <div className="relative flex flex-col items-center gap-5 overflow-hidden rounded-[1.45rem] bg-gradient-to-b from-[#0c101c]/[0.97] to-[#05070d]/[0.98] px-5 pt-6 pb-5 sm:gap-8 sm:rounded-[1.95rem] sm:px-10 sm:pt-9 sm:pb-7 md:flex-row md:items-start md:gap-8 lg:gap-10 md:pb-6">
           <div className="pointer-events-none absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.04]" />
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.55]"
             style={{ background: MESH_ACCENT.background }}
           />
-          <div className="group relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-3xl border-2 border-white/10 bg-black/40 shadow-[0_0_40px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-inset ring-white/5">
+          <div className="group relative flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/10 bg-black/40 shadow-[0_0_40px_rgba(0,243,255,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-inset ring-white/5 sm:h-28 sm:w-28 sm:rounded-3xl">
             <div className="absolute inset-0 rounded-3xl bg-intuition-primary/5 transition-colors group-hover:bg-intuition-primary/10" />
             <img
               src={DEFAULT_PROFILE_AVATAR_URL}
@@ -657,10 +657,10 @@ const PublicProfile: React.FC = () => {
               className="relative z-10 h-full w-full object-cover"
             />
           </div>
-          <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-6 md:flex-row md:items-start md:gap-0 md:pl-1">
+          <div className="relative z-10 flex min-w-0 flex-1 flex-col gap-4 md:flex-row md:items-start md:gap-6 md:gap-0 md:pl-1">
             <div className="min-w-0 flex-1 text-center md:pt-1 md:text-left md:pr-8 lg:pr-10">
-              <p className="mb-2 font-sans text-sm text-slate-500">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
-              <h2 className="mb-1 break-words font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              <p className="mb-1.5 font-sans text-xs text-slate-500 sm:mb-2 sm:text-sm">{isOwnProfile ? 'Your wallet' : 'Address'}</p>
+              <h2 className="mb-1 break-words font-display text-xl font-bold tracking-tight text-white sm:text-2xl md:text-3xl">
                 {address ? displayHeadline || maskedWalletDisplay : 'Unknown address'}
               </h2>
               {profileAlias?.isNamed && address && maskedWalletDisplay && (
@@ -783,7 +783,7 @@ const PublicProfile: React.FC = () => {
                   arenaXp={arenaXpTotal}
                   activityXp={protocolXpTotal}
                   size="lg"
-                  className="w-full shadow-[0_0_32px_rgba(0,243,255,0.08)]"
+                  className="w-full shadow-[0_0_32px_rgba(0,243,255,0.08)] max-md:scale-[0.92] max-md:origin-top"
                 />
               </div>
             ) : null}
@@ -791,12 +791,12 @@ const PublicProfile: React.FC = () => {
         </div>
       </div>
 
-      <div className="mb-10 grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:mb-10 sm:gap-4 lg:grid-cols-3 lg:gap-5">
           {/* {address && (
             <BadgesSection address={address} />
           )} */}
           <div
-            className={`${GLASS_SHEET} group motion-hover-lift p-7 sm:p-8 hover:border-intuition-primary/35 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_40px_rgba(0,243,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+            className={`${GLASS_SHEET} group motion-hover-lift min-w-0 p-4 sm:p-6 lg:p-8 hover:border-intuition-primary/35 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_40px_rgba(0,243,255,0.08),inset_0_1px_0_rgba(255,255,255,0.08)]`}
           >
               <div
                 className="pointer-events-none absolute inset-0 opacity-40"
@@ -808,13 +808,13 @@ const PublicProfile: React.FC = () => {
               <div className="pointer-events-none absolute right-0 top-0 p-4 opacity-[0.07] transition-transform group-hover:scale-110">
                 <Shield size={80} />
               </div>
-              <div className="relative mb-1 flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-intuition-primary/25 bg-intuition-primary/10">
+              <div className="relative mb-1 flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-intuition-primary/25 bg-intuition-primary/10 sm:h-8 sm:w-8">
                     <Activity size={14} className="text-intuition-primary" />
                   </span>
-                  <div>
+                  <div className="min-w-0">
                     <p className={labelSm}>Total in vaults</p>
-                    <p className={`${labelMuted} mt-0.5`}>TRUST value of your open positions</p>
+                    <p className={`${labelMuted} mt-0.5 line-clamp-2`}>TRUST value of your open positions</p>
                   </div>
               </div>
               <div className={`relative mt-3 inline-flex items-baseline gap-2 ${statDisplay} tabular-nums`}>
@@ -823,7 +823,7 @@ const PublicProfile: React.FC = () => {
               </div>
           </div>
           <div
-            className={`${GLASS_SHEET} group motion-hover-lift p-7 sm:p-8 hover:border-intuition-secondary/40 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_36px_rgba(255,0,85,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+            className={`${GLASS_SHEET} group motion-hover-lift min-w-0 p-4 sm:p-6 lg:p-8 hover:border-intuition-secondary/40 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),0_0_36px_rgba(255,0,85,0.1),inset_0_1px_0_rgba(255,255,255,0.08)]`}
           >
               <div
                 className="pointer-events-none absolute inset-0 opacity-35"
@@ -835,13 +835,13 @@ const PublicProfile: React.FC = () => {
               <div className="pointer-events-none absolute right-0 top-0 p-4 opacity-[0.07] transition-transform group-hover:scale-110">
                 <Layers size={80} />
               </div>
-              <div className="relative mb-1 flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-intuition-secondary/30 bg-intuition-secondary/10">
+              <div className="relative mb-1 flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-intuition-secondary/30 bg-intuition-secondary/10 sm:h-8 sm:w-8">
                     <Database size={14} className="text-intuition-secondary" />
                   </span>
-                  <div>
+                  <div className="min-w-0">
                     <p className={labelSm}>On-chain transactions</p>
-                    <p className={`${labelMuted} mt-0.5`}>Recorded on the Intuition index</p>
+                    <p className={`${labelMuted} mt-0.5 line-clamp-2`}>Recorded on the Intuition index</p>
                   </div>
               </div>
               <div className={`relative mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 ${statDisplay}`}>
@@ -850,15 +850,15 @@ const PublicProfile: React.FC = () => {
               </div>
           </div>
           <div
-            className={`${GLASS_SHEET} group motion-hover-lift p-7 sm:p-8 md:col-span-2 lg:col-span-1 hover:border-intuition-primary/30 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]`}
+            className={`${GLASS_SHEET} group motion-hover-lift col-span-2 min-w-0 p-4 sm:p-6 lg:col-span-1 lg:p-8 hover:border-intuition-primary/30 hover:shadow-[0_24px_60px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]`}
           >
-              <div className="relative mb-1 flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-intuition-primary/25 bg-intuition-primary/10">
+              <div className="relative mb-1 flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-intuition-primary/25 bg-intuition-primary/10 sm:h-8 sm:w-8">
                     <PulseIcon size={14} className="animate-pulse text-intuition-primary" />
                   </span>
-                  <div>
+                  <div className="min-w-0">
                     <p className={labelSm}>Trust vs. distrust</p>
-                    <p className={`${labelMuted} mt-0.5`}>From your recent activity</p>
+                    <p className={`${labelMuted} mt-0.5 line-clamp-2`}>From your recent activity</p>
                   </div>
               </div>
               {/*
@@ -897,15 +897,15 @@ const PublicProfile: React.FC = () => {
             </span>
             Account settings
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
-            <div className={`${GLASS_SHEET} p-6 hover:border-white/15`}>
-              <div className="mb-3 flex items-center gap-2">
-                <Wallet size={14} className="text-intuition-primary" />
-                <span className="font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">
+          <div className="grid grid-cols-2 gap-3 md:gap-6">
+            <div className={`${GLASS_SHEET} min-w-0 p-4 hover:border-white/15 sm:p-6`}>
+              <div className="mb-2 flex min-w-0 items-center gap-2 sm:mb-3">
+                <Wallet size={14} className="shrink-0 text-intuition-primary" />
+                <span className="min-w-0 truncate font-sans text-[10px] font-semibold text-slate-300 sm:text-xs [text-rendering:geometricPrecision]">
                   Wallet · TNS / ENS / address
                 </span>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0 flex-1 space-y-1">
                   {profileAlias?.isNamed ? (
                     <>
@@ -923,16 +923,16 @@ const PublicProfile: React.FC = () => {
                     toast.success('Address copied');
                   }}
                   onMouseEnter={playHover}
-                  className="flex shrink-0 items-center gap-2 rounded-xl border-2 border-white/10 px-4 py-2 font-mono text-[10px] font-black tracking-widest text-slate-400 transition-colors hover:border-intuition-primary hover:text-intuition-primary"
+                  className="flex w-full shrink-0 items-center justify-center gap-2 rounded-xl border-2 border-white/10 px-3 py-2 font-mono text-[10px] font-black tracking-widest text-slate-400 transition-colors hover:border-intuition-primary hover:text-intuition-primary sm:w-auto sm:px-4"
                 >
                   <Copy size={12} /> Copy
                 </button>
               </div>
             </div>
-            <div className={`${GLASS_SHEET} p-6 hover:border-white/15`}>
-              <div className="flex items-center gap-2 mb-3">
-                <Mail size={14} className="text-intuition-primary" />
-                <span className="font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">Email alerts</span>
+            <div className={`${GLASS_SHEET} min-w-0 p-4 hover:border-white/15 sm:p-6`}>
+              <div className="mb-2 flex items-center gap-2 sm:mb-3">
+                <Mail size={14} className="shrink-0 text-intuition-primary" />
+                <span className="min-w-0 truncate font-sans text-xs font-semibold text-slate-300 [text-rendering:geometricPrecision]">Email alerts</span>
               </div>
               {subscription?.email ? (
                 <div className="space-y-3">
@@ -977,9 +977,9 @@ const PublicProfile: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <p className="text-slate-500 text-xs font-mono">No email linked</p>
-                    <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="flex items-center gap-2 rounded-xl border border-intuition-primary bg-intuition-primary px-4 py-2.5 font-mono text-[10px] font-black uppercase text-black shadow-[0_0_24px_rgba(0,243,255,0.25)] transition-colors hover:bg-white"><Mail size={12} /> Add email</button>
+                <div className="space-y-2 sm:space-y-3">
+                  <p className="text-[10px] text-slate-500 font-mono sm:text-xs">No email linked</p>
+                    <button onClick={() => { playClick(); openEmailNotify(); }} onMouseEnter={playHover} className="flex w-full items-center justify-center gap-2 rounded-xl border border-intuition-primary bg-intuition-primary px-3 py-2 font-mono text-[9px] font-black uppercase text-black shadow-[0_0_24px_rgba(0,243,255,0.25)] transition-colors hover:bg-white sm:w-auto sm:px-4 sm:py-2.5 sm:text-[10px]"><Mail size={12} /> Add email</button>
                 </div>
               )}
             </div>
@@ -992,10 +992,10 @@ const PublicProfile: React.FC = () => {
       )}
       
       {/*
-        5-column row: mix 40% · activity 60% — the old 33/66 mix card was too narrow; legend text collided.
+        5-column row at lg: mix 40% · activity 60%. From sm: two columns so charts sit side-by-side on phones/tablets.
       */}
-      <div className="mb-12 grid grid-cols-1 gap-5 lg:grid-cols-5 lg:gap-6">
-          <div className={`${GLASS_SHEET} group flex min-h-[360px] flex-col p-6 sm:p-8 lg:col-span-2 motion-hover-lift`}>
+      <div className="mb-12 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-5 lg:gap-6">
+          <div className={`${GLASS_SHEET} group flex min-h-[300px] flex-col p-4 sm:min-h-[320px] sm:p-6 lg:col-span-2 lg:min-h-[360px] lg:p-8 motion-hover-lift`}>
               <div
                 className="pointer-events-none absolute bottom-0 left-0 z-0 p-5 opacity-[0.04] transition-transform group-hover:scale-105"
                 aria-hidden
@@ -1012,13 +1012,9 @@ const PublicProfile: React.FC = () => {
                 </span>
               </h3>
               {exposureData.length > 0 ? (
-                  <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-5 xl:grid xl:min-h-0 xl:grid-cols-[minmax(0,200px)_minmax(0,1fr)] xl:items-center xl:gap-6">
-                      {/*
-                        Recharts: square box only. On xl+ we can sit chart + legend side-by-side with room;
-                        below xl, stack so legend is full width (avoids crammed / overlapping text).
-                      */}
-                      <div className="mx-auto aspect-square w-full max-w-[200px] shrink-0 xl:mx-0 xl:max-w-[min(100%,200px)]">
-                          <div className="h-full min-h-[160px] w-full">
+                  <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-row items-start gap-3 sm:gap-4 lg:gap-6">
+                      <div className="aspect-square w-[min(38vw,132px)] shrink-0 sm:w-[min(40vw,150px)] md:w-[min(42vw,168px)] lg:w-[200px]">
+                          <div className="h-full min-h-[110px] w-full min-w-0">
                               <ResponsiveContainer width="100%" height="100%">
                                   <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                                       <Pie
@@ -1056,7 +1052,7 @@ const PublicProfile: React.FC = () => {
                               </ResponsiveContainer>
                           </div>
                       </div>
-                      <ul className="font-sans min-h-0 w-full list-none space-y-2.5 [text-rendering:optimizeLegibility] xl:max-h-[280px] xl:overflow-y-auto xl:pr-1 custom-scrollbar">
+                      <ul className="font-sans min-h-0 min-w-0 flex-1 list-none space-y-2 [text-rendering:optimizeLegibility] sm:space-y-2.5 max-h-[min(52vh,300px)] overflow-y-auto pr-0.5 custom-scrollbar sm:max-h-[320px] lg:pr-1">
                           {exposureData.map((entry, index) => (
                               <li
                                   key={`${entry.name}-${index}`}
@@ -1067,11 +1063,11 @@ const PublicProfile: React.FC = () => {
                                           className="mt-0.5 h-2.5 w-2.5 shrink-0 self-start rounded-sm shadow-sm ring-1 ring-white/20 sm:mt-0"
                                           style={{ backgroundColor: COLORS[index % COLORS.length] }}
                                       />
-                                      <span className="min-w-0 break-words text-left text-xs font-medium leading-snug text-slate-200">
+                                      <span className="min-w-0 break-words text-left text-[11px] font-medium leading-snug text-slate-200 sm:text-xs">
                                           {entry.name}
                                       </span>
                                   </div>
-                                  <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-white">
+                                  <span className="shrink-0 text-right text-xs font-semibold tabular-nums text-white sm:text-sm">
                                       {entry.value.toFixed(0)}%
                                   </span>
                               </li>
@@ -1082,7 +1078,7 @@ const PublicProfile: React.FC = () => {
                   <div className="font-sans flex h-full min-h-[200px] flex-1 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 text-center text-sm text-slate-500 [text-rendering:geometricPrecision]">No category breakdown yet — open a position to see a split.</div>
               )}
           </div>
-          <div className={`${GLASS_SHEET} group relative flex h-[360px] flex-col overflow-hidden p-8 sm:p-10 lg:col-span-3 motion-hover-lift`}>
+          <div className={`${GLASS_SHEET} group relative flex h-[300px] min-h-[260px] flex-col overflow-hidden p-4 sm:h-[340px] sm:min-h-[300px] sm:p-6 lg:col-span-3 lg:h-[360px] lg:p-10 motion-hover-lift`}>
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-intuition-primary/8 via-transparent to-[#ff1e6d]/5 opacity-60" />
               <h3 className="relative z-10 mb-4 flex items-center gap-3 font-sans text-sm font-semibold text-slate-100 [text-rendering:geometricPrecision]">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-intuition-primary/20 bg-intuition-primary/10">

@@ -2,9 +2,10 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronsUpDown, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Trophy, Loader2, Flame, Zap, User, ArrowLeftRight, ArrowDownUp } from 'lucide-react';
+import { ArrowRight, Shield, Activity, ChevronRight, ChevronUp, ChevronDown, ChevronLeft, Binary, Box, HardDrive, Terminal, Cpu, Network, Mail, Sparkles, Heart, ShoppingCart, Loader2, Flame, Zap, User, ArrowDownUp, Layers } from 'lucide-react';
 import { useEmailNotify } from '../contexts/EmailNotifyContext';
 import { formatEther, getAddress, parseEther } from 'viem';
 import { playHover, playClick } from '../services/audio';
@@ -27,6 +28,7 @@ import {
   getWatchlist,
 } from '../services/web3';
 import Logo from '../components/Logo';
+import { HomeWelcomeStrip } from '../components/HomeWelcomeStrip';
 import { Season2LeaderboardPanel } from '../components/Season2LeaderboardPanel';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
@@ -769,7 +771,7 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, header
             className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
             style={{ borderColor: `${sectionColor}40`, borderTopColor: sectionColor }}
           />
-          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider mt-3">Loading atoms…</p>
+          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.2em] mt-3">Syncing atoms…</p>
         </div>
       </MuiBox>
     );
@@ -888,21 +890,73 @@ const AtomSectionCarousel: React.FC<AtomSectionCarouselProps> = ({ title, header
             )}
           </div>
         </div>
+
+        {/* Four-way swipe cues — edges stay subtle; center remains readable */}
+        <div
+          className="pointer-events-none absolute inset-0 z-[15] rounded-[1rem] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+          aria-hidden
+        >
+          <div className="absolute left-0 top-1/2 flex w-[3rem] -translate-y-1/2 flex-col items-center gap-0.5 pl-0.5 sm:w-[3.25rem] sm:pl-1">
+            <ChevronLeft className="h-4 w-4 text-[#ff1e6d]/50 drop-shadow-[0_0_8px_rgba(255,30,109,0.3)] motion-safe:animate-[pulse_2.8s_ease-in-out_infinite] sm:h-[18px] sm:w-[18px]" strokeWidth={2.6} />
+            <span className="max-w-[3rem] text-center text-[7px] font-mono font-black uppercase leading-[1.1] tracking-[0.08em] text-[#ff1e6d]/65 sm:text-[8px] sm:tracking-[0.1em]">
+              Watchlist
+            </span>
+          </div>
+          <div className="absolute right-0 top-1/2 flex w-[3rem] -translate-y-1/2 flex-col items-center gap-0.5 pr-0.5 sm:w-[3.25rem] sm:pr-1">
+            <ChevronRight className="h-4 w-4 text-[#00f3ff]/50 drop-shadow-[0_0_8px_rgba(0,243,255,0.3)] motion-safe:animate-[pulse_2.8s_ease-in-out_infinite] sm:h-[18px] sm:w-[18px]" strokeWidth={2.6} style={{ animationDelay: '0.35s' }} />
+            <span className="max-w-[3rem] text-center text-[7px] font-mono font-black uppercase leading-[1.1] tracking-[0.1em] text-[#22d3ee]/70 sm:text-[8px] sm:tracking-[0.12em]">
+              Trust
+            </span>
+          </div>
+          {showPeek ? (
+            <>
+              <div className="absolute left-1/2 top-1.5 flex -translate-x-1/2 flex-col items-center gap-0.5">
+                <ChevronUp
+                  className="h-4 w-4 text-slate-400/50 drop-shadow-[0_0_6px_rgba(148,163,184,0.25)] motion-safe:animate-[pulse_2.8s_ease-in-out_infinite] sm:h-[18px] sm:w-[18px]"
+                  strokeWidth={2.6}
+                  style={{ animationDelay: '0.15s' }}
+                />
+                <span className="text-[7px] font-mono font-black uppercase tracking-[0.12em] text-slate-500/95 sm:text-[8px] sm:tracking-[0.14em]">
+                  Next card
+                </span>
+              </div>
+              <div className="absolute bottom-1.5 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5">
+                <span className="text-[7px] font-mono font-black uppercase tracking-[0.12em] text-slate-500/95 sm:text-[8px] sm:tracking-[0.14em]">
+                  Prev card
+                </span>
+                <ChevronDown
+                  className="h-4 w-4 text-slate-400/50 drop-shadow-[0_0_6px_rgba(148,163,184,0.25)] motion-safe:animate-[pulse_2.8s_ease-in-out_infinite] sm:h-[18px] sm:w-[18px]"
+                  strokeWidth={2.6}
+                  style={{ animationDelay: '0.5s' }}
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div
-        className="mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[8px] font-bold uppercase tracking-[0.12em] text-slate-500"
+        className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 text-center text-[8px] font-mono font-bold uppercase tracking-[0.12em] text-slate-500 sm:gap-x-3 sm:tracking-[0.14em]"
         aria-hidden
       >
-        <span className="inline-flex items-center gap-1 text-cyan-400/85">
-          <ArrowLeftRight size={12} strokeWidth={2.4} />
-          Buy / list
+        <span className="inline-flex items-center gap-1 text-[#ff1e6d]/85">
+          <ChevronLeft size={11} strokeWidth={2.6} className="opacity-80" aria-hidden />
+          Watchlist
         </span>
         <span className="text-slate-700">·</span>
-        <span className="inline-flex items-center gap-1 text-fuchsia-400/85">
-          <ArrowDownUp size={12} strokeWidth={2.4} />
-          Next
+        <span className="inline-flex items-center gap-1 text-[#00f3ff]/90">
+          Trust
+          <ChevronRight size={11} strokeWidth={2.6} className="opacity-80" aria-hidden />
         </span>
+        {showPeek ? (
+          <>
+            <span className="text-slate-700">·</span>
+            <span className="inline-flex items-center gap-1 text-slate-400/95">
+              <ArrowDownUp size={11} strokeWidth={2.4} aria-hidden />
+              Stack
+            </span>
+          </>
+        ) : null}
       </div>
 
       <p
@@ -1267,6 +1321,7 @@ const Home: React.FC = () => {
   const [acquisitionSuccess, setAcquisitionSuccess] = useState<{ agentLabel: string } | null>(null);
   const { openConnectModal } = useConnectModal();
   const { address: walletAddress } = useAccount();
+  const reduceMotion = useReducedMotion();
 
   /** `discover` = three card stacks; `watchlist` = full list of saved term IDs. */
   const [arenaMode, setArenaMode] = useState<'discover' | 'watchlist'>('discover');
@@ -1430,98 +1485,138 @@ const Home: React.FC = () => {
         document.body
       )}
 
+      <HomeWelcomeStrip />
+
       {/* 1. TRENDING ATOMS — gamified arena */}
-      <section id="trending-atoms" className="relative overflow-x-clip overflow-y-visible min-w-0 py-12 sm:py-20 border-b border-white/5 scroll-mt-6" style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}>
+      <motion.section
+        id="trending-atoms"
+        className="relative overflow-x-clip overflow-y-visible min-w-0 py-10 sm:py-14 border-b border-white/5 scroll-mt-6"
+        style={{ paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' }}
+        initial={
+          walletAddress || reduceMotion
+            ? false
+            : { opacity: 0, y: 28, clipPath: 'inset(6% 0% 0% 0%)' }
+        }
+        animate={
+          walletAddress || reduceMotion
+            ? undefined
+            : { opacity: 1, y: 0, clipPath: 'inset(0% 0% 0% 0%)' }
+        }
+        transition={
+          walletAddress || reduceMotion
+            ? undefined
+            : { duration: 0.7, delay: 0.85, ease: [0.22, 1, 0.36, 1] }
+        }
+      >
         {/* Arena background: grid + gradients */}
         <div className="absolute inset-0 bg-[#030508]" />
-        <div className="absolute inset-0 opacity-[0.4]" style={{ backgroundImage: 'linear-gradient(rgba(0,243,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,243,255,0.03) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_140%_100%_at_50%_-30%,rgba(0,243,255,0.12),_transparent_55%)] pointer-events-none animate-arena-pulse" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_80%_at_80%_60%,rgba(255,30,109,0.08),_transparent_60%)] pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_50%_at_20%_80%,rgba(250,204,21,0.05),_transparent_60%)] pointer-events-none" />
+        <div className="absolute inset-0 opacity-[0.28]" style={{ backgroundImage: 'linear-gradient(rgba(0,243,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,243,255,0.025) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_70%_at_0%_-10%,rgba(0,243,255,0.06),_transparent_52%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_55%_70%_at_100%_55%,rgba(255,30,109,0.05),_transparent_58%)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_45%_45%_at_10%_85%,rgba(250,204,21,0.03),_transparent_55%)] pointer-events-none" />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.5)_100%)] pointer-events-none" />
         <div className="relative mx-auto z-10 min-w-0 w-full" style={{ maxWidth: 1280 }}>
           <Reveal delay={80}>
-            <div className="mb-8 text-center sm:mb-10">
-              <h2 className="mb-4 font-display text-4xl font-black uppercase leading-[0.92] tracking-tighter sm:text-6xl md:text-7xl lg:text-8xl">
-                <span className="block text-glow-white text-white drop-shadow-[0_0_16px_rgba(255,255,255,0.2)]">TRENDING</span>
-                <span className="mt-1 block text-glow-red text-intuition-secondary drop-shadow-[0_0_20px_rgba(255,30,109,0.25)]">ATOMS</span>
-              </h2>
-              <p className="mx-auto mb-4 flex flex-wrap items-center justify-center gap-2 text-center font-display text-xs tracking-wide text-slate-500 sm:text-sm">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold text-cyan-200/95 shadow-[0_0_12px_rgba(0,243,255,0.15)]">
-                  <ArrowLeftRight size={14} className="text-cyan-400" aria-hidden />
-                  Drag sideways
-                </span>
-                <span className="text-slate-600">·</span>
-                <span className="inline-flex items-center gap-1.5 text-slate-400">
-                  <ArrowDownUp size={14} className="text-fuchsia-400/90" aria-hidden />
-                  Drag up/down for next card
-                </span>
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3" role="tablist" aria-label="Trending arena view">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={arenaMode === 'discover'}
-                  onClick={() => {
-                    playClick();
-                    setArenaMode('discover');
-                  }}
-                  onMouseEnter={playHover}
-                  className={`group flex items-center gap-2 rounded-full border px-4 py-2.5 font-display shadow-[0_0_20px_rgba(0,243,255,0.2)] backdrop-blur-md transition-all duration-300 sm:px-5 ${
-                    arenaMode === 'discover'
-                      ? 'border-[#00f3ff] bg-[#00f3ff]/12 shadow-[0_0_28px_rgba(0,243,255,0.4)]'
-                      : 'border-[#00f3ff]/50 bg-[#05080c]/80 hover:border-[#00f3ff] hover:shadow-[0_0_28px_rgba(0,243,255,0.35)]'
-                  }`}
+            <div className="mb-6 flex flex-col gap-7 text-left sm:mb-8 sm:gap-8 lg:mb-10 lg:flex-row lg:items-start lg:justify-between lg:gap-10 xl:gap-12">
+              <header className="min-w-0 flex-1 space-y-4 sm:space-y-5 lg:max-w-[52rem]">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.32em] text-slate-400 sm:text-[11px] sm:tracking-[0.34em]">
+                  IntuRank
+                  <span className="mx-2 font-normal text-slate-600" aria-hidden>
+                    ·
+                  </span>
+                  Atom arena
+                </p>
+                <h2 className="font-display text-3xl font-black uppercase leading-[0.98] tracking-tight text-white sm:text-4xl md:text-[2.75rem] md:leading-[1.02]">
+                  <span className="block text-white">Trending</span>
+                  <span className="mt-1 block bg-gradient-to-r from-[#ff1e6d] via-[#e879f9] to-[#22d3ee] bg-clip-text text-transparent sm:mt-1.5">
+                    Atoms
+                  </span>
+                </h2>
+                <div
+                  className="flex flex-wrap items-center gap-3"
+                  role="toolbar"
+                  aria-label="Open your saved watchlist or return to atom stacks"
                 >
-                  <ArrowRight size={17} className="text-[#00f3ff]" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#00f3ff] sm:text-[11px]">Buy</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={arenaMode === 'watchlist'}
-                  onClick={() => {
-                    playClick();
-                    if (!walletAddress) {
-                      openConnectModal?.();
-                      return;
-                    }
-                    setArenaMode('watchlist');
-                  }}
-                  onMouseEnter={playHover}
-                  className={`group flex items-center gap-2 rounded-full border px-4 py-2.5 font-display shadow-[0_0_20px_rgba(255,30,109,0.18)] backdrop-blur-md transition-all duration-300 sm:px-5 ${
-                    arenaMode === 'watchlist'
-                      ? 'border-[#ff1e6d] bg-[#ff1e6d]/12 shadow-[0_0_28px_rgba(255,30,109,0.35)]'
-                      : 'border-[#ff1e6d]/50 bg-[#05080c]/80 hover:border-[#ff1e6d] hover:shadow-[0_0_28px_rgba(255,30,109,0.32)]'
-                  }`}
-                >
-                  <Heart size={17} className="text-[#ff1e6d]" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#ff1e6d] sm:text-[11px]">Watchlist</span>
-                  {watchlistCount > 0 && (
-                    <span className="ml-0.5 min-w-[1.25rem] rounded-full border border-rose-400/40 bg-rose-500/25 px-1.5 py-0.5 text-[9px] font-black tabular-nums text-rose-100">
-                      {watchlistCount}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClick();
+                      if (arenaMode === 'watchlist') {
+                        setArenaMode('discover');
+                        return;
+                      }
+                      if (!walletAddress) {
+                        openConnectModal?.();
+                        return;
+                      }
+                      setArenaMode('watchlist');
+                    }}
+                    onMouseEnter={playHover}
+                    className={`group inline-flex h-11 shrink-0 items-center gap-2.5 rounded-full border px-5 text-[11px] font-black uppercase tracking-[0.18em] backdrop-blur-sm transition-colors duration-200 sm:h-12 sm:gap-3 sm:px-6 sm:text-xs sm:tracking-[0.2em] ${
+                      arenaMode === 'watchlist'
+                        ? 'border-white/20 bg-slate-950/90 text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-white/35 hover:bg-slate-900/95'
+                        : 'border-[#ff1e6d]/70 bg-[#ff1e6d]/10 text-white shadow-[0_0_0_1px_rgba(255,30,109,0.15),0_8px_24px_rgba(255,30,109,0.12)] hover:border-[#ff3d7a] hover:bg-[#ff1e6d]/16'
+                    }`}
+                  >
+                    {arenaMode === 'watchlist' ? (
+                      <>
+                        <Layers size={18} className="shrink-0 text-cyan-300/95 sm:h-5 sm:w-5" strokeWidth={2.25} />
+                        <span className="text-cyan-100">Atom stacks</span>
+                      </>
+                    ) : (
+                      <>
+                        <Heart size={18} className="shrink-0 fill-[#ff1e6d]/45 text-[#ff1e6d] sm:h-5 sm:w-5" strokeWidth={2.25} />
+                        <span>Watchlist</span>
+                        {watchlistCount > 0 ? (
+                          <span className="ml-0.5 inline-flex min-h-[1.25rem] min-w-[1.25rem] items-center justify-center rounded-full border border-rose-400/40 bg-rose-500/30 px-1.5 text-[10px] font-black tabular-nums text-white">
+                            {watchlistCount}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </header>
+
+              <aside
+                className="relative w-full shrink-0 overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-b from-[#080c14]/95 to-[#05080c]/90 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-md sm:p-5 lg:max-w-[min(100%,21rem)] xl:max-w-[22.5rem]"
+                aria-label="How to swipe atom cards"
+              >
+                <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[#00f3ff]/[0.07] blur-2xl" aria-hidden />
+                <div className="pointer-events-none absolute -bottom-8 -left-6 h-24 w-24 rounded-full bg-[#ff1e6d]/[0.06] blur-2xl" aria-hidden />
+                <p className="relative mb-3 font-mono text-[9px] font-black uppercase tracking-[0.26em] text-slate-500 sm:mb-3.5 sm:text-[10px] sm:tracking-[0.28em]">
+                  Swipe · take action
+                </p>
+                <ul className="relative space-y-3 text-[11px] leading-snug text-slate-400 sm:space-y-3.5 sm:text-xs sm:leading-relaxed">
+                  <li className="flex gap-3 rounded-xl border border-[#00f3ff]/15 bg-[#00f3ff]/[0.04] px-3 py-2.5">
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#00f3ff]/85" strokeWidth={2.5} aria-hidden />
+                    <span>
+                      <span className="font-display font-black uppercase tracking-wide text-cyan-200/95">Trust — swipe right</span>
+                      <span className="mt-0.5 block font-sans font-normal normal-case tracking-normal text-slate-400">
+                        Opens buy flow so you can add TRUST to the atom.
+                      </span>
                     </span>
-                  )}
-                </button>
-                <Link
-                  to="/markets"
-                  onClick={playClick}
-                  onMouseEnter={playHover}
-                  className="group flex items-center gap-2 rounded-full border border-[#facc15]/45 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(250,204,21,0.15)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(250,204,21,0.28)] sm:px-5"
-                >
-                  <ChevronsUpDown size={17} className="text-[#facc15]" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#facc15] font-display sm:text-[11px]">Browse</span>
-                </Link>
-                <Link
-                  to="/climb"
-                  onClick={playClick}
-                  onMouseEnter={playHover}
-                  className="group flex items-center gap-2 rounded-full border border-amber-400/50 bg-[#05080c]/80 px-4 py-2.5 shadow-[0_0_18px_rgba(251,191,36,0.18)] backdrop-blur-md transition-all duration-300 hover:shadow-[0_0_26px_rgba(251,191,36,0.3)] sm:px-5"
-                >
-                  <Trophy size={17} className="text-amber-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 font-display sm:text-[11px]">Climb</span>
-                </Link>
-              </div>
+                  </li>
+                  <li className="flex gap-3 rounded-xl border border-[#ff1e6d]/15 bg-[#ff1e6d]/[0.04] px-3 py-2.5">
+                    <ChevronLeft className="mt-0.5 h-4 w-4 shrink-0 text-[#ff1e6d]/85" strokeWidth={2.5} aria-hidden />
+                    <span>
+                      <span className="font-display font-black uppercase tracking-wide text-pink-200/95">Watchlist — swipe left</span>
+                      <span className="mt-0.5 block font-sans font-normal normal-case tracking-normal text-slate-400">
+                        Pin or remove the card (connect wallet to save).
+                      </span>
+                    </span>
+                  </li>
+                  <li className="flex gap-3 rounded-xl border border-slate-600/25 bg-white/[0.03] px-3 py-2.5">
+                    <ArrowDownUp className="mt-0.5 h-4 w-4 shrink-0 text-[#facc15]/75" strokeWidth={2.4} aria-hidden />
+                    <span>
+                      <span className="font-display font-black uppercase tracking-wide text-slate-200/90">Stack — swipe up / down</span>
+                      <span className="mt-0.5 block font-sans font-normal normal-case tracking-normal text-slate-400">
+                        Move to the next or previous atom in this column.
+                      </span>
+                    </span>
+                  </li>
+                </ul>
+              </aside>
             </div>
           </Reveal>
 
@@ -1539,11 +1634,11 @@ const Home: React.FC = () => {
               >
                 <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
                 <AtomSectionCarousel
-                  title="Top by ROI (daily)"
+                  title="TOP BY ROI · 24H"
                   headerAddon={(
                     <div className="flex items-center gap-1.5 rounded-full border border-[#ff1e6d]/50 bg-[#ff1e6d]/15 px-2.5 py-1 shadow-[0_0_12px_rgba(255,30,109,0.2)] backdrop-blur-sm">
                       <Flame size={12} className="text-[#ff1e6d] sm:w-[13px] sm:h-[13px]" />
-                      <span className="text-[8px] font-black uppercase tracking-wider text-[#ff1e6d] font-display sm:text-[9px]">Hot</span>
+                      <span className="text-[8px] font-black uppercase tracking-wider text-[#ff1e6d] font-display sm:text-[9px]">HOT</span>
                     </div>
                   )}
                   subtitle=""
@@ -1573,11 +1668,11 @@ const Home: React.FC = () => {
               >
                 <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
                 <AtomSectionCarousel
-                  title="Top by market cap"
+                  title="TOP BY MARKET CAP"
                   headerAddon={(
                     <div className="flex items-center gap-1.5 rounded-full border border-[#00f3ff]/50 bg-[#00f3ff]/12 px-2.5 py-1 shadow-[0_0_12px_rgba(0,243,255,0.18)] backdrop-blur-sm" style={{ animationDelay: '0.25s' }}>
                       <Zap size={12} className="text-[#00f3ff] sm:w-[13px] sm:h-[13px]" />
-                      <span className="text-[8px] font-black uppercase tracking-wider text-[#00f3ff] font-display sm:text-[9px]">Cap</span>
+                      <span className="text-[8px] font-black uppercase tracking-wider text-[#00f3ff] font-display sm:text-[9px]">CAP</span>
                     </div>
                   )}
                   subtitle=""
@@ -1606,11 +1701,11 @@ const Home: React.FC = () => {
               >
                 <div className="pointer-events-none absolute inset-0 animate-slot-shimmer" />
                 <AtomSectionCarousel
-                  title="Newly created"
+                  title="NEWLY MINTED"
                   headerAddon={(
                     <div className="flex items-center gap-1.5 rounded-full border border-[#facc15]/50 bg-[#facc15]/12 px-2.5 py-1 shadow-[0_0_12px_rgba(250,204,21,0.16)] backdrop-blur-sm" style={{ animationDelay: '0.45s' }}>
                       <Sparkles size={12} className="text-[#facc15] sm:w-[13px] sm:h-[13px]" />
-                      <span className="text-[8px] font-black uppercase tracking-wider text-[#facc15] font-display sm:text-[9px]">New</span>
+                      <span className="text-[8px] font-black uppercase tracking-wider text-[#facc15] font-display sm:text-[9px]">NEW</span>
                     </div>
                   )}
                   subtitle=""
@@ -1633,12 +1728,12 @@ const Home: React.FC = () => {
             <div className="mt-2 min-w-0 rounded-[1.65rem] border border-[#ff1e6d]/35 bg-gradient-to-b from-[#0a0610]/95 to-[#05080c]/95 p-4 shadow-[0_0_40px_rgba(255,30,109,0.1)] backdrop-blur-sm sm:p-6 md:p-8">
               <div className="mb-6 flex flex-col gap-2 border-b border-white/[0.08] pb-4 text-center sm:text-left">
                 <h3 className="font-display text-xl font-black uppercase tracking-tight text-white sm:text-2xl">
-                  <span className="text-[#ff1e6d]">Watchlist</span>
-                  <span className="text-slate-500"> — </span>
-                  <span className="text-slate-300">saved markets</span>
+                  <span className="text-[#ff1e6d]">WATCHLIST</span>
+                  <span className="text-slate-500"> · </span>
+                  <span className="text-slate-300">saved atoms</span>
                 </h3>
-                <p className="font-sans text-sm text-slate-500">
-                  Atoms and claims you added by swiping left on the cards. Open a market to trade or remove items here.
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-slate-500 sm:text-xs sm:tracking-[0.2em]">
+                  Swipe left on a card to pin it here · TRUST markets only
                 </p>
               </div>
               {!walletAddress ? (
@@ -1656,18 +1751,18 @@ const Home: React.FC = () => {
               ) : watchlistLoading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-20">
                   <Loader2 className="h-10 w-10 animate-spin text-[#ff1e6d]" />
-                  <p className="font-mono text-xs uppercase tracking-widest text-slate-500">Loading watchlist…</p>
+                  <p className="font-mono text-xs uppercase tracking-widest text-slate-500">Pulling watchlist…</p>
                 </div>
               ) : watchlistRows.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#ff1e6d]/25 bg-[#ff1e6d]/[0.04] py-16 px-4 text-center">
                   <Heart className="h-10 w-10 text-[#ff1e6d]/50" />
-                  <p className="max-w-md font-sans text-sm text-slate-300">Nothing saved yet. Swipe left on any card in the stacks above to add markets here.</p>
+                  <p className="max-w-md font-sans text-sm text-slate-300">Nothing pinned yet. Swipe left on a card in the stacks to park it here.</p>
                   <button
                     type="button"
                     onClick={() => { playClick(); setArenaMode('discover'); }}
                     className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#00f3ff] underline-offset-4 hover:underline"
                   >
-                    Back to trending stacks
+                    ← Back to trending
                   </button>
                 </div>
               ) : (
@@ -1744,7 +1839,7 @@ const Home: React.FC = () => {
             </div>
           )}
         </div>
-      </section>
+      </motion.section>
 
       {/* 2. SEASON 2 LEADERBOARD — live snippet (expanded view on /stats) */}
       <section

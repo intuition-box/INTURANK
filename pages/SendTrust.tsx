@@ -19,9 +19,11 @@ import {
 } from '../constants';
 import { CurrencySymbol } from '../components/CurrencySymbol';
 import { XpEarnHint } from '../components/XpEarnHint';
+import { useEffectiveChainId } from '../hooks/useEffectiveChainId';
 
 const SendTrust: React.FC = () => {
-  const { address: walletAddress, chainId, isConnected } = useAccount();
+  const { address: walletAddress, isConnected } = useAccount();
+  const chainId = useEffectiveChainId();
   const { data: balanceData, refetch: refetchBalance } = useBalance({
     address: walletAddress,
   });

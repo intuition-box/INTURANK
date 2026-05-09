@@ -9,6 +9,8 @@ import {
   PROTOCOL_XP_MARKET_ACQUIRE,
   PROTOCOL_XP_SEND_TRUST,
   PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS,
+  PROTOCOL_XP_SKILL_ATOM,
+  PROTOCOL_XP_SKILL_CHAT,
   PROTOCOL_XP_SKILL_TRIPLE,
 } from '../constants';
 
@@ -25,17 +27,17 @@ const DOC_HREF = '/documentation#activity-xp';
 function hintCopy(variant: XpEarnHintVariant): string {
   switch (variant) {
     case 'arena':
-      return `Climb votes earn at least ${ARENA_XP_PER_RANK_PICK} Arena XP each (more if you stake TRUST on picks). Market buys can add up to +${PROTOCOL_XP_MARKET_ACQUIRE} activity XP depending on buy size.`;
+      return `Climb: ≥${ARENA_XP_PER_RANK_PICK} Arena XP per vote (stake can add more). Buys: up to +${PROTOCOL_XP_MARKET_ACQUIRE} activity XP.`;
     case 'markets':
-      return `Market buys scale toward up to +${PROTOCOL_XP_MARKET_ACQUIRE} activity XP; list adds toward up to +${PROTOCOL_XP_ADD_TO_LIST} — bigger deposits earn more (dust earns little).`;
+      return `Buys: up to +${PROTOCOL_XP_MARKET_ACQUIRE} activity XP. List adds: up to +${PROTOCOL_XP_ADD_TO_LIST}. More TRUST → more XP; small amounts earn less.`;
     case 'market_detail':
-      return `This buy can earn up to +${PROTOCOL_XP_MARKET_ACQUIRE} activity XP; the amount scales with how much TRUST you put in.`;
+      return `Up to +${PROTOCOL_XP_MARKET_ACQUIRE} activity XP — scales with TRUST on this buy.`;
     case 'create_hub':
-      return `Atoms scale toward up to +${PROTOCOL_XP_CREATE_ATOM} activity XP; claims +${PROTOCOL_XP_CREATE_CLAIM}; Skill triples +${PROTOCOL_XP_SKILL_TRIPLE} — larger vault deposits earn more.`;
+      return `Atoms to +${PROTOCOL_XP_CREATE_ATOM} XP; claims +${PROTOCOL_XP_CREATE_CLAIM}. Skill Playground: +${PROTOCOL_XP_SKILL_CHAT} per reply (wallet), up to +${PROTOCOL_XP_SKILL_ATOM} atom / +${PROTOCOL_XP_SKILL_TRIPLE} triple when signed — on-chain rows scale with deposit.`;
     case 'skill':
-      return `Skill publishes scale toward up to +${PROTOCOL_XP_SKILL_TRIPLE} for triples and +${PROTOCOL_XP_CREATE_ATOM} for atoms based on deposit size.`;
+      return `+${PROTOCOL_XP_SKILL_CHAT} activity XP per assistant reply (wallet connected). Signed atom: up to +${PROTOCOL_XP_SKILL_ATOM}; signed triple: up to +${PROTOCOL_XP_SKILL_TRIPLE}. Deposits scale on-chain awards.`;
     case 'send_trust':
-      return `Wallet sends earn +${PROTOCOL_XP_SEND_TRUST} activity XP only at ${PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS}+ TRUST per transfer (daily limits still apply).`;
+      return `+${PROTOCOL_XP_SEND_TRUST} activity XP per send at ${PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS}+ TRUST (daily caps apply).`;
     default:
       return '';
   }
@@ -111,13 +113,14 @@ export function XpEarnHint({
             to={DOC_HREF}
             onClick={(e) => e.stopPropagation()}
             className="shrink-0 text-intuition-primary/75 hover:text-intuition-primary underline-offset-2 hover:underline font-medium"
+            title="Activity XP — documentation"
           >
-            Full table
+            XP rules
           </Link>
         ) : null}
       </p>
       <p className="text-[10px] leading-snug text-slate-600 pl-[18px]">
-        Anti-spam: tiny deposits earn little or no activity XP; each category has a daily cap (UTC).
+        Low deposits → little XP. Daily cap per category (UTC).
       </p>
     </div>
   );

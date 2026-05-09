@@ -36,7 +36,7 @@ function CurationListCard({
     >
       <div className="pointer-events-none absolute inset-0 opacity-50 bg-[radial-gradient(circle_at_top_left,rgba(0,243,255,0.08),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(232,197,71,0.08),transparent_55%)]" />
       <div className="relative z-10 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div className="flex flex-nowrap items-start justify-between gap-2 sm:gap-3 mb-3 min-w-0">
           <div className="min-w-0 flex-1">
             <p className="text-[9px] font-black font-mono text-intuition-primary/85 uppercase tracking-[0.28em] mb-1">
               List · curated by you
@@ -52,13 +52,13 @@ function CurationListCard({
             to={`/climb?list=${encodeURIComponent(group.listId)}`}
             onClick={() => playClick()}
             onMouseEnter={playHover}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/55 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-300 hover:border-intuition-primary/40 hover:text-intuition-primary transition-colors"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-black/55 px-2.5 py-1.5 sm:px-3 sm:py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.18em] text-slate-300 hover:border-intuition-primary/40 hover:text-intuition-primary transition-colors whitespace-nowrap"
           >
             Open in Arena
             <ExternalLink size={11} />
           </Link>
         </div>
-        <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto mb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
             <ThumbsUp size={11} />
             Yes {group.yesCount}
@@ -144,7 +144,7 @@ export const ArenaCurationsPanel: React.FC<{ address: string | null | undefined 
   if (!address) return null;
   if (groups.length === 0) {
     return (
-      <div className="rounded-2xl sm:rounded-3xl border border-slate-800 bg-black/65 px-5 sm:px-6 py-6 sm:py-7 shadow-[0_18px_46px_rgba(0,0,0,0.55)] flex flex-col sm:flex-row sm:items-center gap-4">
+      <div className="rounded-2xl sm:rounded-3xl border border-slate-800 bg-black/65 px-5 sm:px-6 py-6 sm:py-7 shadow-[0_18px_46px_rgba(0,0,0,0.55)] flex flex-row flex-nowrap items-center gap-3 sm:gap-4 min-w-0">
         <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-intuition-primary/10 border border-intuition-primary/20 shrink-0">
           <ListChecks className="w-5 h-5 text-intuition-primary" strokeWidth={2.4} />
         </div>
@@ -174,7 +174,7 @@ export const ArenaCurationsPanel: React.FC<{ address: string | null | undefined 
 
   return (
     <div className="bg-black border border-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden">
-      <div className="px-4 sm:px-5 md:px-6 xl:px-8 py-4 sm:py-5 md:py-6 border-b border-slate-900 bg-white/[0.03] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="px-4 sm:px-5 md:px-6 xl:px-8 py-4 sm:py-5 md:py-6 border-b border-slate-900 bg-white/[0.03] flex flex-row flex-nowrap items-center justify-between gap-2 sm:gap-3 min-w-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-intuition-primary/10 border border-intuition-primary/20 shrink-0">
             <ListChecks className="w-4 h-4 sm:w-5 sm:h-5 text-intuition-primary" strokeWidth={2.5} />
@@ -192,7 +192,7 @@ export const ArenaCurationsPanel: React.FC<{ address: string | null | undefined 
           to="/climb?view=explorer"
           onClick={() => playClick()}
           onMouseEnter={playHover}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-black/50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-300 hover:border-intuition-primary/40 hover:text-intuition-primary transition-colors"
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-700 bg-black/50 px-2.5 py-2 sm:px-3 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.18em] sm:tracking-[0.22em] text-slate-300 hover:border-intuition-primary/40 hover:text-intuition-primary transition-colors whitespace-nowrap"
         >
           See in Explorer
           <ExternalLink size={11} />

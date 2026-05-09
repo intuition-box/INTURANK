@@ -122,9 +122,9 @@
       }
       @media (max-width: 768px) {
         :root {
-          --anim-duration-fast: 0.16s;
-          --anim-duration-normal: 0.22s;
-          --anim-duration-slow: 0.28s;
+        --anim-duration-fast: 0.2s;
+        --anim-duration-normal: 0.28s;
+        --anim-duration-slow: 0.36s;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -650,6 +650,10 @@
         from { opacity: 0; transform: translateY(4px) scale(0.995); }
         to { opacity: 1; transform: translateY(0) scale(1); }
       }
+      @keyframes page-enter-slide-x {
+        from { opacity: 0; transform: translateX(22px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
       .animate-page-enter {
         animation: page-enter var(--anim-duration-normal) var(--anim-ease-out) forwards;
       }
@@ -659,6 +663,13 @@
 
       /* Mobile: slightly shorter but still fluid */
       @media (max-width: 768px) {
+        .mobile-app-shell .animate-page-enter {
+          animation-name: page-enter-slide-x;
+        }
+        .mobile-app-shell main a:active,
+        .mobile-app-shell main button:active {
+          transition: transform var(--anim-duration-fast) var(--anim-ease-out), opacity var(--anim-duration-fast) var(--anim-ease-out);
+        }
         [class*="duration-200"] { animation-duration: 0.24s !important; }
         [class*="duration-300"] { animation-duration: var(--anim-duration-fast) !important; }
         [class*="duration-500"] { animation-duration: 0.35s !important; }

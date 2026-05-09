@@ -147,7 +147,7 @@ const CreateSignal: React.FC = () => {
       setSuccessModal({ termId, type: 'signal', txHash });
       toast.success('Claim created successfully');
     } catch (err: any) {
-      toast.error((err?.message || 'BROADCAST_FAILED').slice(0, 120));
+      toast.error((err?.message || 'Could not create claim').slice(0, 120));
     } finally {
       setCreating(false);
     }
@@ -156,7 +156,7 @@ const CreateSignal: React.FC = () => {
   const handleConstructAtom = async () => {
     playClick();
     if (!nodeAlias.trim()) {
-      toast.error('ENTER_ENTITY_NAME');
+      toast.error('Enter a name for this atom');
       return;
     }
     const dep = atomDeposit || '0.5';
@@ -220,9 +220,9 @@ const CreateSignal: React.FC = () => {
         txHash: atomTxHash,
         depositTrustWei: parseEther(atomDeposit || '0.5'),
       });
-      toast.success('ATOM_ESTABLISHED');
+      toast.success('Atom created');
     } catch (err: any) {
-      toast.error((err?.message || 'GENESIS_FAILED').slice(0, 120));
+      toast.error((err?.message || 'Could not create atom').slice(0, 120));
     } finally {
       setCreatingAtom(false);
     }
@@ -231,7 +231,7 @@ const CreateSignal: React.FC = () => {
   const handleEstablishSynapse = async () => {
     playClick();
     if (!subjectId || !predicateId || !objectId) {
-      toast.error('CONNECT_ALL_NODES');
+      toast.error('Choose subject, predicate, and object');
       return;
     }
     const depositAmount = synapseDeposit || '0.5';
@@ -255,7 +255,7 @@ const CreateSignal: React.FC = () => {
         txHash: synapseTxHash,
         depositTrustWei: parseEther(depositAmount),
       });
-      toast.success('SYNAPSE_ESTABLISHED');
+      toast.success('Link created');
       setSubjectId('');
       setSubjectLabel('');
       setPredicateId('');
@@ -513,9 +513,9 @@ const CreateSignal: React.FC = () => {
         txHash: atomTxHash,
         depositTrustWei: parseEther(deposit),
       });
-      toast.success('ATOM_ESTABLISHED');
+      toast.success('Atom created');
     } catch (err: any) {
-      toast.error((err?.message || 'GENESIS_FAILED').slice(0, 120));
+      toast.error((err?.message || 'Could not create atom').slice(0, 120));
     } finally {
       setCreatingAtom(false);
     }
@@ -550,7 +550,7 @@ const CreateSignal: React.FC = () => {
         txHash: synapseTxHash,
         depositTrustWei: parseEther(depositAmount),
       });
-      toast.success('SYNAPSE_ESTABLISHED');
+      toast.success('Link created');
       setSubjectId('');
       setSubjectLabel('');
       setPredicateId('');

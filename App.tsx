@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ARENA_UI_VISIBLE, MAINTENANCE_MODE } from './constants';
 import Maintenance from './pages/Maintenance';
 import { WagmiProvider } from 'wagmi';
@@ -79,6 +79,7 @@ import ArenaPlaceholder from './pages/ArenaPlaceholder';
 import Compare from './pages/Compare';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
+import { RouteTransition } from './components/RouteTransition';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,48 +96,55 @@ const queryClient = new QueryClient({
  * AppRoutes — runtime chrome + routes. Lives inside the Router so we can
  * read the viewport via `useIsMobile()` and pick the matching layout +
  * landing page. Desktop bundle/markup stays identical to before; mobile
- * users get `MobileLayout` (with bottom dock + nav sheet) and `MobileHome`.
+ * users get `MobileLayout` (floating bottom tabs + header menu sheet) and `MobileHome`.
  */
 const AppRoutes: React.FC = () => {
   const isMobile = useIsMobile();
+  const location = useLocation();
   const Shell = isMobile ? MobileLayout : Layout;
   const Landing = isMobile ? MobileHome : Home;
+  const routeKey = `${location.pathname}${location.search}`;
+
+  const routeTree = (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/agents" element={<Navigate to="/markets" replace />} />
+      <Route path="/agents/:id" element={<Navigate to="/markets/:id" replace />} />
+
+      <Route path="/portfolio" element={<Portfolio />} />
+      <Route path="/account" element={<Account />} />
+      <Route path="/profile/:address" element={<PublicProfile />} />
+      <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} />
+
+      <Route path="/stats" element={<Stats />} />
+      <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
+      <Route path="/markets/atoms" element={<Markets />} />
+      <Route path="/markets/triples" element={<Markets />} />
+      <Route path="/markets/lists" element={<Markets />} />
+      <Route path="/markets/:id" element={<MarketDetail />} />
+      <Route path="/feed" element={<Feed />} />
+      <Route path="/health" element={<KPIDashboard />} />
+      <Route path="/documentation" element={<Documentation />} />
+      <Route path="/skill-playground" element={<SkillPlayground />} />
+
+      <Route path="/compare" element={<Compare />} />
+      <Route path="/coming-soon" element={<ComingSoon />} />
+      <Route path="/create" element={<CreateSignal />} />
+      <Route path="/send-trust" element={<SendTrust />} />
+      <Route path="/hub/trust-tools" element={<DailyTrustHub />} />
+      <Route
+        path="/climb"
+        element={ARENA_UI_VISIBLE ? <RankedList /> : <ArenaPlaceholder />}
+      />
+    </Routes>
+  );
 
   return (
     <Shell>
       <ToastContainer />
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/agents" element={<Navigate to="/markets" replace />} />
-        <Route path="/agents/:id" element={<Navigate to="/markets/:id" replace />} />
-
-        <Route path="/portfolio" element={<Portfolio />} />
-        <Route path="/account" element={<Account />} />
-        <Route path="/profile/:address" element={<PublicProfile />} />
-        <Route path="/dashboard" element={<Navigate to="/portfolio" replace />} />
-
-        <Route path="/stats" element={<Stats />} />
-        <Route path="/markets" element={<Navigate to="/markets/atoms" replace />} />
-        <Route path="/markets/atoms" element={<Markets />} />
-        <Route path="/markets/triples" element={<Markets />} />
-        <Route path="/markets/lists" element={<Markets />} />
-        <Route path="/markets/:id" element={<MarketDetail />} />
-        <Route path="/feed" element={<Feed />} />
-        <Route path="/health" element={<KPIDashboard />} />
-        <Route path="/documentation" element={<Documentation />} />
-        <Route path="/skill-playground" element={<SkillPlayground />} />
-
-        {/* New Features */}
-        <Route path="/compare" element={<Compare />} />
-        <Route path="/coming-soon" element={<ComingSoon />} />
-        <Route path="/create" element={<CreateSignal />} />
-        <Route path="/send-trust" element={<SendTrust />} />
-        <Route path="/hub/trust-tools" element={<DailyTrustHub />} />
-        <Route
-          path="/climb"
-          element={ARENA_UI_VISIBLE ? <RankedList /> : <ArenaPlaceholder />}
-        />
-      </Routes>
+      <RouteTransition routeKey={routeKey} variant={isMobile ? 'mobile-slide' : 'desktop-fade'}>
+        {routeTree}
+      </RouteTransition>
     </Shell>
   );
 };

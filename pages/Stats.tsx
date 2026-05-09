@@ -162,20 +162,20 @@ const Stats: React.FC = () => {
                       next: {
                         ...item,
                         label: named,
-                        image: item.image || `https://effigy.im/a/${item.id}.png`,
+                        image: item.image || DEFAULT_PROFILE_AVATAR_URL,
                       },
                     };
                   }
                   if (!item.image) {
-                    return { i, next: { ...item, image: `https://effigy.im/a/${item.id}.png` } };
+                    return { i, next: { ...item, image: DEFAULT_PROFILE_AVATAR_URL } };
                   }
                 } catch {
                   if (!item.image) {
-                    return { i, next: { ...item, image: `https://effigy.im/a/${item.id}.png` } };
+                    return { i, next: { ...item, image: DEFAULT_PROFILE_AVATAR_URL } };
                   }
                 }
               } else if (!item.image) {
-                return { i, next: { ...item, image: `https://effigy.im/a/${item.id}.png` } };
+                return { i, next: { ...item, image: DEFAULT_PROFILE_AVATAR_URL } };
               }
               return null;
             })
@@ -237,7 +237,7 @@ const Stats: React.FC = () => {
                 ' ' +
                 CURRENCY_SYMBOL,
               rawValue: pnlEth,
-              image: `https://effigy.im/a/${row.account_id}.png`,
+              image: DEFAULT_PROFILE_AVATAR_URL,
               subject: { pnl_pct: pct, win_rate: winRate, total_volume_raw: row.total_volume_raw },
             };
           });
@@ -280,7 +280,7 @@ const Stats: React.FC = () => {
             
             if (!userMeta.has(accId)) {
                 const baseLabel = pos.account?.label || ensNameForDisplay(accId);
-                const baseImage = pos.account?.image || `https://effigy.im/a/${accId}.png`;
+                const baseImage = pos.account?.image || DEFAULT_PROFILE_AVATAR_URL;
                 userMeta.set(accId, { 
                   label: baseLabel, 
                   image: baseImage
@@ -381,7 +381,7 @@ const Stats: React.FC = () => {
                   subLabel: 'PNL_LEADERBOARD',
                   value: (pnlEth >= 0 ? '+' : '') + pnlEth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + CURRENCY_SYMBOL,
                   rawValue: pnlEth,
-                  image: `https://effigy.im/a/${row.account_id}.png`,
+                  image: DEFAULT_PROFILE_AVATAR_URL,
                   subject: { pnl_pct: pct, win_rate: winRate, total_volume_raw: row.total_volume_raw }
               };
           });
@@ -721,11 +721,7 @@ const Stats: React.FC = () => {
                                         className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-intuition-primary/10 border-b border-white/5"
                                       >
                                         <img
-                                          src={
-                                            h.kind === 'tns'
-                                              ? DEFAULT_PROFILE_AVATAR_URL
-                                              : `https://effigy.im/a/${h.address}.png`
-                                          }
+                                          src={DEFAULT_PROFILE_AVATAR_URL}
                                           alt=""
                                           className="w-9 h-9 rounded-full object-cover shrink-0 border border-white/10 bg-black/40"
                                           onError={(e) => {

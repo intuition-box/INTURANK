@@ -4,10 +4,11 @@ import { ExternalLink, Loader2, Radio, RefreshCw, Users } from 'lucide-react';
 import { getAddress, isAddress } from 'viem';
 import { playClick, playHover } from '../services/audio';
 import { fetchRecentArenaPortalRankingFeed, type ArenaPortalRankingFeedItem } from '../services/graphql';
-import { EXPLORER_URL } from '../constants';
+import { ARENA_XP_PER_RANK_PICK, EXPLORER_URL } from '../constants';
 import { subscribeVisibilityAwareInterval } from '../services/visibility';
 import { portalListIdFromTermId } from '../services/arenaListsRegistry';
 import { bestWalletDisplayLabel } from '../services/tns';
+import { getArenaLocalXpByTxHash } from '../services/arenaCurations';
 
 function climbHrefForListTerm(listTermId: string): string {
   const id = /^0x[0-9a-fA-F]{64}$/.test(listTermId) ? portalListIdFromTermId(listTermId) : listTermId;
@@ -20,6 +21,14 @@ function formatFeedWhen(blockNumber: number): string {
 }
 
 const SHORT_ADDR = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+
+function walletsMatch(a: string, b: string): boolean {
+  try {
+    return getAddress(a as `0x${string}`).toLowerCase() === getAddress(b as `0x${string}`).toLowerCase();
+  } catch {
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+}
 
 /** A creator label is "raw" (needs TNS/ENS lookup) when it's just a hex address or our own short hex placeholder. */
 function isRawAddressLabel(label: string, creatorId: string): boolean {
@@ -56,8 +65,24 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
   /** Set briefly after a successful Arena batch so the user gets a visible "syncing" hint while the subgraph catches up. */
   const [syncingRecent, setSyncingRecent] = useState(false);
+  const [curationTick, setCurationTick] = useState(0);
 
   const fetchLimit = variant === 'explorer' ? 48 : 26;
+
+  const localXpByTx = useMemo(() => {
+    if (!viewerAddress?.trim()) return new Map<string, { arenaXp: number; xpdn?: number }>();
+    return getArenaLocalXpByTxHash(viewerAddress);
+  }, [viewerAddress, curationTick]);
+
+  useEffect(() => {
+    const on = () => setCurationTick((n) => n + 1);
+    window.addEventListener('inturank-arena-curations-updated', on);
+    window.addEventListener('inturank-arena-onchain-updated', on);
+    return () => {
+      window.removeEventListener('inturank-arena-curations-updated', on);
+      window.removeEventListener('inturank-arena-onchain-updated', on);
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -224,7 +249,7 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
                 </span>
               ) : null}
             </p>
-            <p className="text-[11px] sm:text-sm text-slate-500 leading-snug mt-0.5 max-w-2xl">{explorerSubtitle}</p>
+            <p className="text-[11px] sm:text-sm text-slate-400 leading-snug mt-0.5 max-w-2xl">{explorerSubtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -292,62 +317,135 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
           </p>
         ) : (
           <ul className="space-y-2.5">
-            {renderedItems.map((row) => (
-              <li
-                key={`${row.claimTermId}-${row.blockNumber}`}
-                className="rounded-xl border border-white/[0.06] bg-slate-950/55 px-2.5 py-2 hover:border-emerald-500/20 transition-colors"
-              >
-                <p className="text-[11px] leading-snug text-slate-200">
-                  {isAddress(row.creatorId as `0x${string}`) ? (
+            {renderedItems.map((row) => {
+              const isViewerRow =
+                !!viewerAddress?.trim() &&
+                isAddress(viewerAddress as `0x${string}`) &&
+                isAddress(row.creatorId as `0x${string}`) &&
+                walletsMatch(viewerAddress, row.creatorId);
+              const txLc = row.transactionHash?.trim().toLowerCase();
+              const rowXp =
+                variant === 'explorer' && isViewerRow && txLc?.startsWith('0x')
+                  ? localXpByTx.get(txLc)
+                  : undefined;
+
+              return (
+                <li
+                  key={`${row.claimTermId}-${row.blockNumber}-${row.transactionHash ?? 'x'}`}
+                  className={`rounded-xl border bg-slate-950/55 px-3 py-2.5 hover:border-emerald-500/25 transition-colors ${
+                    variant === 'explorer'
+                      ? 'border-white/[0.1]'
+                      : 'border-white/[0.06] hover:border-emerald-500/20'
+                  }`}
+                >
+                  <p className="text-[11px] leading-snug text-slate-100">
+                    {isAddress(row.creatorId as `0x${string}`) ? (
+                      <Link
+                        to={`/profile/${encodeURIComponent(row.creatorId)}`}
+                        onClick={playClick}
+                        onMouseEnter={playHover}
+                        className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-300 hover:from-white hover:to-emerald-200 underline-offset-2 hover:underline"
+                      >
+                        {row.creatorLabel}
+                      </Link>
+                    ) : (
+                      <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-300">
+                        {row.creatorLabel}
+                      </span>
+                    )}{' '}
+                    <span
+                      className={
+                        variant === 'explorer'
+                          ? 'text-slate-400 font-medium'
+                          : 'text-slate-500 font-medium'
+                      }
+                    >
+                      ranked
+                    </span>{' '}
+                    <span
+                      className={`font-black uppercase text-[10px] px-1.5 py-0.5 rounded-md ${
+                        row.support
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-rose-500/18 text-rose-300'
+                      }`}
+                    >
+                      {row.support ? 'for' : 'against'}
+                    </span>{' '}
+                    <span className="font-semibold text-white">{row.subjectLabel}</span>{' '}
+                    <span
+                      className={
+                        variant === 'explorer' ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'
+                      }
+                    >
+                      ·
+                    </span>{' '}
                     <Link
-                      to={`/profile/${encodeURIComponent(row.creatorId)}`}
+                      to={climbHrefForListTerm(row.listTermId)}
                       onClick={playClick}
                       onMouseEnter={playHover}
-                      className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-300 hover:from-white hover:to-emerald-200 underline-offset-2 hover:underline"
+                      className="text-intuition-primary font-bold hover:text-white underline-offset-2 hover:underline"
                     >
-                      {row.creatorLabel}
+                      {row.listLabel}
                     </Link>
-                  ) : (
-                    <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-300">
-                      {row.creatorLabel}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                    <span
+                      className={
+                        variant === 'explorer'
+                          ? 'text-[10px] font-mono font-semibold text-slate-400 tabular-nums shrink-0'
+                          : 'text-[9px] font-mono text-slate-500 tabular-nums shrink-0'
+                      }
+                    >
+                      {formatFeedWhen(row.blockNumber)}
                     </span>
-                  )}{' '}
-                  <span className="text-slate-500 font-medium">just ranked</span>{' '}
-                  <span
-                    className={`font-black uppercase text-[10px] px-1.5 py-0.5 rounded-md ${
-                      row.support
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : 'bg-rose-500/18 text-rose-300'
-                    }`}
-                  >
-                    {row.support ? 'in support of' : 'against'}
-                  </span>{' '}
-                  <span className="font-semibold text-white">{row.subjectLabel}</span>{' '}
-                  <span className="text-slate-500 font-medium">in</span>{' '}
-                  <Link
-                    to={climbHrefForListTerm(row.listTermId)}
-                    onClick={playClick}
-                    onMouseEnter={playHover}
-                    className="text-intuition-primary font-bold hover:text-white underline-offset-2 hover:underline"
-                  >
-                    {row.listLabel}
-                  </Link>
-                </p>
-                <div className="flex items-center justify-between gap-2 mt-1.5">
-                  <span className="text-[9px] font-mono text-slate-600">{formatFeedWhen(row.blockNumber)}</span>
-                  <a
-                    href={EXPLORER_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={playClick}
-                    className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-slate-500 hover:text-cyan-300 transition-colors"
-                  >
-                    Explorer
-                    <ExternalLink className="w-3 h-3 opacity-70" aria-hidden />
-                  </a>
-                </div>
-              </li>
-            ))}
+                    <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1 min-w-0 ml-auto">
+                      {variant === 'explorer' && isViewerRow ? (
+                        rowXp ? (
+                          <>
+                            <span className="inline-flex items-center rounded-md border border-cyan-400/45 bg-cyan-950/45 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-cyan-100 shadow-sm shadow-cyan-950/40">
+                              +{rowXp.arenaXp} Arena
+                            </span>
+                            {rowXp.xpdn != null ? (
+                              <span className="inline-flex items-center rounded-md border border-violet-400/40 bg-violet-950/45 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-violet-100 shadow-sm shadow-violet-950/40">
+                                +{rowXp.xpdn} XPDN
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span
+                            className="inline-flex items-center rounded-md border border-slate-500/40 bg-slate-900/90 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-200 text-right max-w-[13rem] sm:max-w-none leading-tight"
+                            title="Arena pick credit applies once the indexer attributes the rank. Submit ranks from this browser to store XPDN per tx locally."
+                          >
+                            +{ARENA_XP_PER_RANK_PICK} Arena · XPDN
+                          </span>
+                        )
+                      ) : null}
+                      <a
+                        href={
+                          row.transactionHash
+                            ? `${EXPLORER_URL.replace(/\/$/, '')}/tx/${row.transactionHash}`
+                            : EXPLORER_URL
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={playClick}
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide transition-colors shrink-0 ${
+                          variant === 'explorer'
+                            ? 'text-cyan-400 hover:text-cyan-200'
+                            : 'text-slate-400 hover:text-cyan-300'
+                        }`}
+                      >
+                        Explorer
+                        <ExternalLink
+                          className={`w-3 h-3 ${variant === 'explorer' ? 'opacity-95' : 'opacity-80'}`}
+                          aria-hidden
+                        />
+                      </a>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

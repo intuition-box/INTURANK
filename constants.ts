@@ -49,7 +49,16 @@ export const PROTOCOL_XP_ADD_TO_LIST = 40;
 export const PROTOCOL_XP_SEND_TRUST = 5;
 /** Sends below this many whole TRUST tokens do not award Send TRUST activity XP in the app. */
 export const PROTOCOL_XP_SEND_TRUST_MIN_TRUST_UNITS = 100;
-/** One award per successful Skill `tripleFromLabels` pipeline (atoms + triple txs). */
+/**
+ * Skill agent: each qualifying assistant reply (wallet connected, deduped per message).
+ * 2 XP hits a sweet spot vs 1 XP — noticeable without opening huge spam incentive; daily cap still applies.
+ */
+export const PROTOCOL_XP_SKILL_CHAT = 2;
+/** Max Skill chat XP per UTC day (anti-spam). */
+export const PROTOCOL_XP_DAILY_CAP_SKILL_CHAT = 200;
+/** Max activity XP for a Skill-signed atom (FeeProxy createAtoms from /skill-playground); scales with deposit. */
+export const PROTOCOL_XP_SKILL_ATOM = 30;
+/** Max activity XP for a Skill-signed triple (label pipeline or FeeProxy createTriples); scales with deposit — higher than atom. */
 export const PROTOCOL_XP_SKILL_TRIPLE = 45;
 
 /**
@@ -167,18 +176,88 @@ export const GROQ_MODEL =
 
 export const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
-export const CHAIN_ID = 1155;
-export const NETWORK_NAME = "Intuition Mainnet";
-export const RPC_URL = "https://rpc.intuition.systems/http";
+/** `mainnet` | `testnet` — set `VITE_INTUITION_NETWORK` (Vite exposes only `VITE_*` to the client). */
+export type IntuitionNetworkId = 'mainnet' | 'testnet';
+
+function normalizeIntuitionNetworkId(raw: string | undefined): IntuitionNetworkId {
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'testnet' ? 'testnet' : 'mainnet';
+}
+
+function envStr(key: string): string {
+  return String((import.meta.env as Record<string, string | undefined>)[key] ?? '').trim();
+}
+
+function intFromEnv(key: string, fallback: number): number {
+  const raw = envStr(key);
+  // `Number('') === 0` — without this guard, a missing VITE_* chain id made CHAIN_ID 0 and wagmi targeted chain 0 vs wallet 1155.
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  const i = Math.floor(n);
+  if (i <= 0) return fallback;
+  return i;
+}
+
+/** Which Intuition deployment the SPA targets (RPC, chain id, Graph defaults, explorer). */
+export const INTUITION_ACTIVE_NETWORK: IntuitionNetworkId = normalizeIntuitionNetworkId(
+  import.meta.env.VITE_INTUITION_NETWORK as string | undefined
+);
+
+const INTUITION_MAINNET_DEFAULTS = {
+  chainId: 1155,
+  rpc: 'https://rpc.intuition.systems/http',
+  graphql: 'https://mainnet.intuition.sh/v1/graphql',
+  explorer: 'https://explorer.intuition.systems',
+  name: 'Intuition Mainnet',
+} as const;
+
+const INTUITION_TESTNET_DEFAULTS = {
+  chainId: 13579,
+  rpc: 'https://testnet.rpc.intuition.systems/',
+  graphql: 'https://testnet.intuition.sh/v1/graphql',
+  explorer: 'https://testnet.explorer.intuition.systems',
+  name: 'Intuition Testnet',
+} as const;
+
+const intuitionProfile =
+  INTUITION_ACTIVE_NETWORK === 'testnet' ? INTUITION_TESTNET_DEFAULTS : INTUITION_MAINNET_DEFAULTS;
+
+export const CHAIN_ID = intFromEnv(
+  INTUITION_ACTIVE_NETWORK === 'testnet'
+    ? 'VITE_INTUITION_TESTNET_CHAIN_ID'
+    : 'VITE_INTUITION_MAINNET_CHAIN_ID',
+  intuitionProfile.chainId
+);
+
+export const RPC_URL =
+  envStr(INTUITION_ACTIVE_NETWORK === 'testnet' ? 'VITE_INTUITION_TESTNET_RPC_URL' : 'VITE_INTUITION_MAINNET_RPC_URL') ||
+  intuitionProfile.rpc;
+
+export const NETWORK_NAME = intuitionProfile.name;
+
+export const EXPLORER_URL = (
+  envStr(
+    INTUITION_ACTIVE_NETWORK === 'testnet'
+      ? 'VITE_INTUITION_TESTNET_EXPLORER_URL'
+      : 'VITE_INTUITION_MAINNET_EXPLORER_URL'
+  ) || intuitionProfile.explorer
+).replace(/\/$/, '');
+
+const activeGraphqlUrl = intuitionProfile.graphql;
+
 /**
  * Core Intuition Graph endpoint.
- * In dev, ALWAYS use /v1/graphql so Vite proxies to mainnet (avoids CORS + rate limits).
- * In production, use VITE_GRAPHQL_URL from env or fallback.
+ * In dev, use `/v1/graphql` so Vite proxies to the active network (see `vite.config.ts`).
+ * In production: `VITE_GRAPHQL_URL` overrides; otherwise the URL for `INTUITION_ACTIVE_NETWORK`.
  */
-export const GRAPHQL_URL =
-  import.meta.env.DEV ? "/v1/graphql" : (import.meta.env.VITE_GRAPHQL_URL || "https://mainnet.intuition.sh/v1/graphql");
-export const EXPLORER_URL = "https://explorer.intuition.systems";
-/** Fallback avatar when effigy / indexer image is missing (bundled under `public/`). */
+export const GRAPHQL_URL = import.meta.env.DEV
+  ? '/v1/graphql'
+  : envStr('VITE_GRAPHQL_URL') || activeGraphqlUrl;
+
+/** MultiVault / FeeProxy / atom IDs below are mainnet values; for `VITE_INTUITION_NETWORK=testnet` update those constants for signing or keep mainnet for on-chain flows. */
+
+/** Fallback avatar when no on-chain / IPFS image — IntuRank branded placeholder (`public/avatars/default-profile-trust.png`). */
 export const DEFAULT_PROFILE_AVATAR_URL = "/avatars/default-profile-trust.png";
 export const CURRENCY_SYMBOL = "₸";
 
