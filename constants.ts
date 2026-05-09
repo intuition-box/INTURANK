@@ -273,7 +273,7 @@ export const PAGE_HERO_TITLE =
 export const PAGE_HERO_BODY = 'text-[15px] text-slate-400 leading-relaxed font-sans';
 
 /** Season 2 / fallback epoch id when no window matches (keep aligned with latest shipped epoch) */
-export const SEASON_2_EPOCH_ID = 12;
+export const SEASON_2_EPOCH_ID = 13;
 
 /** Human-readable date range for Epoch 8 (Season 2 current period) — matches Intuition portal */
 export const SEASON_2_EPOCH_8_DATE_RANGE = 'Feb 24, 4:00 PM – Mar 10, 4:00 PM';
@@ -294,6 +294,14 @@ export type Season2EpochDef = {
 
 /** Season 2 Epoch schedule for homepage / stats selectors. Approximate 14-day epochs. New epochs: add at top, set `isCurrent` or rely on date range. */
 export const SEASON_2_EPOCHS: Season2EpochDef[] = [
+  {
+    id: 13,
+    label: 'Epoch 13',
+    /** Contiguous with Epoch 12 end (portal 15:00 UTC). */
+    range: 'May 5, 3:00 PM UTC – May 19, 3:00 PM UTC',
+    start: '2026-05-05T15:00:00Z',
+    end: '2026-05-19T15:00:00Z',
+  },
   {
     id: 12,
     label: 'Epoch 12',
