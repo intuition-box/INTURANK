@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Trophy,
   PlusCircle,
+  Radio,
   Send,
   Wallet,
   UserCircle,
@@ -44,6 +45,7 @@ import {
   OFFSET_PROGRESSIVE_CURVE_ID,
   PAGE_HERO_TITLE,
   PROTOCOL_XP_ADD_TO_LIST,
+  PROTOCOL_XP_ARENA_RANK_ADD_TO_LIST_MULT,
   PROTOCOL_XP_CREATE_ATOM,
   PROTOCOL_XP_CREATE_CLAIM,
   PROTOCOL_XP_MARKET_ACQUIRE,
@@ -1112,7 +1114,7 @@ const Documentation: React.FC = () => {
                 There are <strong className="text-slate-100 font-semibold">two kinds of XP</strong>.{' '}
                 <strong className="text-slate-100 font-semibold">Arena XP</strong> is what you get from playing the Arena — the fast voting flow on{' '}
                 <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>.{' '}
-                <strong className="text-slate-100 font-semibold">Activity XP</strong> is extra credit for things you do on-chain (markets, create flows, sending TRUST, and so on). The app adds it when your wallet qualifies; numbers stay in sync with the little hints on each page.
+                <strong className="text-slate-100 font-semibold">Activity XP</strong> is extra credit for things you do on-chain (markets, create flows, sending TRUST, Arena vault deposits, and Signal vouch batches). The app adds it when your wallet qualifies; numbers stay in sync with the little hints on each page.
               </p>
               <p className="text-slate-400 text-sm leading-relaxed">
                 These amounts can change when the product updates; they all come from one place in the code so nothing drifts.
@@ -1161,6 +1163,22 @@ const Documentation: React.FC = () => {
                       <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_ADD_TO_LIST}</td>
                       <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
                         Activity XP — scales with list triple deposit (often the protocol floor unless you raise it).
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Arena · stance batch (vault deposit)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_ADD_TO_LIST}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Same <strong className="text-slate-400 font-semibold">add-to-list</strong> category when you submit ranked picks: deposit-scaled, then the gross is multiplied by{' '}
+                        <strong className="text-slate-400 font-semibold">×{PROTOCOL_XP_ARENA_RANK_ADD_TO_LIST_MULT}</strong> so it stacks fairly with arena pick XP on the same flow.
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-slate-200">Signal · Vouch batch (FeeProxy createTriples)</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-amber-200/95">+{PROTOCOL_XP_CREATE_CLAIM}</td>
+                      <td className="px-4 py-3 text-slate-500 text-[13px] leading-snug">
+                        Activity XP — treated like <strong className="text-slate-400 font-semibold">created a claim</strong>. One transaction can mint several “vouches for” triples; the deposit basis is the{' '}
+                        <strong className="text-slate-400 font-semibold">sum</strong> of per-vouch vault deposits, then the usual create-claim scaling and daily cap apply.
                       </td>
                     </tr>
                     <tr>
@@ -1282,6 +1300,40 @@ const Documentation: React.FC = () => {
                   <code className="text-xs bg-white/5 px-1 py-0.5 rounded text-slate-300">VITE_ARENA_PLACEHOLDER=true</code>{' '}
                   masks the work-in-progress UI. The nav can still list{' '}
                   <strong className="text-slate-100 font-semibold">THE ARENA</strong> while the full surface is hidden.
+                </p>
+              )}
+
+              <h3 className="text-base font-semibold text-slate-100 mt-8 mb-3 flex items-center gap-2">
+                <Radio className="w-5 h-5 text-cyan-300 shrink-0" aria-hidden />
+                Signal — Pulse &amp; Vouch
+              </h3>
+              {ARENA_UI_VISIBLE ? (
+                <>
+                  <p>
+                    <strong className="text-slate-100 font-semibold">Signal</strong> is the Arena tab for quick social graph actions without picking a themed list first. It has two sub-lanes:{' '}
+                    <strong className="text-slate-100 font-semibold">Pulse</strong> and{' '}
+                    <strong className="text-slate-100 font-semibold">Vouch</strong>.
+                  </p>
+                  <p>
+                    <strong className="text-slate-100 font-semibold">Pulse</strong> surfaces identity atoms as <strong className="text-slate-200">tag cards</strong> (third-person predicates like “has tag”, “trusts”, etc.).
+                    Tabs group the rail: <strong className="text-slate-200">Hot</strong> is the editorial spotlight;{' '}
+                    <strong className="text-slate-200">Crowd</strong> is the full curated portal list (same order you configured in the app);{' '}
+                    <strong className="text-slate-200">Yours</strong> is atoms you pin; <strong className="text-slate-200">My stakes</strong> lists every triple where your wallet already has a position, with controls to queue the opposite stance{' '}
+                    (new on-chain deposit via the conviction cart) or unstake from the vault.{' '}
+                    Tapping <strong className="text-slate-200">Support</strong> or <strong className="text-slate-200">Oppose</strong> queues a stance for that vault triple (local queue — no wallet yet). Queued stances are summarized in the footer; the on-chain batch for those stances is still rolling out — until then, plan in Signal and execute larger Arena list batches from the main grid when you need vault deposits and XP.
+                  </p>
+                  <p>
+                    <strong className="text-slate-100 font-semibold">Vouch</strong> is for named identities (e.g. <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">.eth</code> /{' '}
+                    <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">.trust</code>). You queue who you want to vouch for;{' '}
+                    <strong className="text-slate-200">Submit (1 tx)</strong> calls FeeProxy <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">createTriples</code> with predicate{' '}
+                    <strong className="text-slate-200">vouches for</strong>, your account atom as subject, and a per-row vault deposit. Successful submits earn{' '}
+                    <strong className="text-slate-200">activity XP</strong> under the same rules as creating a claim ( basis = sum of deposits in that transaction). Daily caps still apply.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  When the Arena UI is visible, <strong className="text-slate-100 font-semibold">Signal</strong> appears as a tab on{' '}
+                  <code className="text-xs bg-white/5 px-1.5 py-0.5 rounded text-slate-300">/climb</code>: Pulse for identity tag cards and stance queueing, Vouch for batched “vouches for” claims.
                 </p>
               )}
 

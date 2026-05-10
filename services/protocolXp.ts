@@ -170,19 +170,22 @@ function postMirrorOptional(opts: {
   delta: number;
   reasonKey: ProtocolXpReasonKey;
   txHash?: string | null;
+  dedupeKey?: string | null;
 }): void {
   const url = getArenaLeaderboardMirrorUrl();
   if (!url) return;
+  const dk = opts.dedupeKey?.trim();
   fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      kind: 'protocol_xp',
+      kind: 'protocol_xp_event',
       address: opts.address,
+      delta: opts.delta,
       protocolXpTotal: opts.total,
-      protocolXpDelta: opts.delta,
       reason: opts.reasonKey,
       txHash: opts.txHash ?? undefined,
+      dedupeKey: dk || undefined,
       t: Date.now(),
     }),
   }).catch(() => {});
@@ -301,15 +304,24 @@ export function notifyProtocolXpEarned(opts: {
   sendTrustFixedAmount?: number;
   /** Dedupe non-tx awards (e.g. Skill assistant message id). */
   dedupeKey?: string | null;
+  /**
+   * Multiply gross (after deposit scaling) before daily cap — e.g. Arena rank uses `add_to_list` on the same tx as pick XP.
+   * Omit or use 1 for full weight; values in (0, 1) floor after multiply.
+   */
+  grossMultiplier?: number;
 }): number {
-  const { address, reasonKey, txHash, depositTrustWei, sendTrustFixedAmount, dedupeKey } = opts;
+  const { address, reasonKey, txHash, depositTrustWei, sendTrustFixedAmount, dedupeKey, grossMultiplier } = opts;
   if (!address?.trim()) return 0;
 
-  const gross = computeGrossProtocolXp({
+  let gross = computeGrossProtocolXp({
     reasonKey,
     depositTrustWei,
     sendTrustFixedAmount,
   });
+  if (!Number.isFinite(gross) || gross <= 0) return 0;
+  if (grossMultiplier != null && Number.isFinite(grossMultiplier) && grossMultiplier > 0 && grossMultiplier < 1) {
+    gross = Math.floor(gross * grossMultiplier);
+  }
   if (!Number.isFinite(gross) || gross <= 0) return 0;
 
   const addrLc = address.toLowerCase();
@@ -373,6 +385,7 @@ export function notifyProtocolXpEarned(opts: {
     delta: award,
     reasonKey,
     txHash: h ?? undefined,
+    dedupeKey: opts.dedupeKey?.trim() ? opts.dedupeKey.trim() : undefined,
   });
   return award;
 }

@@ -20,7 +20,7 @@ type Props = {
   onFavoriteToggle?: () => void;
 };
 
-/** Trust-terminal lane row — gold/cyan rim, matte glass (Intuition-style dashboards). */
+/** Trust-terminal lane row — matches Pulse “Hot” cards: amber rim, heat top bar, teal chips, red depth accents. */
 const ArenaListCard: React.FC<Props> = ({
   title,
   description,
@@ -65,18 +65,17 @@ const ArenaListCard: React.FC<Props> = ({
   );
 
   return (
-    <article
-      className="group/card relative min-w-0 w-full rounded-xl border border-white/[0.08] backdrop-blur-lg overflow-hidden transition-[border-color,box-shadow] duration-300 hover:border-[#38e8ff]/28 hover:shadow-[0_14px_44px_rgba(0,0,0,0.42),0_0_28px_rgba(232,197,71,0.08)]"
-      style={{
-        background: 'linear-gradient(165deg, rgba(14,14,18,0.96) 0%, rgba(8,9,11,0.94) 55%)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 28px rgba(0,0,0,0.4)',
-      }}
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-70 group-hover/card:opacity-100 transition-opacity" style={{ background: ARENA_THEME.rimBar }} aria-hidden />
+    <article className="group/card relative min-w-0 w-full rounded-2xl border border-amber-700/55 bg-zinc-950/95 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition-[border-color,box-shadow] duration-300 hover:border-amber-500/70 hover:shadow-[0_0_30px_rgba(232,197,71,0.2),0_0_42px_rgba(248,113,113,0.12)]">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[3px] opacity-95 group-hover/card:opacity-100 transition-opacity rounded-t-2xl bg-gradient-to-r from-amber-400/85 via-orange-500/55 via-fuchsia-500/45 to-rose-600/55"
+        aria-hidden
+      />
       <div
         aria-hidden
         className="pointer-events-none absolute left-0 top-0 bottom-0 w-[2px] opacity-0 group-hover/card:opacity-100 transition-opacity duration-300"
-        style={{ background: `linear-gradient(180deg, ${ARENA_THEME.gold}, ${ARENA_THEME.cyan}, ${ARENA_THEME.violet})` }}
+        style={{
+          background: `linear-gradient(180deg, ${ARENA_THEME.gold}, ${ARENA_THEME.redHot}, ${ARENA_THEME.violet}, ${ARENA_THEME.cyan})`,
+        }}
       />
       {showStar ? (
         <button
@@ -92,8 +91,8 @@ const ArenaListCard: React.FC<Props> = ({
           onMouseEnter={playHover}
           className={`absolute top-2 right-2 z-30 flex h-8 w-8 items-center justify-center rounded-lg border backdrop-blur-sm transition-colors ${
             isFavorite
-              ? 'border-amber-400/50 bg-black/75 text-amber-300 hover:bg-amber-500/15'
-              : 'border-white/[0.08] bg-black/55 text-slate-500 hover:text-amber-200/90 hover:border-amber-400/28 hover:bg-black/75'
+              ? 'border-rose-400/55 bg-black/75 text-rose-300 hover:bg-rose-500/15'
+              : 'border-white/[0.08] bg-black/55 text-slate-500 hover:text-rose-200/95 hover:border-rose-400/35 hover:bg-black/75'
           }`}
         >
           <Star className="h-4 w-4" strokeWidth={2.25} fill={isFavorite ? 'currentColor' : 'none'} />
@@ -128,20 +127,20 @@ const ArenaListCard: React.FC<Props> = ({
         <div
           className="pointer-events-none absolute inset-0 opacity-0 group-hover/card:opacity-100 transition-opacity duration-500"
           style={{
-            background: `radial-gradient(ellipse 90% 70% at 0% 40%, ${ARENA_THEME.gold}14, transparent 58%), radial-gradient(ellipse 70% 50% at 100% 80%, ${ARENA_THEME.cyan}10, transparent 55%)`,
+            background: `radial-gradient(ellipse 90% 70% at 0% 40%, ${ARENA_THEME.gold}16, transparent 58%), radial-gradient(ellipse 70% 50% at 100% 80%, ${ARENA_THEME.cyan}10, transparent 55%), radial-gradient(ellipse 55% 45% at 80% 20%, ${ARENA_THEME.redDim}, transparent 50%)`,
           }}
         />
 
         <div
-          className="relative z-10 shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl shadow-inner border transition-all duration-300 group-hover/card:shadow-[0_0_22px_rgba(232,197,71,0.2)]"
+          className="relative z-10 shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-xl shadow-inner border transition-all duration-300 group-hover/card:shadow-[0_0_22px_rgba(251,191,36,0.25)]"
           style={{
             background: `linear-gradient(145deg, rgba(10,10,12,0.95), rgba(6,7,10,0.98))`,
-            borderColor: `${ARENA_THEME.gold}33`,
+            borderColor: `${ARENA_THEME.gold}44`,
             color: ARENA_THEME.goldBright,
           }}
         >
           {listGlyph ? (
-            <span className="font-black leading-none select-none drop-shadow-[0_0_12px_rgba(56,232,255,0.35)]" aria-hidden>
+            <span className="font-black leading-none select-none drop-shadow-[0_0_12px_rgba(251,191,36,0.4)]" aria-hidden>
               {listGlyph}
             </span>
           ) : (
@@ -207,9 +206,9 @@ const ArenaListCard: React.FC<Props> = ({
             ) : null}
           </div>
           <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors group-hover/card:border-[#38e8ff]/45"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors group-hover/card:border-rose-400/40"
             style={{
-              borderColor: `${ARENA_THEME.gold}28`,
+              borderColor: `${ARENA_THEME.gold}35`,
               background: 'rgba(255,255,255,0.04)',
               color: ARENA_THEME.cyan,
             }}
@@ -231,7 +230,7 @@ const ArenaListCard: React.FC<Props> = ({
             className="h-full rounded-full transition-[width] duration-500"
             style={{
               width: `${depthPct}%`,
-              background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.gold})`,
+              background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.gold}, ${ARENA_THEME.red})`,
             }}
           />
         </div>

@@ -31,7 +31,7 @@ export const ARENA_PERSONAL_ATTESTATION_TRIPLES =
   import.meta.env.VITE_ARENA_PERSONAL_ATTESTATION_TRIPLES === 'true';
 
 /** Minimum Arena XP per ranking gesture; awards scale with stake but never dip below this. */
-export const ARENA_XP_PER_RANK_PICK = 25;
+export const ARENA_XP_PER_RANK_PICK = 15;
 
 /**
  * Portal lists merged into Arena browse (`RankedList` live lists). The Arena explorer feed uses the same cap and
@@ -39,12 +39,74 @@ export const ARENA_XP_PER_RANK_PICK = 25;
  */
 export const ARENA_PORTAL_LISTS_FETCH_LIMIT = 48;
 
+/**
+ * Signal Pulse homepage — identity atom cards in this order. Each entry is resolved on the subgraph
+ * by label (`atoms.label` ilike); exact / closest label match wins.
+ */
+export const SIGNAL_PULSE_HERO_ATOM_LABELS: readonly string[] = [
+  'INTURANK',
+  'USDC',
+  'USDT',
+  'INTUITION',
+  'INTUITIONBILLY.ETH',
+  '0XBILLY.ETH',
+  'Dogecoin',
+  'ELON MUSK',
+  'ZET.BOX',
+  'BLUERESEARCHER.ETH',
+  'CBCRYPTO.ETH',
+  'FUNGBILL.ETH',
+  'OPENSEA',
+  'RCHRIS.ETH',
+];
+
+/**
+ * Signal Pulse **Crowd** rail — portal shop identities in display order (full curated list).
+ * Overlap with **Hot** is allowed: both rails may intentionally surface the same label.
+ * Each label resolves on the subgraph with **highest total vault assets** when multiple atoms share a name.
+ */
+const SIGNAL_PULSE_CROWD_ATOM_LABELS_RAW: readonly string[] = [
+  'STARCRAFT',
+  'DAPPESTDEV',
+  'TRUST NAME SERVICE',
+  'NEXURA',
+  'THE OVERMIND GALLERY',
+  'TRUST CARD',
+  'INTUITION BOX',
+  'AGENT SCORE',
+  'SAULO',
+  'JEBLINSKY.ETH',
+  'SOFIA',
+  'WOODS.ETH',
+  'X.COM',
+  'SMILINGKYLAN.ETH',
+  'AVOTOINTUITION.ETH',
+  'PIXI3.ETH',
+  'IRONGATE.ETH',
+  'THE HACKING PROJECT',
+  '0XVITAL.ETH',
+  'RCHRIS.ETH',
+  'NOVASKO.ETH',
+  'THE DOGE POUND NFT',
+  'ZET.BOX',
+  'WATCHER.GURU',
+  'METAMASK',
+  'JOLAD.ETH',
+  'COINDESK',
+  'ARKHAM',
+  'OPENSEA',
+  'CALEBNFTGOD.ETH',
+  'INTURANK',
+];
+
+export const SIGNAL_PULSE_CROWD_ATOM_LABELS: readonly string[] = SIGNAL_PULSE_CROWD_ATOM_LABELS_RAW;
+
 /** On-device “activity” XP mirrors via `getArenaLeaderboardMirrorUrl()` (same IntuRank API as Arena POST). */
 export const PROTOCOL_XP_MARKET_ACQUIRE = 50;
 export const PROTOCOL_XP_CREATE_ATOM = 45;
 export const PROTOCOL_XP_CREATE_CLAIM = 45;
 /** List-triple (add atom to list) — still a proxy triple, slightly below a free-form claim. */
-export const PROTOCOL_XP_ADD_TO_LIST = 40;
+export const PROTOCOL_XP_ADD_TO_LIST = 30;
 /** Activity XP for qualifying native TRUST sends (see minimum amount below). */
 export const PROTOCOL_XP_SEND_TRUST = 5;
 /** Sends below this many whole TRUST tokens do not award Send TRUST activity XP in the app. */
@@ -77,8 +139,17 @@ export const PROTOCOL_XP_CREATE_CLAIM_REFERENCE_DEPOSIT_TRUST_UNITS = 25;
 
 /** 0 = any on-chain deposit counts; XP still scales (protocol floor deposits stay tiny). */
 export const PROTOCOL_XP_ADD_TO_LIST_MIN_DEPOSIT_TRUST_UNITS = 0;
-/** Arena list stakes are often ~0.5 TRUST/row; 15 TRUST reference made protocol XP look like “1 pt”. Align reference to 1 TRUST so typical stakes earn meaningful activity XP. */
-export const PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS = 1;
+/**
+ * TRUST at or above this (whole units) earns full `PROTOCOL_XP_ADD_TO_LIST`; below → linear vs deposit (anti-farm).
+ * Raised from 1 → 2 so typical ~0.5 TRUST Arena stakes earn less deposit-side XP than before.
+ */
+export const PROTOCOL_XP_ADD_TO_LIST_REFERENCE_DEPOSIT_TRUST_UNITS = 2;
+
+/**
+ * Arena ranking batches earn Arena pick XP and `add_to_list` activity XP on the same vault deposit.
+ * Apply this to deposit-side gross only (values below 1 soften double-count); other add_to_list flows use default 1.
+ */
+export const PROTOCOL_XP_ARENA_RANK_ADD_TO_LIST_MULT = 0.85;
 
 /** Match triple Skill deposits — min 0 scales everything sub-reference (raise deposit for meaningful XP). */
 export const PROTOCOL_XP_SKILL_ONCHAIN_MIN_DEPOSIT_TRUST_UNITS = 0;
@@ -86,8 +157,7 @@ export const PROTOCOL_XP_SKILL_ONCHAIN_REFERENCE_DEPOSIT_TRUST_UNITS = 15;
 
 /**
  * Max activity XP creditable per UTC calendar day per bucket — anti-spam ceiling.
- * Tuned so a normal Arena/markets day never silently zero-outs: ~50 ranks ($0.5 TRUST each ≈ 1000 XP)
- * before add_to_list caps; market buys & creates similarly generous.
+ * Tuned so a normal Arena/markets day never silently zero-outs; daily buckets remain generous for real usage.
  */
 export const PROTOCOL_XP_DAILY_CAP_MARKET_ACQUIRE = 1000;
 export const PROTOCOL_XP_DAILY_CAP_CREATE_ATOM = 600;

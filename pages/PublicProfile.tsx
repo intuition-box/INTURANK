@@ -5,7 +5,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAccount } from 'wagmi';
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { getWalletBalance, getShareBalancesBatch, resolveENS, toAddress } from '../services/web3';
-import { resolveProfileSearchInput, walletDisplayMeta, rememberTrustNameForProfile } from '../services/tns';
+import { resolveProfileSearchInput, walletDisplayMeta, rememberTrustNameForProfile, TRUST_DISPLAY_UPDATED_EVENT, canonicalTrustFullName } from '../services/tns';
 import {
   getUserPositions,
   getPortfolioPositionsWithValue,
@@ -148,6 +148,8 @@ const PublicProfile: React.FC = () => {
   /** Arena XP for the address being viewed — pulled from indexer (`fetchArenaXpRecordForWallet`),
    * with an optional floor from the connected wallet's local pick credit if it's the same address. */
   const [arenaXpTotal, setArenaXpTotal] = useState(0);
+  /** False until the first indexer fetch for this profile finishes (matches Arena / RankedList XP badge). */
+  const [arenaGraphReady, setArenaGraphReady] = useState(false);
 
   const refreshSubscription = useCallback((addr: string | null) => {
     if (!addr) {
@@ -215,9 +217,11 @@ const PublicProfile: React.FC = () => {
    */
   useEffect(() => {
     if (!address) {
+      setArenaGraphReady(false);
       setArenaXpTotal(0);
       return;
     }
+    setArenaGraphReady(false);
     let cancelled = false;
     const sync = async () => {
       try {
@@ -229,6 +233,8 @@ const PublicProfile: React.FC = () => {
         if (cancelled) return;
         const local = isOwnProfile ? arenaPickCreditXp(address) : 0;
         setArenaXpTotal(local);
+      } finally {
+        if (!cancelled) setArenaGraphReady(true);
       }
     };
     void sync();
@@ -258,6 +264,39 @@ const PublicProfile: React.FC = () => {
     }
   }, [connectedAddress, address, followEntry?.emailAlerts]);
 
+  useEffect(() => {
+    if (!address) {
+      setProfileAlias(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      walletDisplayMeta(address)
+        .then((meta) => {
+          if (!cancelled) setProfileAlias(meta);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            try {
+              setProfileAlias({ primaryLabel: getAddress(address as `0x${string}`), isNamed: false });
+            } catch {
+              setProfileAlias(null);
+            }
+          }
+        });
+    };
+    load();
+    const onTrust = (ev: Event) => {
+      const d = (ev as CustomEvent<{ address?: string }>).detail;
+      if (d?.address && address && d.address.toLowerCase() === address.toLowerCase()) load();
+    };
+    window.addEventListener(TRUST_DISPLAY_UPDATED_EVENT, onTrust);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(TRUST_DISPLAY_UPDATED_EVENT, onTrust);
+    };
+  }, [address]);
+
   const fetchUserData = async (addr: string) => {
     const gen = ++profileFetchGenerationRef.current;
     activeProfileFetchFor.current = addr;
@@ -267,9 +306,6 @@ const PublicProfile: React.FC = () => {
       gen !== profileFetchGenerationRef.current || activeProfileFetchFor.current !== addr;
 
     try {
-      walletDisplayMeta(addr).then((meta) => {
-        if (!stale()) setProfileAlias(meta);
-      });
 
       await Promise.race([
         (async () => {
@@ -548,8 +584,15 @@ const PublicProfile: React.FC = () => {
       try {
         const { address: resolved, error } = await resolveProfileSearchInput(cleanQuery);
         if (resolved) {
-          rememberTrustNameForProfile(resolved, cleanQuery);
+          if (canonicalTrustFullName(cleanQuery) || cleanQuery.toLowerCase().endsWith('.trust')) {
+            rememberTrustNameForProfile(resolved, cleanQuery);
+          }
           navigate(`/profile/${resolved}`);
+          void walletDisplayMeta(resolved).then((m) => {
+            if (m.isNamed && m.primaryLabel?.toLowerCase().endsWith('.trust')) {
+              rememberTrustNameForProfile(resolved, m.primaryLabel);
+            }
+          });
           setSearchQuery('');
           return;
         }
@@ -783,6 +826,7 @@ const PublicProfile: React.FC = () => {
                   arenaXp={arenaXpTotal}
                   activityXp={protocolXpTotal}
                   size="lg"
+                  loading={!arenaGraphReady}
                   className="w-full shadow-[0_0_32px_rgba(0,243,255,0.08)] max-md:scale-[0.92] max-md:origin-top"
                 />
               </div>

@@ -20,8 +20,11 @@ import { CHAIN_ID, RPC_URL } from '../constants';
 import {
   getAccountsByIds,
   getAccountTrustNameLabelForWallet,
+  getAccountTrustNameLabelFromPositions,
+  getAccountTrustNameFromCreatorAtoms,
   resolveIntuitionAccountForWallet,
   searchAccountsByLabelSuggest,
+  type GraphAccountRow,
 } from './graphql';
 import {
   isGraphResolvableAddress,
@@ -59,7 +62,7 @@ export function canonicalTrustFullName(input: string): string | null {
 
   const labelPart = lower.endsWith('.trust') ? raw.slice(0, raw.length - '.trust'.length) : raw;
   const label = normalise(labelPart);
-  if (!label || !/^[a-z0-9-]+$/.test(label)) return null;
+  if (!label || !/^[a-z0-9_-]+$/.test(label)) return null;
   return toFullName(label);
 }
 
@@ -68,9 +71,28 @@ const TRUST_PRIMARY_HINT_PREFIX = 'inturank_tns_primary_v1:';
 /** Dispatched when session TNS hint updates so header chrome refetches labels without remounting the wallet. */
 export const TRUST_DISPLAY_UPDATED_EVENT = 'inturank-trust-display-updated';
 
+function trustHintKey(walletChecksum: string): string {
+  return TRUST_PRIMARY_HINT_PREFIX + walletChecksum.toLowerCase();
+}
+
+function persistTrustPrimaryHint(walletChecksum: string, fullTrustName: string): void {
+  if (typeof window === 'undefined') return;
+  const k = trustHintKey(walletChecksum);
+  try {
+    sessionStorage.setItem(k, fullTrustName);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(k, fullTrustName);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Remember a `.trust` search selection so `/profile/0x…` can show the name before reverse records sync. */
 export function rememberTrustNameForProfile(walletChecksum: string, trustQuery: string): void {
-  const full = canonicalTrustFullName(trustQuery);
+  const full = canonicalTrustFullName(trustQuery.trim());
   if (!full) return;
   let keys = walletChecksum.trim();
   try {
@@ -78,11 +100,7 @@ export function rememberTrustNameForProfile(walletChecksum: string, trustQuery: 
   } catch {
     /* keep trimmed raw */
   }
-  try {
-    sessionStorage.setItem(TRUST_PRIMARY_HINT_PREFIX + keys.toLowerCase(), full);
-  } catch {
-    /* quota / private mode */
-  }
+  persistTrustPrimaryHint(keys, full);
   if (typeof window === 'undefined') return;
   try {
     window.dispatchEvent(new CustomEvent(TRUST_DISPLAY_UPDATED_EVENT, { detail: { address: keys } }));
@@ -92,8 +110,9 @@ export function rememberTrustNameForProfile(walletChecksum: string, trustQuery: 
 }
 
 function readStoredTrustPrimaryHint(walletChecksum: string): string | null {
+  const k = trustHintKey(walletChecksum);
   try {
-    return sessionStorage.getItem(TRUST_PRIMARY_HINT_PREFIX + walletChecksum.toLowerCase());
+    return sessionStorage.getItem(k) ?? localStorage.getItem(k);
   } catch {
     return null;
   }
@@ -208,26 +227,46 @@ function graphPreferredWalletLabel(lab: string | undefined | null): string | nul
   return t;
 }
 
-async function resolveWalletLabelFromGraph(walletAddress: string): Promise<string | null> {
-  try {
-    const map = await getAccountsByIds([walletAddress]);
-    const hit = resolveIntuitionAccountForWallet(walletAddress, map);
-    return graphPreferredWalletLabel(hit?.label ?? null);
-  } catch {
-    return null;
-  }
-}
-
 /** Reverse lookup: wallet → primary `.trust` name, or null. */
 export async function reverseResolveTNS(walletAddress: string): Promise<string | null> {
+  let chk: string;
   try {
-    const chk = getAddress(walletAddress.trim() as `0x${string}`);
-    const strict = await getTNSClient().lookupAddress(chk);
-    if (typeof strict === 'string' && strict.toLowerCase().endsWith('.trust')) return strict;
-    return await reverseTrustWhenAddrUnsetButReverseAndOwnerMatch(chk);
+    chk = getAddress(walletAddress.trim() as `0x${string}`);
   } catch {
     return null;
   }
+
+  const normalizeLookup = (name: string | null | undefined): string | null => {
+    if (typeof name !== 'string') return null;
+    const t = name.trim();
+    if (!t) return null;
+    const coerced = canonicalTrustFullName(t);
+    if (coerced) return coerced;
+    if (t.toLowerCase().endsWith('.trust')) return t;
+    return null;
+  };
+
+  /**
+   * Prefer registry **owner** match first: {@link TNSClient.lookupAddress} requires `resolver.addr(forward)`
+   * to equal the wallet, so it returns null for many real registrations (reverse + NFT owner only).
+   * That path must not throw away the fallback — isolate it from RPC errors.
+   */
+  try {
+    const viaOwner = await reverseTrustWhenAddrUnsetButReverseAndOwnerMatch(chk);
+    if (viaOwner) return viaOwner;
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const strict = await getTNSClient().lookupAddress(chk);
+    const n = normalizeLookup(strict);
+    if (n) return n;
+  } catch {
+    /* RPC / resolver read failure */
+  }
+
+  return null;
 }
 
 /**
@@ -243,9 +282,14 @@ async function reverseTrustWhenAddrUnsetButReverseAndOwnerMatch(walletAddress: s
     if (!resolverAddr || resolverAddr.toLowerCase() === ZeroAddress.toLowerCase()) return null;
 
     const resolver = new Contract(resolverAddr, TNS_RESOLVER_ABI, createTNSReadProvider());
-    const nameStr: string = await resolver.name(reverseNode);
-    if (!nameStr || typeof nameStr !== 'string') return null;
-    const full = canonicalTrustFullName(nameStr);
+    const nameStrRaw = await resolver.name(reverseNode);
+    const nameStr = typeof nameStrRaw === 'string' ? nameStrRaw.trim() : '';
+    if (!nameStr) return null;
+    let full = canonicalTrustFullName(nameStr);
+    if (!full && nameStr.toLowerCase().endsWith('.trust')) {
+      const stem = normalise(nameStr.replace(/\.trust$/i, ''));
+      if (stem && /^[a-z0-9_-]+$/.test(stem)) full = toFullName(stem);
+    }
     if (!full) return null;
 
     const forwardNode = namehash(full);
@@ -270,35 +314,58 @@ export async function walletDisplayMeta(walletAddress: string | null | undefined
 
     const hintedFirst = readStoredTrustPrimaryHint(chk);
     if (hintedFirst) {
-      const ownerAddr = await resolveTrustNameToAddress(hintedFirst);
-      if (ownerAddr?.toLowerCase() === chk.toLowerCase()) {
-        const label = canonicalTrustFullName(hintedFirst) ?? hintedFirst;
-        return { primaryLabel: label, isNamed: true };
+      try {
+        const ownerAddr = await resolveTrustNameToAddress(hintedFirst);
+        if (ownerAddr?.toLowerCase() === chk.toLowerCase()) {
+          const label = canonicalTrustFullName(hintedFirst) ?? hintedFirst;
+          return { primaryLabel: label, isNamed: true };
+        }
+      } catch {
+        /* RPC / registry hiccup — fall through to live resolution */
       }
     }
 
-    const tns = await reverseResolveTNS(chk);
+    /**
+     * Run TNS reverse and indexer reads together. A slow/hung RPC no longer blocks showing a `.trust`
+     * the subgraph already indexed; on-chain primary still wins when both return.
+     */
+    const [tns, graphMap, trustTagged, trustViaPositions, trustViaCreatorAtoms] = await Promise.all([
+      reverseResolveTNS(chk).catch(() => null as string | null),
+      getAccountsByIds([chk]).catch(() => new Map<string, GraphAccountRow>()),
+      getAccountTrustNameLabelForWallet(chk).catch(() => null as string | null),
+      getAccountTrustNameLabelFromPositions(chk).catch(() => null as string | null),
+      getAccountTrustNameFromCreatorAtoms(chk).catch(() => null as string | null),
+    ]);
+
     if (tns) {
-      try {
-        sessionStorage.setItem(TRUST_PRIMARY_HINT_PREFIX + chk.toLowerCase(), tns);
-      } catch {
-        /* ignore */
-      }
+      persistTrustPrimaryHint(chk, tns);
       return { primaryLabel: tns, isNamed: true };
     }
 
-    const trustTagged = await getAccountTrustNameLabelForWallet(chk);
-    if (trustTagged?.toLowerCase().endsWith('.trust')) {
-      return { primaryLabel: trustTagged, isNamed: true };
+    const hit = resolveIntuitionAccountForWallet(chk, graphMap);
+    const fromGraphRow = graphPreferredWalletLabel(hit?.label ?? null);
+    const graphTrust =
+      fromGraphRow?.toLowerCase().endsWith('.trust') ? fromGraphRow : null;
+    const secondaryTrust =
+      trustTagged?.toLowerCase().endsWith('.trust') ? trustTagged : null;
+    const positionsTrust =
+      trustViaPositions?.toLowerCase().endsWith('.trust') ? trustViaPositions : null;
+    const creatorTrust =
+      trustViaCreatorAtoms?.toLowerCase().endsWith('.trust') ? trustViaCreatorAtoms : null;
+    const indexerTrust = (() => {
+      const pool = [graphTrust, secondaryTrust, positionsTrust, creatorTrust].filter(Boolean) as string[];
+      if (!pool.length) return null;
+      pool.sort((a, b) => a.length - b.length);
+      return pool[0] ?? null;
+    })();
+    if (indexerTrust) {
+      const store = canonicalTrustFullName(indexerTrust) ?? indexerTrust.trim().toLowerCase();
+      persistTrustPrimaryHint(chk, store);
+      return { primaryLabel: indexerTrust, isNamed: true };
     }
 
     const ens = await reverseResolveENS(chk);
     if (ens) return { primaryLabel: ens, isNamed: true };
-
-    const graphTrust = await resolveWalletLabelFromGraph(chk);
-    if (graphTrust?.toLowerCase().endsWith('.trust')) {
-      return { primaryLabel: graphTrust, isNamed: true };
-    }
 
     return { primaryLabel: chk, isNamed: false };
   } catch {

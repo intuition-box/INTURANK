@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CheckCircle2, Layers, Sparkles, Terminal, X, Zap } from 'lucide-react';
 import { playClick } from '../services/audio';
-import { ARENA_XP_PER_RANK_PICK } from '../constants';
 
 export type ArenaBatchSuccessPayload = {
   itemCount: number;
@@ -23,6 +22,8 @@ export type ArenaBatchSuccessPayload = {
   arenaXpEarned?: number;
   /** XPDN granted per vault tx (same sum as `activityXpEarned` when all txs qualify). */
   xpdnByTx?: number[];
+  /** Optional replacement for the default “Arena stances” footer line (e.g. Signal / Pulse). */
+  outro?: string;
 };
 
 type Props = {
@@ -74,14 +75,15 @@ const ArenaBatchSuccessModal: React.FC<Props> = ({ open, payload, onClose }) => 
   const totalXp = arena + xpdn;
   const xpdnLine =
     p?.xpdnByTx && p.xpdnByTx.length > 0 ? p.xpdnByTx.map((n) => `+${n}`).join(' · ') : null;
-  const xpdnSumFromParts = p?.xpdnByTx?.reduce((a, b) => a + b, 0) ?? 0;
-  const showXpTiles = arena > 0 || xpdn > 0;
-  const statColClass =
-    showXpTiles && arena > 0 && xpdn > 0
-      ? 'grid-cols-2 sm:grid-cols-4'
-      : showXpTiles
-        ? 'grid-cols-2 sm:grid-cols-3'
-        : 'grid-cols-2';
+  const xpSubtitle = (() => {
+    if (totalXp <= 0) {
+      return 'No XP credited — try a larger deposit or check daily cap / duplicate tx.';
+    }
+    const parts: string[] = [];
+    if (arena > 0) parts.push(`${arena} Arena`);
+    if (xpdn > 0) parts.push(xpdnLine ? `activity ${xpdnLine}` : `${xpdn} activity`);
+    return parts.join(' · ');
+  })();
 
   return createPortal(
     <AnimatePresence mode="wait">
@@ -198,7 +200,7 @@ const ArenaBatchSuccessModal: React.FC<Props> = ({ open, payload, onClose }) => 
             </div>
 
             <div id="arena-success-desc" className="relative px-5 py-4 space-y-3">
-              <div className={`grid gap-2.5 ${statColClass}`}>
+              <div className="grid gap-2.5 grid-cols-3">
                 <motion.div
                   className="rounded-xl border border-white/[0.08] bg-black/40 px-3 py-2.5"
                   initial={reduceMotion ? false : { opacity: 0, y: 10 }}
@@ -222,85 +224,30 @@ const ArenaBatchSuccessModal: React.FC<Props> = ({ open, payload, onClose }) => 
                   </p>
                   <p className="text-[9px] font-mono text-amber-600/90 mt-0.5 uppercase tracking-wide">TRUST</p>
                 </motion.div>
-                {showXpTiles && arena > 0 ? (
-                    <motion.div
-                      className="rounded-xl border border-cyan-500/30 bg-cyan-950/25 px-3 py-2.5 sm:col-span-1"
-                      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: reduceMotion ? 0 : 0.13, ...springPop }}
-                    >
-                      <p className="text-[9px] font-mono uppercase tracking-widest text-cyan-400/90 mb-1 flex items-center gap-1">
-                        <Zap className="w-3 h-3" strokeWidth={2.4} aria-hidden />
-                        Arena XP
-                      </p>
-                      <p className="text-xl font-black font-mono tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-cyan-200 to-cyan-500">
-                        +{arena}
-                      </p>
-                      <p className="text-[8px] font-mono text-cyan-500/80 mt-0.5 leading-tight">
-                        {p.itemCount}×{ARENA_XP_PER_RANK_PICK} pick credit
-                      </p>
-                    </motion.div>
-                ) : null}
-                {showXpTiles && xpdn > 0 ? (
-                    <motion.div
-                      className="rounded-xl border border-violet-500/35 bg-violet-950/30 px-3 py-2.5 sm:col-span-1"
-                      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: reduceMotion ? 0 : 0.17, ...springPop }}
-                    >
-                      <p className="text-[9px] font-mono uppercase tracking-widest text-violet-200/95 mb-0.5">
-                        XPDN
-                      </p>
-                      <p className="text-xl font-black font-mono tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-violet-200 to-fuchsia-500 leading-none">
-                        +{xpdn}
-                      </p>
-                      <p className="text-[8px] font-mono text-violet-400/80 mt-1 leading-snug">
-                        XP from deposits — counted per tx on this device
-                      </p>
-                    </motion.div>
-                ) : null}
-              </div>
-
-              <p className="text-[10px] text-slate-500 leading-relaxed rounded-lg border border-white/[0.05] bg-black/30 px-3 py-2">
-                <span className="font-bold text-violet-200/90">XPDN</span> is short for{' '}
-                <span className="text-slate-400">experience points from your deposits</span> — the protocol activity bonus IntuRank
-                credits on each qualifying vault deposit (same family as “add to list” XP). It’s saved in{' '}
-                <span className="text-slate-400">this browser</span> with daily caps; Arena XP is your climb / indexer rhythm.
-              </p>
-
-              {totalXp > 0 ? (
                 <motion.div
-                  className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 via-slate-950/85 to-teal-950/35 px-4 py-3 text-center"
-                  initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: reduceMotion ? 0 : 0.2, ...burstSpring }}
+                  className="rounded-xl border border-violet-500/35 bg-violet-950/30 px-3 py-2.5 min-w-0"
+                  initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: reduceMotion ? 0 : 0.13, ...springPop }}
                 >
-                  <p className="text-[9px] font-mono font-black uppercase tracking-[0.28em] text-emerald-400/90 mb-1">
-                    Total power-up
+                  <p className="text-[9px] font-mono uppercase tracking-widest text-violet-200/95 mb-1 flex items-center gap-1">
+                    <Zap className="w-3 h-3 shrink-0" strokeWidth={2.4} aria-hidden />
+                    XP
                   </p>
-                  <motion.p
-                    className="text-3xl sm:text-4xl font-black font-display tabular-nums text-white tracking-tight drop-shadow-[0_0_24px_rgba(52,211,153,0.45)]"
-                    initial={reduceMotion ? false : { scale: 0.5, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: reduceMotion ? 0 : 0.24, type: 'spring', stiffness: 380, damping: 18 }}
+                  <p
+                    className={`text-xl font-black font-mono tabular-nums leading-none ${
+                      totalXp > 0
+                        ? 'text-transparent bg-clip-text bg-gradient-to-b from-violet-200 to-fuchsia-500'
+                        : 'text-slate-500'
+                    }`}
                   >
-                    +{totalXp} XP
-                  </motion.p>
-                  <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
-                    Arena XP + XPDN combined. Leaderboard totals sync after the indexer catches up.
+                    +{totalXp}
+                  </p>
+                  <p className="text-[8px] font-mono text-slate-500 mt-1.5 leading-snug line-clamp-3">
+                    {xpSubtitle}
                   </p>
                 </motion.div>
-              ) : null}
-
-              {xpdnLine ? (
-                <p className="rounded-lg border border-violet-500/20 bg-violet-950/15 px-3 py-1.5 text-[10px] font-mono text-violet-200/90">
-                  <span className="text-violet-400/90 font-bold">Per tx · </span>
-                  {xpdnLine}
-                  {xpdnSumFromParts > 0 && xpdnSumFromParts !== xpdn ? (
-                    <span className="text-slate-500"> · Σ {xpdnSumFromParts}</span>
-                  ) : null}
-                </p>
-              ) : null}
+              </div>
 
               {p.humanLine ? (
                 <p className="text-[12px] text-slate-100 leading-snug font-sans border-l-2 border-emerald-500/50 pl-3 py-1.5 rounded-r-md bg-emerald-950/15">
@@ -309,7 +256,8 @@ const ArenaBatchSuccessModal: React.FC<Props> = ({ open, payload, onClose }) => 
               ) : null}
 
               <p className="text-[11px] text-slate-400 leading-relaxed font-medium">
-                Your Arena stances are written to Intuition. Leaderboard XP catches up after indexer sync.
+                {p.outro ??
+                  'Your Arena stances are written to Intuition. Leaderboard XP catches up after indexer sync.'}
               </p>
 
               {p.footnote ? (

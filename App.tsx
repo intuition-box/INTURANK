@@ -103,7 +103,13 @@ const AppRoutes: React.FC = () => {
   const location = useLocation();
   const Shell = isMobile ? MobileLayout : Layout;
   const Landing = isMobile ? MobileHome : Home;
-  const routeKey = `${location.pathname}${location.search}`;
+  /**
+   * Only pathname drives the transition. Including `location.search` made every
+   * `/climb?list=…` / `view=` change replay the full-route fade (exit opacity 0) —
+   * felt like the Arena “black flicker” when switching lists or tabs.
+   */
+  const routeKey =
+    location.pathname === '/climb' ? '/climb' : `${location.pathname}${location.search}`;
 
   const routeTree = (
     <Routes>

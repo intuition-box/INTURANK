@@ -1,5 +1,7 @@
 import React from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { ArenaXpToken } from './ArenaXpToken';
+import { AnimatedXpFigure } from './AnimatedXpFigure';
 
 /**
  * Single source of truth for the "IntuRank XP" stat across the app.
@@ -67,12 +69,21 @@ export const IntuRankXpBadge: React.FC<IntuRankXpBadgeProps> = ({
   loading = false,
 }) => {
   const preset = SIZE_PRESETS[size];
+  const reduceMotion = useReducedMotion();
   const total = Math.max(0, Math.round((arenaXp || 0) + (activityXp || 0)));
-  const showBreakdown = !compact && (arenaXp > 0 || activityXp > 0);
+  const showBreakdown =
+    !compact && !loading && (arenaXp > 0 || activityXp > 0);
 
   return (
-    <div
+    <motion.div
       className={`relative flex items-center overflow-hidden border border-intuition-primary/40 ${preset.container} ${className}`}
+      initial={reduceMotion ? false : { opacity: 0.88, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : { duration: 0.42, ease: [0.22, 1, 0.36, 1] }
+      }
       style={{
         background:
           'linear-gradient(135deg, rgba(0,243,255,0.08) 0%, rgba(8,15,28,0.85) 55%, rgba(2,6,12,0.95) 100%)',
@@ -105,17 +116,26 @@ export const IntuRankXpBadge: React.FC<IntuRankXpBadgeProps> = ({
         <p
           className={`font-display font-black tabular-nums tracking-tight text-white leading-none mt-1 ${preset.total}`}
         >
-          {loading ? '—' : total.toLocaleString()}
+          <AnimatedXpFigure ready={!loading} value={total} />
         </p>
         {showBreakdown ? (
-          <p className={`font-mono font-semibold text-slate-400 mt-1.5 ${preset.breakdown}`}>
+          <motion.p
+            className={`font-mono font-semibold text-slate-400 mt-1.5 ${preset.breakdown}`}
+            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={
+              reduceMotion
+                ? { duration: 0 }
+                : { duration: 0.32, delay: 0.04, ease: [0.22, 1, 0.36, 1] }
+            }
+          >
             <span className="text-intuition-primary/85">Arena {arenaXp.toLocaleString()}</span>
             <span className="text-slate-600 mx-1.5">·</span>
             <span className="text-amber-300/85">Activity {activityXp.toLocaleString()}</span>
-          </p>
+          </motion.p>
         ) : null}
       </div>
-    </div>
+    </motion.div>
   );
 };
 

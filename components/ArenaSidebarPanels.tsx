@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Hexagon, ListTree, Trophy, Zap, LayoutGrid } from 'lucide-react';
+import { AnimatedXpFigure } from './AnimatedXpFigure';
 import { playClick, playHover } from '../services/audio';
 import { ARENA_THEME } from '../services/arenaUiTheme';
 
@@ -23,7 +24,9 @@ export const ArenaBrowseLaneHud: React.FC<{ laneLabel: string; listCount: number
 type SessionStripProps = {
   duels: number;
   streak: number;
-  xpRoll: number;
+  xpTotal: number;
+  /** False until Arena graph XP has been fetched once for this session (matches header badge). */
+  xpTotalReady: boolean;
   connected: boolean;
 };
 
@@ -31,7 +34,8 @@ type SessionStripProps = {
 export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
   duels,
   streak,
-  xpRoll,
+  xpTotal,
+  xpTotalReady,
   connected,
 }) => {
   const progressToMilestone = duels % 5;
@@ -45,17 +49,23 @@ export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
       </div>
       <div className="grid grid-cols-3 gap-px bg-white/[0.05]">
         {[
-          { k: 'Ranks', v: String(duels), accent: 'text-white' },
-          { k: 'Streak', v: String(streak), accent: 'text-[#fcd34d]' },
-          {
-            k: 'XP',
-            v: connected ? xpRoll.toLocaleString() : '—',
-            accent: 'text-[#fde68a]',
-          },
+          { k: 'Ranks', v: String(duels), accent: 'text-white', kind: 'plain' as const },
+          { k: 'Streak', v: String(streak), accent: 'text-[#fcd34d]', kind: 'plain' as const },
+          { k: 'XP', v: '', accent: 'text-[#fde68a]', kind: 'xp' as const },
         ].map((cell) => (
           <div key={cell.k} className="bg-[#070708] px-2 py-3 text-center">
             <p className="text-[8px] font-mono uppercase tracking-wider text-slate-600">{cell.k}</p>
-            <p className={`text-[15px] font-black tabular-nums mt-1 ${cell.accent}`}>{cell.v}</p>
+            <p className={`text-[15px] font-black mt-1 ${cell.accent} tabular-nums`}>
+              {cell.kind === 'xp' ? (
+                <AnimatedXpFigure
+                  ready={connected && xpTotalReady}
+                  value={xpTotal}
+                  className="justify-center w-full font-black"
+                />
+              ) : (
+                cell.v
+              )}
+            </p>
           </div>
         ))}
       </div>
@@ -68,7 +78,7 @@ export const ArenaSidebarSessionStrip: React.FC<SessionStripProps> = ({
         </div>
         <div className="h-1.5 rounded-full bg-slate-900 overflow-hidden ring-1 ring-white/[0.05]">
           <div
-            className="h-full rounded-full transition-[width] duration-300"
+            className="h-full rounded-full transition-[width] duration-500 ease-out"
             style={{
               width: `${(progressToMilestone / 5) * 100}%`,
               background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.gold})`,

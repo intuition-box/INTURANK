@@ -44,6 +44,35 @@ const FOLLOWS_PATH = path.join(DATA_DIR, 'follows.json');
 const ARENA_LB_PATH = path.join(DATA_DIR, 'arena-leaderboard.json');
 const USER_PREFS_PATH = path.join(DATA_DIR, 'arena-user-prefs.json');
 
+/** @type {Set<string>} */
+const PROTOCOL_XP_REASONS = new Set([
+  'market_acquire',
+  'create_atom',
+  'create_claim',
+  'add_to_list',
+  'send_trust',
+  'skill_chat',
+  'skill_atom',
+  'skill_triple',
+]);
+/** Single-event ceiling (mirrors ~one protocol action); stops absurd POSTs. */
+const MAX_PROTOCOL_XP_EVENT_DELTA = 250;
+
+/**
+ * @param {Record<string, unknown>} body
+ * @returns {string} empty if unusable
+ */
+function protocolXpMirrorDedupeKey(body) {
+  const tx = typeof body.txHash === 'string' ? body.txHash.trim().toLowerCase() : '';
+  if (/^0x[0-9a-f]{64}$/.test(tx)) {
+    const r = String(body.reason || '').trim();
+    return `tx:${tx}:${r}`;
+  }
+  const dk = typeof body.dedupeKey === 'string' ? body.dedupeKey.trim() : '';
+  if (dk.length >= 6 && dk.length <= 256) return `dk:${dk}`;
+  return '';
+}
+
 async function loadFollowsStore() {
   try {
     const raw = await fs.readFile(FOLLOWS_PATH, 'utf8');
@@ -334,6 +363,8 @@ app.post('/api/sync-follows', async (req, res) => {
 });
 
 // --- Arena: leaderboard mirror (GET list + POST telemetry + protocol_xp) ---
+// Prefer POST kind=protocol_xp_event (additive, idempotent per tx/reason or dedupeKey).
+// Legacy kind=protocol_xp overwrites protocolXp from client total — deprecated for untrusted clients.
 app.get('/api/arena-leaderboard', async (_req, res) => {
   try {
     const map = await loadArenaLbMap();
@@ -360,6 +391,36 @@ app.post('/api/arena-leaderboard', async (req, res) => {
       listsPlayed: 0,
       updatedAt: 0,
     };
+
+    if (body.kind === 'protocol_xp_event') {
+      const reason = String(body.reason || '').trim();
+      if (!PROTOCOL_XP_REASONS.has(reason)) {
+        return res.status(400).json({ error: 'Invalid protocol XP reason' });
+      }
+      const dedupeKey = protocolXpMirrorDedupeKey(body);
+      if (!dedupeKey) {
+        return res.status(400).json({ error: 'protocol_xp_event requires txHash or dedupeKey' });
+      }
+      const deltaRaw = Number(body.protocolXpDelta ?? body.delta);
+      if (!Number.isFinite(deltaRaw) || deltaRaw <= 0) {
+        return res.status(400).json({ error: 'Invalid delta' });
+      }
+      const delta = Math.min(Math.max(0, Math.floor(deltaRaw)), MAX_PROTOCOL_XP_EVENT_DELTA);
+
+      const seenList = Array.isArray(prev.protocolXpSeenKeys) ? [...prev.protocolXpSeenKeys] : [];
+      if (seenList.includes(dedupeKey)) {
+        return res.json({ ok: true, duplicate: true });
+      }
+      seenList.push(dedupeKey);
+      while (seenList.length > 500) seenList.shift();
+
+      prev.protocolXpSeenKeys = seenList;
+      prev.protocolXp = Math.max(0, Math.floor(Number(prev.protocolXp) || 0)) + delta;
+      prev.updatedAt = Date.now();
+      map[w] = prev;
+      await saveArenaLbMap(map);
+      return res.json({ ok: true, applied: delta });
+    }
 
     if (body.kind === 'protocol_xp') {
       const t = Number(body.protocolXpTotal);

@@ -13,8 +13,8 @@ import { playClick, playHover } from '../services/audio';
 import { ARENA_THEME } from '../services/arenaUiTheme';
 
 const CY = ARENA_THEME.cyan;
-const MG = ARENA_THEME.violetDeep;
 const GOLD = ARENA_THEME.gold;
+const RED = ARENA_THEME.red;
 const SILVER = '#cbd5e1';
 const BRONZE = '#fb923c';
 
@@ -69,6 +69,12 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
     () => (myAddrLc ? augmentedPlayers.find((p) => p.address === myAddrLc) ?? null : null),
     [augmentedPlayers, myAddrLc],
   );
+  /**
+   * Single source for "You" breakdown: when already on the fetched board, match the row used for the podium
+   * (indexer/mirror + merged activity). Props alone use `max(indexer, pick credit)` for Arena and can differ by a few XP.
+   */
+  const youArenaXp = myRow ? myRow.arenaXp : myArenaXp;
+  const youActivityXp = myRow ? myRow.activityXp : myActivityXp;
   const top3 = augmentedPlayers.slice(0, 3);
 
   return (
@@ -76,12 +82,12 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       to="/stats?tab=rankers"
       onClick={playClick}
       onMouseEnter={playHover}
-      className="group block rounded-3xl border border-white/[0.08] overflow-hidden transition-all duration-300 hover:border-[#00f3ff]/40 hover:-translate-y-0.5"
+      className="group block rounded-3xl border border-white/[0.1] overflow-hidden transition-all duration-300 hover:border-amber-400/40 hover:shadow-[0_0_28px_rgba(251,191,36,0.12),0_0_32px_rgba(248,113,113,0.1)] hover:-translate-y-0.5"
       style={{
         background:
-          'linear-gradient(165deg, rgba(10,10,12,0.97) 0%, rgba(5,6,8,0.99) 52%, rgba(16,12,24,0.92) 100%)',
+          'linear-gradient(165deg, rgba(14,12,10,0.97) 0%, rgba(5,6,8,0.99) 48%, rgba(20,12,18,0.94) 100%)',
         boxShadow:
-          '0 0 0 1px rgba(56,232,255,0.06), 0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 40px rgba(232,197,71,0.04)',
+          '0 0 0 1px rgba(251,191,36,0.08), 0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 36px rgba(56,232,255,0.05), 0 0 32px rgba(248,113,113,0.05)',
       }}
     >
       {/* Header */}
@@ -89,7 +95,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
         <div
           className="absolute inset-0 opacity-[0.4] pointer-events-none"
           style={{
-            background: `linear-gradient(135deg, ${ARENA_THEME.gold}12 0%, transparent 50%, ${MG}10 100%)`,
+            background: `linear-gradient(135deg, ${GOLD}14 0%, transparent 45%, ${RED}08 100%)`,
           }}
           aria-hidden
         />
@@ -102,7 +108,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
               <Trophy size={14} style={{ color: CY }} strokeWidth={2.4} />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-mono uppercase tracking-[0.28em] text-[#00f3ff]/90 font-bold leading-none">
+              <p className="text-[9px] font-mono uppercase tracking-[0.28em] text-amber-200/90 font-bold leading-none">
                 IntuRank · Rankers
               </p>
               <p className="text-[11px] font-bold text-white leading-tight mt-0.5">Live leaderboard</p>
@@ -110,7 +116,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
           </div>
           <ArrowUpRight
             size={15}
-            className="text-slate-500 group-hover:text-cyan-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all shrink-0"
+            className="text-slate-500 group-hover:text-cyan-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all shrink-0"
           />
         </div>
       </div>
@@ -119,7 +125,7 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       <div className="px-3.5 py-3">
         {loading ? (
           <div className="flex items-center justify-center py-6 gap-2">
-            <Loader2 size={14} className="text-cyan-400 animate-spin" />
+            <Loader2 size={14} className="text-amber-300 animate-spin" />
             <span className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">Loading</span>
           </div>
         ) : top3.length === 0 ? (
@@ -236,23 +242,23 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                   </p>
               ) : (
                 <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
-                  {myArenaXp > 0 || myActivityXp > 0 ? 'Not on board yet' : 'Vote to enter'}
+                  {youArenaXp > 0 || youActivityXp > 0 ? 'Not on board yet' : 'Vote to enter'}
                 </p>
               )}
             </div>
             <div className="text-right shrink-0 space-y-1.5 tabular-nums">
-              <div title="Arena XP from indexer (leaderboard pool)">
+              <div title="Arena XP as counted on this leaderboard (indexer / mirror). Session strip may bridge pick credit until the graph catches up.">
                 <p className="text-[8px] font-mono uppercase tracking-wider text-cyan-300/85 font-bold leading-none">Arena</p>
                 <p
                   className="text-base font-black leading-none mt-0.5"
                   style={{ color: GOLD, textShadow: `0 0 8px ${GOLD}40` }}
                 >
-                  {myArenaXp.toLocaleString()}
+                  {youArenaXp.toLocaleString()}
                 </p>
               </div>
-              <div title="Activity XP (IntuRank markets, creates, sends — counts toward leaderboard for you; others when mirrored)">
+              <div title="Activity XP — this browser for you; others from API mirror when deployed.">
                 <p className="text-[8px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Activity</p>
-                <p className="text-sm font-black text-slate-400 leading-none mt-0.5">{myActivityXp.toLocaleString()}</p>
+                <p className="text-sm font-black text-slate-400 leading-none mt-0.5">{youActivityXp.toLocaleString()}</p>
               </div>
             </div>
           </div>

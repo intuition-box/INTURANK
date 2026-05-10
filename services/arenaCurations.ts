@@ -4,9 +4,13 @@
  * (subgraph is the source of truth, but this guarantees instant feedback while indexers catch up).
  */
 
+import { ARENA_XP_PER_RANK_PICK } from '../constants';
+
 const STORAGE_KEY = 'inturank-arena-curations-v1';
-const MAX_PICKS_PER_LIST = 200;
-const MAX_LISTS_PER_WALLET = 60;
+/** Max wallet keys stored in the JSON blob (LRU-ish by last activity). */
+const MAX_WALLET_KEYS_IN_STORAGE = 60;
+/** Max picks retained per list id (newest first) after each append. */
+const MAX_PICKS_PER_LIST = 120;
 
 export type ArenaCurationPick = {
   /** Stable key for de-dupe (composite of listId+itemId+ts on insert). */
@@ -102,11 +106,11 @@ export function recordArenaCurationPicks(
 
   // Cap total wallets in the file (oldest dropped).
   const wallets = Object.keys(file);
-  if (wallets.length > MAX_LISTS_PER_WALLET) {
+  if (wallets.length > MAX_WALLET_KEYS_IN_STORAGE) {
     const ranked = wallets
       .map((w) => ({ w, lastTs: Math.max(...(file[w] ?? []).map((p) => p.ts), 0) }))
       .sort((a, b) => b.lastTs - a.lastTs);
-    const keep = new Set(ranked.slice(0, MAX_LISTS_PER_WALLET).map((r) => r.w));
+    const keep = new Set(ranked.slice(0, MAX_WALLET_KEYS_IN_STORAGE).map((r) => r.w));
     for (const w of wallets) if (!keep.has(w)) delete file[w];
   }
 
@@ -137,7 +141,7 @@ export function getArenaLocalXpByTxHash(
   for (const p of getArenaCurationsForWallet(address)) {
     const h = p.txHash?.trim().toLowerCase();
     if (!h?.startsWith('0x')) continue;
-    const arenaXp = typeof p.arenaXpPick === 'number' && p.arenaXpPick > 0 ? p.arenaXpPick : 25;
+    const arenaXp = typeof p.arenaXpPick === 'number' && p.arenaXpPick > 0 ? p.arenaXpPick : ARENA_XP_PER_RANK_PICK;
     const xpdn = typeof p.xpdnAward === 'number' && p.xpdnAward > 0 ? p.xpdnAward : undefined;
     m.set(h, { arenaXp, ...(xpdn != null ? { xpdn } : {}) });
   }

@@ -17,6 +17,7 @@ import {
   resolveProfileSearchInput,
   resolveTrustNameToAddress,
   reverseResolveTNS,
+  walletDisplayMeta,
 } from '../services/tns';
 import { formatEther, isAddress, getAddress } from 'viem';
 import { playHover, playClick } from '../services/audio';
@@ -563,6 +564,11 @@ const Stats: React.FC = () => {
         if (isAddress(query)) {
           const normalized = getAddress(query as `0x${string}`);
           navigate(`/profile/${normalized}`);
+          void walletDisplayMeta(normalized).then((m) => {
+            if (m.isNamed && m.primaryLabel?.toLowerCase().endsWith('.trust')) {
+              rememberTrustNameForProfile(normalized, m.primaryLabel);
+            }
+          });
           await loadDiagnostics(normalized, ensNameForDisplay(normalized));
           return;
         }

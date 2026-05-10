@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layers } from 'lucide-react';
 import { playClick } from '../services/audio';
+import { ARENA_THEME } from '../services/arenaUiTheme';
 
 export type ArenaClimbTerraceProps = {
   queuedBatchCount: number;
@@ -15,18 +16,23 @@ const ArenaClimbTerrace: React.FC<ArenaClimbTerraceProps> = ({ queuedBatchCount,
   if (queuedBatchCount < 1 || !onReviewBatch) return null;
 
   return (
-    <div className="mt-4 rounded-2xl border-2 border-slate-800 bg-black/45 backdrop-blur-sm px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div
+      className="mt-4 rounded-2xl border border-white/10 bg-black/50 backdrop-blur-sm px-3 py-2.5 ring-1 ring-amber-500/15"
+      style={{ boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), 0 0 24px ${ARENA_THEME.redDim}` }}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[9px] font-mono font-black uppercase tracking-[0.22em] text-slate-500">Queued stances</p>
+        <p className="text-[9px] font-mono font-black uppercase tracking-[0.22em] text-amber-200/50">
+          Queued stances
+        </p>
         <button
           type="button"
           onClick={() => {
             playClick();
             onReviewBatch();
           }}
-          className="inline-flex items-center gap-1.5 rounded-xl border-2 border-intuition-primary/35 bg-intuition-primary/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-cyan-100 hover:bg-intuition-primary/16 hover:border-intuition-primary/50 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-xl border-2 border-cyan-400/40 bg-gradient-to-b from-cyan-500/18 to-black/80 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-cyan-50 hover:border-amber-400/45 hover:shadow-[0_0_18px_rgba(248,113,113,0.15)] transition-colors"
         >
-          <Layers size={13} strokeWidth={2.2} className="text-intuition-primary shrink-0" aria-hidden />
+          <Layers size={13} strokeWidth={2.2} className="text-cyan-200 shrink-0" aria-hidden />
           Review cart · {queuedBatchCount}
         </button>
       </div>
