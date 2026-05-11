@@ -13,6 +13,7 @@ import {
   Flame,
   Hash,
   Heart,
+  HeartPulse,
   Layers,
   Loader2,
   LogOut,
@@ -20,7 +21,6 @@ import {
   Plus,
   Radio,
   RefreshCw,
-  Scale,
   Search,
   Shield,
   Sparkles,
@@ -725,7 +725,7 @@ const SignalFeed: React.FC<Props> = ({ className, viewerAddress }) => {
             className="shrink-0 w-10 h-10 rounded-xl border border-cyan-400/50 bg-cyan-500/15 flex items-center justify-center"
             aria-hidden
           >
-            <Scale size={18} className="text-cyan-200" strokeWidth={2.4} />
+            <HeartPulse size={18} className="text-cyan-200" strokeWidth={2.4} />
           </div>
           <div className="min-w-0">
             <p className="text-[11px] font-mono font-black uppercase tracking-[0.28em] text-cyan-200">
@@ -1281,7 +1281,7 @@ const PulseLane: React.FC<{
             className="shrink-0 w-11 h-11 rounded-2xl border border-cyan-400/45 bg-cyan-500/15 flex items-center justify-center"
             aria-hidden
           >
-            <Scale size={22} className="text-cyan-100" strokeWidth={2.2} />
+            <HeartPulse size={22} className="text-cyan-100" strokeWidth={2.2} />
           </div>
           <div className="min-w-0">
             <h2 className="text-xl sm:text-2xl font-black font-display text-white leading-tight">Pulse</h2>
