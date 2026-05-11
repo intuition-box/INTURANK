@@ -1757,7 +1757,11 @@ const PulseAtomTagSection: React.FC<{
   if (loading && atomCards.length === 0) {
     return (
       <div className="space-y-3">
-        <p className="px-1 text-[11px] font-medium text-slate-500">Fetching atoms — first load may take a few seconds; later visits use cache.</p>
+        <p className="px-1 text-[11px] font-medium text-slate-500 max-w-xl">
+          Each card loads that identity on the Intuition graph, then triples and vault stats per atom (the same depth
+          as a market claim view). That means many requests—first load is slower; Hot and Crowd are then cached in
+          this browser for a while.
+        </p>
         <div className={gridClass}>
           {Array.from({ length: 4 }).map((_, i) => (
             <div

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
 import {
   Twitter,
   Github,
@@ -8,7 +9,10 @@ import {
   ExternalLink,
   BookOpen,
   Globe,
-  ChevronsRight,
+  Store,
+  Activity,
+  Trophy,
+  Wallet,
 } from 'lucide-react';
 import { playHover } from '../services/audio';
 import { APP_VERSION, EXPLORER_URL } from '../constants';
@@ -16,6 +20,25 @@ import Logo from './Logo';
 
 const TRUST_SWAP_URL =
   'https://aero.drome.eth.limo/swap?from=0x833589fcd6edb6e08f4c7c32d4f71b54bda02913&to=0x6cd905df2ed214b22e0d48ff17cd4200c1c6d8a3&chain0=8453&chain1=8453';
+
+const FOOTER_EXPLORE: { to: string; label: string; Icon: LucideIcon }[] = [
+  { to: '/markets', label: 'Markets', Icon: Store },
+  { to: '/feed', label: 'Activity', Icon: Activity },
+  { to: '/stats', label: 'Leaderboard', Icon: Trophy },
+  { to: '/portfolio', label: 'Portfolio', Icon: Wallet },
+];
+
+type FooterEco =
+  | { kind: 'route'; to: string; label: string; Icon: LucideIcon }
+  | { kind: 'external'; href: string; label: string; Icon: LucideIcon; trust?: boolean };
+
+const FOOTER_ECOSYSTEM: FooterEco[] = [
+  { kind: 'route', to: '/documentation', label: 'Documentation', Icon: FileText },
+  { kind: 'external', href: TRUST_SWAP_URL, label: 'Get Trust', Icon: ExternalLink, trust: true },
+  { kind: 'external', href: 'https://intuition.systems', label: 'Intuition home', Icon: ExternalLink },
+  { kind: 'external', href: 'https://docs.intuition.systems', label: 'Intuition Docs', Icon: BookOpen },
+  { kind: 'external', href: EXPLORER_URL, label: 'Block explorer', Icon: Globe },
+];
 
 const MediumIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -153,251 +176,163 @@ const SiteFooter: React.FC<SiteFooterProps> = ({ compact = false }) => {
           {compact ? (
             <div className="col-span-full grid grid-cols-2 gap-x-4 gap-y-2 sm:gap-x-8 min-w-0">
               <div className="flex flex-col gap-3 min-w-0">
-                <h4 className="text-xs sm:text-sm font-bold font-display text-intuition-primary tracking-wide leading-none">
+                <h4 className="text-sm sm:text-lg font-bold font-display text-intuition-primary tracking-wide leading-tight">
                   Explore
                 </h4>
-                <nav className="flex flex-col gap-2 font-sans text-[13px] sm:text-[15px] text-slate-200 font-semibold leading-snug">
-                  <Link
-                    to="/markets"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    Markets
-                  </Link>
-                  <Link
-                    to="/feed"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    Activity
-                  </Link>
-                  <Link
-                    to="/stats"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    Leaderboard
-                  </Link>
-                  <Link
-                    to="/portfolio"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    Portfolio
-                  </Link>
+                <nav
+                  className="flex flex-col gap-1 font-sans text-[13px] sm:text-[15px] font-semibold leading-snug"
+                  aria-label="Explore"
+                >
+                  {FOOTER_EXPLORE.map(({ to, label, Icon }) => (
+                    <Link
+                      key={to}
+                      to={to}
+                      className="group inline-flex items-center gap-1.5 py-1.5 text-slate-200 transition-colors hover:text-intuition-primary"
+                    >
+                      {label}
+                      <Icon
+                        size={14}
+                        className="shrink-0 text-slate-500 transition-colors group-hover:text-intuition-primary"
+                        aria-hidden
+                      />
+                    </Link>
+                  ))}
                 </nav>
               </div>
               <div className="flex flex-col gap-3 min-w-0">
-                <h4 className="text-xs sm:text-sm font-bold font-display text-intuition-secondary tracking-wide leading-none text-glow-red">
+                <h4 className="text-sm sm:text-lg font-bold font-display text-intuition-secondary tracking-wide leading-tight text-glow-red">
                   Ecosystem
                 </h4>
-                <nav className="flex flex-col gap-2 font-sans text-[13px] sm:text-[15px] text-slate-200 font-semibold leading-snug">
-                  <Link
-                    to="/documentation"
-                    className="hover:text-intuition-secondary transition-colors flex items-start gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 mt-0.5 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    <span className="flex items-center gap-1 flex-wrap min-w-0 leading-snug">
-                      Documentation <FileText size={14} className="opacity-80 shrink-0" />
-                    </span>
-                  </Link>
-                  <a
-                    href={TRUST_SWAP_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-intuition-success hover:text-white transition-colors flex items-start gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 mt-0.5 text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    <span className="flex items-center gap-1 flex-wrap min-w-0">
-                      Get Trust <ExternalLink size={14} className="opacity-90 shrink-0" />
-                    </span>
-                  </a>
-                  <a
-                    href="https://intuition.systems"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-intuition-secondary transition-colors flex items-start gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 mt-0.5 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    <span className="flex items-center gap-1 flex-wrap min-w-0 leading-snug">
-                      Intuition home <ExternalLink size={14} className="opacity-80 shrink-0" />
-                    </span>
-                  </a>
-                  <a
-                    href="https://docs.intuition.systems"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-intuition-secondary transition-colors flex items-start gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 mt-0.5 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    <span className="flex items-center gap-1 flex-wrap min-w-0 leading-snug">
-                      Intuition Docs <BookOpen size={14} className="opacity-80 shrink-0" />
-                    </span>
-                  </a>
-                  <a
-                    href={EXPLORER_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-intuition-secondary transition-colors flex items-start gap-1.5 min-h-0 py-1 group"
-                  >
-                    <ChevronsRight
-                      size={16}
-                      className="shrink-0 mt-0.5 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-4 group-hover:ml-0 max-sm:w-3"
-                    />
-                    <span className="flex items-center gap-1 flex-wrap min-w-0 leading-snug">
-                      Block explorer <Globe size={14} className="opacity-80 shrink-0" />
-                    </span>
-                  </a>
+                <nav
+                  className="flex flex-col gap-1 font-sans text-[13px] sm:text-[15px] font-semibold leading-snug"
+                  aria-label="Ecosystem"
+                >
+                  {FOOTER_ECOSYSTEM.map((row) => {
+                    if (row.kind === 'route') {
+                      const Icon = row.Icon;
+                      return (
+                        <Link
+                          key={row.to}
+                          to={row.to}
+                          className="group inline-flex items-center gap-1.5 py-1.5 text-slate-200 transition-colors hover:text-intuition-secondary"
+                        >
+                          {row.label}
+                          <Icon
+                            size={14}
+                            className="shrink-0 text-slate-500 transition-colors group-hover:text-intuition-secondary"
+                            aria-hidden
+                          />
+                        </Link>
+                      );
+                    }
+                    const Icon = row.Icon;
+                    return (
+                      <a
+                        key={row.href}
+                        href={row.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={
+                          row.trust
+                            ? 'group inline-flex items-center gap-1.5 py-1.5 text-intuition-success transition-colors hover:text-white'
+                            : 'group inline-flex items-center gap-1.5 py-1.5 text-slate-200 transition-colors hover:text-intuition-secondary'
+                        }
+                      >
+                        {row.label}
+                        <Icon
+                          size={14}
+                          className={
+                            row.trust
+                              ? 'shrink-0 opacity-90 text-intuition-success transition-colors group-hover:text-white'
+                              : 'shrink-0 text-slate-500 transition-colors group-hover:text-intuition-secondary'
+                          }
+                          aria-hidden
+                        />
+                      </a>
+                    );
+                  })}
                 </nav>
               </div>
             </div>
           ) : (
             <>
               <div className="flex flex-col gap-4 min-w-0">
-                <h4 className="text-sm sm:text-base font-bold font-display text-intuition-primary tracking-wide leading-none">
+                <h4 className="text-lg sm:text-xl font-bold font-display text-intuition-primary tracking-wide leading-tight">
                   Explore
                 </h4>
-                <nav className="flex flex-col gap-3 font-sans text-[15px] sm:text-base text-slate-200 font-semibold leading-snug">
-                  <Link
-                    to="/markets"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    Markets
-                  </Link>
-                  <Link
-                    to="/feed"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    Activity
-                  </Link>
-                  <Link
-                    to="/stats"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    Leaderboard
-                  </Link>
-                  <Link
-                    to="/portfolio"
-                    className="hover:text-intuition-primary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-primary/0 group-hover:text-intuition-primary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    Portfolio
-                  </Link>
+                <nav
+                  className="flex flex-col gap-1 font-sans text-[15px] sm:text-base font-semibold leading-snug"
+                  aria-label="Explore"
+                >
+                  {FOOTER_EXPLORE.map(({ to, label, Icon }) => (
+                    <Link
+                      key={to}
+                      to={to}
+                      className="group inline-flex items-center gap-2 py-2 text-slate-200 transition-colors hover:text-intuition-primary"
+                    >
+                      {label}
+                      <Icon
+                        size={16}
+                        className="shrink-0 text-slate-500 transition-colors group-hover:text-intuition-primary"
+                        aria-hidden
+                      />
+                    </Link>
+                  ))}
                 </nav>
               </div>
 
               <div className="flex flex-col gap-4 min-w-0">
-                <h4 className="text-sm sm:text-base font-bold font-display text-intuition-secondary tracking-wide leading-none text-glow-red">
+                <h4 className="text-lg sm:text-xl font-bold font-display text-intuition-secondary tracking-wide leading-tight text-glow-red">
                   Ecosystem
                 </h4>
-                <nav className="flex flex-col gap-3 font-sans text-[15px] sm:text-base text-slate-200 font-semibold leading-snug">
-                  <Link
-                    to="/documentation"
-                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    <span className="flex items-center gap-2 flex-wrap">
-                      Documentation <FileText size={16} className="opacity-80 shrink-0" />
-                    </span>
-                  </Link>
-                  <a
-                    href={TRUST_SWAP_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-intuition-success hover:text-white transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-success/0 group-hover:text-intuition-success transition-all -ml-5 group-hover:ml-0"
-                    />
-                    <span className="flex items-center gap-2 flex-wrap">
-                      Get Trust <ExternalLink size={16} className="opacity-90 shrink-0" />
-                    </span>
-                  </a>
-                  <a
-                    href="https://intuition.systems"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    <span className="flex items-center gap-2 flex-wrap">
-                      Intuition home <ExternalLink size={16} className="opacity-80 shrink-0" />
-                    </span>
-                  </a>
-                  <a
-                    href="https://docs.intuition.systems"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    <span className="flex items-center gap-2 flex-wrap">
-                      Intuition Docs <BookOpen size={16} className="opacity-80 shrink-0" />
-                    </span>
-                  </a>
-                  <a
-                    href={EXPLORER_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="hover:text-intuition-secondary transition-colors flex items-center gap-3 min-h-[2.5rem] group"
-                  >
-                    <ChevronsRight
-                      size={18}
-                      className="shrink-0 text-intuition-secondary/0 group-hover:text-intuition-secondary transition-all -ml-5 group-hover:ml-0"
-                    />
-                    <span className="flex items-center gap-2 flex-wrap">
-                      Block explorer <Globe size={16} className="opacity-80 shrink-0" />
-                    </span>
-                  </a>
+                <nav
+                  className="flex flex-col gap-1 font-sans text-[15px] sm:text-base font-semibold leading-snug"
+                  aria-label="Ecosystem"
+                >
+                  {FOOTER_ECOSYSTEM.map((row) => {
+                    if (row.kind === 'route') {
+                      const Icon = row.Icon;
+                      return (
+                        <Link
+                          key={row.to}
+                          to={row.to}
+                          className="group inline-flex items-center gap-2 py-2 text-slate-200 transition-colors hover:text-intuition-secondary"
+                        >
+                          {row.label}
+                          <Icon
+                            size={16}
+                            className="shrink-0 text-slate-500 transition-colors group-hover:text-intuition-secondary"
+                            aria-hidden
+                          />
+                        </Link>
+                      );
+                    }
+                    const Icon = row.Icon;
+                    return (
+                      <a
+                        key={row.href}
+                        href={row.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={
+                          row.trust
+                            ? 'group inline-flex items-center gap-2 py-2 text-intuition-success transition-colors hover:text-white'
+                            : 'group inline-flex items-center gap-2 py-2 text-slate-200 transition-colors hover:text-intuition-secondary'
+                        }
+                      >
+                        {row.label}
+                        <Icon
+                          size={16}
+                          className={
+                            row.trust
+                              ? 'shrink-0 opacity-90 text-intuition-success transition-colors group-hover:text-white'
+                              : 'shrink-0 text-slate-500 transition-colors group-hover:text-intuition-secondary'
+                          }
+                          aria-hidden
+                        />
+                      </a>
+                    );
+                  })}
                 </nav>
               </div>
             </>
