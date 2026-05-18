@@ -2760,7 +2760,7 @@ const RankedList: React.FC = () => {
                 IntuRank · Climb
               </p>
               <h1
-                className="text-3xl sm:text-4xl md:text-5xl font-black font-display tracking-tight bg-clip-text text-transparent"
+                className="text-3xl sm:text-4xl md:text-5xl font-black font-display tracking-tight bg-clip-text text-transparent drop-shadow-[0_0_42px_rgba(0,243,255,0.09)]"
                 style={{ backgroundImage: ARENA_THEME.heroTitle }}
               >
                 THE ARENA
@@ -3341,7 +3341,7 @@ const RankedList: React.FC = () => {
             </div>
           ) : (
           <div
-            className="rounded-2xl border border-white/10 p-4 sm:p-5 backdrop-blur-xl relative overflow-hidden ring-1 ring-intuition-primary/20"
+            className="rounded-2xl border border-white/10 p-4 sm:p-5 backdrop-blur-md relative overflow-hidden ring-1 ring-intuition-primary/20"
             style={{
               background: ARENA_THEME.currentRunCard,
               boxShadow: `0 0 48px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 32px ${ARENA_THEME.redDim}`,

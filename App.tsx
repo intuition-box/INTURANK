@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ARENA_UI_VISIBLE, MAINTENANCE_MODE } from './constants';
 import Maintenance from './pages/Maintenance';
@@ -73,12 +73,26 @@ import ComingSoon from './pages/ComingSoon';
 import CreateSignal from './pages/CreateSignal';
 import SendTrust from './pages/SendTrust';
 import SkillPlayground from './pages/SkillPlayground';
-import RankedList from './pages/RankedList';
 import DailyTrustHub from './pages/DailyTrustHub';
-import ArenaPlaceholder from './pages/ArenaPlaceholder';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 import { RouteTransition } from './components/RouteTransition';
+import { PageLoadingSpinner } from './components/PageLoading';
+
+const RankedList = lazy(() => import('./pages/RankedList'));
+const ArenaPlaceholder = lazy(() => import('./pages/ArenaPlaceholder'));
+
+/** Thin code-split boundary for `/climb` so the main bundle stays smaller when users never open Arena. */
+const ArenaRouteFallback: React.FC = () => (
+  <div
+    className="flex min-h-[min(100dvh,920px)] w-full flex-col items-center justify-center gap-3 bg-[#05070c]"
+    role="status"
+    aria-live="polite"
+  >
+    <PageLoadingSpinner />
+    <span className="text-[10px] font-mono font-bold uppercase tracking-[0.35em] text-slate-600">Loading</span>
+  </div>
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -139,7 +153,17 @@ const AppRoutes: React.FC = () => {
       <Route path="/hub/trust-tools" element={<DailyTrustHub />} />
       <Route
         path="/climb"
-        element={ARENA_UI_VISIBLE ? <RankedList /> : <ArenaPlaceholder />}
+        element={
+          ARENA_UI_VISIBLE ? (
+            <Suspense fallback={<ArenaRouteFallback />}>
+              <RankedList />
+            </Suspense>
+          ) : (
+            <Suspense fallback={<ArenaRouteFallback />}>
+              <ArenaPlaceholder />
+            </Suspense>
+          )
+        }
       />
     </Routes>
   );
