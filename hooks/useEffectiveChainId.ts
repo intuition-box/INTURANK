@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
+import { subscribeVisibilityAwareInterval } from '../services/visibility';
 
 type Eip1193Like = {
   request?: (args: { method: string }) => Promise<unknown>;
@@ -105,15 +106,18 @@ export function useEffectiveChainId(): number {
 
     refresh();
 
-    const intervalMs = 1600;
-    const intervalId = window.setInterval(refresh, intervalMs);
+    /**
+     * Primary path is the wallet's `chainChanged` event + focus/visibility refresh.
+     * The interval is a safety net for MetaMask mobile / in-app browsers that drop the event —
+     * 5s + paused-when-tab-hidden keeps idle CPU low without sacrificing correctness.
+     */
+    const stopInterval = subscribeVisibilityAwareInterval(refresh, 5000);
 
     const onBecameVisible = () => {
       refresh();
     };
     window.addEventListener('focus', onBecameVisible);
     window.addEventListener('pageshow', onBecameVisible);
-    document.addEventListener('visibilitychange', onBecameVisible);
 
     let removeChainListener: (() => void) | undefined;
     if (getConnectorFn(connector, 'getProvider')) {
@@ -133,10 +137,9 @@ export function useEffectiveChainId(): number {
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      stopInterval();
       window.removeEventListener('focus', onBecameVisible);
       window.removeEventListener('pageshow', onBecameVisible);
-      document.removeEventListener('visibilitychange', onBecameVisible);
       removeChainListener?.();
     };
   }, [connector, isConnected]);

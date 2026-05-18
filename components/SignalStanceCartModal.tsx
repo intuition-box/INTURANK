@@ -78,7 +78,7 @@ const SignalStanceCartModal: React.FC<Props> = ({
   }, [open, requestClose]);
 
   const springPop = { type: 'spring' as const, stiffness: 420, damping: 32, mass: 0.85 };
-  const txCount = picks.length;
+  const batchTxCount = picks.length > 0 ? 1 : 0;
 
   return createPortal(
     <AnimatePresence mode="wait">
@@ -261,7 +261,8 @@ const SignalStanceCartModal: React.FC<Props> = ({
             </div>
 
             <p className="px-4 pb-2 text-[10px] text-slate-500 leading-snug shrink-0 z-10">
-              One wallet signature per row · counts are <span className="text-slate-400">triples</span>, not atoms.
+              One wallet signature sends the whole cart in a single batch deposit · counts are{' '}
+              <span className="text-slate-400">triples</span>, not atoms.
             </p>
 
             <div className="p-3 border-t border-white/[0.08] shrink-0 z-10 bg-black/45">
@@ -282,13 +283,14 @@ const SignalStanceCartModal: React.FC<Props> = ({
                       Submitting…
                     </span>
                     <span className="text-[10px] font-semibold text-slate-400 leading-snug text-center px-1">
-                      Confirm each transaction in your wallet when prompted.
+                      Confirm the batch deposit in your wallet when prompted.
                     </span>
                   </div>
                 ) : (
                   <>
                     <Shield size={18} strokeWidth={2.2} className="shrink-0 opacity-90" />
-                    Confirm · {trustTotalLabel} TRUST · {txCount}&nbsp;tx
+                    Confirm · {trustTotalLabel} TRUST
+                    {picks.length > 1 ? ` · ${picks.length} stakes` : ''} · {batchTxCount}&nbsp;tx
                   </>
                 )}
               </motion.button>

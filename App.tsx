@@ -76,7 +76,6 @@ import SkillPlayground from './pages/SkillPlayground';
 import RankedList from './pages/RankedList';
 import DailyTrustHub from './pages/DailyTrustHub';
 import ArenaPlaceholder from './pages/ArenaPlaceholder';
-import Compare from './pages/Compare';
 import { ToastContainer } from './components/Toast';
 import EmailNotifyModal from './components/EmailNotifyModal';
 import { RouteTransition } from './components/RouteTransition';
@@ -133,7 +132,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/documentation" element={<Documentation />} />
       <Route path="/skill-playground" element={<SkillPlayground />} />
 
-      <Route path="/compare" element={<Compare />} />
+      <Route path="/compare" element={<Navigate to="/climb" replace />} />
       <Route path="/coming-soon" element={<ComingSoon />} />
       <Route path="/create" element={<CreateSignal />} />
       <Route path="/send-trust" element={<SendTrust />} />

@@ -57,6 +57,8 @@ export interface IntuRankXpBadgeProps {
   className?: string;
   /** Shown when the connected wallet hasn't loaded yet — keeps layout stable. */
   loading?: boolean;
+  /** Light card for blueprint / Climb contest shell. */
+  surface?: 'dark' | 'light';
 }
 
 export const IntuRankXpBadge: React.FC<IntuRankXpBadgeProps> = ({
@@ -67,16 +69,18 @@ export const IntuRankXpBadge: React.FC<IntuRankXpBadgeProps> = ({
   compact = false,
   className = '',
   loading = false,
+  surface = 'dark',
 }) => {
   const preset = SIZE_PRESETS[size];
   const reduceMotion = useReducedMotion();
   const total = Math.max(0, Math.round((arenaXp || 0) + (activityXp || 0)));
   const showBreakdown =
     !compact && !loading && (arenaXp > 0 || activityXp > 0);
+  const light = surface === 'light';
 
   return (
     <motion.div
-      className={`relative flex items-center overflow-hidden border border-intuition-primary/40 ${preset.container} ${className}`}
+      className={`relative flex items-center overflow-hidden ${light ? 'border-slate-200/90' : 'border border-intuition-primary/40'} ${preset.container} ${className}`}
       initial={reduceMotion ? false : { opacity: 0.88, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={
@@ -84,43 +88,65 @@ export const IntuRankXpBadge: React.FC<IntuRankXpBadgeProps> = ({
           ? { duration: 0 }
           : { duration: 0.42, ease: [0.22, 1, 0.36, 1] }
       }
-      style={{
-        background:
-          'linear-gradient(135deg, rgba(0,243,255,0.08) 0%, rgba(8,15,28,0.85) 55%, rgba(2,6,12,0.95) 100%)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 28px rgba(0,243,255,0.12)',
-      }}
+      style={
+        light
+          ? {
+              background:
+                'linear-gradient(135deg, #ffffff 0%, rgb(248 250 252) 50%, rgb(240 249 255 / 0.85) 100%)',
+              boxShadow:
+                'inset 0 1px 0 rgba(255,255,255,0.95), 0 8px 28px rgba(15,23,42,0.08)',
+            }
+          : {
+              background:
+                'linear-gradient(135deg, rgba(0,243,255,0.08) 0%, rgba(8,15,28,0.85) 55%, rgba(2,6,12,0.95) 100%)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 0 28px rgba(0,243,255,0.12)',
+            }
+      }
     >
       <div
         className="pointer-events-none absolute inset-0 opacity-60"
-        style={{
-          background:
-            'radial-gradient(circle at 18% 30%, rgba(34,211,238,0.16), transparent 55%), radial-gradient(circle at 80% 80%, rgba(232,197,71,0.06), transparent 65%)',
-        }}
+        style={
+          light
+            ? {
+                background:
+                  'radial-gradient(circle at 18% 30%, rgba(14,165,233,0.08), transparent 55%), radial-gradient(circle at 80% 80%, rgba(232,197,71,0.06), transparent 65%)',
+              }
+            : {
+                background:
+                  'radial-gradient(circle at 18% 30%, rgba(34,211,238,0.16), transparent 55%), radial-gradient(circle at 80% 80%, rgba(232,197,71,0.06), transparent 65%)',
+              }
+        }
         aria-hidden
       />
       <ArenaXpToken size={preset.token} className="relative z-10 shrink-0" />
       <div className="relative z-10 min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p
-            className={`font-mono font-black uppercase text-intuition-primary/90 ${preset.label}`}
+            className={`font-mono font-black uppercase ${light ? 'text-sky-800/90' : 'text-intuition-primary/90'} ${preset.label}`}
             style={{ letterSpacing: '0.18em' }}
           >
             IntuRank XP
           </p>
           {typeof rank === 'number' && rank > 0 ? (
-            <span className="inline-flex items-center rounded-md border border-amber-400/45 bg-amber-500/[0.12] px-1.5 py-0.5 text-[8px] font-mono font-black uppercase tracking-widest text-amber-200">
+            <span
+              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[8px] font-mono font-black uppercase tracking-widest ${
+                light
+                  ? 'border-amber-200 bg-amber-100 text-amber-900'
+                  : 'border-amber-400/45 bg-amber-500/[0.12] text-amber-200'
+              }`}
+            >
               Rank #{rank}
             </span>
           ) : null}
         </div>
         <p
-          className={`font-display font-black tabular-nums tracking-tight text-white leading-none mt-1 ${preset.total}`}
+          className={`font-display font-black tabular-nums tracking-tight leading-none mt-1 ${light ? 'text-slate-900' : 'text-white'} ${preset.total}`}
         >
           <AnimatedXpFigure ready={!loading} value={total} />
         </p>
         {showBreakdown ? (
           <motion.p
-            className={`font-mono font-semibold text-slate-400 mt-1.5 ${preset.breakdown}`}
+            className={`font-mono font-semibold mt-1.5 ${light ? 'text-slate-600' : 'text-slate-400'} ${preset.breakdown}`}
             initial={reduceMotion ? false : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={
@@ -129,9 +155,13 @@ export const IntuRankXpBadge: React.FC<IntuRankXpBadgeProps> = ({
                 : { duration: 0.32, delay: 0.04, ease: [0.22, 1, 0.36, 1] }
             }
           >
-            <span className="text-intuition-primary/85">Arena {arenaXp.toLocaleString()}</span>
+            <span className={light ? 'text-sky-700' : 'text-intuition-primary/85'}>
+              Arena {arenaXp.toLocaleString()}
+            </span>
             <span className="text-slate-600 mx-1.5">·</span>
-            <span className="text-amber-300/85">Activity {activityXp.toLocaleString()}</span>
+            <span className={light ? 'text-amber-700' : 'text-amber-300/85'}>
+              Activity {activityXp.toLocaleString()}
+            </span>
           </motion.p>
         ) : null}
       </div>

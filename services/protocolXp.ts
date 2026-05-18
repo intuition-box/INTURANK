@@ -335,7 +335,8 @@ export function notifyProtocolXpEarned(opts: {
     return 0;
   }
 
-  if (h && entry.seenHashes[h]) {
+  /** Same tx hash may credit multiple logical deposits (FeeProxy depositBatch); require per-row `dedupeKey`. */
+  if (h && entry.seenHashes[h] && !dedupe) {
     return 0;
   }
 

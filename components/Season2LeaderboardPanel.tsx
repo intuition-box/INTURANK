@@ -408,7 +408,7 @@ export const Season2LeaderboardPanel: React.FC<{
                 </Link>
                 {' · '}
                 <Link
-                  to="/#trending-atoms"
+                  to="/markets/atoms"
                   onClick={playClick}
                   className="text-intuition-primary/90 hover:text-cyan-200"
                 >
@@ -418,17 +418,13 @@ export const Season2LeaderboardPanel: React.FC<{
             )}
             {isHome && (
               <p className="font-sans text-xs text-slate-500">
-                <a
-                  href="#trending-atoms"
+                <Link
+                  to="/markets/atoms"
                   className="font-medium text-intuition-primary/90 hover:text-intuition-primary"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    playClick();
-                    document.getElementById('trending-atoms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
+                  onClick={() => playClick()}
                 >
                   Trending
-                </a>
+                </Link>
               </p>
             )}
           </header>

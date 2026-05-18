@@ -26,6 +26,8 @@ type Props = {
   myArenaXp: number;
   /** Protocol activity XP ledger on this browser only. */
   myActivityXp: number;
+  /** `light` matches Climb contest blueprint shell; default keeps legacy Arena sidebar. */
+  tone?: 'dark' | 'light';
 };
 
 function avatarGlyph(label: string): string {
@@ -34,9 +36,17 @@ function avatarGlyph(label: string): string {
   return m ? m[0].toUpperCase() : '?';
 }
 
-const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, myArenaXp, myActivityXp }) => {
+const ArenaLeaderboardGlance: React.FC<Props> = ({
+  players,
+  loading,
+  myAddress,
+  myArenaXp,
+  myActivityXp,
+  tone = 'dark',
+}) => {
   const reduceMotion = useReducedMotion();
   const myAddrLc = myAddress?.toLowerCase();
+  const isLight = tone === 'light';
 
   /**
    * Subgraph attribution lags real-time Arena stakes (and FeeProxy batches need re-attribution).
@@ -82,41 +92,71 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       to="/stats?tab=rankers"
       onClick={playClick}
       onMouseEnter={playHover}
-      className="group block rounded-3xl border border-white/[0.1] overflow-hidden transition-all duration-300 hover:border-amber-400/40 hover:shadow-[0_0_28px_rgba(251,191,36,0.12),0_0_32px_rgba(248,113,113,0.1)] hover:-translate-y-0.5"
-      style={{
-        background:
-          'linear-gradient(165deg, rgba(14,12,10,0.97) 0%, rgba(5,6,8,0.99) 48%, rgba(20,12,18,0.94) 100%)',
-        boxShadow:
-          '0 0 0 1px rgba(251,191,36,0.08), 0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 36px rgba(56,232,255,0.05), 0 0 32px rgba(248,113,113,0.05)',
-      }}
+      className={`group block rounded-3xl border overflow-hidden transition-all duration-300 ${
+        isLight
+          ? 'border-slate-200/90 bg-white shadow-sm hover:border-sky-300/80 hover:shadow-md hover:-translate-y-0.5'
+          : 'border-white/[0.1] hover:border-amber-400/40 hover:shadow-[0_0_28px_rgba(251,191,36,0.12),0_0_32px_rgba(248,113,113,0.1)] hover:-translate-y-0.5'
+      }`}
+      style={
+        isLight
+          ? undefined
+          : {
+              background:
+                'linear-gradient(165deg, rgba(14,12,10,0.97) 0%, rgba(5,6,8,0.99) 48%, rgba(20,12,18,0.94) 100%)',
+              boxShadow:
+                '0 0 0 1px rgba(251,191,36,0.08), 0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05), 0 0 36px rgba(56,232,255,0.05), 0 0 32px rgba(248,113,113,0.05)',
+            }
+      }
     >
       {/* Header */}
-      <div className="relative px-3.5 pt-3 pb-2.5 border-b border-white/[0.06]">
-        <div
-          className="absolute inset-0 opacity-[0.4] pointer-events-none"
-          style={{
-            background: `linear-gradient(135deg, ${GOLD}14 0%, transparent 45%, ${RED}08 100%)`,
-          }}
-          aria-hidden
-        />
+      <div
+        className={`relative px-3.5 pt-3 pb-2.5 border-b ${isLight ? 'border-slate-100 bg-sky-50/60' : 'border-white/[0.06]'}`}
+      >
+        {!isLight ? (
+          <div
+            className="absolute inset-0 opacity-[0.4] pointer-events-none"
+            style={{
+              background: `linear-gradient(135deg, ${GOLD}14 0%, transparent 45%, ${RED}08 100%)`,
+            }}
+            aria-hidden
+          />
+        ) : null}
         <div className="relative flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <div
-              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border"
-              style={{ borderColor: `${CY}55`, background: `linear-gradient(135deg, ${CY}22, ${ARENA_THEME.gold}18)` }}
+              className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border ${
+                isLight ? 'border-sky-200 bg-white' : ''
+              }`}
+              style={
+                isLight
+                  ? undefined
+                  : { borderColor: `${CY}55`, background: `linear-gradient(135deg, ${CY}22, ${ARENA_THEME.gold}18)` }
+              }
             >
-              <Trophy size={14} style={{ color: CY }} strokeWidth={2.4} />
+              <Trophy size={14} style={{ color: isLight ? '#0369a1' : CY }} strokeWidth={2.4} />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-mono uppercase tracking-[0.28em] text-amber-200/90 font-bold leading-none">
+              <p
+                className={`text-[9px] font-mono uppercase tracking-[0.28em] font-bold leading-none ${
+                  isLight ? 'text-sky-800/90' : 'text-amber-200/90'
+                }`}
+              >
                 IntuRank · Rankers
               </p>
-              <p className="text-[11px] font-bold text-white leading-tight mt-0.5">Live leaderboard</p>
+              <p
+                className={`text-[11px] font-bold leading-tight mt-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}
+              >
+                Live leaderboard
+              </p>
             </div>
           </div>
           <ArrowUpRight
             size={15}
-            className="text-slate-500 group-hover:text-cyan-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all shrink-0"
+            className={`shrink-0 transition-all ${
+              isLight
+                ? 'text-slate-400 group-hover:text-sky-600 group-hover:-translate-y-0.5 group-hover:translate-x-0.5'
+                : 'text-slate-500 group-hover:text-cyan-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5'
+            }`}
           />
         </div>
       </div>
@@ -125,14 +165,16 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
       <div className="px-3.5 py-3">
         {loading ? (
           <div className="flex items-center justify-center py-6 gap-2">
-            <Loader2 size={14} className="text-amber-300 animate-spin" />
-            <span className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">Loading</span>
+            <Loader2 size={14} className={`animate-spin ${isLight ? 'text-sky-600' : 'text-amber-300'}`} />
+            <span className={`text-[10px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
+              Loading
+            </span>
           </div>
         ) : top3.length === 0 ? (
           <div className="text-center py-4 px-2">
-            <Sparkles size={18} style={{ color: CY }} className="mx-auto mb-1.5" />
-            <p className="text-[11px] font-bold text-white">Be the first ranker</p>
-            <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+            <Sparkles size={18} style={{ color: isLight ? '#0369a1' : CY }} className="mx-auto mb-1.5" />
+            <p className={`text-[11px] font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Be the first ranker</p>
+            <p className={`text-[10px] mt-0.5 leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
               Vote on a list to enter the board.
             </p>
           </div>
@@ -168,11 +210,13 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                         boxShadow: `0 0 12px ${slotColor}45`,
                       }}
                     >
-                      <div className={`${isFirst ? 'w-10 h-10' : 'w-8 h-8'} rounded-full overflow-hidden bg-[#040810]`}>
+                      <div className={`${isFirst ? 'w-10 h-10' : 'w-8 h-8'} rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-[#040810]'}`}>
                         {p.image ? (
                           <img src={p.image} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xs font-black text-cyan-200/90">
+                          <div
+                            className={`w-full h-full flex items-center justify-center text-xs font-black ${isLight ? 'text-sky-800' : 'text-cyan-200/90'}`}
+                          >
                             {avatarGlyph(p.label)}
                           </div>
                         )}
@@ -191,18 +235,21 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
                   </div>
                   <p
                     className="text-[10px] font-bold truncate w-full text-center"
-                    style={{ color: isYou ? CY : '#e2e8f0' }}
+                    style={{ color: isYou ? CY : isLight ? '#0f172a' : '#e2e8f0' }}
                     title={p.label}
                   >
                     {p.label}
                   </p>
                   <span
                     className="text-[10px] font-black tabular-nums leading-none mt-0.5"
-                    style={{ color: slotColor, textShadow: `0 0 8px ${slotColor}50` }}
+                    style={{
+                      color: slotColor,
+                      textShadow: isLight ? 'none' : `0 0 8px ${slotColor}50`,
+                    }}
                   >
                     {inturankLeaderboardTotalXp(p).toLocaleString()}
                   </span>
-                  <span className="text-[7px] font-mono font-bold uppercase tracking-wider text-slate-500 mt-1 leading-none">
+                  <span className={`text-[7px] font-mono font-bold uppercase tracking-wider mt-1 leading-none ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
                     Total XP
                   </span>
                 </motion.div>
@@ -217,48 +264,66 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
         <div className="px-3.5 pb-3">
           <div
             className="rounded-xl border px-3 py-2 flex items-center justify-between gap-2"
-            style={{
-              borderColor: myRow ? `${CY}40` : 'rgba(148,163,184,0.20)',
-              background: myRow
-                ? `linear-gradient(135deg, ${CY}10, rgba(8,12,22,0.95))`
-                : 'rgba(255,255,255,0.02)',
-              boxShadow: myRow ? `0 0 16px ${CY}14` : 'none',
-            }}
+            style={
+              myRow
+                ? isLight
+                  ? {
+                      borderColor: `${CY}35`,
+                      background: `linear-gradient(135deg, ${CY}08, #f8fafc)`,
+                      boxShadow: `0 0 12px ${CY}10`,
+                    }
+                  : {
+                      borderColor: `${CY}40`,
+                      background: `linear-gradient(135deg, ${CY}10, rgba(8,12,22,0.95))`,
+                      boxShadow: `0 0 16px ${CY}14`,
+                    }
+                : isLight
+                  ? {
+                      borderColor: 'rgba(148,163,184,0.35)',
+                      background: 'rgba(248,250,252,0.9)',
+                    }
+                  : {
+                      borderColor: 'rgba(148,163,184,0.20)',
+                      background: 'rgba(255,255,255,0.02)',
+                    }
+            }
           >
             <div className="min-w-0">
-              <p className="text-[9px] font-mono uppercase tracking-[0.25em] font-bold text-cyan-300/90">
+              <p
+                className={`text-[9px] font-mono uppercase tracking-[0.25em] font-bold ${isLight ? 'text-sky-800' : 'text-cyan-300/90'}`}
+              >
                 You
               </p>
               {myRow ? (
-                  <p className="text-[12px] font-bold text-white leading-tight mt-0.5">
+                  <p className={`text-[12px] font-bold leading-tight mt-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                     Rank{' '}
                     <span
                       className="text-base font-black tabular-nums ml-0.5"
-                      style={{ color: CY, textShadow: `0 0 10px ${CY}40` }}
+                      style={{ color: CY, textShadow: isLight ? 'none' : `0 0 10px ${CY}40` }}
                     >
                       #{myRow.rank}
                     </span>
-                    <span className="text-slate-500 font-normal text-[10px]"> · {augmentedPlayers.length}</span>
+                    <span className={`font-normal text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-500'}`}> · {augmentedPlayers.length}</span>
                   </p>
               ) : (
-                <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
+                <p className={`text-[11px] leading-tight mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
                   {youArenaXp > 0 || youActivityXp > 0 ? 'Not on board yet' : 'Vote to enter'}
                 </p>
               )}
             </div>
             <div className="text-right shrink-0 space-y-1.5 tabular-nums">
               <div title="Arena XP as counted on this leaderboard (indexer / mirror). Session strip may bridge pick credit until the graph catches up.">
-                <p className="text-[8px] font-mono uppercase tracking-wider text-cyan-300/85 font-bold leading-none">Arena</p>
+                <p className={`text-[8px] font-mono uppercase tracking-wider font-bold leading-none ${isLight ? 'text-sky-800/90' : 'text-cyan-300/85'}`}>Arena</p>
                 <p
                   className="text-base font-black leading-none mt-0.5"
-                  style={{ color: GOLD, textShadow: `0 0 8px ${GOLD}40` }}
+                  style={{ color: GOLD, textShadow: isLight ? 'none' : `0 0 8px ${GOLD}40` }}
                 >
                   {youArenaXp.toLocaleString()}
                 </p>
               </div>
               <div title="Activity XP — this browser for you; others from API mirror when deployed.">
-                <p className="text-[8px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Activity</p>
-                <p className="text-sm font-black text-slate-400 leading-none mt-0.5">{youActivityXp.toLocaleString()}</p>
+                <p className={`text-[8px] font-mono uppercase tracking-wider font-bold leading-none ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Activity</p>
+                <p className={`text-sm font-black leading-none mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{youActivityXp.toLocaleString()}</p>
               </div>
             </div>
           </div>
@@ -267,14 +332,20 @@ const ArenaLeaderboardGlance: React.FC<Props> = ({ players, loading, myAddress, 
 
       {/* Footer CTA */}
       <div
-        className="px-3.5 py-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2"
-        style={{ background: `linear-gradient(90deg, ${ARENA_THEME.gold}08, ${CY}06)` }}
+        className={`px-3.5 py-2.5 border-t flex items-center justify-between gap-2 ${
+          isLight ? 'border-slate-100 bg-slate-50/80' : 'border-white/[0.06]'
+        }`}
+        style={isLight ? undefined : { background: `linear-gradient(90deg, ${ARENA_THEME.gold}08, ${CY}06)` }}
       >
-        <span className="text-[10px] font-bold text-cyan-200 inline-flex items-center gap-1.5">
+        <span className={`text-[10px] font-bold inline-flex items-center gap-1.5 ${isLight ? 'text-sky-800' : 'text-cyan-200'}`}>
           <Award size={11} />
           Full board · stats · streaks
         </span>
-        <span className="text-[10px] font-black uppercase tracking-widest text-cyan-300 group-hover:text-white transition-colors inline-flex items-center gap-1">
+        <span
+          className={`text-[10px] font-black uppercase tracking-widest transition-colors inline-flex items-center gap-1 ${
+            isLight ? 'text-sky-700 group-hover:text-slate-900' : 'text-cyan-300 group-hover:text-white'
+          }`}
+        >
           Open
           <ArrowUpRight size={11} className="group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
         </span>

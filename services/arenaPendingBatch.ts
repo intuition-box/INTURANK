@@ -40,12 +40,26 @@ function readStore(): Store {
   return {};
 }
 
+/** Custom event name — fires after any mutation so listeners (FAB, badges) can refresh without polling. */
+export const ARENA_PENDING_UPDATED_EVENT = 'inturank-arena-pending-updated';
+
+function notifyPendingUpdated() {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(ARENA_PENDING_UPDATED_EVENT));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function writeStore(s: Store) {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(s));
   } catch {
     /* ignore */
   }
+  notifyPendingUpdated();
 }
 
 /** Row with originating list id (for unified batch UI + per-list submission). */
@@ -100,6 +114,7 @@ export function clearPendingStorage() {
   } catch {
     /* ignore */
   }
+  notifyPendingUpdated();
 }
 
 export function clearPendingForList(listId: string) {

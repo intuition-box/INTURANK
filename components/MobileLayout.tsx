@@ -2,7 +2,7 @@
  * MobileLayout — top app-bar + floating pill bottom nav (five primary tabs).
  * Used in place of the desktop `Layout` chrome whenever `useIsMobile()` is true.
  *
- * Dock: Home · Markets · Skill · Compare · Portfolio (all in-app routes).
+ * Dock: Home · Markets · Skill · Leaderboard · Portfolio (all in-app routes).
  * Header “Menu” opens a sheet with Activity, Arena, Trust tools, docs, Create, etc.
  */
 import React, { memo, useEffect, useState } from 'react';
@@ -15,7 +15,7 @@ import {
   Home,
   TrendingUp,
   Cpu,
-  Swords,
+  BarChart2,
   Users,
   Search,
   Wallet,
@@ -54,7 +54,7 @@ const BOTTOM_TABS: BottomTab[] = [
   { label: 'Home', path: '/', icon: <Home size={22} strokeWidth={2} /> },
   { label: 'Markets', path: '/markets', icon: <TrendingUp size={22} strokeWidth={2} /> },
   { label: 'Skill', path: '/skill-playground', icon: <Cpu size={22} strokeWidth={2} /> },
-  { label: 'Compare', path: '/compare', icon: <Swords size={22} strokeWidth={2} /> },
+  { label: 'Ranks', path: '/stats', icon: <BarChart2 size={22} strokeWidth={2} /> },
   { label: 'Portfolio', path: '/portfolio', icon: <Users size={22} strokeWidth={2} /> },
 ];
 

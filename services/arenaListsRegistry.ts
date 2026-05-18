@@ -39,6 +39,8 @@ export type ArenaListEntry =
       arenaCategory: 'daily' | 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
       /** Center tile on the list card (emoji or short glyph) */
       listGlyph?: string;
+      /** Optional hero image on hub tiles (future art pass). */
+      coverImage?: string;
       /**
        * Full sentence for the current card, e.g. "Is Sophia the stand-out on this list?"
        * If omitted, `buildArenaItemQuestion` uses a default from title.
@@ -55,6 +57,7 @@ export type ArenaListEntry =
       arenaCategory: 'daily' | 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
       listGlyph?: string;
       itemQuestion?: (item: RankItem) => string;
+      coverImage?: string;
       source: 'graphql';
       theme: ArenaTheme;
     }
@@ -66,6 +69,7 @@ export type ArenaListEntry =
       arenaCategory: 'daily' | 'ecosystem' | 'identities' | 'graph' | 'macro' | 'network';
       listGlyph?: string;
       itemQuestion?: (item: RankItem) => string;
+      coverImage?: string;
       /** List object `term_id` (Intuition "list" as object in list triples). */
       source: 'portal';
       listObjectTermId: string;

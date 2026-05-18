@@ -6,7 +6,6 @@ import { useAccount } from 'wagmi';
 import { parseEther, formatEther, getAddress } from 'viem';
 import {
   Trophy,
-  RefreshCw,
   Loader2,
   Sparkles,
   ChevronRight,
@@ -22,7 +21,6 @@ import {
   List,
   ArrowLeft,
   Check,
-  Share2,
   ExternalLink,
   Scale,
 } from 'lucide-react';
@@ -35,16 +33,26 @@ import {
   predicateLooksLikeBattlePredicateLoose,
   resolveMetadata,
   registerArenaPortalListTermsForIndexing,
+  fetchUserArenaRankingClaims,
+  fetchDistinctRankingCreatorsForPortalList,
+  fetchDistinctReceiversForPortalListFromProxyDeposits,
+  fetchApproxDistinctPortalListRankerCount,
+  type UserArenaRankingClaim,
 } from '../services/graphql';
 import {
+  atomRefJobKey,
+  batchEnsureAtomTermIds,
   calculateCounterTripleId,
-  createTripleFromLabels,
-  depositToVault,
+  calculateTripleId,
+  connectWallet,
+  createSemanticTriplesBatch,
+  depositBatchToVaults,
   getProxyApprovalStatus,
   hasCachedProxyApproval,
   getRawShareBalance,
   grantProxyApproval,
-  arenaPersonalAttestationFootnote,
+  collapseAdjacentDuplicateSentences,
+  isTermCreatedOnChain,
   parseProtocolError,
   sendNativeTransfer,
 } from '../services/web3';
@@ -62,6 +70,11 @@ import { recordArenaCurationPicks } from '../services/arenaCurations';
 import { fetchArenaXpRecordForWallet, postArenaTotalsMirrorOptional } from '../services/arenaXp';
 import { clearProtocolXpLedger, getProtocolXpTotal, notifyProtocolXpEarned, PROTOCOL_XP_UPDATED_EVENT } from '../services/protocolXp';
 import { fetchArenaPlayerLeaderboard, inturankLeaderboardTotalXp, type ArenaPlayerRow } from '../services/arenaLeaderboard';
+import {
+  aggregateSimilarity,
+  computeArenaListSimilarity,
+  type ArenaSimilarityResult,
+} from '../services/arenaSimilarity';
 import {
   ARENA_BATCH_MODE,
   ARENA_PORTAL_LISTS_FETCH_LIMIT,
@@ -95,6 +108,7 @@ import {
   portalListIdFromTermId,
   type ArenaListEntry,
 } from '../services/arenaListsRegistry';
+import { buildContestHubSections } from '../services/arenaHubGroups';
 import { hydrateArenaFavoritesFromServer, loadArenaFavoriteListIds, pushArenaFavoriteListIdsRemote, saveArenaFavoriteListIds } from '../services/arenaFavorites';
 import ArenaBatchReviewModal from '../components/ArenaBatchReviewModal';
 import ArenaBatchSuccessModal, {
@@ -106,6 +120,14 @@ import ArenaRankingPulse from '../components/ArenaRankingPulse';
 import SignalFeed from '../components/SignalFeed';
 import ArenaListQuickPick from '../components/ArenaListQuickPick';
 import ArenaClimbTerrace from '../components/ArenaClimbTerrace';
+import { ArenaContestHub } from '../components/arenaFlow/ArenaContestHub';
+import { ArenaCreateCardModal, isPendingArenaCardId } from '../components/arenaFlow/ArenaCreateCardModal';
+import { ArenaCurateStack } from '../components/arenaFlow/ArenaCurateStack';
+import { ArenaRankDeck } from '../components/arenaFlow/ArenaRankDeck';
+import { ArenaCompareView } from '../components/arenaFlow/ArenaCompareView';
+import { ArenaPromoteBanner } from '../components/arenaFlow/ArenaPromoteBanner';
+import { ArenaPromoteContestModal } from '../components/arenaFlow/ArenaPromoteContestModal';
+import type { ArenaPromoteListResult } from '../services/arenaPromoteList';
 import ArenaStarredRail from '../components/ArenaStarredRail';
 import { XpEarnHint } from '../components/XpEarnHint';
 import IntuRankXpBadge from '../components/IntuRankXpBadge';
@@ -119,6 +141,17 @@ import { FLAGSHIP_ARENA_LIST_ID } from '../services/intuRankProductSpec';
 import { ARENA_THEME } from '../services/arenaUiTheme';
 import { copyTextToClipboard, getArenaListShareUrl } from '../services/arenaShareLink';
 export type ArenaTheme = 'claims' | 'narratives' | 'tokens' | 'passion';
+
+/**
+ * A leaderboard peer's REAL alignment with the player's current deck for
+ * this contest. `similarity` carries the agree/disagree breakdown and the
+ * concrete shared subjects (so chips show real items, not placeholders).
+ */
+export type ArenaComparePeer = {
+  player: ArenaPlayerRow;
+  claims: UserArenaRankingClaim[];
+  similarity: ArenaSimilarityResult;
+};
 
 export type RankItemKind = 'claim' | 'atom' | 'token';
 
@@ -151,6 +184,9 @@ export type ArenaRound = {
 
 /** Arena ranking: three stance cards fill the viewport; answering one removes & shifts lanes, new fills from the right. */
 const ARENA_CARDS_PER_ROUND = 3;
+/** Contest flow: hub → curate stack → rank deck → compare (replaces 3-lane grid in-run). */
+const ARENA_CONTEST_FLOW_V2 = true;
+type ArenaFlowPhase = 'hub' | 'curate' | 'rank' | 'compare';
 /**
  * IntuRank-native rankers leaderboard: always shown alongside the ranking flow
  * via the `ArenaRankerLeaderboard` component (right column on desktop, below
@@ -162,13 +198,58 @@ const TERM_ID_RE = /^0x[0-9a-fA-F]{64}$/;
 function readArenaListIdFromWindowSearch(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    const u = new URLSearchParams(window.location.search);
+    let rawSearch = window.location.search;
+    if ((!rawSearch || rawSearch === '?') && window.location.hash.includes('?')) {
+      rawSearch = `?${window.location.hash.split('?').slice(1).join('?').split('#')[0] ?? ''}`;
+    }
+    const u = new URLSearchParams(rawSearch.startsWith('?') ? rawSearch.slice(1) : rawSearch);
     const lid = (u.get('list') || u.get('listId'))?.trim();
     if (lid && getArenaListById(lid)) return lid;
   } catch {
     /* ignore */
   }
   return null;
+}
+
+const ARENA_CONTEST_FLOW_STORAGE = 'inturank-arena-contest-flow-v1';
+
+type PersistedContestFlow = {
+  phase: Exclude<ArenaFlowPhase, 'hub'>;
+  rankOrderIds: string[];
+  rankTrustUnits: Record<string, number>;
+};
+
+function readPersistedContestFlow(listId: string): PersistedContestFlow | null {
+  try {
+    const raw = sessionStorage.getItem(`${ARENA_CONTEST_FLOW_STORAGE}:${listId}`);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Partial<PersistedContestFlow>;
+    if (!p || typeof p !== 'object') return null;
+    if (p.phase !== 'curate' && p.phase !== 'rank' && p.phase !== 'compare') return null;
+    const rankOrderIds = Array.isArray(p.rankOrderIds) ? p.rankOrderIds.filter((x) => typeof x === 'string') : [];
+    const rankTrustUnits =
+      p.rankTrustUnits && typeof p.rankTrustUnits === 'object' ? { ...p.rankTrustUnits } : {};
+    return { phase: p.phase, rankOrderIds, rankTrustUnits };
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedContestFlow(listId: string, data: PersistedContestFlow) {
+  try {
+    sessionStorage.setItem(`${ARENA_CONTEST_FLOW_STORAGE}:${listId}`, JSON.stringify(data));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearPersistedContestFlow(listId: string | null | undefined) {
+  if (!listId) return;
+  try {
+    sessionStorage.removeItem(`${ARENA_CONTEST_FLOW_STORAGE}:${listId}`);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Lane grid: roomier gutters and earlier 3-up on large screens so lanes are not cramped. */
@@ -233,11 +314,9 @@ const PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL = formatEther(CURVE_OFFSET);
 
 /**
  * Discrete stake tiers. With batch submissions, **each queued row’s on-chain deposit** is
- * `preset TRUST × row units`; every row must be ≥ protocol minimum (~0.5 TRUST). Presets below
- * that are misleading and are omitted in batch mode.
- * Legacy mode (micro-tips per pick to treasury) can keep smaller presets.
+ * `preset TRUST × row units`; every row must be ≥ protocol minimum (`CURVE_OFFSET`, 0.1 TRUST at 1 unit with default preset).
  */
-const ARENA_STAKE_PRESETS_BATCH = [0.5, 1, 2, 2.5, 5, 10] as const;
+const ARENA_STAKE_PRESETS_BATCH = [0.1, 0.25, 0.5, 1, 2.5, 5] as const;
 const ARENA_STAKE_PRESETS_LEGACY = [0.1, 0.25, 0.5, 1, 2.5, 10] as const;
 const ARENA_STAKE_PRESETS = (ARENA_BATCH_MODE ? ARENA_STAKE_PRESETS_BATCH : ARENA_STAKE_PRESETS_LEGACY) as
   | typeof ARENA_STAKE_PRESETS_BATCH
@@ -245,6 +324,9 @@ const ARENA_STAKE_PRESETS = (ARENA_BATCH_MODE ? ARENA_STAKE_PRESETS_BATCH : AREN
 const ARENA_STAKE_TITLES = ARENA_BATCH_MODE
   ? (['Pulse', 'Surge', 'Blitz', 'Nova', 'Forge', 'Singularity'] as const)
   : (['Spark', 'Pulse', 'Surge', 'Blitz', 'Nova', 'Singularity'] as const);
+
+/** Per-card multiplier in Step 2 · Rank (batch deposit = stake preset × units per row). */
+const RANK_TRUST_UNITS_MAX = 12;
 
 const TOKEN_POOL: RankItem[] = [
   { id: 'tok-eth', kind: 'token', label: 'ETH', subtitle: 'Native gas & collateral', pairKind: 'token' },
@@ -312,9 +394,13 @@ function rankItemToPendingSnapshot(item: RankItem): ArenaPendingRow['item'] {
   };
 }
 
+/**
+ * Stance pool for contest Curate: **deterministic order** so cards follow ecosystem / indexer ordering
+ * (portal lists = graph order; static = registry order; claims = indexer order). Not shuffled.
+ */
 async function loadPool(theme: ArenaTheme): Promise<RankItem[]> {
   if (theme === 'tokens') {
-    return [...TOKEN_POOL].sort(() => Math.random() - 0.5).slice(0, Math.min(POOL_SIZE, TOKEN_POOL.length));
+    return [...TOKEN_POOL].slice(0, Math.min(POOL_SIZE, TOKEN_POOL.length));
   }
 
   /** Larger slice so more head-to-head claims appear (indexer returns by mcap — shallow fetch hid many vs claims). */
@@ -326,7 +412,7 @@ async function loadPool(theme: ArenaTheme): Promise<RankItem[]> {
     const src = battle.length >= 2 ? battle : base;
     const pk = battle.length >= 2 ? 'claim-vs' : 'claim';
     const mapped = src.map((r: any) => claimToRankItem(r, pk)).filter(Boolean) as RankItem[];
-    return [...mapped].sort(() => Math.random() - 0.5).slice(0, POOL_SIZE);
+    return mapped.slice(0, POOL_SIZE);
   }
 
   if (theme === 'narratives') {
@@ -348,16 +434,18 @@ async function loadPool(theme: ArenaTheme): Promise<RankItem[]> {
 
 async function loadArenaListPool(entry: ArenaListEntry): Promise<RankItem[]> {
   if (entry.source === 'static') {
-    return [...entry.items].sort(() => Math.random() - 0.5);
+    /** Curated list order from the registry — same sequence the ecosystem auth had in mind. */
+    return [...entry.items];
   }
   if (entry.source === 'portal') {
+    /** Members in subgraph order (e.g. recent list adds first) — community-visible ranking, not random. */
     const rows = await getListMemberSubjectsForObject(entry.listObjectTermId, 220);
     if (rows.length < 1) return [];
     return rows.map((r) => ({
       id: r.id,
       kind: 'atom' as const,
       label: r.label,
-      subtitle: 'List member',
+      subtitle: 'On-chain list · community order',
       image: r.image,
       pairKind: 'list-member',
     }));
@@ -412,43 +500,48 @@ function fmtArenaScore(raw: number): string {
 }
 
 function getStreakTier(s: number): { label: string; className: string } {
-  if (s >= 12) return { label: 'Unstoppable', className: 'from-rose-500/90 via-fuchsia-500/80 to-amber-400/90 shadow-[0_0_20px_rgba(244,63,94,0.35)]' };
-  if (s >= 7) return { label: 'Blazing', className: 'from-orange-500/90 to-amber-500/80 shadow-[0_0_16px_rgba(251,146,60,0.3)]' };
-  if (s >= 3) return { label: 'On fire', className: 'from-amber-400/85 to-orange-600/70 shadow-[0_0_14px_rgba(251,191,36,0.25)]' };
-  if (s >= 1) return { label: 'Heating up', className: 'from-cyan-500/70 to-cyan-600/50 shadow-[0_0_12px_rgba(34,211,238,0.2)]' };
+  if (s >= 12)
+    return {
+      label: 'Unstoppable',
+      className: 'from-intuition-primary/90 to-intuition-secondary/80 shadow-[0_0_20px_rgba(0,243,255,0.35)]',
+    };
+  if (s >= 7)
+    return { label: 'Blazing', className: 'from-intuition-primary/85 to-cyan-600/75 shadow-[0_0_16px_rgba(0,243,255,0.28)]' };
+  if (s >= 3) return { label: 'On fire', className: 'from-cyan-400/80 to-intuition-primary/70 shadow-[0_0_14px_rgba(0,243,255,0.22)]' };
+  if (s >= 1) return { label: 'Heating up', className: 'from-slate-600/70 to-intuition-primary/60 shadow-[0_0_12px_rgba(0,243,255,0.15)]' };
   return { label: '', className: '' };
 }
 
-/** Arena XP tier — shown on ladder for competitive vibe. */
+/** Arena XP tier — cyan / magenta spectrum only (matches profile). */
 function arenaCombatTier(xp: number): { label: string; chip: string } {
   if (xp >= 5000)
     return {
       label: 'Mythic',
-      chip: 'bg-gradient-to-r from-fuchsia-600/55 to-rose-600/45 text-fuchsia-50 border-fuchsia-300/55 shadow-[0_0_16px_rgba(217,70,239,0.25)]',
+      chip: 'bg-gradient-to-r from-intuition-primary/45 to-intuition-secondary/40 text-white border-intuition-primary/55 shadow-[0_0_16px_rgba(0,243,255,0.22)]',
     };
   if (xp >= 2500)
     return {
       label: 'Apex',
-      chip: 'bg-gradient-to-r from-violet-600/50 to-fuchsia-800/45 text-violet-50 border-violet-300/50 shadow-[0_0_14px_rgba(139,92,246,0.2)]',
+      chip: 'bg-gradient-to-r from-intuition-primary/35 to-cyan-700/40 text-cyan-50 border-intuition-primary/45 shadow-[0_0_14px_rgba(0,243,255,0.18)]',
     };
   if (xp >= 1000)
     return {
       label: 'Elite',
-      chip: 'bg-gradient-to-r from-amber-500/50 to-orange-700/45 text-amber-50 border-amber-300/55 shadow-[0_0_14px_rgba(245,158,11,0.2)]',
+      chip: 'bg-gradient-to-r from-slate-600/55 to-intuition-primary/35 text-slate-50 border-intuition-primary/40 shadow-[0_0_12px_rgba(0,243,255,0.14)]',
     };
   if (xp >= 500)
     return {
       label: 'Veteran',
-      chip: 'bg-gradient-to-r from-cyan-600/45 to-teal-800/45 text-cyan-50 border-cyan-300/50 shadow-[0_0_12px_rgba(34,211,238,0.18)]',
+      chip: 'bg-gradient-to-r from-slate-600/50 to-slate-800/55 text-slate-100 border-slate-400/45',
     };
   if (xp >= 150)
     return {
       label: 'Contender',
-      chip: 'bg-gradient-to-r from-slate-500/50 to-slate-700/50 text-slate-50 border-slate-400/45',
+      chip: 'bg-gradient-to-r from-slate-600/50 to-slate-700/50 text-slate-50 border-slate-400/45',
     };
   return {
     label: 'Rookie',
-    chip: 'bg-gradient-to-r from-slate-600/55 to-slate-800/55 text-slate-100 border-slate-400/40',
+    chip: 'bg-gradient-to-r from-slate-700/55 to-slate-900/55 text-slate-200 border-slate-500/40',
   };
 }
 
@@ -642,7 +735,9 @@ function ArenaLaneCard({
                   {item.pairKind}
                 </span>
               ) : null}
-              <span className="rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-200/90">Climb</span>
+              <span className="rounded-md bg-intuition-primary/12 px-2 py-0.5 text-[10px] font-medium text-intuition-primary/95">
+                Climb
+              </span>
               <span
                 className="rounded-md px-2 py-0.5 text-[10px] font-medium"
                 style={{
@@ -658,7 +753,7 @@ function ArenaLaneCard({
             </h3>
             <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
               <span className="inline-flex items-center gap-1 tabular-nums text-slate-400">
-                <Zap size={12} className="shrink-0 text-amber-400/90" aria-hidden />+{xpRoundTotal} XP
+                <Zap size={12} className="shrink-0 text-intuition-primary/90" aria-hidden />+{xpRoundTotal} XP
               </span>
               <span className="text-slate-600" aria-hidden>
                 ·
@@ -762,15 +857,22 @@ function getTreasury(): `0x${string}` | null {
   }
 }
 
+/** Index into `ARENA_STAKE_PRESETS` — default aligns with `CURVE_OFFSET` (0.1 TRUST). */
 function defaultStakePresetIndex(): number {
-  const env = (import.meta.env.VITE_ARENA_DEFAULT_STAKE_TRUST as string | undefined)?.trim();
-  if (!env) return 0;
-  const n = parseFloat(env.replace(',', '.'));
-  if (!Number.isFinite(n) || n <= 0) return 0;
+  const raw = (import.meta.env.VITE_ARENA_DEFAULT_STAKE_TRUST as string | undefined)?.trim();
+  /** Earlier builds documented `0.5` as the example default; ignore so testers land on 0.1 unless they pick another value. */
+  const env = raw && raw !== '0.5' ? raw : '';
+  const floorTrust = parseFloat(formatEther(CURVE_OFFSET));
+  const target = (() => {
+    if (!env) return Number.isFinite(floorTrust) && floorTrust > 0 ? floorTrust : 0.1;
+    const n = parseFloat(env.replace(',', '.'));
+    if (!Number.isFinite(n) || n <= 0) return Number.isFinite(floorTrust) && floorTrust > 0 ? floorTrust : 0.1;
+    return n;
+  })();
   let best = 0;
   let bestD = Infinity;
   ARENA_STAKE_PRESETS.forEach((v, i) => {
-    const d = Math.abs(v - n);
+    const d = Math.abs(v - target);
     if (d < bestD) {
       bestD = d;
       best = i;
@@ -781,16 +883,7 @@ function defaultStakePresetIndex(): number {
 
 const RankedList: React.FC = () => {
   const { address, isConnected } = useAccount();
-  const [listId, setListId] = useState<string | null>(() => {
-    const fromUrl = readArenaListIdFromWindowSearch();
-    if (fromUrl) return fromUrl;
-    try {
-      const v = sessionStorage.getItem('inturank-arena-last-list');
-      return v && getArenaListById(v) ? v : null;
-    } catch {
-      return null;
-    }
-  });
+  const [listId, setListId] = useState<string | null>(() => readArenaListIdFromWindowSearch());
   const [pool, setPool] = useState<RankItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -803,6 +896,31 @@ const RankedList: React.FC = () => {
   const [arenaCategoryId, setArenaCategoryId] = useState<string>('all');
   const [openBatchAfterLoad, setOpenBatchAfterLoad] = useState(false);
   const [showAllLists, setShowAllLists] = useState(false);
+  const [arenaFlowPhase, setArenaFlowPhase] = useState<ArenaFlowPhase>(() => {
+    const lid = readArenaListIdFromWindowSearch();
+    if (!lid) return 'hub';
+    const persisted = readPersistedContestFlow(lid);
+    if (persisted) return persisted.phase;
+    return 'curate';
+  });
+  const [curateQueue, setCurateQueue] = useState<RankItem[]>([]);
+  const [rankDeckItems, setRankDeckItems] = useState<RankItem[]>([]);
+  /** Inline "create a new card" modal for the Rank step (no nav-away). */
+  const [createCardOpen, setCreateCardOpen] = useState(false);
+  /** "Mint contest on-chain" modal — only relevant for static lists. */
+  const [promoteContestOpen, setPromoteContestOpen] = useState(false);
+  /**
+   * Commit coordinator phase. On Compare, "Sign + pick next game" runs the
+   * full on-chain commit chain. We track which phase we're in so the promote
+   * modal's success callback knows to chain into the rank-batch step instead
+   * of just navigating away. Stays `'idle'` until the user hits Submit.
+   */
+  const [commitPhase, setCommitPhase] = useState<'idle' | 'promote' | 'rank-batch'>('idle');
+  /** Per ranked card: TRUST weight = session preset × units (batch rows). */
+  const [rankTrustUnits, setRankTrustUnits] = useState<Record<string, number>>({});
+  const curateInitForListRef = useRef<string | null>(null);
+  const prevListIdForFlowRef = useRef<string | null>(null);
+  const guestCurateNudgeRef = useRef(false);
   /** Starred rail starts collapsed — expands from the right column. */
   const [starredRailCollapsed, setStarredRailCollapsed] = useState(false);
   const [favoriteListIds, setFavoriteListIds] = useState<string[]>(() => loadArenaFavoriteListIds());
@@ -851,6 +969,20 @@ const RankedList: React.FC = () => {
   const [pendingRows, setPendingRows] = useState<ArenaPendingRow[]>([]);
   const [players, setPlayers] = useState<ArenaPlayerRow[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
+  /**
+   * Real per-peer similarity for the current contest. Only populated for
+   * portal lists where we have an on-chain `listObjectTermId` to anchor
+   * `UserArenaRankingClaim` rows against.
+   */
+  const [comparePeers, setComparePeers] = useState<ArenaComparePeer[]>([]);
+  const [comparePeersLoading, setComparePeersLoading] = useState(false);
+  /** Refetch Compare similarities after batch / pick events (indexer lags). */
+  const [comparePeersVersion, setComparePeersVersion] = useState(0);
+  /** Bumps portal list ranker-count refetch alongside Compare peers after on-chain submits. */
+  const [listRankersTick, setListRankersTick] = useState(0);
+  /** Distinct wallets with indexed activity on this portal list (deposit path + triple creators). */
+  const [portalListRankerCount, setPortalListRankerCount] = useState<number | null>(null);
+  const [portalListRankerCountLoading, setPortalListRankerCountLoading] = useState(false);
   const reduceMotion = useReducedMotion();
 
   const batchModalRows = useMemo(
@@ -950,6 +1082,15 @@ const RankedList: React.FC = () => {
     };
   }, [address]);
 
+  useEffect(() => {
+    const bump = () => {
+      setComparePeersVersion((v) => v + 1);
+      setListRankersTick((t) => t + 1);
+    };
+    window.addEventListener('inturank-arena-onchain-updated', bump);
+    return () => window.removeEventListener('inturank-arena-onchain-updated', bump);
+  }, []);
+
   const [graphArenaXp, setGraphArenaXp] = useState(0);
   /** After first graph XP fetch for this wallet — avoids flashing Arena 0 / wrong total before indexer data arrives. */
   const [arenaGraphReady, setArenaGraphReady] = useState(false);
@@ -1022,6 +1163,47 @@ const RankedList: React.FC = () => {
     return { place: i + 1, total: players.length };
   }, [address, players]);
 
+  const curateAgreedYesCount = useMemo(
+    () => pool.filter((it) => (scores[it.id] ?? SCORE_START) > SCORE_START).length,
+    [pool, scores],
+  );
+  const curatePlayerCount = useMemo(() => {
+    const entry = listId ? getArenaListById(listId) : undefined;
+    if (
+      entry?.source === 'portal' &&
+      portalListRankerCount != null &&
+      portalListRankerCount >= 1
+    ) {
+      return portalListRankerCount;
+    }
+    return Math.max(players.length, pool.length + 4, 12);
+  }, [listId, portalListRankerCount, players.length, pool.length]);
+  /**
+   * Compare-step numbers — all derived from REAL on-chain data when present.
+   * Returns `null` when the truth isn't available so the UI can stay honest
+   * instead of fabricating a comparison.
+   */
+  const compareSimilarityAgg = useMemo(
+    () => aggregateSimilarity(comparePeers.map((p) => p.similarity)),
+    [comparePeers],
+  );
+  /** Headline similarity vs the top of the on-chain leaderboard for THIS list. */
+  const compareSimilarityPct: number | null = compareSimilarityAgg?.similarityPct ?? null;
+  /** Ladder progression — only when we actually know the user's place. */
+  const compareProgressionPct: number | null = useMemo(() => {
+    if (!myLadderPosition || myLadderPosition.total <= 0) return null;
+    return Math.max(
+      0,
+      Math.min(100, Math.round((1 - myLadderPosition.place / myLadderPosition.total) * 100)),
+    );
+  }, [myLadderPosition]);
+  /** Games-to-top-10 only when their actual place is known and they're outside top-10. */
+  const compareGamesToTop10: number | null = useMemo(() => {
+    if (!myLadderPosition) return null;
+    if (myLadderPosition.place <= 10) return 0;
+    return myLadderPosition.place - 10;
+  }, [myLadderPosition]);
+
   const activeList = useMemo(() => getArenaListById(listId), [listId]);
 
   useEffect(() => {
@@ -1030,6 +1212,159 @@ const RankedList: React.FC = () => {
       registerArenaPortalListTermsForIndexing([entry.listObjectTermId]);
     }
   }, [listId]);
+
+  /**
+   * Curate headline: approximate “players on this list” from indexer (FeeProxy receivers ∪ triple creators).
+   */
+  useEffect(() => {
+    const entry = listId ? getArenaListById(listId) : undefined;
+    if (!entry || entry.source !== 'portal' || !entry.listObjectTermId) {
+      setPortalListRankerCount(null);
+      setPortalListRankerCountLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPortalListRankerCountLoading(true);
+    void (async () => {
+      try {
+        const n = await fetchApproxDistinctPortalListRankerCount(entry.listObjectTermId, address ?? null);
+        if (!cancelled) setPortalListRankerCount(n);
+      } catch {
+        if (!cancelled) setPortalListRankerCount(null);
+      } finally {
+        if (!cancelled) setPortalListRankerCountLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listId, address, listRankersTick]);
+
+  /**
+   * Live similarity fetch — pulls other rankers’ on-chain claims for this portal
+   * list (global leaderboard **plus** FeeProxy receivers **plus** triple creators on this list) and
+   * scores overlap with your deck. Refetch on Compare step, deck changes, leaderboard
+   * changes, or `inturank-arena-onchain-updated` via `comparePeersVersion`.
+   */
+  useEffect(() => {
+    if (arenaFlowPhase !== 'compare') return;
+    if (!activeList || activeList.source !== 'portal' || !activeList.listObjectTermId) {
+      setComparePeers([]);
+      setComparePeersLoading(false);
+      return;
+    }
+    if (rankDeckItems.length === 0) {
+      setComparePeers([]);
+      setComparePeersLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const myLower = (address ?? '').toLowerCase();
+    const playerByAddr = new Map<string, ArenaPlayerRow>();
+    for (const p of players) {
+      if (p.address) playerByAddr.set(p.address.toLowerCase(), p);
+    }
+
+    const syntheticRow = (wallet: string): ArenaPlayerRow => {
+      const hit = playerByAddr.get(wallet.toLowerCase());
+      if (hit) return hit;
+      let short = wallet;
+      try {
+        const a = getAddress(wallet as `0x${string}`);
+        short = `${a.slice(0, 6)}…${a.slice(-4)}`;
+      } catch {
+        short = wallet.length >= 10 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
+      }
+      return {
+        rank: 0,
+        address: wallet,
+        label: short,
+        arenaXp: 0,
+        activityXp: 0,
+        duels: 0,
+        atomsRanked: 0,
+        listsPlayed: 0,
+        updatedAt: 0,
+      };
+    };
+
+    setComparePeersLoading(true);
+    (async () => {
+      const lb = players
+        .filter((p) => p.address && p.address.toLowerCase() !== myLower)
+        .slice(0, 8)
+        .map((p) => p.address);
+
+      let fromList: string[] = [];
+      try {
+        fromList = await fetchDistinctRankingCreatorsForPortalList(
+          activeList.listObjectTermId!,
+          address,
+          20,
+        );
+      } catch (e) {
+        console.warn('[comparePeers] list rankers fetch failed', e);
+      }
+
+      let fromDeposits: string[] = [];
+      try {
+        fromDeposits = await fetchDistinctReceiversForPortalListFromProxyDeposits(
+          activeList.listObjectTermId!,
+          address,
+          26,
+        );
+      } catch (e) {
+        console.warn('[comparePeers] deposit list rankers fetch failed', e);
+      }
+
+      const merged: string[] = [];
+      const seen = new Set<string>();
+      for (const w of [...lb, ...fromDeposits, ...fromList]) {
+        const lc = w.toLowerCase();
+        if (!lc || lc === myLower || seen.has(lc)) continue;
+        seen.add(lc);
+        merged.push(w);
+        if (merged.length >= 22) break;
+      }
+
+      if (merged.length === 0) {
+        if (!cancelled) {
+          setComparePeers([]);
+          setComparePeersLoading(false);
+        }
+        return;
+      }
+
+      const results = await Promise.all(
+        merged.map(async (wallet) => {
+          try {
+            const claims = await fetchUserArenaRankingClaims(wallet);
+            const sim = computeArenaListSimilarity(
+              rankDeckItems,
+              claims,
+              activeList.listObjectTermId,
+            );
+            return { player: syntheticRow(wallet), claims, similarity: sim };
+          } catch (e) {
+            console.warn('[comparePeers] failed for', wallet, e);
+            return { player: syntheticRow(wallet), claims: [] as UserArenaRankingClaim[], similarity: null };
+          }
+        }),
+      );
+
+      if (cancelled) return;
+      const peers: ArenaComparePeer[] = results
+        .filter((r): r is ArenaComparePeer => r.similarity !== null && r.similarity.sharedCount > 0)
+        .sort((a, b) => b.similarity.similarityPct - a.similarity.similarityPct);
+      setComparePeers(peers);
+      setComparePeersLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [arenaFlowPhase, activeList, rankDeckItems, players, address, comparePeersVersion]);
 
   const [portalListEntries, setPortalListEntries] = useState<
     Extract<ArenaListEntry, { source: 'portal' }>[]
@@ -1065,7 +1400,6 @@ const RankedList: React.FC = () => {
           };
         });
         registerPortalListEntries(entries);
-        registerArenaPortalListTermsForIndexing(entries.map((e) => e.listObjectTermId));
         setPortalListEntries(entries);
       } catch {
         if (!cancelled) setPortalListEntries([]);
@@ -1117,6 +1451,18 @@ const RankedList: React.FC = () => {
   }, [address]);
 
   const allArenaListsFlat = useMemo(() => dedupeArenaEntries([...ARENA_LISTS, ...portalListEntries]), [portalListEntries]);
+
+  const contestHubSections = useMemo(() => buildContestHubSections(allArenaListsFlat), [allArenaListsFlat]);
+
+  const resumeBrowseTitle = useMemo(() => {
+    try {
+      const id = sessionStorage.getItem('inturank-arena-last-list')?.trim();
+      const entry = id ? getArenaListById(id) : null;
+      return entry?.title ?? null;
+    } catch {
+      return null;
+    }
+  }, [listId]);
 
   /** Quick-switch + dropdown: favorites first, then alphabetical. */
   const quickSwitchSortedLists = useMemo(() => {
@@ -1226,12 +1572,88 @@ const RankedList: React.FC = () => {
     }
 
     setListId(null);
-    try {
-      sessionStorage.removeItem('inturank-arena-last-list');
-    } catch {
-      /* ignore */
-    }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!ARENA_CONTEST_FLOW_V2) return;
+    if (!listId) {
+      prevListIdForFlowRef.current = null;
+      setArenaFlowPhase('hub');
+      curateInitForListRef.current = null;
+      setCurateQueue([]);
+      setRankDeckItems([]);
+      setRankTrustUnits({});
+      return;
+    }
+    const prev = prevListIdForFlowRef.current;
+    if (prev !== listId) {
+      if (prev != null) {
+        clearPersistedContestFlow(prev);
+        setArenaFlowPhase('curate');
+        curateInitForListRef.current = null;
+        setRankDeckItems([]);
+        setRankTrustUnits({});
+      } else if (listId) {
+        const persisted = readPersistedContestFlow(listId);
+        if (persisted) {
+          setArenaFlowPhase(persisted.phase);
+          if (persisted.phase === 'curate') {
+            curateInitForListRef.current = null;
+            setRankDeckItems([]);
+            setRankTrustUnits({});
+          }
+        } else {
+          setArenaFlowPhase('curate');
+          curateInitForListRef.current = null;
+          setRankDeckItems([]);
+          setRankTrustUnits({});
+        }
+      }
+      prevListIdForFlowRef.current = listId;
+    }
+  }, [listId]);
+
+  /** After hard refresh during rank/compare: restore deck once pool loads. */
+  useEffect(() => {
+    if (!ARENA_CONTEST_FLOW_V2 || !listId || loading || pool.length < 1) return;
+    if (arenaFlowPhase !== 'rank' && arenaFlowPhase !== 'compare') return;
+    if (rankDeckItems.length > 0) return;
+
+    const persisted = readPersistedContestFlow(listId);
+    if (!persisted || (persisted.phase !== 'rank' && persisted.phase !== 'compare')) return;
+
+    const rebuilt = persisted.rankOrderIds
+      .map((id) => pool.find((x) => x.id === id))
+      .filter(Boolean) as RankItem[];
+    if (rebuilt.length < 1) {
+      clearPersistedContestFlow(listId);
+      setArenaFlowPhase('curate');
+      curateInitForListRef.current = null;
+      return;
+    }
+    setRankDeckItems(rebuilt);
+    setRankTrustUnits(persisted.rankTrustUnits || {});
+  }, [listId, loading, pool, arenaFlowPhase, rankDeckItems.length]);
+
+  useEffect(() => {
+    if (!ARENA_CONTEST_FLOW_V2 || !listId) return;
+    if (arenaFlowPhase === 'hub') return;
+    if ((arenaFlowPhase === 'rank' || arenaFlowPhase === 'compare') && rankDeckItems.length < 1) return;
+
+    writePersistedContestFlow(listId, {
+      phase: arenaFlowPhase === 'compare' ? 'compare' : arenaFlowPhase === 'rank' ? 'rank' : 'curate',
+      rankOrderIds: rankDeckItems.map((x) => x.id),
+      rankTrustUnits,
+    });
+  }, [listId, arenaFlowPhase, rankDeckItems, rankTrustUnits]);
+
+  useEffect(() => {
+    if (!ARENA_CONTEST_FLOW_V2) return;
+    if (arenaFlowPhase !== 'curate' || !listId || loading || pool.length < 1) return;
+    if (curateInitForListRef.current === listId) return;
+    curateInitForListRef.current = listId;
+    setCurateQueue([...pool]);
+  }, [arenaFlowPhase, listId, loading, pool]);
 
   /** Return-trigger nudge — pair with bookmarks like `?ref=graph`. */
   useEffect(() => {
@@ -1241,7 +1663,6 @@ const RankedList: React.FC = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!openBatchAfterLoad) return;
     if (!listId || loading) return;
     setOpenBatchAfterLoad(false);
     if (getTotalPendingCount() > 0) {
@@ -1299,7 +1720,12 @@ const RankedList: React.FC = () => {
     try {
       const items = await loadArenaListPool(entry);
       const roundItems = pickYesNoGridItems(items, ARENA_CARDS_PER_ROUND);
-      const nextRound = roundItems.length > 0 ? ({ kind: 'yesno' as const, items: roundItems } satisfies ArenaRound) : null;
+      const nextRound =
+        ARENA_CONTEST_FLOW_V2
+          ? null
+          : roundItems.length > 0
+            ? ({ kind: 'yesno' as const, items: roundItems } satisfies ArenaRound)
+            : null;
       setPool(items);
       setScores(initScoresForPool(items));
       setDuels(0);
@@ -1331,6 +1757,7 @@ const RankedList: React.FC = () => {
   }, [listId]);
 
   useEffect(() => {
+    if (ARENA_CONTEST_FLOW_V2) return;
     if (!listId) return;
     if (loading || round) return;
     if (pool.length < 1) return;
@@ -1368,6 +1795,7 @@ const RankedList: React.FC = () => {
       });
 
       setRound((prev) => {
+        if (ARENA_CONTEST_FLOW_V2) return prev;
         if (!prev) return prev;
         const newItems = refillLanesAfterAnswer(pool, prev.items, item);
         if (!newItems) return null;
@@ -1413,29 +1841,28 @@ const RankedList: React.FC = () => {
     setStakingTx(true);
     setSubmitProgress('Reviewing batch…');
     let sent = false;
-    let attestFootnote: string | undefined;
     const totalWei = rowsToSend.reduce((acc, row) => acc + baseWei * BigInt(row.units), 0n);
     /** Captured per-row tx hashes so we can record curations + streak with the real txHash after success. */
     const txByRowKey = new Map<string, string>();
-    /** Lowercased tx hash → XPDN granted for that deposit (for curation ledger + explorer). */
-    const xpdnByTxHashLc = new Map<string, number>();
-    /** Activity XP (XPDN) awarded across this batch — sum and per-tx grants from `notifyProtocolXpEarned`. */
+    /** Per-row activity XP grant for curation modal / ledger (batch tx shares one hash across rows). */
+    const xpdnByRowKey = new Map<string, number>();
+    /** Activity XP (XPDN) awarded across this batch — sum and per-row grants from `notifyProtocolXpEarned`. */
     let activityXpDelta = 0;
     const xpdnGrantsPerTx: number[] = [];
     try {
-      const awardArenaStakeXp = (txHash: string, depositWei: bigint) => {
+      const awardArenaStakeXp = (txHash: string, depositWei: bigint, rowKey: string) => {
         const granted = notifyProtocolXpEarned({
           address: address!,
           reasonKey: 'add_to_list',
           txHash,
           depositTrustWei: depositWei,
           grossMultiplier: PROTOCOL_XP_ARENA_RANK_ADD_TO_LIST_MULT,
+          dedupeKey: `arena:${txHash}:${rowKey}`,
         });
         if (typeof granted === 'number' && granted > 0) {
           activityXpDelta += granted;
           xpdnGrantsPerTx.push(granted);
-          const h = txHash.trim().toLowerCase();
-          if (h.startsWith('0x')) xpdnByTxHashLc.set(h, granted);
+          xpdnByRowKey.set(rowKey, granted);
         }
       };
 
@@ -1485,13 +1912,30 @@ const RankedList: React.FC = () => {
         }
       }
 
+      const progressCb = (m: string) => setSubmitProgress(m);
+
+      const mergedDepositLegs: { termId: string; assetsWei: bigint }[] = [];
+      const depositXpRows: Array<{ rowKey: string; rowWei: bigint }> = [];
+
+      type LegacyRowSpec = {
+        row: (typeof rowsToSend)[0];
+        rowTrust: string;
+        subjectRef: string;
+        predicateRef: string;
+        objectRef: string;
+        rowWei: bigint;
+      };
+      const legacyRowSpecs: LegacyRowSpec[] = [];
+      type AttestSpec = {
+        subjectRef: string;
+        predicateRef: string;
+        objectRef: string;
+        rowTrust: string;
+        rowWei: bigint;
+      };
+      const attestSpecs: AttestSpec[] = [];
+
       for (const { portalListObjectId, listRows, listEntry } of portalJobs) {
-        /**
-         * Canonical Intuition flow per row in a portal list:
-         *   YES = deposit into membership triple vault (subject, LIST_PREDICATE, list_object).
-         *   NO  = deposit into the **counter-triple** of that membership vault (auto-created on-chain).
-         * Pre-check share balances on both sides — protocol reverts `MultiVault_HasCounterStake()` if the user already holds the opposite side.
-         */
         const checkBothCurves = async (account: string, termId: string): Promise<bigint> => {
           const [a, b] = await Promise.all([
             getRawShareBalance(account, termId, LINEAR_CURVE_ID),
@@ -1500,21 +1944,19 @@ const RankedList: React.FC = () => {
           return a > b ? a : b;
         };
 
-        // Resolve membership vaults + run counter-stake checks fully in parallel — saves ~N×RPC seconds vs the previous serial loop.
         setSubmitProgress(
           listRows.length > 1 ? `Resolving ${listRows.length} vaults…` : 'Resolving vault…',
         );
         const resolved = await Promise.all(
           listRows.map(async (row) => {
             const rowWei = baseWei * BigInt(row.units);
-            const amt = formatEther(rowWei);
             const membershipVault = await getListMembershipTripleTermId(row.item.id, portalListObjectId);
-            if (!membershipVault) return { row, rowWei, amt, membershipVault: null, counterShares: 0n };
+            if (!membershipVault) return { row, rowWei, membershipVault: null, counterShares: 0n };
             const yesVault = membershipVault;
             const noVault = calculateCounterTripleId(yesVault);
             const oppositeVault = row.support ? noVault : yesVault;
             const counterShares = await checkBothCurves(address, oppositeVault);
-            return { row, rowWei, amt, membershipVault, counterShares };
+            return { row, rowWei, membershipVault, counterShares };
           }),
         );
 
@@ -1522,7 +1964,7 @@ const RankedList: React.FC = () => {
           if (!r.membershipVault) {
             throw new Error(
               `Could not resolve list-membership vault for "${r.row.item.label}". ` +
-                `If this identity is new on-chain, wait for the indexer to sync or pick another member.`
+                `If this identity is new on-chain, wait for the indexer to sync or pick another member.`,
             );
           }
           if (r.counterShares > 0n) {
@@ -1533,33 +1975,30 @@ const RankedList: React.FC = () => {
                 `Withdraw it from your portfolio before voting ${newSideWord} (protocol blocks counter-stakes on the same triple).`,
             );
           }
-          const yesVault = r.membershipVault;
+        }
+
+        for (const r of resolved) {
+          const yesVault = r.membershipVault!;
           const noVault = calculateCounterTripleId(yesVault);
           const targetVault = r.row.support ? yesVault : noVault;
-
-          setSubmitProgress(
-            listRows.length > 1
-              ? `Awaiting wallet · ${r.row.item.label} (${listRows.indexOf(r.row) + 1}/${listRows.length})`
-              : `Awaiting wallet · ${r.row.item.label}`,
-          );
-          const dep = await depositToVault(r.amt, targetVault, address);
-          awardArenaStakeXp(dep.hash, r.rowWei);
-          txByRowKey.set(r.row.key, dep.hash);
+          mergedDepositLegs.push({ termId: targetVault, assetsWei: r.rowWei });
+          depositXpRows.push({ rowKey: r.row.key, rowWei: r.rowWei });
         }
 
         if (ARENA_PERSONAL_ATTESTATION_TRIPLES && listEntry?.title) {
-          try {
-            const listTitle = listEntry.title;
-            const arenaSpeakerLabel = await bestWalletDisplayLabel(address);
-            for (const row of listRows) {
-              const rowTrust = formatEther(baseWei * BigInt(row.units));
-              const sideWord = row.support ? 'YES' : 'NO';
-              const stance = `${arenaSpeakerLabel} chose ${sideWord} for “${row.item.label}” in list “${listTitle}” (${rowTrust} TRUST)`;
-              await createTripleFromLabels(address, stance, row.item.id, rowTrust, address);
-            }
-          } catch (attestErr: unknown) {
-            console.warn('Arena personal attestation triple failed (stakes may already be on-chain):', attestErr);
-            attestFootnote = arenaPersonalAttestationFootnote(attestErr);
+          const listTitle = listEntry.title;
+          const arenaSpeakerLabel = await bestWalletDisplayLabel(address);
+          for (const row of listRows) {
+            const rowTrust = formatEther(baseWei * BigInt(row.units));
+            const sideWord = row.support ? 'YES' : 'NO';
+            const stance = `${arenaSpeakerLabel} chose ${sideWord} for “${row.item.label}” in list “${listTitle}” (${rowTrust} TRUST)`;
+            attestSpecs.push({
+              subjectRef: address,
+              predicateRef: stance,
+              objectRef: row.item.id,
+              rowTrust,
+              rowWei: parseEther(rowTrust),
+            });
           }
         }
       }
@@ -1571,16 +2010,145 @@ const RankedList: React.FC = () => {
           const subjectRef = TERM_ID_RE.test(row.item.id) ? row.item.id : (row.item.label || row.item.id);
           const predicateRef = row.support ? `belongs in ${listLabel}` : `does not belong in ${listLabel}`;
           const objectRef = listLabel;
-          const created = await createTripleFromLabels(subjectRef, predicateRef, objectRef, rowTrust, address);
-          awardArenaStakeXp(created.tripleHash, parseEther(rowTrust));
-          txByRowKey.set(row.key, created.tripleHash);
+          legacyRowSpecs.push({
+            row,
+            rowTrust,
+            subjectRef,
+            predicateRef,
+            objectRef,
+            rowWei: parseEther(rowTrust),
+          });
+        }
+      }
+
+      const atomJobs: { ref: string; depositTrust: string }[] = [];
+      for (const spec of legacyRowSpecs) {
+        atomJobs.push({ ref: spec.subjectRef, depositTrust: spec.rowTrust });
+        atomJobs.push({ ref: spec.predicateRef, depositTrust: spec.rowTrust });
+        atomJobs.push({ ref: spec.objectRef, depositTrust: spec.rowTrust });
+      }
+      for (const a of attestSpecs) {
+        atomJobs.push({ ref: a.subjectRef, depositTrust: a.rowTrust });
+        atomJobs.push({ ref: a.predicateRef, depositTrust: a.rowTrust });
+        atomJobs.push({ ref: a.objectRef, depositTrust: a.rowTrust });
+      }
+
+      if (atomJobs.length > 0) {
+        const nUnique = new Set(atomJobs.map((j) => atomRefJobKey(j.ref, j.depositTrust))).size;
+        setSubmitProgress(`Preparing ${nUnique} unique atom reference(s) (batched on-chain)…`);
+      }
+      const termMap = await batchEnsureAtomTermIds(atomJobs, address, progressCb);
+
+      const pickTerm = (ref: string, dep: string): `0x${string}` => {
+        const tid = termMap.get(atomRefJobKey(ref, dep));
+        if (!tid) throw new Error(`Could not resolve atom for “${String(ref).slice(0, 48)}…”.`);
+        return tid;
+      };
+
+      type ResolvedTripleLeg = {
+        sTerm: `0x${string}`;
+        pTerm: `0x${string}`;
+        oTerm: `0x${string}`;
+        tripleId: string;
+        exists: boolean;
+        rowWei: bigint;
+        rowKey?: string;
+        isLegacy: boolean;
+      };
+
+      const resolvedTriples: ResolvedTripleLeg[] = [];
+
+      for (const spec of legacyRowSpecs) {
+        const sTerm = pickTerm(spec.subjectRef, spec.rowTrust);
+        const pTerm = pickTerm(spec.predicateRef, spec.rowTrust);
+        const oTerm = pickTerm(spec.objectRef, spec.rowTrust);
+        const tripleId = calculateTripleId(sTerm, pTerm, oTerm);
+        const exists = await isTermCreatedOnChain(tripleId);
+        resolvedTriples.push({
+          sTerm,
+          pTerm,
+          oTerm,
+          tripleId,
+          exists,
+          rowWei: spec.rowWei,
+          rowKey: spec.row.key,
+          isLegacy: true,
+        });
+      }
+
+      for (const a of attestSpecs) {
+        const sTerm = pickTerm(a.subjectRef, a.rowTrust);
+        const pTerm = pickTerm(a.predicateRef, a.rowTrust);
+        const oTerm = pickTerm(a.objectRef, a.rowTrust);
+        const tripleId = calculateTripleId(sTerm, pTerm, oTerm);
+        const exists = await isTermCreatedOnChain(tripleId);
+        resolvedTriples.push({
+          sTerm,
+          pTerm,
+          oTerm,
+          tripleId,
+          exists,
+          rowWei: a.rowWei,
+          isLegacy: false,
+        });
+      }
+
+      const tripleCreateInputs: {
+        subjectId: string;
+        predicateId: string;
+        objectId: string;
+        assetsWei: bigint;
+      }[] = [];
+      const tripleCreateLegacyRows: Array<{ rowKey: string; rowWei: bigint }> = [];
+
+      for (const r of resolvedTriples) {
+        if (r.exists) continue;
+        tripleCreateInputs.push({
+          subjectId: r.sTerm,
+          predicateId: r.pTerm,
+          objectId: r.oTerm,
+          assetsWei: r.rowWei,
+        });
+        if (r.isLegacy && r.rowKey) tripleCreateLegacyRows.push({ rowKey: r.rowKey, rowWei: r.rowWei });
+      }
+
+      if (tripleCreateInputs.length > 0) {
+        setSubmitProgress(
+          tripleCreateInputs.length > 1
+            ? `Confirm in wallet · create ${tripleCreateInputs.length} claims (one transaction)`
+            : 'Confirm in wallet · create claim',
+        );
+        const createHash = await createSemanticTriplesBatch(tripleCreateInputs, address, progressCb);
+        for (const x of tripleCreateLegacyRows) {
+          awardArenaStakeXp(createHash, x.rowWei, x.rowKey);
+          txByRowKey.set(x.rowKey, createHash);
+        }
+      }
+
+      for (const r of resolvedTriples) {
+        if (!r.exists) continue;
+        mergedDepositLegs.push({ termId: r.tripleId, assetsWei: r.rowWei });
+        if (r.isLegacy && r.rowKey) depositXpRows.push({ rowKey: r.rowKey, rowWei: r.rowWei });
+      }
+
+      if (mergedDepositLegs.length > 0) {
+        setSubmitProgress(
+          mergedDepositLegs.length > 1
+            ? `Confirm in wallet · ${mergedDepositLegs.length} vault deposits (one transaction)`
+            : 'Confirm in wallet · vault deposit',
+        );
+        const { hash: depHash } = await depositBatchToVaults(mergedDepositLegs, address, progressCb);
+        for (const x of depositXpRows) {
+          awardArenaStakeXp(depHash, x.rowWei, x.rowKey);
+          txByRowKey.set(x.rowKey, depHash);
         }
       }
       sent = true;
     } catch (e: any) {
       console.error('[Arena batch submit]', e);
-      let msg = parseProtocolError(e);
+      let msg = collapseAdjacentDuplicateSentences(parseProtocolError(e));
       if (!msg?.trim()) msg = e?.shortMessage ?? e?.message ?? 'Transaction failed';
+      msg = collapseAdjacentDuplicateSentences(msg);
       toast.error(msg.length > 420 ? `${msg.slice(0, 417)}…` : msg);
     } finally {
       setStakingTx(false);
@@ -1597,8 +2165,7 @@ const RankedList: React.FC = () => {
           const entry = getArenaListById(row.sourceListId);
           const trustLabel = formatEther(baseWei * BigInt(row.units));
           const txHash = txByRowKey.get(row.key);
-          const txLc = txHash?.trim().toLowerCase();
-          const xpdn = txLc?.startsWith('0x') ? xpdnByTxHashLc.get(txLc) : undefined;
+          const xpdn = typeof row.key === 'string' ? xpdnByRowKey.get(row.key) : undefined;
           return {
             listId: row.sourceListId,
             listTitle: entry?.title ?? 'Arena list',
@@ -1657,7 +2224,6 @@ const RankedList: React.FC = () => {
         themeShort: successThemeShort,
         contextSuffix: successContextSuffix,
         ...(humanLine ? { humanLine } : {}),
-        ...(attestFootnote ? { footnote: attestFootnote } : {}),
         ...(activityXpDelta > 0 ? { activityXpEarned: activityXpDelta } : {}),
         ...(arenaXpDelta > 0 ? { arenaXpEarned: arenaXpDelta } : {}),
         ...(xpdnGrantsPerTx.length > 0 ? { xpdnByTx: xpdnGrantsPerTx } : {}),
@@ -1760,27 +2326,29 @@ const RankedList: React.FC = () => {
   }, [listId, pendingRows, pool]);
 
   const resolveYesNo = useCallback(
-    async (item: RankItem, support: boolean) => {
+    async (item: RankItem, support: boolean): Promise<boolean> => {
       if (support) playSuccess();
       else playClick();
 
       if (!isConnected || !address) {
         toast.error('Connect your wallet to pick.');
-        return;
+        return false;
       }
 
       if (ARENA_BATCH_MODE) {
         applyLocalYesNo(item, support);
-        setPendingRows((prev) => [
-          ...prev,
-          {
-            key: `q-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            item: rankItemToPendingSnapshot(item),
-            support,
-            units: 1,
-          },
-        ]);
-        return;
+        if (!ARENA_CONTEST_FLOW_V2 || support) {
+          setPendingRows((prev) => [
+            ...prev,
+            {
+              key: `q-${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+              item: rankItemToPendingSnapshot(item),
+              support,
+              units: 1,
+            },
+          ]);
+        }
+        return true;
       }
 
       let stakeOk = true;
@@ -1789,12 +2357,12 @@ const RankedList: React.FC = () => {
         wei = parseEther((stakeTRUST || '0').trim() || '0');
       } catch {
         toast.error('Invalid stake amount');
-        return;
+        return false;
       }
 
       if (!treasury) {
         toast.error('Arena payouts aren’t enabled in this deployment (treasury not configured).');
-        return;
+        return false;
       }
 
       setStakingTx(true);
@@ -1809,7 +2377,7 @@ const RankedList: React.FC = () => {
         setStakingTx(false);
       }
 
-      if (!stakeOk) return;
+      if (!stakeOk) return false;
 
       applyLocalYesNo(item, support);
 
@@ -1829,9 +2397,148 @@ const RankedList: React.FC = () => {
           });
         }, 2800);
       }
+      return true;
     },
     [stakeTRUST, isConnected, address, treasury, refreshPlayers, refreshArenaXpSelf, applyLocalYesNo]
   );
+
+  const onCurateDecide = useCallback(
+    (item: RankItem, agree: boolean) => {
+      const pop = () => setCurateQueue((q) => q.filter((x) => x.id !== item.id));
+
+      if (!isConnected || !address) {
+        applyLocalYesNo(item, agree);
+        pop();
+        if (!guestCurateNudgeRef.current) {
+          guestCurateNudgeRef.current = true;
+          toast.info('Practice mode — connect a wallet to queue TRUST and submit on-chain.');
+        }
+        return;
+      }
+
+      void resolveYesNo(item, agree).then((ok) => {
+        if (ok) pop();
+      });
+    },
+    [isConnected, address, applyLocalYesNo, resolveYesNo],
+  );
+
+  const onCurateSkip = useCallback(() => {
+    playClick();
+    setCurateQueue((q) => q.slice(1));
+  }, []);
+
+  const onNextToRankFromCurate = useCallback(() => {
+    const yesItems = pool
+      .filter((it) => (scores[it.id] ?? SCORE_START) > SCORE_START)
+      .sort((a, b) => (scores[b.id] ?? SCORE_START) - (scores[a.id] ?? SCORE_START));
+    if (yesItems.length < 1) {
+      toast.error('Agree with at least one pick to build your rank deck.');
+      return;
+    }
+    const initTrust: Record<string, number> = {};
+    for (const it of yesItems) {
+      const row = pendingRows.find((r) => r.item.id === it.id);
+      initTrust[it.id] = Math.max(1, Math.min(RANK_TRUST_UNITS_MAX, row?.units ?? 1));
+    }
+    setRankTrustUnits(initTrust);
+    setRankDeckItems(yesItems);
+    setArenaFlowPhase('rank');
+  }, [pool, scores, pendingRows]);
+
+  const onRankReorder = useCallback(
+    (next: RankItem[]) => {
+      setRankDeckItems(next);
+      if (!ARENA_BATCH_MODE || !listId) return;
+      setPendingRows((prev) => {
+        const idSet = new Set(next.map((i) => i.id));
+        const front: ArenaPendingRow[] = [];
+        for (const it of next) {
+          const row = prev.find((r) => r.item.id === it.id);
+          if (row) front.push(row);
+        }
+        const rest = prev.filter((r) => !idSet.has(r.item.id));
+        return [...front, ...rest];
+      });
+    },
+    [listId],
+  );
+
+  const onRankRemoveItem = useCallback(
+    (itemId: string) => {
+      playClick();
+
+      const rowsForItem = pendingRows.filter((r) => r.item.id === itemId);
+      const nRows = rowsForItem.length;
+
+      setPendingRows((prev) => prev.filter((r) => r.item.id !== itemId));
+
+      setScores((p) => {
+        const next = { ...p, [itemId]: SCORE_START };
+        if (listId) savePersistedForList(listId, next);
+        return next;
+      });
+
+      const duelDrop = nRows > 0 ? nRows : 1;
+      setDuels((d) => Math.max(0, d - duelDrop));
+      setStreak(0);
+
+      setRankTrustUnits((prev) => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+
+      setRankDeckItems((prev) => {
+        const next = prev.filter((x) => x.id !== itemId);
+        if (next.length < 1) {
+          toast.info('Deck empty — opening Curate to add picks.');
+          queueMicrotask(() => {
+            curateInitForListRef.current = null;
+            setArenaFlowPhase('curate');
+          });
+        } else {
+          toast.info('Removed from deck — swipe again in Curate if you change your mind.');
+        }
+        return next;
+      });
+    },
+    [listId, pendingRows],
+  );
+
+  const onRankTrustUnitsChange = useCallback((itemId: string, units: number) => {
+    const u = Math.max(1, Math.min(RANK_TRUST_UNITS_MAX, units));
+    playClick();
+    setRankTrustUnits((prev) => ({ ...prev, [itemId]: u }));
+    setPendingRows((prev) => prev.map((row) => (row.item.id === itemId ? { ...row, units: u } : row)));
+  }, []);
+
+  const rankFlowCartCount = useMemo(
+    () => (listId ? batchModalRows.filter((r) => r.sourceListId === listId).length : 0),
+    [batchModalRows, listId],
+  );
+
+  const onOpenRankBatchSign = useCallback(() => {
+    playClick();
+    if (!isConnected || !address) {
+      toast.error('Connect your wallet to sign and submit.');
+      return;
+    }
+    if (!ARENA_BATCH_MODE) {
+      toast.info('Batch mode is off — use legacy per-pick sends.');
+      return;
+    }
+    if (rankFlowCartCount < 1) {
+      toast.error('No stances in your cart for this list.');
+      return;
+    }
+    setBatchModalOpen(true);
+  }, [isConnected, address, rankFlowCartCount]);
+
+  const onCompareFromRank = useCallback(() => {
+    playClick();
+    setArenaFlowPhase('compare');
+  }, []);
 
   const onYesNo = (item: RankItem, support: boolean) => {
     if (!round) return;
@@ -1858,6 +2565,15 @@ const RankedList: React.FC = () => {
     setDuels(0);
     setStreak(0);
     setRound(null);
+    if (ARENA_CONTEST_FLOW_V2 && listId) {
+      clearPersistedContestFlow(listId);
+      setArenaFlowPhase('curate');
+      curateInitForListRef.current = null;
+      setRankDeckItems([]);
+      setRankTrustUnits({});
+      guestCurateNudgeRef.current = false;
+      if (pool.length > 0) setCurateQueue([...pool]);
+    }
     if (ARENA_BATCH_MODE && listId) {
       clearPendingForList(listId);
       setPendingRows([]);
@@ -1888,6 +2604,10 @@ const RankedList: React.FC = () => {
 
   const streakTier = getStreakTier(streak);
   const minPoolNeeded = 1;
+  /** Slim top bar for contest run (no heavy “Current run” card). */
+  const arenaSlimRunChrome =
+    ARENA_CONTEST_FLOW_V2 &&
+    (arenaFlowPhase === 'curate' || arenaFlowPhase === 'rank' || arenaFlowPhase === 'compare');
   const quickStartList = useMemo(() => {
     const flagship = getArenaListById(FLAGSHIP_ARENA_LIST_ID);
     const flagshipInLane = listsForCategory.some((l) => l.id === FLAGSHIP_ARENA_LIST_ID);
@@ -1898,6 +2618,14 @@ const RankedList: React.FC = () => {
   const startListRun = useCallback(
     (id: string) => {
       setListId(id);
+      if (ARENA_CONTEST_FLOW_V2) {
+        clearPersistedContestFlow(id);
+        guestCurateNudgeRef.current = false;
+        setArenaFlowPhase('curate');
+        curateInitForListRef.current = null;
+        setRankDeckItems([]);
+        setRankTrustUnits({});
+      }
       try {
         sessionStorage.setItem('inturank-arena-last-list', id);
       } catch {
@@ -1915,6 +2643,15 @@ const RankedList: React.FC = () => {
 
   const exitToArenaBrowse = useCallback(() => {
     playClick();
+    if (ARENA_CONTEST_FLOW_V2) {
+      clearPersistedContestFlow(listId);
+      setArenaFlowPhase('hub');
+      curateInitForListRef.current = null;
+      setCurateQueue([]);
+      setRankDeckItems([]);
+      setRankTrustUnits({});
+      guestCurateNudgeRef.current = false;
+    }
     setListId(null);
     setRound(null);
     try {
@@ -1923,7 +2660,65 @@ const RankedList: React.FC = () => {
       /* ignore */
     }
     navigate('/climb', { replace: true });
-  }, [navigate]);
+  }, [navigate, listId]);
+
+  const onCompareRandomGame = useCallback(() => {
+    playClick();
+    const others = allArenaListsFlat.filter((l) => l.id !== listId);
+    if (others.length < 1) {
+      toast.info('No other lists to jump to.');
+      return;
+    }
+    const pick = others[Math.floor(Math.random() * others.length)]!;
+    startListRun(pick.id);
+  }, [allArenaListsFlat, listId, startListRun]);
+
+  /** Count of locally-created cards (id starts with `pending-card-…`) in the deck. */
+  const pendingCardCount = useMemo(
+    () => rankDeckItems.filter((it) => isPendingArenaCardId(it.id)).length,
+    [rankDeckItems],
+  );
+
+  /**
+   * Compare → "Sign + pick next game" entry point.
+   *
+   * On-chain writes ONLY happen here, at the end of a contest run. Chain:
+   *   1. If the contest is off-chain (`source !== 'portal'`) → open the
+   *      promote modal. Its success callback then migrates the pending
+   *      batch rows to the new portal id and (if any) opens the rank
+   *      batch modal in the same flow.
+   *   2. Else if there are queued rank stakes → open the batch review modal.
+   *   3. Else → nothing to sign; exit to hub (Compare only calls this when (1) or (2) applies).
+   */
+  const beginArenaCommit = useCallback(() => {
+    playClick();
+
+    if (!isConnected || !address) {
+      void connectWallet();
+      return;
+    }
+
+    if (activeList && activeList.source !== 'portal') {
+      setCommitPhase('promote');
+      setPromoteContestOpen(true);
+      return;
+    }
+
+    if (ARENA_BATCH_MODE && rankFlowCartCount > 0) {
+      setCommitPhase('rank-batch');
+      setBatchModalOpen(true);
+      return;
+    }
+
+    setCommitPhase('idle');
+    exitToArenaBrowse();
+  }, [
+    activeList,
+    address,
+    isConnected,
+    rankFlowCartCount,
+    exitToArenaBrowse,
+  ]);
 
   const onQuickStart = useCallback(() => {
     if (!quickStartList) return;
@@ -1931,9 +2726,28 @@ const RankedList: React.FC = () => {
     startListRun(quickStartList.id);
   }, [quickStartList, startListRun]);
 
+  const onRandomContestFromGate = useCallback(() => {
+    const pool = allArenaListsFlat;
+    if (pool.length < 1) {
+      toast.info('No contests available.');
+      return;
+    }
+    const pick = pool[Math.floor(Math.random() * pool.length)]!;
+    startListRun(pick.id);
+  }, [allArenaListsFlat, startListRun]);
+
+  const onResumeLastFromGate = useCallback(() => {
+    try {
+      const id = sessionStorage.getItem('inturank-arena-last-list')?.trim();
+      if (id && getArenaListById(id)) startListRun(id);
+    } catch {
+      /* ignore */
+    }
+  }, [startListRun]);
+
   return (
     <div
-      className={`relative isolate z-10 min-h-screen w-full min-w-0 overflow-x-hidden font-sans text-slate-300 selection:bg-[#38e8ff]/25 selection:text-white ${listId ? 'pb-6 sm:pb-8' : 'pb-16 sm:pb-20'}`}
+      className={`relative isolate z-10 min-h-screen w-full min-w-0 overflow-x-hidden font-sans text-slate-300 selection:bg-intuition-primary/25 selection:text-white ${listId ? 'pb-6 sm:pb-8' : 'pb-16 sm:pb-20'}`}
       style={{ backgroundColor: ARENA_THEME.bgPage }}
     >
       <section className="relative z-10 border-b border-white/[0.06] overflow-hidden">
@@ -2017,7 +2831,7 @@ const RankedList: React.FC = () => {
                   <Trophy size={13} strokeWidth={2.4} className={climbViewMode === 'arena' ? 'text-cyan-200' : 'text-slate-500'} />
                   Arena
                   {climbViewMode !== 'arena' ? (
-                    <span className="absolute -top-0.5 -right-0.5 inline-block px-1.5 py-0.5 rounded-md bg-amber-400/90 text-[8px] font-black text-black tracking-wider leading-none">
+                    <span className="absolute -top-0.5 -right-0.5 inline-block px-1.5 py-0.5 rounded-md bg-intuition-secondary text-[8px] font-black text-white tracking-wider leading-none shadow-[0_0_12px_rgba(255,30,109,0.45)]">
                       NEW
                     </span>
                   ) : null}
@@ -2036,7 +2850,7 @@ const RankedList: React.FC = () => {
                   <Zap size={13} strokeWidth={2.5} className={climbViewMode === 'signal' ? 'text-cyan-200' : 'text-slate-500'} />
                   Signal
                   {climbViewMode !== 'signal' ? (
-                    <span className="absolute -top-0.5 -right-0.5 inline-block px-1.5 py-0.5 rounded-md bg-amber-400/90 text-[8px] font-black text-black tracking-wider leading-none">
+                    <span className="absolute -top-0.5 -right-0.5 inline-block px-1.5 py-0.5 rounded-md bg-intuition-secondary text-[8px] font-black text-white tracking-wider leading-none shadow-[0_0_12px_rgba(255,30,109,0.45)]">
                       NEW
                     </span>
                   ) : null}
@@ -2054,7 +2868,7 @@ const RankedList: React.FC = () => {
                   <Sparkles size={13} strokeWidth={2.4} className={climbViewMode === 'explorer' ? 'text-cyan-200' : 'text-slate-500'} />
                   Explorer
                   {climbViewMode !== 'explorer' ? (
-                    <span className="absolute -top-0.5 -right-0.5 inline-block px-1.5 py-0.5 rounded-md bg-amber-400/90 text-[8px] font-black text-black tracking-wider leading-none">
+                    <span className="absolute -top-0.5 -right-0.5 inline-block px-1.5 py-0.5 rounded-md bg-intuition-secondary text-[8px] font-black text-white tracking-wider leading-none shadow-[0_0_12px_rgba(255,30,109,0.45)]">
                       NEW
                     </span>
                   ) : null}
@@ -2085,7 +2899,7 @@ const RankedList: React.FC = () => {
                         <AnimatedXpFigure
                           ready={arenaGraphReady}
                           value={xpDisplayTarget}
-                          className="text-[#fde68a] font-mono font-bold ml-1 arena-xp-roll"
+                          className="text-intuition-primary font-mono font-bold ml-1 arena-xp-roll"
                         />
                       </span>
                     </>
@@ -2095,7 +2909,7 @@ const RankedList: React.FC = () => {
                       className="h-full rounded-full transition-[width] duration-500 ease-out"
                       style={{
                         width: `${(progressToMilestone / 5) * 100}%`,
-                        background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.gold})`,
+                        background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.accentPink})`,
                       }}
                     />
                   </div>
@@ -2192,47 +3006,59 @@ const RankedList: React.FC = () => {
           </div>
         </div>
       ) : (
-      <div className={`relative z-10 w-full max-w-[min(1720px,calc(100vw-1.5rem))] sm:max-w-[min(1720px,calc(100vw-2rem))] mx-auto px-3 sm:px-6 lg:px-10 xl:px-12 pt-0 ${listId ? 'pb-4 sm:pb-5' : 'pb-10'}`}>
+      <div
+        className={`relative z-10 mx-auto w-full max-w-[min(1800px,calc(100vw-1rem))] sm:max-w-[min(1800px,calc(100vw-1.25rem))] pt-0 ${
+          listId && arenaSlimRunChrome ? 'px-2 sm:px-4 lg:px-6 xl:px-8' : 'px-3 sm:px-6 lg:px-10 xl:px-12'
+        } ${listId ? 'pb-4 sm:pb-5' : 'pb-10'}`}
+      >
         <div
-          className="rounded-[1.75rem] border border-white/[0.1] backdrop-blur-2xl backdrop-saturate-150 overflow-x-hidden lg:overflow-visible shadow-[0_0_48px_rgba(56,232,255,0.05)]"
-          style={{
-            background: ARENA_THEME.shellGlass,
-            boxShadow: ARENA_THEME.shellShadow,
-          }}
+          className={
+            false
+              ? 'rounded-2xl border border-slate-200/95 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.07)] overflow-x-hidden lg:overflow-visible'
+              : 'rounded-[1.75rem] border border-white/[0.1] backdrop-blur-2xl backdrop-saturate-150 overflow-x-hidden lg:overflow-visible shadow-[0_0_48px_rgba(56,232,255,0.05)]'
+          }
+          style={
+            false
+              ? undefined
+              : {
+                  background: ARENA_THEME.shellGlass,
+                  boxShadow: ARENA_THEME.shellShadow,
+                }
+          }
         >
         <div
-          className={`grid grid-cols-1 gap-0 divide-y divide-white/[0.06] ${
-            listId
-              ? 'lg:grid-cols-[minmax(0,1fr)_minmax(328px,28vw)] xl:grid-cols-[minmax(0,1fr)_392px] 2xl:grid-cols-[minmax(0,1fr)_416px] lg:divide-y-0 lg:divide-x lg:items-start'
-              : 'items-stretch'
+          className={`grid grid-cols-1 gap-0 ${
+            false ? 'divide-y divide-slate-200/90' : 'divide-y divide-white/[0.06]'
+          } items-stretch`}
+        >
+        <div
+          className={`min-w-0 flex flex-col lg:min-h-[calc(100vh-12rem)] ${
+            listId && arenaSlimRunChrome ? 'p-2 sm:p-3 md:p-4 lg:p-5 xl:p-6' : 'p-3 sm:p-4 md:p-5 lg:p-7 xl:p-8'
           }`}
         >
-        <div
-          className={`min-w-0 p-3 sm:p-4 md:p-5 lg:p-7 xl:p-8 flex flex-col ${listId ? 'lg:min-h-0 lg:self-start' : 'lg:min-h-[calc(100vh-12rem)]'}`}
-        >
-          {!listId ? (
+          {!listId && !ARENA_CONTEST_FLOW_V2 ? (
             <div
               className="mb-4 rounded-2xl border border-white/[0.1] px-5 py-3.5 sm:px-7 sm:py-4 relative overflow-hidden"
               style={{
                 background: ARENA_THEME.signalIntroStrip,
                 boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.06), 0 0 48px rgba(251,191,36,0.06), 0 0 40px rgba(248,113,113,0.05)',
+                  'inset 0 1px 0 rgba(255,255,255,0.06), 0 0 40px rgba(0,243,255,0.08), 0 0 28px rgba(255,30,109,0.04)',
               }}
             >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="min-w-0 flex items-center gap-3">
                   <div
-                    className="shrink-0 w-10 h-10 rounded-xl border border-amber-400/45 bg-amber-500/12 flex items-center justify-center shadow-[0_0_20px_rgba(251,191,36,0.14)]"
+                    className="shrink-0 w-10 h-10 rounded-xl border border-intuition-primary/35 bg-intuition-primary/10 flex items-center justify-center shadow-[0_0_20px_rgba(0,243,255,0.12)]"
                     aria-hidden
                   >
-                    <Trophy size={18} className="text-amber-200" strokeWidth={2.35} />
+                    <Trophy size={18} className="text-intuition-primary" strokeWidth={2.35} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[11px] font-mono font-black uppercase tracking-[0.28em] text-amber-200">
+                    <p className="text-[11px] font-mono font-black uppercase tracking-[0.28em] text-intuition-primary/90">
                       IntuRank · Arena
                     </p>
                     <p className="text-[13px] text-slate-200 leading-snug mt-0.5">
-                      Same spectrum as Signal Pulse — amber, teal tags, violet, red accents.
+                      Dark glass, cyan readouts — same language as your IntuRank profile.
                     </p>
                   </div>
                 </div>
@@ -2240,28 +3066,48 @@ const RankedList: React.FC = () => {
             </div>
           ) : null}
           <div
-            className={`relative min-w-0 isolate overflow-hidden rounded-xl border border-white/10 grid grid-cols-1 ${
+            className={`relative min-w-0 isolate overflow-hidden rounded-xl grid grid-cols-1 ${
+              false
+                ? 'border border-slate-200/70 bg-[#f8fafc]'
+                : 'border border-white/10'
+            } ${
               listId
                 ? 'min-h-0 auto-rows-min'
                 : 'flex-1 min-h-[min(520px,calc(100vh-13rem))] lg:min-h-[min(560px,calc(100vh-12rem))] grid-rows-1'
             }`}
-            style={{
-              background: ARENA_THEME.signalBrowseWell,
-              boxShadow: ARENA_THEME.signalBrowseWellShadow,
-            }}
+            style={
+              false
+                ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.9)' }
+                : {
+                    background: ARENA_THEME.signalBrowseWell,
+                    boxShadow: ARENA_THEME.signalBrowseWellShadow,
+                  }
+            }
           >
             {!listId ? (
               <div
                 role="tabpanel"
-                aria-label="Browse Arena lists"
+                aria-label={ARENA_CONTEST_FLOW_V2 ? 'Arena play entry' : 'Browse Arena lists'}
                 className="col-start-1 row-start-1 z-[1] min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-auto pr-1 [scrollbar-gutter:stable]"
               >
+            {ARENA_CONTEST_FLOW_V2 ? (
+              <div className="p-3 sm:p-4 md:p-5 lg:p-6">
+                <ArenaContestHub
+                  sections={contestHubSections}
+                  onSelectList={startListRun}
+                  reduceMotion={reduceMotion}
+                  onRandomContest={onRandomContestFromGate}
+                  onResumeLast={onResumeLastFromGate}
+                  resumeListTitle={resumeBrowseTitle}
+                />
+              </div>
+            ) : (
             <div
               className="rounded-2xl border border-white/[0.1] p-4 sm:p-5 relative overflow-hidden backdrop-blur-md"
               style={{
                 background: ARENA_THEME.signalIntroStrip,
                 boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.06), 0 18px 56px rgba(0,0,0,0.45), 0 0 48px rgba(251,191,36,0.07), 0 0 44px rgba(248,113,113,0.06)',
+                  'inset 0 1px 0 rgba(255,255,255,0.06), 0 18px 56px rgba(0,0,0,0.45), 0 0 36px rgba(0,243,255,0.08), 0 0 28px rgba(255,30,109,0.05)',
               }}
             >
               <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-90" style={{ background: ARENA_THEME.rimBar }} aria-hidden />
@@ -2269,13 +3115,13 @@ const RankedList: React.FC = () => {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div className="flex items-start gap-3 min-w-0">
                   <div
-                    className="shrink-0 w-10 h-10 rounded-xl border border-amber-400/45 bg-amber-500/12 flex items-center justify-center shadow-[0_0_20px_rgba(251,191,36,0.15)]"
+                    className="shrink-0 w-10 h-10 rounded-xl border border-intuition-primary/35 bg-intuition-primary/10 flex items-center justify-center shadow-[0_0_20px_rgba(0,243,255,0.12)]"
                     aria-hidden
                   >
-                    <Scale size={18} className="text-amber-200" strokeWidth={2.35} />
+                    <Scale size={18} className="text-intuition-primary" strokeWidth={2.35} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-amber-200/90">Arena · Climb</p>
+                    <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-intuition-primary/90">Arena · Climb</p>
                     <h2 className="text-lg sm:text-xl font-black text-white tracking-tight mt-0.5">Pick a list</h2>
                     <p className="text-[11px] text-slate-400 mt-0.5">Tap a list card below to start.</p>
                   </div>
@@ -2291,41 +3137,29 @@ const RankedList: React.FC = () => {
                     Lane
                   </span>
                   <ChevronRight size={12} className="text-slate-600 shrink-0" />
-                  <span
-                    className="flex items-center gap-1 rounded-full border px-2.5 py-1"
-                    style={{ borderColor: `${ARENA_THEME.gold}40`, background: `${ARENA_THEME.gold}12` }}
-                  >
-                    <span className="font-black tabular-nums text-[#fcd34d]">2</span> List
+                  <span className="flex items-center gap-1 rounded-full border border-white/[0.12] bg-white/[0.04] px-2.5 py-1">
+                    <span className="font-black tabular-nums text-slate-200">2</span> List
                   </span>
                   <ChevronRight size={12} className="text-slate-600 shrink-0" />
-                  <span
-                    className="flex items-center gap-1 rounded-full border px-2.5 py-1"
-                    style={{ borderColor: `${ARENA_THEME.violet}44`, background: `${ARENA_THEME.violet}12` }}
-                  >
-                    <span className="font-black tabular-nums text-[#ddd6fe]">3</span> Vote
+                  <span className="flex items-center gap-1 rounded-full border border-intuition-secondary/35 bg-intuition-secondary/10 px-2.5 py-1">
+                    <span className="font-black tabular-nums text-intuition-secondary/95">3</span> Vote
                   </span>
                 </div>
               </div>
               <div
-                className="mb-4 rounded-xl border border-cyan-500/20 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 relative overflow-hidden"
+                className="mb-4 rounded-xl border border-intuition-primary/25 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 relative overflow-hidden bg-[#05070c]/80"
                 style={{
-                  borderColor: `${ARENA_THEME.cyan}33`,
-                  background: `linear-gradient(105deg, ${ARENA_THEME.cyan}10 0%, transparent 42%, ${ARENA_THEME.gold}10 100%)`,
-                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(56,232,255,0.08)`,
+                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(0,243,255,0.08)`,
                 }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <div
-                    className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center border"
-                    style={{
-                      borderColor: `${ARENA_THEME.gold}50`,
-                      background: `linear-gradient(145deg, ${ARENA_THEME.gold}22, ${ARENA_THEME.cyan}12)`,
-                    }}
+                    className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center border border-intuition-primary/40 bg-intuition-primary/10"
                   >
-                    <Sparkles size={18} style={{ color: ARENA_THEME.goldBright }} />
+                    <Sparkles size={18} className="text-intuition-primary" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-[0.2em] font-black" style={{ color: ARENA_THEME.goldBright }}>
+                    <p className="text-[10px] uppercase tracking-[0.2em] font-black text-slate-300">
                       Jump in
                     </p>
                     <p className="text-sm font-bold text-white truncate">{quickStartList?.title ?? '—'}</p>
@@ -2334,9 +3168,9 @@ const RankedList: React.FC = () => {
                 <button
                   type="button"
                   onClick={onQuickStart}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider text-black shadow-[0_0_28px_rgba(232,197,71,0.35)] hover:brightness-110 transition-[filter]"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-[0_0_28px_rgba(0,243,255,0.25)] hover:brightness-110 transition-[filter]"
                   style={{
-                    background: `linear-gradient(90deg, ${ARENA_THEME.gold}, ${ARENA_THEME.cyan})`,
+                    background: `linear-gradient(90deg, ${ARENA_THEME.cyan}, ${ARENA_THEME.accentPink})`,
                   }}
                 >
                   Go
@@ -2428,38 +3262,93 @@ const RankedList: React.FC = () => {
               )}
               </div>
             </div>
+            )}
                 </div>
               ) : (
                 <div
                   role="tabpanel"
                   aria-label="Arena voting"
                   className="col-start-1 row-start-1 z-[2] min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-auto flex flex-col gap-4 md:gap-5 pb-3 pr-1 [scrollbar-gutter:stable]"
-                  style={{
-                    background: ARENA_THEME.signalRunColumnBg,
-                    boxShadow: ARENA_THEME.signalRunColumnShadow,
-                  }}
+                  style={
+                    false
+                      ? {
+                          background: '#f8fafc',
+                          boxShadow: 'none',
+                        }
+                      : {
+                          background: ARENA_THEME.signalRunColumnBg,
+                          boxShadow: ARENA_THEME.signalRunColumnShadow,
+                        }
+                  }
                 >
             <>
               {listId && !address ? (
                 <div
-                  className="rounded-xl border px-3 py-2 mb-4 text-[11px] text-slate-300"
-                  style={{
-                    borderColor: `${ARENA_THEME.cyan}35`,
-                    background: `linear-gradient(135deg, ${ARENA_THEME.cyan}08, ${ARENA_THEME.redDim})`,
-                  }}
+                  className={`rounded-xl border px-3 py-2 mb-4 text-[11px] ${
+                    false
+                      ? 'border-sky-200 bg-sky-50 text-slate-600'
+                      : 'text-slate-300'
+                  }`}
+                  style={
+                    false
+                      ? undefined
+                      : {
+                          borderColor: `${ARENA_THEME.cyan}35`,
+                          background: `linear-gradient(135deg, ${ARENA_THEME.cyan}08, ${ARENA_THEME.redDim})`,
+                        }
+                  }
                 >
                   Guest — connects only if you stake
                 </div>
               ) : null}
+          {arenaSlimRunChrome ? (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={exitToArenaBrowse}
+                onMouseEnter={playHover}
+                aria-label="Back to Arena lists"
+                title="Back"
+                className={
+                  false
+                    ? 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-slate-900'
+                    : 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.14] bg-black/45 text-slate-200 transition-all hover:border-intuition-primary/45 hover:text-white hover:bg-black/55'
+                }
+                style={false ? undefined : { boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06)` }}
+              >
+                <ArrowLeft
+                  size={18}
+                  strokeWidth={2.5}
+                  style={{ color: false ? '#0f172a' : ARENA_THEME.cyanMuted }}
+                />
+              </button>
+              {ARENA_BATCH_MODE && batchModalRows.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClick();
+                    setBatchModalOpen(true);
+                  }}
+                  className={
+                    false
+                      ? 'rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-sky-900 transition-colors hover:border-sky-300'
+                      : 'rounded-xl border border-cyan-500/35 bg-cyan-500/[0.1] px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-cyan-100 transition-colors hover:border-cyan-400/50'
+                  }
+                >
+                  Cart ({batchModalRows.length})
+                </button>
+              ) : null}
+            </div>
+          ) : (
           <div
-            className="rounded-2xl border border-white/10 p-4 sm:p-5 backdrop-blur-xl relative overflow-hidden ring-1 ring-amber-500/25"
+            className="rounded-2xl border border-white/10 p-4 sm:p-5 backdrop-blur-xl relative overflow-hidden ring-1 ring-intuition-primary/20"
             style={{
               background: ARENA_THEME.currentRunCard,
               boxShadow: `0 0 48px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 32px ${ARENA_THEME.redDim}`,
             }}
           >
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] rounded-t-2xl opacity-95 bg-gradient-to-r from-amber-400/75 via-cyan-400/35 to-rose-600/50"
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] rounded-t-2xl opacity-95 bg-gradient-to-r from-transparent via-intuition-primary/90 to-transparent"
               aria-hidden
             />
             <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] opacity-90 rounded-t-3xl" style={{ background: ARENA_THEME.rimBar }} aria-hidden />
@@ -2470,7 +3359,7 @@ const RankedList: React.FC = () => {
                 onMouseEnter={playHover}
                 aria-label="Back to Arena lists"
                 title="Back"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.14] bg-black/45 text-slate-200 transition-all hover:border-[#38e8ff]/45 hover:text-white hover:bg-black/55 self-start"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.14] bg-black/45 text-slate-200 transition-all hover:border-intuition-primary/45 hover:text-white hover:bg-black/55 self-start"
                 style={{ boxShadow: `inset 0 1px 0 rgba(255,255,255,0.06)` }}
               >
                 <ArrowLeft size={18} strokeWidth={2.5} style={{ color: ARENA_THEME.cyanMuted }} />
@@ -2481,7 +3370,7 @@ const RankedList: React.FC = () => {
                   className="rounded-full border px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-[0.28em]"
                   style={{
                     borderColor: `${ARENA_THEME.cyan}44`,
-                    background: `linear-gradient(135deg, ${ARENA_THEME.gold}18, ${ARENA_THEME.cyan}12)`,
+                    background: `linear-gradient(135deg, ${ARENA_THEME.cyan}14, rgba(8,10,14,0.9))`,
                     color: ARENA_THEME.goldBright,
                   }}
                 >
@@ -2505,7 +3394,7 @@ const RankedList: React.FC = () => {
               />
             </div>
 
-            {activeList ? (
+            {activeList && !arenaSlimRunChrome ? (
               <>
                 <div className="mt-4 pt-4 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 gap-y-3">
                   <h2 className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight truncate min-w-0">
@@ -2530,7 +3419,7 @@ const RankedList: React.FC = () => {
               </>
             ) : null}
 
-            {listId && round?.kind === 'yesno' && round.items?.length ? (
+            {listId && !ARENA_CONTEST_FLOW_V2 && round?.kind === 'yesno' && round.items?.length ? (
               <div
                 className="mt-5 rounded-xl border border-white/10 bg-black/35 px-4 py-3 md:px-5 md:py-4"
                 style={{
@@ -2568,7 +3457,7 @@ const RankedList: React.FC = () => {
                   playClick();
                   setBatchModalOpen(true);
                 }}
-                className="mt-3 w-full text-center rounded-xl py-2.5 px-3 border transition-colors hover:border-amber-400/45 hover:bg-cyan-500/[0.12]"
+                className="mt-3 w-full text-center rounded-xl py-2.5 px-3 border transition-colors hover:border-intuition-primary/45 hover:bg-intuition-primary/[0.08]"
                 style={{
                   borderColor: `${ARENA_THEME.cyan}44`,
                   background: `linear-gradient(135deg, ${ARENA_THEME.cyan}10, rgba(8,8,12,0.85))`,
@@ -2584,12 +3473,98 @@ const RankedList: React.FC = () => {
               </button>
             ) : null}
           </div>
+          )}
 
           {loading ? (
-            <ArenaPoolSkeleton lanes={ARENA_CARDS_PER_ROUND} />
+            <ArenaPoolSkeleton lanes={ARENA_CONTEST_FLOW_V2 ? 1 : ARENA_CARDS_PER_ROUND} />
           ) : pool.length < minPoolNeeded ? (
             <div className="rounded-xl border border-dashed border-slate-700 py-16 text-center text-sm text-slate-500">
               Not enough items. Try another list.
+            </div>
+          ) : ARENA_CONTEST_FLOW_V2 && listId ? (
+            <div className="w-full min-w-0 py-2 md:py-3">
+              {/**
+               * Static / off-chain contests can't produce peers or on-chain
+               * ranking credit. Surface the "promote on-chain" path right at
+               * the top of every step so the user can fix it any time.
+               */}
+              {activeList && activeList.source !== 'portal' ? (
+                <div className="mb-4">
+                  <ArenaPromoteBanner
+                    listCategory={activeList.arenaCategory}
+                    memberCount={pool.length || rankDeckItems.length}
+                  />
+                </div>
+              ) : null}
+              {arenaFlowPhase === 'curate' ? (
+                <ArenaCurateStack
+                  listTitle={activeList?.title ?? '—'}
+                  listGlyph={activeList?.listGlyph}
+                  listCategory={activeList?.arenaCategory}
+                  queue={curateQueue}
+                  pool={pool}
+                  playerCount={curatePlayerCount}
+                  playerCountLoading={activeList?.source === 'portal' && portalListRankerCountLoading}
+                  agreedYesCount={curateAgreedYesCount}
+                  topLeaderAddress={players[0]?.address ?? null}
+                  stakingTx={stakingTx}
+                  reduceMotion={reduceMotion}
+                  onDecide={onCurateDecide}
+                  onSkip={onCurateSkip}
+                  onNextToRank={onNextToRankFromCurate}
+                />
+              ) : arenaFlowPhase === 'rank' ? (
+                <ArenaRankDeck
+                  items={rankDeckItems}
+                  listCategory={activeList?.arenaCategory}
+                  stakeBaseLabel={stakeTRUST}
+                  rankTrustUnits={rankTrustUnits}
+                  onTrustUnitsChange={onRankTrustUnitsChange}
+                  reduceMotion={reduceMotion}
+                  onReorder={onRankReorder}
+                  onRemoveItem={onRankRemoveItem}
+                  onCompare={onCompareFromRank}
+                  /**
+                   * On-chain writes (atom mints, list promotion, membership
+                   * triples, rank stakes) all happen at the END of the flow
+                   * in a single commit from the Compare step. Rank no longer
+                   * shows a sign button — `onSignSubmit` intentionally omitted.
+                   */
+                  signDisabled={stakingTx}
+                  queuedStanceCount={rankFlowCartCount}
+                  onCreateCard={() => {
+                    playClick();
+                    setCreateCardOpen(true);
+                  }}
+                />
+              ) : (
+                <ArenaCompareView
+                  deck={rankDeckItems}
+                  listCategory={activeList?.arenaCategory}
+                  peers={comparePeers}
+                  peersLoading={comparePeersLoading}
+                  listIsOnChain={activeList?.source === 'portal' && Boolean(activeList?.listObjectTermId)}
+                  similarityPct={compareSimilarityPct}
+                  progressionPct={compareProgressionPct}
+                  gamesToTop10Hint={compareGamesToTop10}
+                  pendingPromote={Boolean(activeList && activeList.source !== 'portal')}
+                  pendingCardCount={pendingCardCount}
+                  pendingStakeCount={ARENA_BATCH_MODE ? rankFlowCartCount : 0}
+                  batchMode={ARENA_BATCH_MODE}
+                  isWalletConnected={isConnected}
+                  onSubmitAndContinue={beginArenaCommit}
+                  onRandomGame={onCompareRandomGame}
+                  onPickNextGame={exitToArenaBrowse}
+                  onOpenConvictionCart={() => {
+                    playClick();
+                    setBatchModalOpen(true);
+                  }}
+                  onOpenSignal={() => {
+                    playClick();
+                    setClimbViewMode('signal');
+                  }}
+                />
+              )}
             </div>
           ) : !round ? (
             <div className="rounded-xl border border-slate-700/60 py-16 text-center bg-slate-900/15">
@@ -2625,8 +3600,8 @@ const RankedList: React.FC = () => {
                         </span>
                       ) : null}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 text-amber-200/90 tabular-nums">
-                      <Zap size={12} className="text-amber-400" />
+                    <span className="inline-flex items-center gap-1.5 text-intuition-primary/90 tabular-nums">
+                      <Zap size={12} className="text-intuition-primary" />
                       +{xpPickPreview} XP
                       {round.items.length > 1 ? (
                         <span className="ml-1.5 rounded-md bg-white/[0.06] px-2 py-0.5 font-sans tabular-nums normal-case tracking-normal text-[9px] text-slate-400">
@@ -2683,182 +3658,11 @@ const RankedList: React.FC = () => {
                 : undefined
             }
           />
-            </>
-                </div>
-              )}
+                </>
+              </div>
+            )}
           </div>
         </div>
-
-        {listId ? (
-        <aside
-          className="flex flex-col gap-4 min-w-0 w-full p-4 sm:p-5 rounded-3xl border border-white/[0.1] backdrop-blur-md [scrollbar-width:thin] lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto lg:overscroll-auto"
-          style={{
-            background: ARENA_THEME.signalIntroStrip,
-            boxShadow:
-              'inset 0 1px 0 rgba(255,255,255,0.06), 0 0 44px rgba(251,191,36,0.08), 0 0 40px rgba(248,113,113,0.07)',
-          }}
-        >
-          <div className="shrink-0 space-y-2">
-            <ArenaLeaderboardGlance
-              players={players}
-              loading={playersLoading}
-              myAddress={address}
-              myArenaXp={arenaXpUi}
-              myActivityXp={myProtocolXp}
-            />
-            {address ? (
-              <div className="flex justify-center px-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    playClick();
-                    clearProtocolXpLedger();
-                    clearArenaPickCreditLedger();
-                    setPickCreditTick((n) => n + 1);
-                    toast.success('Cleared activity XP and device Arena pick credit on this browser.');
-                  }}
-                  className="text-[9px] font-bold uppercase tracking-wider text-slate-600 hover:text-slate-400 underline-offset-2 hover:underline transition-colors"
-                >
-                  Clear device XP (activity + Arena picks)
-                </button>
-              </div>
-            ) : null}
-          </div>
-
-          <>
-            <div className="hidden lg:block h-3 shrink-0 min-h-0" aria-hidden />
-            <motion.div
-              className="relative shrink-0 rounded-3xl border border-white/[0.1] bg-zinc-950/90 p-4 ring-1 ring-amber-500/15 overflow-hidden"
-              style={{
-                boxShadow: `0 16px 40px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 28px rgba(251,191,36,0.08), 0 0 24px ${ARENA_THEME.redDim}`,
-              }}
-              initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div
-                className="absolute inset-x-0 top-0 h-[3px] rounded-t-3xl bg-gradient-to-r from-amber-400/70 via-cyan-400/35 to-rose-600/50 pointer-events-none"
-                aria-hidden
-              />
-              <div className="absolute inset-x-0 top-3 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none" aria-hidden />
-              <p className="text-[9px] font-black uppercase tracking-[0.34em] text-amber-200/90 mb-3">Arena controls</p>
-              <p className="text-[11px] text-slate-500 leading-relaxed mb-4">
-                {ARENA_BATCH_MODE ? (
-                  <>
-                    TRUST preset for queued stances in your cart (claims need ≥{' '}
-                    <span className="text-amber-200/90 tabular-nums">{PROTOCOL_MIN_CLAIM_DEPOSIT_LABEL}</span> TRUST).
-                    Arena XP tracks rhythm and stakes — not factual correctness.
-                  </>
-                ) : (
-                  <>
-                    Tip intensity per pick. Arena XP tracks streaks and stakes — not whether you&apos;re &quot;right&quot; on facts.
-                  </>
-                )}
-              </p>
-
-              <div className="flex items-stretch gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStakePresetIdx(Math.max(0, stakePresetIdx - 1))}
-                  disabled={stakePresetIdx <= 0}
-                  className="h-11 w-10 shrink-0 rounded-xl border border-white/12 bg-slate-900/65 text-lg font-black text-slate-200 hover:border-rose-400/35 disabled:opacity-35 disabled:pointer-events-none"
-                  aria-label="Lower trust tier"
-                >
-                  −
-                </button>
-                <div className="flex-1 min-w-0 rounded-xl border border-cyan-400/35 bg-black/55 px-2.5 py-1 text-center backdrop-blur-sm ring-1 ring-amber-500/10">
-                  <div className="text-[9px] uppercase tracking-[0.18em] text-cyan-200/95 font-black truncate">{ARENA_STAKE_TITLES[stakePresetIdx]}</div>
-                  <div className="text-lg font-black tabular-nums text-white leading-tight mt-0.5 truncate">
-                    {ARENA_STAKE_PRESETS[stakePresetIdx]}{' '}
-                    <span className="text-[#7af0ff] text-[11px] font-bold">TRUST</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setStakePresetIdx(Math.min(ARENA_STAKE_PRESETS.length - 1, stakePresetIdx + 1))}
-                  disabled={stakePresetIdx >= ARENA_STAKE_PRESETS.length - 1}
-                  className="h-11 w-10 shrink-0 rounded-xl border border-cyan-500/40 bg-cyan-500/12 text-lg font-black text-cyan-100 hover:bg-cyan-500/18 disabled:opacity-35 disabled:pointer-events-none"
-                  aria-label="Increase trust tier"
-                >
-                  +
-                </button>
-              </div>
-
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
-                <motion.button
-                  type="button"
-                  onClick={() => {
-                    playClick();
-                    void refreshPool();
-                  }}
-                  disabled={loading}
-                  whileHover={reduceMotion || loading ? undefined : { scale: 1.02 }}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/35 bg-cyan-500/10 py-2 text-[9px] font-black uppercase tracking-widest text-cyan-100 disabled:opacity-50"
-                >
-                  <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
-                  New pool
-                </motion.button>
-                <motion.button
-                  type="button"
-                  onClick={resetSession}
-                  disabled={!pool.length}
-                  whileHover={reduceMotion || !pool.length ? undefined : { scale: 1.02 }}
-                  className="inline-flex items-center justify-center rounded-xl border border-slate-600/85 bg-slate-900/60 py-2 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-white disabled:opacity-40"
-                >
-                  Reset
-                </motion.button>
-              </div>
-
-              {batchDepositBelowProtocol ? (
-                <p className="mt-2.5 rounded-lg border border-amber-500/40 bg-amber-500/[0.08] px-2 py-1.5 text-[9px] text-amber-200/95 leading-snug">
-                  Some queued cuts are below the vault minimum — raise preset or bump units before submit.
-                </p>
-              ) : null}
-              {!isConnected ? (
-                <div className="mt-2.5 pt-2.5 border-t border-white/[0.06]">
-                  <span className="text-[9px] text-amber-400/95 flex items-center gap-1 leading-snug">
-                    <Wallet size={11} className="shrink-0" />
-                    Connect when you&apos;re ready to submit the cart on-chain
-                  </span>
-                </div>
-              ) : null}
-              <motion.button
-                type="button"
-                onClick={() => {
-                  playClick();
-                  if (!listId) return;
-                  void copyTextToClipboard(getArenaListShareUrl(listId)).then(
-                    () => toast.success('Copied Arena link — friends open this same list.'),
-                    () => toast.error('Could not copy link.'),
-                  );
-                }}
-                whileHover={reduceMotion ? undefined : { scale: 1.02 }}
-                className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] py-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-200 hover:border-amber-400/35 hover:text-cyan-100 transition-colors"
-              >
-                <Share2 size={12} strokeWidth={2.2} className="text-amber-200/90" aria-hidden />
-                Copy stance link
-              </motion.button>
-              <Link
-                to={
-                  listId
-                    ? `/climb?list=${encodeURIComponent(listId)}&view=explorer`
-                    : '/climb?view=explorer'
-                }
-                onClick={() => playClick()}
-                className="mt-2.5 flex items-center justify-center gap-1 rounded-xl border py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-colors hover:border-amber-400/45 hover:brightness-110"
-                style={{
-                  borderColor: `${ARENA_THEME.cyan}44`,
-                  background: `linear-gradient(135deg, ${ARENA_THEME.cyan}12, ${ARENA_THEME.redDim})`,
-                  color: ARENA_THEME.cyanMuted,
-                }}
-              >
-                Arena explorer (your rankings)
-                <ChevronRight className="w-3 h-3 shrink-0 opacity-80" aria-hidden />
-              </Link>
-            </motion.div>
-          </>
-        </aside>
-        ) : null}
         </div>
 
         {/* Bottom "Arena champions" leaderboard kept for reference but gated off — replaced by the side-by-side ArenaRankerLeaderboard. */}
@@ -3128,7 +3932,16 @@ const RankedList: React.FC = () => {
       {ARENA_BATCH_MODE && listId && (
         <ArenaBatchReviewModal
           open={batchModalOpen}
-          onClose={() => setBatchModalOpen(false)}
+          onClose={() => {
+            setBatchModalOpen(false);
+            /**
+             * Dismissed without signing — bail out of the commit chain so the
+             * user isn't auto-advanced past the contest.
+             */
+            if (commitPhase === 'rank-batch') {
+              setCommitPhase('idle');
+            }
+          }}
           themeShort={batchModalHeader.themeShort}
           contextSuffix={batchModalHeader.contextSuffix}
           stakeLabel={stakeTRUST}
@@ -3148,7 +3961,18 @@ const RankedList: React.FC = () => {
       <ArenaBatchSuccessModal
         open={arenaBatchSuccess != null}
         payload={arenaBatchSuccess}
-        onClose={() => setArenaBatchSuccess(null)}
+        onClose={() => {
+          setArenaBatchSuccess(null);
+          /**
+           * If we got here via the Compare commit chain, the user already
+           * intended to advance — once the success splash is dismissed, pick
+           * the next game for them so the loop closes naturally.
+           */
+          if (commitPhase === 'rank-batch') {
+            setCommitPhase('idle');
+            exitToArenaBrowse();
+          }
+        }}
       />
 
       <style>{`
@@ -3304,6 +4128,139 @@ const RankedList: React.FC = () => {
           transform: scale(1.08);
         }
       `}</style>
+
+      {/**
+       * Promote a static contest to a real Intuition portal list. On success
+       * we register the new list with the runtime registry and switch the
+       * router to its portal id so the very next render uses real on-chain
+       * peers / leaderboard credit.
+       */}
+      <ArenaPromoteContestModal
+        isOpen={promoteContestOpen}
+        onClose={() => {
+          setPromoteContestOpen(false);
+          /**
+           * User closed the promote modal before signing → bail out of the
+           * commit chain so the Compare CTA stays "Sign + pick next game"
+           * rather than silently advancing.
+           */
+          if (commitPhase === 'promote') {
+            setCommitPhase('idle');
+          }
+        }}
+        listCategory={activeList?.arenaCategory}
+        contestTitle={activeList?.title ?? 'New contest'}
+        contestDescription={activeList && 'description' in activeList ? activeList.description : undefined}
+        items={
+          /** Prefer the curated pool (broader on-chain canvas); fall back to the user's deck. */
+          pool.length > 0
+            ? pool.map((p) => ({
+                id: p.id,
+                label: p.label,
+                subtitle: p.subtitle,
+                image: p.image,
+              }))
+            : rankDeckItems.map((p) => ({
+                id: p.id,
+                label: p.label,
+                subtitle: p.subtitle,
+                image: p.image,
+              }))
+        }
+        walletAddress={address ?? null}
+        isWalletConnected={isConnected}
+        onPromoted={(result: ArenaPromoteListResult) => {
+          /** Register the freshly minted list so Hub / Compare / portfolio all see it. */
+          const arenaCategory = activeList?.arenaCategory ?? 'network';
+          const portalId = portalListIdFromTermId(result.listTermId);
+          const portalEntry: Extract<ArenaListEntry, { source: 'portal' }> = {
+            id: portalId,
+            source: 'portal',
+            listObjectTermId: result.listTermId,
+            title: activeList?.title ?? 'New contest',
+            description:
+              activeList && 'description' in activeList && activeList.description
+                ? activeList.description
+                : 'Promoted on-chain · live on the graph',
+            tag: 'Live',
+            arenaCategory,
+            listGlyph: activeList?.listGlyph ?? '◆',
+            totalItems: result.members.length,
+            previewItemsData: result.members.slice(0, 5).map((m) => {
+              const termId = result.memberTermIds.get(m.id);
+              return {
+                termId: termId ?? undefined,
+                label: m.label,
+                image: m.image,
+              };
+            }),
+          };
+          registerPortalListEntries([portalEntry]);
+          registerArenaPortalListTermsForIndexing([result.listTermId]);
+
+          /**
+           * Migrate the queued batch rows from the (old) static list id to the
+           * new portal id so the existing batch flow can deposit straight to
+           * the freshly-minted membership triples.
+           */
+          const oldListId = listId;
+          if (oldListId && oldListId !== portalId) {
+            try {
+              const rows = loadPendingForList(oldListId);
+              if (rows.length > 0) savePendingForList(portalId, rows);
+              clearPendingForList(oldListId);
+            } catch (e) {
+              console.error('arena: failed to migrate pending batch rows', e);
+            }
+          }
+
+          setPromoteContestOpen(false);
+          toast.success(`"${portalEntry.title}" is live on-chain.`);
+
+          /**
+           * If this was the manual "promote-only" path (no commit chain active),
+           * navigate to the new portal id and stop. Otherwise we're mid-commit
+           * — stay put, update listId in place, and chain into the rank-batch
+           * step so the user finishes signing in one continuous flow.
+           */
+          if (commitPhase !== 'promote') {
+            navigate(`/climb?list=${encodeURIComponent(portalId)}`);
+            return;
+          }
+
+          /** Stay on Compare; update URL + listId so the page picks up portal data. */
+          navigate(`/climb?list=${encodeURIComponent(portalId)}`, { replace: true });
+          setListId(portalId);
+
+          const hasQueuedStakes = ARENA_BATCH_MODE && oldListId
+            ? loadPendingForList(portalId).length > 0
+            : false;
+          if (hasQueuedStakes) {
+            setCommitPhase('rank-batch');
+            /** Wait a tick so the listId state propagates before the batch modal reads it. */
+            setTimeout(() => setBatchModalOpen(true), 60);
+          } else {
+            setCommitPhase('idle');
+            toast.info('Contest minted. Run another round to stake on the new list.');
+          }
+        }}
+      />
+
+      {/**
+       * Create card on-chain (Identity mint). New item id is the graph `termId`.
+       */}
+      <ArenaCreateCardModal
+        isOpen={createCardOpen}
+        onClose={() => setCreateCardOpen(false)}
+        listCategory={activeList?.arenaCategory}
+        listTitle={activeList?.title}
+        existingItems={rankDeckItems}
+        onSubmit={(item) => {
+          setRankDeckItems((prev) => [...prev, item]);
+          setRankTrustUnits((prev) => ({ ...prev, [item.id]: 1 }));
+          toast.success(`"${item.label}" added — mints on-chain at submit.`);
+        }}
+      />
     </div>
   );
 };

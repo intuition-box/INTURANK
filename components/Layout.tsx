@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useConnect, useConfig } from 'wagmi';
 import { getWalletClient } from '@wagmi/core';
-import { Wallet, Menu, X, TrendingUp, Users, BarChart2, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Plus, Send, Coins, HeartPulse, FileText, Volume2, VolumeX, Swords, Cpu } from 'lucide-react';
+import { Wallet, Menu, X, TrendingUp, Users, BarChart2, LogOut, Copy, ChevronDown, AlertTriangle, Globe, ArrowRightLeft, Activity, Home, UserCircle, Search, Plus, Send, Coins, HeartPulse, FileText, Volume2, VolumeX, Cpu } from 'lucide-react';
 import { switchNetwork, disconnectWallet, setWagmiConnection, setOpenConnectModalRef } from '../services/web3';
 import { APP_VERSION_DISPLAY, CHAIN_ID } from '../constants';
 import { playHover, playClick, getSoundEnabled, setSoundEnabled } from '../services/audio';
@@ -30,17 +30,28 @@ const MAIN_NAV_ITEMS: Array<{
   label: string;
   path: string;
   icon: React.ReactNode;
-  variant?: 'gold';
+  /** Stand-out pricing / trust flows vs default cyan */
+  variant?: 'gold' | 'arena';
+  /** Small chip (e.g. HOT) — shown on icon when rail collapsed + after label when expanded */
+  badge?: 'hot';
+  /** Passed to router `Link` (e.g. scroll contest floor on Home). */
+  linkState?: Record<string, unknown>;
+  /** When set, tab is active on any of these pathnames (see Arena: `/` entry + `/climb` play). */
+  activePaths?: string[];
 }> = [
+  {
+    label: 'The Arena',
+    path: '/climb',
+    icon: <Activity size={18} strokeWidth={2} />,
+    variant: 'arena',
+    badge: 'hot',
+  },
   { label: 'Markets', path: '/markets', icon: <TrendingUp size={18} strokeWidth={2} /> },
   { label: 'Portfolio', path: '/portfolio', icon: <Users size={18} strokeWidth={2} /> },
-  { label: 'The Arena', path: '/climb', icon: <Activity size={18} strokeWidth={2} /> },
   { label: 'Send Trust', path: '/send-trust', icon: <Send size={18} strokeWidth={2} />, variant: 'gold' },
   { label: 'Profile', path: '/account', icon: <UserCircle size={18} strokeWidth={2} /> },
   { label: 'Skill agent', path: '/skill-playground', icon: <Cpu size={18} strokeWidth={2} /> },
 ];
-
-const VERSUS_NAV_ITEMS = [{ label: 'Compare', path: '/compare', icon: <Swords size={18} strokeWidth={2} /> }];
 
 const EXPLORE_NAV_ITEMS: Array<{
   label: string;
@@ -56,7 +67,7 @@ const EXPLORE_NAV_ITEMS: Array<{
 
 const MONITOR_NAV_ITEMS = [{ label: 'System health', path: '/health', icon: <HeartPulse size={18} strokeWidth={2} /> }];
 
-const ALL_MOBILE_NAV_ITEMS = [...MAIN_NAV_ITEMS, ...VERSUS_NAV_ITEMS, ...EXPLORE_NAV_ITEMS, ...MONITOR_NAV_ITEMS];
+const ALL_MOBILE_NAV_ITEMS = [...MAIN_NAV_ITEMS, ...EXPLORE_NAV_ITEMS, ...MONITOR_NAV_ITEMS];
 
 interface NavItemProps {
   to: string;
@@ -64,10 +75,13 @@ interface NavItemProps {
   icon: React.ReactNode;
   active: boolean;
   onClick: () => void;
-  /** Gold accent for Send Trust — distinct from cyan primary nav */
-  variant?: 'default' | 'gold' | 'success';
+  /** Gold = Send Trust; arena = magenta “hero” Arena row */
+  variant?: 'default' | 'gold' | 'success' | 'arena';
+  /** Pill on icon when collapsed; repeats next to label when rail expands */
+  badge?: 'hot';
   /** Opens in new tab (e.g. Get Trust swap) — uses <a>, not router Link */
   external?: boolean;
+  linkState?: Record<string, unknown>;
 }
 
 const NavItem = memo(function NavItem({
@@ -77,9 +91,12 @@ const NavItem = memo(function NavItem({
   active,
   onClick,
   variant = 'default',
+  badge,
   external = false,
+  linkState,
 }: NavItemProps) {
   const isGold = variant === 'gold';
+  const isArena = variant === 'arena';
   const isSuccess = variant === 'success';
   const motionEasing = 'motion-safe:[transition-timing-function:cubic-bezier(0.33,1,0.68,1)]';
   const baseMotion =
@@ -87,13 +104,17 @@ const NavItem = memo(function NavItem({
     motionEasing;
   const activeCls = isGold
     ? 'text-black bg-intuition-warning border-intuition-warning shadow-[0_0_16px_rgba(250,204,21,0.55)] ring-1 ring-amber-400/50 motion-safe:duration-500 hover:shadow-[0_0_28px_rgba(250,204,21,0.5)] motion-safe:group-hover/item:-translate-y-px'
-    : isSuccess
-      ? 'text-black bg-intuition-success border-intuition-success shadow-[0_0_16px_rgba(0,255,157,0.5)] ring-1 ring-intuition-success/45 motion-safe:duration-500 hover:shadow-[0_0_28px_rgba(0,255,157,0.45)] motion-safe:group-hover/item:-translate-y-px'
-      : 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_14px_rgba(0,243,255,0.45)] ring-1 ring-intuition-primary/45 motion-safe:duration-500 hover:shadow-[0_0_32px_rgba(0,243,255,0.38)] motion-safe:group-hover/item:-translate-y-px';
+    : isArena
+      ? 'text-white bg-gradient-to-br from-[#ff2470] via-intuition-secondary to-[#d4145a] border-intuition-secondary shadow-[0_0_22px_rgba(255,30,109,0.55)] ring-1 ring-fuchsia-400/50 motion-safe:duration-500 hover:shadow-[0_0_32px_rgba(255,30,109,0.52)] hover:brightness-105 motion-safe:group-hover/item:-translate-y-px'
+      : isSuccess
+        ? 'text-black bg-intuition-success border-intuition-success shadow-[0_0_16px_rgba(0,255,157,0.5)] ring-1 ring-intuition-success/45 motion-safe:duration-500 hover:shadow-[0_0_28px_rgba(0,255,157,0.45)] motion-safe:group-hover/item:-translate-y-px'
+        : 'text-black bg-intuition-primary border-intuition-primary shadow-[0_0_14px_rgba(0,243,255,0.45)] ring-1 ring-intuition-primary/45 motion-safe:duration-500 hover:shadow-[0_0_32px_rgba(0,243,255,0.38)] motion-safe:group-hover/item:-translate-y-px';
   const idleCls = isGold
     ? 'text-amber-200/95 border border-amber-500/40 bg-gradient-to-br from-amber-950/55 to-black/60 hover:text-amber-50 hover:border-amber-400/85 hover:from-amber-500/15 hover:via-amber-400/8 hover:to-black/50 hover:shadow-[0_0_22px_rgba(250,204,21,0.28),inset_0_1px_0_0_rgba(255,255,255,0.05)] motion-safe:group-hover/item:-translate-y-px'
-    : isSuccess
-      ? 'text-intuition-success border border-intuition-success/40 bg-gradient-to-br from-intuition-success/8 to-intuition-success/[0.03] hover:text-intuition-success hover:border-intuition-success/80 hover:from-intuition-success/16 hover:via-white/[0.04] hover:to-intuition-success/8 hover:shadow-[0_0_22px_rgba(0,255,157,0.28),inset_0_1px_0_0_rgba(255,255,255,0.04)] motion-safe:group-hover/item:-translate-y-px'
+    : isArena
+      ? 'text-fuchsia-50/95 border border-intuition-secondary/55 bg-gradient-to-br from-intuition-secondary/22 via-[#2a0818]/85 to-black/70 hover:text-white hover:border-fuchsia-400/90 hover:from-intuition-secondary/32 hover:via-[#401028]/95 hover:to-black/60 hover:shadow-[0_0_24px_rgba(255,30,109,0.35),inset_0_1px_0_0_rgba(255,255,255,0.06)] motion-safe:group-hover/item:-translate-y-px'
+      : isSuccess
+        ? 'text-intuition-success border border-intuition-success/40 bg-gradient-to-br from-intuition-success/8 to-intuition-success/[0.03] hover:text-intuition-success hover:border-intuition-success/80 hover:from-intuition-success/16 hover:via-white/[0.04] hover:to-intuition-success/8 hover:shadow-[0_0_22px_rgba(0,255,157,0.28),inset_0_1px_0_0_rgba(255,255,255,0.04)] motion-safe:group-hover/item:-translate-y-px'
       : 'text-slate-400/95 border border-white/[0.07] bg-gradient-to-br from-white/[0.07] to-white/[0.02] hover:text-white hover:border-intuition-primary/55 hover:from-intuition-primary/14 hover:via-white/[0.05] hover:to-intuition-primary/10 hover:shadow-[0_0_0_1px_rgba(0,243,255,0.2),0_6px_32px_rgba(0,243,255,0.16),inset_0_1px_0_0_rgba(255,255,255,0.07)] motion-safe:group-hover/item:-translate-y-px';
 
   const cls = `group/item relative z-0 flex items-center overflow-hidden gap-0 group-hover/sidebar:gap-2.5 group-focus-within/sidebar:gap-2.5 justify-center group-hover/sidebar:justify-start group-focus-within/sidebar:justify-start px-2 group-hover/sidebar:px-4 group-focus-within/sidebar:px-4 sm:group-hover/sidebar:px-5 sm:group-focus-within/sidebar:px-5 py-2.5 min-h-[44px] text-[11px] font-semibold tracking-wide font-sans normal-case rounded-xl sm:rounded-full border min-w-0 will-change-transform active:scale-[0.99] ${baseMotion} ${
@@ -108,20 +129,26 @@ const NavItem = memo(function NavItem({
   const sheenVia =
     isGold
       ? 'from-transparent via-amber-200/25 to-transparent'
-      : isSuccess
-        ? 'from-transparent via-emerald-200/22 to-transparent'
-        : 'from-transparent via-white/20 to-transparent';
+      : isArena
+        ? 'from-transparent via-fuchsia-200/30 to-transparent'
+        : isSuccess
+          ? 'from-transparent via-emerald-200/22 to-transparent'
+          : 'from-transparent via-white/20 to-transparent';
 
   const iconT =
     'transition-[transform,filter] duration-400 motion-reduce:transition-none motion-reduce:duration-0 ' + motionEasing;
 
   const iconHoverIdle = isGold
     ? 'text-amber-200/95 group-hover/item:scale-110 group-hover/item:text-amber-50'
-    : isSuccess
-      ? 'text-intuition-success group-hover/item:scale-110 group-hover/item:drop-shadow-[0_0_10px_rgba(0,255,157,0.4)]'
-      : 'text-slate-400 group-hover/item:scale-110 group-hover/item:text-intuition-primary group-hover/item:drop-shadow-[0_0_10px_rgba(0,243,255,0.45)]';
+    : isArena
+      ? 'text-fuchsia-200 group-hover/item:scale-110 group-hover/item:text-white group-hover/item:drop-shadow-[0_0_12px_rgba(255,30,109,0.55)]'
+      : isSuccess
+        ? 'text-intuition-success group-hover/item:scale-110 group-hover/item:drop-shadow-[0_0_10px_rgba(0,255,157,0.4)]'
+        : 'text-slate-400 group-hover/item:scale-110 group-hover/item:text-intuition-primary group-hover/item:drop-shadow-[0_0_10px_rgba(0,243,255,0.45)]';
 
-  const iconActive = 'text-black group-hover/item:scale-105 group-hover/item:drop-shadow-sm';
+  const iconActive = isArena
+    ? 'text-white drop-shadow-[0_0_8px_rgba(0,0,0,0.35)] group-hover/item:scale-105'
+    : 'text-black group-hover/item:scale-105 group-hover/item:drop-shadow-sm';
 
   const inner = (
     <>
@@ -132,15 +159,26 @@ const NavItem = memo(function NavItem({
           />
         </span>
       )}
-      <span
-        className={`shrink-0 flex items-center justify-center w-5 relative z-[2] [&>svg]:shrink-0 ${iconT} ${
-          active ? iconActive : iconHoverIdle
-        }`}
-      >
-        {icon}
+      <span className="relative shrink-0 flex items-center justify-center w-5 z-[2]">
+        {badge === 'hot' ? (
+          <span
+            className="pointer-events-none absolute -top-2 -right-2 z-[4] rounded px-1 py-0.5 bg-intuition-secondary text-[7px] font-black text-white tracking-wider leading-none shadow-[0_0_10px_rgba(255,30,109,0.55)] motion-reduce:hidden"
+            aria-hidden
+          >
+            HOT
+          </span>
+        ) : null}
+        <span className={`flex items-center justify-center [&>svg]:shrink-0 ${iconT} ${active ? iconActive : iconHoverIdle}`}>
+          {icon}
+        </span>
       </span>
-      <span className="whitespace-nowrap overflow-hidden text-left max-w-0 opacity-0 motion-reduce:transition-none transition-[max-width,opacity] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-hover/sidebar:max-w-[13rem] xl:group-hover/sidebar:max-w-[15rem] group-hover/sidebar:opacity-100 group-focus-within/sidebar:max-w-[13rem] xl:group-focus-within/sidebar:max-w-[15rem] group-focus-within/sidebar:opacity-100 flex-1 min-w-0 relative z-[2]">
-        {label}
+      <span className="whitespace-nowrap overflow-hidden text-left max-w-0 opacity-0 motion-reduce:transition-none transition-[max-width,opacity] duration-300 [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-hover/sidebar:max-w-[13rem] xl:group-hover/sidebar:max-w-[15rem] group-hover/sidebar:opacity-100 group-focus-within/sidebar:max-w-[13rem] xl:group-focus-within/sidebar:max-w-[15rem] group-focus-within/sidebar:opacity-100 flex-1 min-w-0 relative z-[2] flex flex-wrap items-center gap-1.5">
+        <span>{label}</span>
+        {badge === 'hot' ? (
+          <span className="inline-flex shrink-0 items-center rounded border border-white/35 bg-black/35 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-fuchsia-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+            Hot
+          </span>
+        ) : null}
       </span>
     </>
   );
@@ -162,7 +200,7 @@ const NavItem = memo(function NavItem({
   }
 
   return (
-    <Link to={to} title={label} onClick={handleActivate} onMouseEnter={playHover} className={cls}>
+    <Link to={to} state={linkState} title={label} onClick={handleActivate} onMouseEnter={playHover} className={cls}>
       {inner}
     </Link>
   );
@@ -356,30 +394,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 to={item.path}
                 label={item.label}
                 icon={item.icon}
-                active={isActive(item.path)}
+                active={
+                  item.activePaths?.length ? item.activePaths.includes(pathname) : isActive(item.path)
+                }
                 onClick={closeSidebarNav}
-                variant={item.variant}
+                variant={item.variant ?? 'default'}
+                badge={item.badge}
+                linkState={item.linkState}
               />
             ))}
           </nav>
 
           <div ref={intelRef} className="space-y-4 flex flex-col min-h-0">
-            <nav className="space-y-2" aria-label="Compare">
-              <div className="hidden group-hover/sidebar:block group-focus-within/sidebar:block px-3 pb-1">
-                <p className="text-[10px] font-mono text-slate-400 normal-case tracking-wide font-semibold">Compare</p>
-              </div>
-              {VERSUS_NAV_ITEMS.map((item) => (
-                <NavItem
-                  key={`${item.path}-${item.label}`}
-                  to={item.path}
-                  label={item.label}
-                  icon={item.icon}
-                  active={isActive(item.path)}
-                  onClick={closeSidebarNav}
-                />
-              ))}
-            </nav>
-
             <nav className="space-y-2" aria-label="Explore">
               <div className="hidden group-hover/sidebar:block group-focus-within/sidebar:block px-3 pb-1">
                 <p className="text-[10px] font-mono text-slate-400 normal-case tracking-wide font-semibold">Explore</p>
@@ -476,15 +502,23 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="px-4 pl-5 pt-4 pb-10 space-y-2 max-w-[100vw] bg-black">
                   {ALL_MOBILE_NAV_ITEMS.map((item, index) => {
                     const ext = 'external' in item && item.external;
+                    const ap = 'activePaths' in item ? item.activePaths : undefined;
+                    const variant = 'variant' in item ? item.variant : undefined;
+                    const showHotBadge = 'badge' in item && item.badge === 'hot';
+                    const navActive = ap?.length ? ap.includes(pathname) : isActive(item.path);
                     const mobileCls = `relative flex items-center gap-3 min-w-0 pl-5 pr-5 py-4 border-2 text-sm font-semibold font-sans normal-case tracking-normal transition-all rounded-2xl animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both ${
                       ext
                         ? 'text-intuition-success border-intuition-success/45 bg-intuition-success/8 hover:bg-intuition-success/15 hover:border-intuition-success'
-                        : isActive(item.path)
-                          ? item.variant === 'gold'
+                        : navActive
+                          ? variant === 'gold'
                             ? 'text-black bg-intuition-warning border-intuition-warning shadow-[0_0_20px_rgba(250,204,21,0.35)]'
-                            : 'text-black bg-intuition-primary border-intuition-primary'
-                          : item.variant === 'gold'
+                            : variant === 'arena'
+                              ? 'text-white bg-gradient-to-r from-[#ff2470] via-intuition-secondary to-[#d4145a] border-intuition-secondary shadow-[0_0_24px_rgba(255,30,109,0.45)]'
+                              : 'text-black bg-intuition-primary border-intuition-primary'
+                          : variant === 'gold'
                             ? 'text-amber-200 border-amber-500/45 bg-amber-950/35 hover:text-amber-50 hover:border-amber-400 hover:bg-amber-500/10'
+                            : variant === 'arena'
+                              ? 'text-fuchsia-100 border-intuition-secondary/55 bg-gradient-to-r from-intuition-secondary/20 to-black/50 hover:border-fuchsia-400/80 hover:from-intuition-secondary/30'
                             : 'text-slate-400 border-slate-900 hover:text-white bg-white/5'
                     }`;
                     const delay = { animationDelay: `${index * 45}ms` };
@@ -512,15 +546,36 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <Link
                         key={`${item.label}-${item.path}`}
                         to={item.path}
+                        state={'linkState' in item ? item.linkState : undefined}
                         onClick={close}
                         style={delay}
                         className={mobileCls}
                       >
-                        {isActive(item.path) && (
+                        {navActive && (
                           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-black rounded-r" />
                         )}
-                        <span className="shrink-0 flex items-center justify-center w-5">{item.icon}</span>
-                        <span className="min-w-0 break-words">{item.label}</span>
+                        <span className="relative shrink-0 flex items-center justify-center w-5">
+                          {showHotBadge ? (
+                            <span
+                              className="pointer-events-none absolute -right-2 -top-2 z-[1] rounded border border-white/40 bg-black/80 px-[3px] py-px text-[7px] font-black uppercase tracking-tight leading-none text-amber-100 shadow-[0_0_8px_rgba(251,113,133,0.6)]"
+                              aria-hidden
+                            >
+                              HOT
+                            </span>
+                          ) : null}
+                          {item.icon}
+                        </span>
+                        <span className="flex min-w-0 flex-1 items-center gap-2">
+                          <span className="min-w-0 flex-1 break-words">{item.label}</span>
+                          {showHotBadge ? (
+                            <span
+                              className="shrink-0 rounded-md border border-white/35 bg-black/35 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-100"
+                              aria-hidden
+                            >
+                              HOT
+                            </span>
+                          ) : null}
+                        </span>
                       </Link>
                     );
                   })}

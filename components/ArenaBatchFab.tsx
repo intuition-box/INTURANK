@@ -2,7 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Layers } from 'lucide-react';
-import { getFirstListIdWithPending, getTotalPendingCount } from '../services/arenaPendingBatch';
+import {
+  ARENA_PENDING_UPDATED_EVENT,
+  getFirstListIdWithPending,
+  getTotalPendingCount,
+} from '../services/arenaPendingBatch';
 import { playClick } from '../services/audio';
 import { useIsMobile } from '../hooks/useIsMobile';
 
@@ -33,8 +37,23 @@ const ArenaBatchFab: React.FC = () => {
   useEffect(() => {
     const read = () => setCount(getTotalPendingCount());
     read();
-    const id = window.setInterval(read, 1500);
-    return () => window.clearInterval(id);
+
+    const onUpdate = () => read();
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.key === 'inturank-arena-pending-v1') read();
+    };
+    const onVisibility = () => {
+      if (!document.hidden) read();
+    };
+
+    window.addEventListener(ARENA_PENDING_UPDATED_EVENT, onUpdate);
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener(ARENA_PENDING_UPDATED_EVENT, onUpdate);
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [loc.pathname]);
 
   const onOpen = () => {

@@ -582,7 +582,11 @@ app.listen(PORT, () => {
 // Optionally start the background email worker in the same process.
 // Useful in production (Coolify, Railway, etc.) so one always-on service
 // serves the API and sends alerts without relying on the user's browser.
-if (process.env.ENABLE_EMAIL_WORKER === 'true') {
+// Requires Ensend — otherwise the worker is skipped (see email-worker.js).
+const enableEmailWorker = String(process.env.ENABLE_EMAIL_WORKER ?? '').trim() === 'true';
+const ensendForWorker =
+  process.env.ENSEND_PROJECT_SECRET && process.env.ENSEND_SENDER_EMAIL;
+if (enableEmailWorker && ensendForWorker) {
   import('./email-worker.js')
     .then(() => {
       console.log('[email-api] Email worker attached (ENABLE_EMAIL_WORKER=true).');
@@ -590,4 +594,8 @@ if (process.env.ENABLE_EMAIL_WORKER === 'true') {
     .catch((err) => {
       console.error('[email-api] Failed to start email worker', err);
     });
+} else if (enableEmailWorker && !ensendForWorker) {
+  console.warn(
+    '[email-api] ENABLE_EMAIL_WORKER=true but ENSEND_PROJECT_SECRET / ENSEND_SENDER_EMAIL missing — background worker disabled.',
+  );
 }

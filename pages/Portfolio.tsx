@@ -39,7 +39,7 @@ import { PageLoadingSpinner } from '../components/PageLoading';
 import { Link } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import logo from '../logo.png';
-import ArenaCurationsPanel from '../components/ArenaCurationsPanel';
+import ArenaMyRankingsPanel from '../components/ArenaMyRankingsPanel';
 
 const COLORS = ['#00f3ff', '#00ff9d', '#a855f7', '#facc15', '#ff1e6d', '#ff8c00', '#00ced1'];
 
@@ -1357,8 +1357,8 @@ const Portfolio: React.FC = () => {
             </div>
         </div>
         </div>
-        {/* Arena curations: every YES/NO pick this wallet has confirmed through IntuRank, grouped by list. */}
-        <ArenaCurationsPanel address={account ?? null} />
+        {/* Single Portfolio surface for Arena: indexed portal-list stakes from your wallet (subgraph). */}
+        <ArenaMyRankingsPanel wallet={account ?? null} />
       </div>
     </div>
   );

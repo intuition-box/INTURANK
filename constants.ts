@@ -511,7 +511,12 @@ export const LIST_PREDICATE_ID = "0x7ec36d201c842dc787b45cb5bb753bea4cf849be3908
 
 // Protocol Pricing Constants
 export const CURVE_SLOPE = 30000000000000000000n; // 3 * 10^19
-export const CURVE_OFFSET = 500000000000000000n; // 5 * 10^17
+/**
+ * Client-side floor for per-row deposits (the FeeProxy enforces an on-chain
+ * `minDeposit` from `getGeneralConfig()`). Lowered from 0.5 → 0.1 TRUST for
+ * testing — the real chain config still wins via simulation if it's higher.
+ */
+export const CURVE_OFFSET = 100000000000000000n; // 1 * 10^17 = 0.1 TRUST
 export const DISPLAY_DIVISOR = 100000;
 
 export const FEE_PROXY_ABI = [
@@ -551,6 +556,29 @@ export const FEE_PROXY_ABI = [
     "name": "deposit",
     "outputs": [{ "internalType": "uint256", "name": "shares", "type": "uint256" }],
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "receiver", "type": "address" },
+      { "internalType": "bytes32[]", "name": "termIds", "type": "bytes32[]" },
+      { "internalType": "uint256[]", "name": "curveIds", "type": "uint256[]" },
+      { "internalType": "uint256[]", "name": "assets", "type": "uint256[]" },
+      { "internalType": "uint256[]", "name": "minShares", "type": "uint256[]" }
+    ],
+    "name": "depositBatch",
+    "outputs": [{ "internalType": "uint256[]", "name": "shares", "type": "uint256[]" }],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "depositCount", "type": "uint256" },
+      { "internalType": "uint256", "name": "totalDeposit", "type": "uint256" }
+    ],
+    "name": "calculateDepositFee",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
     "type": "function"
   },
   {

@@ -2,11 +2,11 @@
  * Pulse / Signal — submit queued Support (stand) or Oppose stances as FeeProxy vault deposits.
  * Mirrors Arena portal semantics: positive vault vs counter vault, with counter-stake checks.
  */
-import { getAddress } from 'viem';
+import { getAddress, parseEther } from 'viem';
 import type { SignalPendingPick } from './signalPendingBatch';
 import {
   calculateCounterTripleId,
-  depositToVault,
+  depositBatchToVaults,
   getProxyApprovalStatus,
   getRawShareBalance,
   grantProxyApproval,
@@ -33,7 +33,8 @@ async function maxSharesOnVault(account: string, termId: string): Promise<bigint
 }
 
 /**
- * One wallet signature per queued claim (sequential `deposit` calls), same as Arena multi-row submit.
+ * Single FeeProxy `depositBatch` for the whole cart (one fee lump). Returns the same tx hash
+ * once per pick so XP callers can attach per-row `dedupeKey`s.
  */
 export async function submitSignalStancesOnChain(
   wallet: string,
@@ -53,7 +54,8 @@ export async function submitSignalStancesOnChain(
     await grantProxyApproval(receiver);
   }
 
-  const hashes: `0x${string}`[] = [];
+  onProgress?.('Checking for opposing vault positions…');
+  const batchLegs: { termId: string; assetsWei: bigint }[] = [];
 
   for (let i = 0; i < picks.length; i++) {
     const p = picks[i]!;
@@ -69,15 +71,15 @@ export async function submitSignalStancesOnChain(
     }
 
     const amt = p.unitsTrust.trim() || '0';
+    batchLegs.push({ termId: String(target), assetsWei: parseEther(amt) });
     const labelShort = p.objectLabel.trim().slice(0, 40) + (p.objectLabel.length > 40 ? '…' : '');
     onProgress?.(
       picks.length > 1
-        ? `Confirm in wallet · ${labelShort} (${i + 1}/${picks.length})`
-        : `Confirm in wallet · ${labelShort}`,
+        ? `Queued · ${labelShort} (${i + 1}/${picks.length})`
+        : `Queued · ${labelShort}`,
     );
-    const dep = await depositToVault(amt, String(target), receiver, (m) => onProgress?.(m));
-    hashes.push(dep.hash);
   }
 
-  return hashes;
+  const { hash } = await depositBatchToVaults(batchLegs, receiver, (m) => onProgress?.(m));
+  return picks.map(() => hash);
 }

@@ -29,7 +29,7 @@ type Props = {
   submitProgress?: string | null;
   /** True when stake × units is below curve minimum on any row — submit would revert. */
   depositBlocked?: boolean;
-  /** Protocol minimum TRUST label (e.g. "0.5") from `CURVE_OFFSET`. */
+  /** Protocol minimum TRUST label from `CURVE_OFFSET` (e.g. `"0.1"`). */
   minDepositLabel?: string;
 };
 
@@ -225,7 +225,6 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                       </button>
                       <button
                         type="button"
-                        disabled={submitting}
                         onClick={(e) => {
                           e.stopPropagation();
                           playClick();
@@ -233,6 +232,7 @@ const ArenaBatchReviewModal: React.FC<Props> = ({
                           onClearAll();
                         }}
                         className="rounded-lg px-2.5 py-1 text-[11px] font-semibold bg-rose-600/90 text-white border border-rose-400/45 hover:bg-rose-600 disabled:opacity-40"
+                        title="Clears the queue even if a submit is in progress (wallet may still complete a pending tx)."
                       >
                         Clear
                       </button>

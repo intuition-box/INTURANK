@@ -142,6 +142,17 @@ function resolveProxyActivityAccount(dep: {
   return (sender ?? receiver) ?? null;
 }
 
+/** Graph `account.id` variants for contracts that route IntuRank traffic in the indexer. */
+function feeProxyRoutedSenderGraphIds(): string[] {
+  const s = new Set<string>();
+  for (const addr of [FEE_PROXY_ADDRESS, MULTI_VAULT_ADDRESS]) {
+    for (const id of prepareQueryIds(addr)) {
+      if (id) s.add(id);
+    }
+  }
+  return Array.from(s);
+}
+
 export const prepareQueryIds = (id: string) => {
     if (!id) return [];
     const base = id.trim();
@@ -1097,6 +1108,198 @@ export const getGlobalActivity = async (limit: number = 40, offset: number = 0) 
         hasMore: events.length === limit
     };
   } catch (e) { return { items: [], hasMore: false }; }
+};
+
+/**
+ * Global activity where deposits/redemptions were initiated through the IntuRank
+ * routing layer (FeeProxy / MultiVault as `sender` in the subgraph). Same row
+ * shape as {@link getGlobalActivity} so `ActivityRow` keeps working.
+ */
+export const getIntuRankNetworkActivity = async (limit: number = 40, offset: number = 0) => {
+  const proxyIds = feeProxyRoutedSenderGraphIds();
+  const q = `query GetIntuRankActivity($limit: Int!, $offset: Int!, $proxyIds: [String!]!) {
+    events(limit: $limit, offset: $offset, order_by: {created_at: desc}, where: {
+      _and: [
+        { type: { _in: ["Deposited", "Redeemed"] } },
+        { _not: { deposit: { assets_after_fees: { _eq: "0" } } } },
+        { _or: [
+          { deposit: { sender_id: { _in: $proxyIds } } },
+          { redemption: { sender_id: { _in: $proxyIds } } }
+        ] }
+      ]
+    }) {
+      id created_at type transaction_hash
+      atom { term_id label data image type creator { id label image } }
+      triple { term_id counter_term_id subject { label term_id data image type } predicate { label } object { label term_id data image type } creator { id label image } }
+      deposit { assets_after_fees shares sender { id label image } receiver { id label image } vault { curve_id } }
+      redemption { assets shares sender { id label image } receiver { id label image } vault { curve_id } }
+    }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { limit, offset, proxyIds });
+    const events = data?.events ?? [];
+    return {
+      items: events.map((ev: any) => {
+        let label = 'Unknown Node',
+          vaultId = '0x',
+          shares = '0',
+          assets = '0',
+          curveId = '0',
+          sender = null,
+          target = null;
+
+        if (ev.type === 'Deposited' && ev.deposit) {
+          assets = ev.deposit.assets_after_fees || '0';
+          shares = ev.deposit.shares || '0';
+          curveId = ev.deposit.vault?.curve_id;
+          sender = resolveProxyActivityAccount(ev.deposit);
+          if (ev.atom) {
+            const meta = resolveMetadata(ev.atom);
+            label = meta.label;
+            vaultId = ev.atom.term_id;
+            target = { ...meta, id: ev.atom.term_id };
+          } else if (ev.triple) {
+            const sMeta = resolveMetadata(ev.triple.subject);
+            const oMeta = resolveMetadata(ev.triple.object);
+            label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
+            vaultId = ev.triple.term_id;
+            target = {
+              label,
+              id: ev.triple.term_id,
+              type: 'CLAIM',
+              subject: sMeta,
+              predicate: ev.triple.predicate?.label,
+              object: oMeta,
+            };
+          }
+        } else if (ev.type === 'Redeemed' && ev.redemption) {
+          assets = ev.redemption.assets || '0';
+          shares = ev.redemption.shares || '0';
+          curveId = ev.redemption.vault?.curve_id;
+          sender = resolveProxyActivityAccount(ev.redemption);
+          if (ev.atom) {
+            const meta = resolveMetadata(ev.atom);
+            label = meta.label;
+            vaultId = ev.atom.term_id;
+            target = { ...meta, id: ev.atom.term_id };
+          } else if (ev.triple) {
+            const sMeta = resolveMetadata(ev.triple.subject);
+            const oMeta = resolveMetadata(ev.triple.object);
+            label = `${sMeta.label} ${ev.triple.predicate?.label || 'LINK'} ${oMeta.label}`;
+            vaultId = ev.triple.term_id;
+            target = {
+              label,
+              id: ev.triple.term_id,
+              type: 'CLAIM',
+              subject: sMeta,
+              predicate: ev.triple.predicate?.label,
+              object: oMeta,
+            };
+          }
+        }
+
+        return {
+          id: ev.transaction_hash || ev.id,
+          type: ev.type,
+          timestamp: new Date(ev.created_at).getTime(),
+          sender,
+          target,
+          assets,
+          shares,
+          curveId,
+          vaultId,
+        };
+      }),
+      hasMore: events.length === limit,
+    };
+  } catch (e) {
+    return { items: [], hasMore: false };
+  }
+};
+
+/** Wallet history: only deposits/redemptions routed through FeeProxy/MultiVault with the wallet as receiver. */
+export const getUserIntuRankRoutedHistory = async (userAddress: string): Promise<Transaction[]> => {
+  const userIds = prepareQueryIds(userAddress);
+  if (!userIds.length) return [];
+  const proxyIds = feeProxyRoutedSenderGraphIds();
+  const q = `query ($userIds: [String!]!, $proxyIds: [String!]!) {
+    events(limit: 500, order_by: {created_at: desc}, where: {
+      _and: [
+        { type: { _in: ["Deposited", "Redeemed"] } },
+        { _not: { deposit: { assets_after_fees: { _eq: "0" } } } },
+        { _or: [
+          { _and: [
+            { type: { _eq: "Deposited" } },
+            { deposit: { _and: [{ sender_id: { _in: $proxyIds } }, { receiver_id: { _in: $userIds } }] } }
+          ] },
+          { _and: [
+            { type: { _eq: "Redeemed" } },
+            { redemption: { _and: [{ sender_id: { _in: $proxyIds } }, { receiver_id: { _in: $userIds } }] } }
+          ] }
+        ] }
+      ]
+    }) {
+      id created_at type transaction_hash
+      atom { term_id label data type }
+      triple { term_id subject { label term_id data } predicate { label term_id } object { label term_id data } }
+      deposit { shares assets_after_fees vault { term_id curve_id } }
+      redemption { assets shares vault { term_id curve_id } }
+    }
+  }`;
+  try {
+    const data = await fetchGraphQL(q, { userIds, proxyIds });
+    const events = data?.events ?? [];
+    return events.map((ev: any) => {
+      let label = 'Unknown Node',
+        vaultId = '0x',
+        shares = '0',
+        assets = '0',
+        type: 'DEPOSIT' | 'REDEEM' = 'DEPOSIT',
+        curveId: number | undefined;
+      if (ev.type === 'Deposited' && ev.deposit) {
+        assets = ev.deposit.assets_after_fees || '0';
+        shares = ev.deposit.shares || '0';
+        const v = ev.deposit.vault;
+        const rawCurve = v?.curve_id ?? (ev.deposit as any).curve_id;
+        if (rawCurve != null) curveId = typeof rawCurve === 'string' ? parseInt(rawCurve, 10) : rawCurve;
+        if (v?.term_id) vaultId = v.term_id;
+        if (ev.atom) {
+          label = resolveMetadata(ev.atom).label;
+          if (!vaultId || vaultId === '0x') vaultId = ev.atom.term_id;
+        } else if (ev.triple) {
+          label = `${resolveMetadata(ev.triple.subject).label} ${ev.triple.predicate?.label || 'LINK'} ${resolveMetadata(ev.triple.object).label}`;
+          if (!vaultId || vaultId === '0x') vaultId = ev.triple.term_id;
+        }
+      } else if (ev.type === 'Redeemed' && ev.redemption) {
+        assets = ev.redemption.assets || '0';
+        shares = ev.redemption.shares || '0';
+        type = 'REDEEM';
+        const v = ev.redemption.vault;
+        const rawCurve = v?.curve_id ?? (ev.redemption as any).curve_id;
+        if (rawCurve != null) curveId = typeof rawCurve === 'string' ? parseInt(rawCurve, 10) : rawCurve;
+        if (v?.term_id) vaultId = v.term_id;
+        if (ev.atom) {
+          label = resolveMetadata(ev.atom).label;
+          if (!vaultId || vaultId === '0x') vaultId = ev.atom.term_id;
+        } else if (ev.triple) {
+          label = `${resolveMetadata(ev.triple.subject).label} ${ev.triple.predicate?.label || 'LINK'} ${resolveMetadata(ev.triple.object).label}`;
+          if (!vaultId || vaultId === '0x') vaultId = ev.triple.term_id;
+        }
+      }
+      return {
+        id: ev.transaction_hash || ev.id,
+        type,
+        shares,
+        assets,
+        timestamp: ev.created_at ? new Date(ev.created_at).getTime() : Date.now(),
+        vaultId,
+        curveId,
+        assetLabel: label,
+      };
+    });
+  } catch {
+    return [];
+  }
 };
 
 /** Fetches all user positions (linear and exponential curves). No curve_id filter — both curve 1 and 2 are included. */
@@ -2349,20 +2552,75 @@ export const getLists = async (limit: number = 40, offset: number = 0, orderBy?:
 
 /**
  * List members: triples (list predicate) whose **object** is the list — **subject** is a member to rank in Arena.
- * Arena portfolio / XP use `registerArenaPortalListTermsForIndexing` + indexer list objects — only curated portal lists count.
+ * Leaderboard / Compare use `registerArenaPortalListTermsForIndexing` ∪ indexer portal lists (`getLists`).
+ * Portfolio “My ranked lists” narrows to **extras only** (`fetchPortfolioArenaRankingClaims`) so the UI starts clean until you open lists in Arena.
  */
 
 const arenaRankingAllowlistExtras = new Set<string>();
 
+/** Persist extras across reloads so leaderboard/explorer retain remembered portal list ids without re-opening Arena. */
+const ARENA_RANKING_ALLOWLIST_EXTRAS_STORAGE_KEY = 'inturank-arena-ranking-extras-v2';
+
+let arenaRankingAllowlistExtrasHydrated = false;
+
+function ensureArenaRankingAllowlistExtrasHydrated() {
+  if (arenaRankingAllowlistExtrasHydrated) return;
+  arenaRankingAllowlistExtrasHydrated = true;
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(ARENA_RANKING_ALLOWLIST_EXTRAS_STORAGE_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return;
+    for (const x of arr) {
+      const n = normalize(String(x ?? ''));
+      if (n) arenaRankingAllowlistExtras.add(n);
+    }
+  } catch {
+    /* ignore corrupt storage */
+  }
+}
+
+function persistArenaRankingAllowlistExtras() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      ARENA_RANKING_ALLOWLIST_EXTRAS_STORAGE_KEY,
+      JSON.stringify(Array.from(arenaRankingAllowlistExtras)),
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+/**
+ * Drops persisted + in-memory portal list term registrations for this browser (Portfolio “fresh slate”).
+ * Leaderboard/compare still use the full indexer portal merge via `getArenaPortalRankingAllowlist`.
+ */
+export function clearArenaPortalListIndexingExtras() {
+  arenaRankingAllowlistExtras.clear();
+  arenaRankingAllowlistExtrasHydrated = false;
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(ARENA_RANKING_ALLOWLIST_EXTRAS_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** Register list object term ids Arena can write to — e.g. current portal batch + URL-opened portal lists — so portfolio stays accurate without waiting for pagination. */
 export function registerArenaPortalListTermsForIndexing(termIds: string[]) {
+  ensureArenaRankingAllowlistExtrasHydrated();
   for (const raw of termIds) {
     const n = normalize(raw);
     if (n) arenaRankingAllowlistExtras.add(n);
   }
+  persistArenaRankingAllowlistExtras();
 }
 
 async function getArenaPortalRankingAllowlist(): Promise<Set<string>> {
+  ensureArenaRankingAllowlistExtrasHydrated();
   const s = new Set<string>(arenaRankingAllowlistExtras);
   try {
     const { items } = await getLists(260, 0, [{ total_position_count: 'desc' }]);
@@ -2381,6 +2639,7 @@ async function getArenaPortalRankingAllowlist(): Promise<Set<string>> {
  * Explorer feed only — keeps rankings scoped to IntuRank-surfaced portal lists, not a broad portal scrape.
  */
 async function getArenaExplorerFeedAllowlist(): Promise<Set<string>> {
+  ensureArenaRankingAllowlistExtrasHydrated();
   const s = new Set<string>(arenaRankingAllowlistExtras);
   try {
     const { items } = await getLists(ARENA_PORTAL_LISTS_FETCH_LIMIT, 0, [{ total_position_count: 'desc' }]);
@@ -2432,6 +2691,20 @@ function arenaRankSlotKey(listTermId: string, subjectId: string): string | null 
   const sk = subs[0];
   if (!lk || !sk) return null;
   return `${lk}:${sk}`;
+}
+
+/** Vault stance `listTermId` vs portal list object id (handles id padding variants). */
+function portalListStanceMatchesListObject(listTermIdFromStance: string, portalListObjectTermId: string): boolean {
+  const want = new Set(
+    prepareQueryIds(String(portalListObjectTermId || ''))
+      .map(normalize)
+      .filter(Boolean),
+  );
+  if (want.size === 0) return false;
+  for (const v of prepareQueryIds(String(listTermIdFromStance || ''))) {
+    if (want.has(normalize(v))) return true;
+  }
+  return false;
 }
 
 type ArenaGraphTripleStanceRow = {
@@ -2541,6 +2814,145 @@ export async function getListMemberSubjectsForObject(
 }
 
 /**
+ * Wallets that have an indexed YES membership triple on this portal list — used to discover Compare
+ * peers beyond the global Arena XP leaderboard (popular lists often have many rankers who are not top‑XP globally).
+ */
+export async function fetchDistinctRankingCreatorsForPortalList(
+  listObjectTermId: string,
+  excludeWallet: string | undefined,
+  maxCreators: number,
+): Promise<string[]> {
+  const ids = prepareQueryIds(listObjectTermId);
+  if (!ids.length || maxCreators <= 0) return [];
+
+  const exclude = new Set((excludeWallet ? prepareQueryIds(excludeWallet) : []).map((x) => normalize(x)));
+  const operators = protocolOperatorCreatorIdsNormalized();
+
+  const q = `query RankingCreatorsForList($ids: [String!]!, $pred: String!, $limit: Int!) {
+    triples(
+      where: { object_id: { _in: $ids }, predicate_id: { _eq: $pred } }
+      order_by: { block_number: desc }
+      limit: $limit
+    ) {
+      creator { id }
+    }
+  }`;
+
+  const scanLimit = Math.min(Math.max(maxCreators * 45, 120), 720);
+
+  try {
+    const res = await fetchGraphQL(q, { ids, pred: LIST_PREDICATE_ID, limit: scanLimit });
+    const out: string[] = [];
+    const seen = new Set<string>();
+
+    for (const t of res?.triples || []) {
+      const raw = t?.creator?.id as string | undefined;
+      if (!raw || !isAddress(raw)) continue;
+      let chk: string;
+      try {
+        chk = getAddress(raw);
+      } catch {
+        continue;
+      }
+      const lc = normalize(chk);
+      if (exclude.has(lc) || operators.has(lc)) continue;
+      if (seen.has(lc)) continue;
+      seen.add(lc);
+      out.push(chk);
+      if (out.length >= maxCreators) break;
+    }
+    return out;
+  } catch (e) {
+    console.warn('[fetchDistinctRankingCreatorsForPortalList]', e);
+    return [];
+  }
+}
+
+/**
+ * Wallets that ranked this portal list through IntuRank FeeProxy/MultiVault (deposit `receiver`), derived from
+ * vault → triple stance — fixes under-counting when `triple.creator` is the operator, not the human ranker.
+ */
+export async function fetchDistinctReceiversForPortalListFromProxyDeposits(
+  listObjectTermId: string,
+  excludeWallet: string | undefined,
+  maxWallets: number,
+): Promise<string[]> {
+  const ids = prepareQueryIds(listObjectTermId.trim());
+  if (!ids.length || maxWallets <= 0) return [];
+
+  const exclude = new Set((excludeWallet ? prepareQueryIds(excludeWallet) : []).map((x) => normalize(x)));
+  const operators = protocolOperatorCreatorIdsNormalized();
+  const minBnLb = ARENA_ATTRIBUTION_MIN_BLOCK;
+
+  const depLimit = Math.min(5200, Math.max(1800, maxWallets * 80));
+  try {
+    const deposits = await fetchProxyArenaRankDeposits(depLimit);
+    if (!deposits.length) return [];
+
+    const vaultIds = Array.from(new Set(deposits.map((d) => d.vaultTermId)));
+    const stanceByVault = await fetchArenaVaultStanceMap(vaultIds);
+    if (!stanceByVault.size) return [];
+
+    const out: string[] = [];
+    const seenRecv = new Set<string>();
+
+    for (const dep of deposits) {
+      const stance = stanceByVault.get(dep.vaultTermId);
+      if (!stance) continue;
+      if (minBnLb != null && stance.stance.blockNumber > 0 && stance.stance.blockNumber < minBnLb) continue;
+      if (!portalListStanceMatchesListObject(stance.stance.listTermId, listObjectTermId)) continue;
+
+      let recv: string;
+      try {
+        recv = getAddress(dep.receiverId as `0x${string}`);
+      } catch {
+        continue;
+      }
+      const lc = recv.toLowerCase();
+      if (exclude.has(lc) || operators.has(lc)) continue;
+      if (seenRecv.has(lc)) continue;
+      seenRecv.add(lc);
+      out.push(recv);
+      if (out.length >= maxWallets) break;
+    }
+    return out;
+  } catch (e) {
+    console.warn('[fetchDistinctReceiversForPortalListFromProxyDeposits]', e);
+    return [];
+  }
+}
+
+/**
+ * Approximate distinct rankers on one portal list: merges deposit receivers + LIST_PREDICATE triple creators (legacy/direct).
+ */
+export async function fetchApproxDistinctPortalListRankerCount(
+  listObjectTermId: string,
+  excludeWallet?: string | null,
+): Promise<number> {
+  const ex = excludeWallet?.trim();
+  const [fromDeposits, fromTriples] = await Promise.all([
+    fetchDistinctReceiversForPortalListFromProxyDeposits(listObjectTermId, ex || undefined, 2400),
+    fetchDistinctRankingCreatorsForPortalList(listObjectTermId, ex || undefined, 2400),
+  ]);
+  const s = new Set<string>();
+  for (const w of fromDeposits) {
+    try {
+      s.add(getAddress(w as `0x${string}`).toLowerCase());
+    } catch {
+      /* skip */
+    }
+  }
+  for (const w of fromTriples) {
+    try {
+      s.add(getAddress(w as `0x${string}`).toLowerCase());
+    } catch {
+      /* skip */
+    }
+  }
+  return s.size;
+}
+
+/**
  * Canonical vault triple id for “subject belongs on list” (LIST_PREDICATE → list object).
  * Portal Arena members are sourced from this triple; staking YES must deposit here, not createTriples again.
  */
@@ -2611,7 +3023,7 @@ export async function getListNegativeStanceTripleTermId(
   }
 }
 
-/** Arena batch claims indexed on Intuition: YES uses list predicate + list object; NO uses list as predicate + distrust object. */
+/** One portal-list stance row after resolving FeeProxy vault → triple (YES vs NO vault side). */
 export type UserArenaRankingClaim = {
   claimTermId: string;
   subjectId: string;
@@ -2624,63 +3036,91 @@ export type UserArenaRankingClaim = {
 };
 
 /**
- * Portfolio / sync: finalized **portal-list** memberships you created on-chain. Filtered by Intuition index list
- * objects (`getLists`) plus optional `registerArenaPortalListTermsForIndexing` (never local queue taps).
+ * Compare / XP fallback: full portal allowlist (extras ∪ indexer lists). Same FeeProxy receiver attribution as Portfolio.
  */
-export async function fetchUserArenaRankingClaims(creatorWallet: string): Promise<UserArenaRankingClaim[]> {
-  const ids = prepareQueryIds(creatorWallet.trim());
-  if (!ids.length) return [];
-  const idSet = new Set(ids.map(normalize));
-
-  const allow = await getArenaPortalRankingAllowlist();
-  if (allow.size === 0) return [];
-
-  const q = `query UserArenaRankingClaims($ids: [String!]!, $listPred: String!, $distrust: String!, $limit: Int!) {
-    triples(
-      where: {
-        creator: { id: { _in: $ids } }
-        _or: [{ predicate_id: { _eq: $listPred } }, { object_id: { _eq: $distrust } }]
-      }
-      order_by: { block_number: desc }
-      limit: $limit
-    ) {
-      term_id
-      block_number
-      creator { id }
-      subject { term_id label image }
-      predicate { term_id label }
-      object { term_id label image }
-    }
-  }`;
+export async function fetchUserArenaRankingClaims(wallet: string): Promise<UserArenaRankingClaim[]> {
   try {
-    const res = await fetchGraphQL(q, { ids, listPred: LIST_PREDICATE_ID, distrust: DISTRUST_ATOM_ID, limit: 520 });
-    const minBn = ARENA_ATTRIBUTION_MIN_BLOCK;
-    const parsed = arenaTriplesResponseToPortalStances(res?.triples || []).filter((s) => {
-      if (!idSet.has(s.creatorId) || !allow.has(normalize(s.listTermId))) return false;
-      if (minBn != null && s.blockNumber > 0 && s.blockNumber < minBn) return false;
-      return true;
-    });
-
-    const best = new Map<string, UserArenaRankingClaim>();
-    for (const r of parsed) {
-      if (!r.listTermId) continue;
-      const k = `${normalize(r.listTermId)}:${normalize(r.subjectId)}`;
-      const prev = best.get(k);
-      const row: UserArenaRankingClaim = {
-        claimTermId: r.claimTermId,
-        subjectId: r.subjectId,
-        subjectLabel: r.subjectLabel,
-        subjectImage: r.subjectImage,
-        listTermId: r.listTermId,
-        listLabel: r.listLabel,
-        support: r.support,
-        blockNumber: r.blockNumber,
-      };
-      if (!prev || r.blockNumber >= prev.blockNumber) best.set(k, row);
-    }
-    return Array.from(best.values()).sort((a, b) => b.blockNumber - a.blockNumber);
+    const allow = await getArenaPortalRankingAllowlist();
+    return fetchUserArenaRankingClaimsWithAllowlist(wallet, allow);
   } catch (e) {
     console.warn('[fetchUserArenaRankingClaims]', e);
+    return [];
+  }
+}
+
+/**
+ * Portfolio only: ranks on portal lists this browser has explicitly surfaced in Arena (`registerArenaPortalListTermsForIndexing`),
+ * **not** every portal list from the indexer — avoids stale “noise” rows while you rebuild testers’ flows.
+ */
+export async function fetchPortfolioArenaRankingClaims(wallet: string): Promise<UserArenaRankingClaim[]> {
+  ensureArenaRankingAllowlistExtrasHydrated();
+  const allow = new Set(arenaRankingAllowlistExtras);
+  return fetchUserArenaRankingClaimsWithAllowlist(wallet, allow);
+}
+
+async function fetchUserArenaRankingClaimsWithAllowlist(
+  wallet: string,
+  allow: Set<string>,
+): Promise<UserArenaRankingClaim[]> {
+  const recvVariants = prepareQueryIds(wallet.trim());
+  if (!recvVariants.length) return [];
+  const recvSet = new Set(recvVariants.map(normalize));
+
+  try {
+    if (allow.size === 0) return [];
+
+    const operatorCreators = protocolOperatorCreatorIdsNormalized();
+    const minBnLb = ARENA_ATTRIBUTION_MIN_BLOCK;
+
+    const depositsAll = await fetchProxyArenaRankDeposits(4200);
+    const userDeps = depositsAll.filter((d) => {
+      const recvLc = normalize(d.receiverId);
+      return recvLc && recvSet.has(recvLc) && !operatorCreators.has(recvLc);
+    });
+    if (userDeps.length === 0) return [];
+
+    const vaultIds = Array.from(new Set(userDeps.map((d) => d.vaultTermId)));
+    const stanceByVault = await fetchArenaVaultStanceMap(vaultIds);
+    if (stanceByVault.size === 0) return [];
+
+    const seenWalletStake = new Set<string>();
+    const rawStakes: ArenaGraphTripleStanceRow[] = [];
+
+    for (const dep of userDeps) {
+      const stance = stanceByVault.get(dep.vaultTermId);
+      if (!stance) continue;
+      if (minBnLb != null && stance.stance.blockNumber > 0 && stance.stance.blockNumber < minBnLb) continue;
+      if (!arenaListIdMatchesAllowlist(allow, stance.stance.listTermId)) continue;
+
+      const recvLc = normalize(dep.receiverId);
+      const stakeKey = `${recvLc}:${dep.vaultTermId}:${stance.support ? 'y' : 'n'}`;
+      if (seenWalletStake.has(stakeKey)) continue;
+      seenWalletStake.add(stakeKey);
+
+      rawStakes.push({ ...stance.stance, creatorId: recvLc, support: stance.support });
+    }
+
+    const bySlot = new Map<string, UserArenaRankingClaim>();
+    for (const s of rawStakes) {
+      const slotKey = arenaRankSlotKey(s.listTermId, s.subjectId);
+      if (!slotKey) continue;
+      const prev = bySlot.get(slotKey);
+      const row: UserArenaRankingClaim = {
+        claimTermId: s.claimTermId,
+        subjectId: s.subjectId,
+        subjectLabel: s.subjectLabel,
+        subjectImage: s.subjectImage,
+        listTermId: s.listTermId,
+        listLabel: s.listLabel,
+        support: s.support,
+        blockNumber: s.blockNumber,
+      };
+      if (!prev || row.blockNumber >= prev.blockNumber) bySlot.set(slotKey, row);
+    }
+
+    return Array.from(bySlot.values()).sort((a, b) => b.blockNumber - a.blockNumber);
+  } catch (e) {
+    console.warn('[fetchUserArenaRankingClaimsWithAllowlist]', e);
     return [];
   }
 }
@@ -3222,19 +3662,29 @@ export function getCurveLabel(curveId: number | string | undefined): string {
 export const getActivityOnMyMarkets = async (
   userAddress: string,
   vaultIds: string[],
-  limit: number = 30
+  limit: number = 30,
+  options?: { onlyIntuRankRouted?: boolean },
 ): Promise<PositionActivityNotification[]> => {
   if (!vaultIds.length) return [];
   const ids = Array.from(new Set(vaultIds.map(normalize).filter(Boolean)));
   if (!ids.length) return [];
   const userAddr = userAddress.toLowerCase();
+  const proxyIds = options?.onlyIntuRankRouted ? feeProxyRoutedSenderGraphIds() : null;
+  const proxyFilter = proxyIds?.length
+    ? `,
+          { _or: [
+            { deposit: { sender_id: { _in: $proxyIds } } },
+            { redemption: { sender_id: { _in: $proxyIds } } }
+          ] }`
+    : '';
   // Fetch activity on both Linear and Offset Progressive (exponential) curves — filter by term_id only so all curve types are included
-  const q = `query GetActivityOnMyMarkets($ids: [String!]!, $limit: Int!) {
+  const q = `query GetActivityOnMyMarkets($ids: [String!]!, $limit: Int!${proxyIds ? ', $proxyIds: [String!]!' : ''}) {
     events(
       where: {
         _and: [
           { type: { _in: ["Deposited", "Redeemed"] } },
           { _or: [{ atom: { term_id: { _in: $ids } } }, { triple: { term_id: { _in: $ids } } }] }
+          ${proxyFilter}
         ]
       },
       order_by: { created_at: desc },
@@ -3248,7 +3698,9 @@ export const getActivityOnMyMarkets = async (
     }
   }`;
   try {
-    const data = await fetchGraphQL(q, { ids, limit });
+    const vars: Record<string, unknown> = { ids, limit };
+    if (proxyIds?.length) vars.proxyIds = proxyIds;
+    const data = await fetchGraphQL(q, vars);
     const rawEvents = data?.events ?? [];
     // Dedupe by event id so the same activity never appears or triggers email twice
     const seenEventIds = new Set<string>();
@@ -3310,12 +3762,21 @@ export const getActivityOnMyMarkets = async (
  */
 export const getActivityBySenderIds = async (
   senderIds: string[],
-  limit: number = 40
+  limit: number = 40,
+  options?: { onlyIntuRankRouted?: boolean },
 ): Promise<PositionActivityNotification[]> => {
   if (!senderIds?.length) return [];
   const ids = Array.from(new Set(senderIds.flatMap((s) => prepareQueryIds(s)).filter(Boolean)));
   if (!ids.length) return [];
-  const q = `query GetActivityBySenders($ids: [String!]!, $limit: Int!) {
+  const proxyIds = options?.onlyIntuRankRouted ? feeProxyRoutedSenderGraphIds() : null;
+  const proxyFilter = proxyIds?.length
+    ? `,
+          { _or: [
+            { deposit: { sender_id: { _in: $proxyIds } } },
+            { redemption: { sender_id: { _in: $proxyIds } } }
+          ] }`
+    : '';
+  const q = `query GetActivityBySenders($ids: [String!]!, $limit: Int!${proxyIds ? ', $proxyIds: [String!]!' : ''}) {
     events(
       where: {
         _and: [
@@ -3324,6 +3785,7 @@ export const getActivityBySenderIds = async (
             { deposit: { _or: [{ sender_id: { _in: $ids } }, { receiver_id: { _in: $ids } }] } },
             { redemption: { _or: [{ sender_id: { _in: $ids } }, { receiver_id: { _in: $ids } }] } }
           ] }
+          ${proxyFilter}
         ]
       },
       order_by: { created_at: desc },
@@ -3337,7 +3799,9 @@ export const getActivityBySenderIds = async (
     }
   }`;
   try {
-    const data = await fetchGraphQL(q, { ids, limit });
+    const vars: Record<string, unknown> = { ids, limit };
+    if (proxyIds?.length) vars.proxyIds = proxyIds;
+    const data = await fetchGraphQL(q, vars);
     const rawEvents = data?.events ?? [];
     const seenEventIds = new Set<string>();
     const events = rawEvents.filter((ev: any) => {
@@ -3346,7 +3810,7 @@ export const getActivityBySenderIds = async (
       seenEventIds.add(eid);
       return true;
     });
-      const idsSet = new Set(ids.map((i) => i.toLowerCase()));
+    const idsSet = new Set(ids.map((i) => i.toLowerCase()));
     const out: PositionActivityNotification[] = [];
     for (const ev of events) {
       const deposit = ev.deposit;

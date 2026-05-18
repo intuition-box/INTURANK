@@ -55,15 +55,21 @@ const SECTIONS: Array<{ heading: string; items: SheetItem[] }> = [
   {
     heading: 'Feed & profile',
     items: [
-      { label: 'Activity', desc: 'Network feed and people you follow', to: '/feed', icon: <Globe size={20} />, accent: 'cyan' },
+      { label: 'Activity', desc: 'IntuRank-routed stakes and your Arena-related moves', to: '/feed', icon: <Globe size={20} />, accent: 'cyan' },
       { label: 'Profile', desc: 'Account, identity, and badges', to: '/account', icon: <UserCircle size={20} />, accent: 'purple' },
     ],
   },
   {
     heading: 'Arena & Trust',
     items: [
-      { label: 'The Arena', desc: 'Ranked lists and stance batches', to: '/climb', icon: <Activity size={20} />, accent: 'magenta' },
-      { label: 'Leaderboard', desc: 'Top rankers and stats', to: '/stats', icon: <BarChart2 size={20} />, accent: 'gold' },
+      {
+        label: 'The Arena',
+        desc: 'Ranked lists and stance batches',
+        to: '/climb',
+        icon: <Activity size={20} />,
+        accent: 'magenta',
+      },
+      { label: 'Leaderboard', desc: 'Arena rankers leaderboard', to: '/stats', icon: <BarChart2 size={20} />, accent: 'gold' },
       { label: 'Send Trust', desc: 'Transfer TRUST (₸)', to: '/send-trust', icon: <Send size={20} />, accent: 'gold' },
       { label: 'Trust tools', desc: 'Daily Trust hub', to: '/hub/trust-tools', icon: <CalendarDays size={20} />, accent: 'cyan' },
     ],
@@ -283,7 +289,12 @@ const MobileNavSheet: React.FC<Props> = ({ open, onClose, onCreate, onConnect, o
                       }
                       return (
                         <motion.div key={item.label} variants={sheetRowVariants}>
-                        <Link to={item.to} onClick={handleNavigate} onMouseEnter={playHover} className={cls}>
+                        <Link
+                          to={item.to}
+                          onClick={handleNavigate}
+                          onMouseEnter={playHover}
+                          className={cls}
+                        >
                           {inner}
                         </Link>
                         </motion.div>

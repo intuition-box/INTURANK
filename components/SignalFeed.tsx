@@ -630,6 +630,7 @@ const SignalFeed: React.FC<Props> = ({ className, viewerAddress }) => {
           reasonKey: 'add_to_list',
           txHash: hashes[i]!,
           depositTrustWei: depWei,
+          dedupeKey: `pulse-stake:${hashes[i]!}:${p.key}`,
         });
         if (typeof granted === 'number' && granted > 0) {
           activityXpDelta += granted;
@@ -659,7 +660,9 @@ const SignalFeed: React.FC<Props> = ({ className, viewerAddress }) => {
         ...(activityXpDelta > 0 ? { activityXpEarned: activityXpDelta } : {}),
         ...(xpdnGrantsPerTx.length > 0 ? { xpdnByTx: xpdnGrantsPerTx } : {}),
         outro:
-          'Your Pulse stances are on-chain (one transaction per claim). Portfolio and explorers update after the indexer syncs.',
+          picks.length > 1
+            ? 'Your Pulse stances landed in one batched deposit. Portfolio and explorers update after the indexer syncs.'
+            : 'Your Pulse stance is on-chain. Portfolio and explorers update after the indexer syncs.',
       });
       clearSignalPending(viewerAddress);
       setStanceTick((n) => n + 1);

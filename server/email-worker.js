@@ -47,13 +47,22 @@ const ENSEND_PROJECT_SECRET = process.env.ENSEND_PROJECT_SECRET;
 const ENSEND_SENDER_EMAIL = process.env.ENSEND_SENDER_EMAIL;
 const ENSEND_SENDER_NAME = process.env.ENSEND_SENDER_NAME || 'IntuRank';
 
-if (!ENSEND_PROJECT_SECRET || !ENSEND_SENDER_EMAIL) {
-  console.error('[email-worker] ENSEND_PROJECT_SECRET / ENSEND_SENDER_EMAIL not configured, exiting.');
-  process.exit(1);
-}
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ensendConfigured = !!(ENSEND_PROJECT_SECRET && ENSEND_SENDER_EMAIL);
+/** Standalone `node server/email-worker.js` — exit on misconfig. When imported from `index.js`, never kill the API. */
+const isStandaloneWorker =
+  typeof process.argv[1] === 'string' && path.resolve(process.argv[1]) === __filename;
+
+if (!ensendConfigured) {
+  const msg =
+    '[email-worker] ENSEND_PROJECT_SECRET / ENSEND_SENDER_EMAIL not configured.';
+  if (isStandaloneWorker) {
+    console.error(msg + ' Exiting.');
+    process.exit(1);
+  }
+  console.warn(msg + ' Skipping background worker (API server continues).');
+}
 const DATA_DIR = process.env.EMAIL_DATA_DIR || __dirname;
 try {
   mkdirSync(DATA_DIR, { recursive: true });
@@ -396,7 +405,9 @@ async function tick() {
   await flushDailyDigests();
 }
 
-console.log('[email-worker] Started email worker.');
-tick();
-setInterval(tick, 60_000);
+if (ensendConfigured) {
+  console.log('[email-worker] Started email worker.');
+  tick();
+  setInterval(tick, 60_000);
+}
 

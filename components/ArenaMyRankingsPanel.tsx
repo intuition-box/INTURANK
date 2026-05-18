@@ -2,7 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity, ChevronDown, ChevronRight, Layers, Loader2, RefreshCw } from 'lucide-react';
 import { playClick, playHover } from '../services/audio';
-import { fetchUserArenaRankingClaims, type UserArenaRankingClaim } from '../services/graphql';
+import {
+  clearArenaPortalListIndexingExtras,
+  fetchPortfolioArenaRankingClaims,
+  type UserArenaRankingClaim,
+} from '../services/graphql';
 import { ARENA_ATTRIBUTION_MIN_BLOCK } from '../constants';
 import { portalListIdFromTermId } from '../services/arenaListsRegistry';
 
@@ -80,7 +84,7 @@ const ArenaMyRankingsPanel: React.FC<{ wallet: string | null }> = ({ wallet }) =
     setLoading(true);
     setError(null);
     try {
-      const rows = await fetchUserArenaRankingClaims(wallet);
+      const rows = await fetchPortfolioArenaRankingClaims(wallet);
       setClaims(rows);
     } catch (e: any) {
       setError(e?.message || 'Could not load on-chain Arena data');
@@ -137,9 +141,10 @@ const ArenaMyRankingsPanel: React.FC<{ wallet: string | null }> = ({ wallet }) =
               <p className="text-[10px] xl:text-xs font-black text-slate-500 uppercase tracking-[0.28em] mb-1">Arena · Portfolio</p>
               <h2 className="text-xl sm:text-2xl font-black font-display text-white tracking-tight">My ranked lists</h2>
               <p className="text-[13px] text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
-                Rows come from your wallet’s finalized <strong className="text-slate-300 font-semibold">portal list</strong>{' '}
-                triples on Intuition—the same predicates other Intuition flows use—not from this tab’s local picks. Clearing an
-                unsigned batch cannot remove them. Signed Arena batches show here once indexed.
+                FeeProxy/MultiVault deposits only — your wallet is the{' '}
+                <strong className="text-slate-300 font-semibold">receiver</strong>. Portfolio intentionally lists ranks on portal lists
+                you&apos;ve opened in Arena on this browser (not every indexer portal list), so you can start clean and grow from real
+                sessions.
               </p>
               {ARENA_ATTRIBUTION_MIN_BLOCK != null ? (
                 <p className="text-[11px] text-slate-500 mt-2">
@@ -155,6 +160,19 @@ const ArenaMyRankingsPanel: React.FC<{ wallet: string | null }> = ({ wallet }) =
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={!wallet || loading}
+              onClick={() => {
+                playClick();
+                clearArenaPortalListIndexingExtras();
+                void load();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700/90 bg-black/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-intuition-danger hover:border-intuition-danger/35 disabled:opacity-40 transition-colors"
+              title="Forget portal lists Arena registered on this browser — Portfolio empties until you open lists again."
+            >
+              Clear lists
+            </button>
             <button
               type="button"
               disabled={!wallet || loading}
@@ -207,8 +225,8 @@ const ArenaMyRankingsPanel: React.FC<{ wallet: string | null }> = ({ wallet }) =
             <div className="rounded-2xl border border-dashed border-slate-700/80 bg-slate-950/50 px-5 py-10 text-center">
               <p className="text-slate-300 text-sm font-semibold mb-2">No Arena claims recorded for this wallet</p>
               <p className="text-slate-500 text-xs leading-relaxed max-w-md mx-auto mb-5">
-                Nothing shows until your wallet confirms a ranked batch against an Arena portal list — clearing your queue locally
-                does not write to Intuition or this view.
+                Open a portal list in Arena on this device (we remember its id here), confirm a ranked batch through FeeProxy, then
+                refresh — or tap Clear lists if you wiped the remembered registry.
               </p>
               <Link
                 to="/climb"
@@ -249,6 +267,8 @@ function ArenaListOnchainCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const preview = group.rows.slice(0, 4);
+
   return (
     <div className="group relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gradient-to-br from-slate-900/90 via-black to-black border border-slate-800/80 shadow-[0_14px_40px_rgba(0,0,0,0.65)]">
       <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100 bg-[radial-gradient(circle_at_top_left,rgba(0,243,255,0.14),transparent_55%)]" />
@@ -256,36 +276,64 @@ function ArenaListOnchainCard({
         type="button"
         onClick={onToggle}
         onMouseEnter={playHover}
-        className="relative z-10 w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-white/[0.02] transition-colors"
+        className="relative z-10 w-full px-4 py-4 text-left hover:bg-white/[0.02] transition-colors"
       >
-        <span className="shrink-0 text-slate-500">
-          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-bold text-white truncate text-[15px]" title={group.listLabel}>
-            {group.listLabel}
-          </p>
-          <p className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
-            <span>
-              <span className="text-intuition-success font-semibold tabular-nums">{group.yesCount}</span>
-              {' yes · '}
-              <span className="text-intuition-danger font-semibold tabular-nums">{group.noCount}</span>
-              {' no'}
-            </span>
-            <span className="text-slate-600">·</span>
-            <span className="tabular-nums uppercase tracking-wider">Latest block {group.maxBlock || '—'}</span>
-          </p>
+        <div className="flex items-start gap-3">
+          <span className="shrink-0 text-slate-500 mt-0.5">
+            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-white truncate text-[15px]" title={group.listLabel}>
+              {group.listLabel}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
+              <span>
+                <span className="text-intuition-success font-semibold tabular-nums">{group.yesCount}</span>
+                {' yes · '}
+                <span className="text-intuition-danger font-semibold tabular-nums">{group.noCount}</span>
+                {' no'}
+              </span>
+              <span className="text-slate-600">·</span>
+              <span className="tabular-nums uppercase tracking-wider">Latest block {group.maxBlock || '—'}</span>
+            </p>
+            {!expanded && preview.length > 0 ? (
+              <ul className="mt-3 space-y-1.5 border-t border-slate-800/80 pt-3">
+                {preview.map((r) => (
+                  <li
+                    key={`${r.subjectId}-${r.claimTermId}-preview`}
+                    className="flex items-center gap-2 rounded-lg border border-white/[0.05] bg-black/35 px-2 py-1.5"
+                  >
+                    <span
+                      className={`inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md text-[9px] font-black uppercase shrink-0 ${
+                        r.support
+                          ? 'border border-emerald-500/40 bg-emerald-500/[0.12] text-emerald-300'
+                          : 'border border-rose-500/40 bg-rose-500/[0.12] text-rose-300'
+                      }`}
+                    >
+                      {r.support ? 'Y' : 'N'}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-slate-200">{r.subjectLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {!expanded && group.rows.length > preview.length ? (
+              <p className="mt-2 text-[10px] font-medium text-slate-600">
+                +{group.rows.length - preview.length} more · expand for full table
+              </p>
+            ) : null}
+          </div>
+          <Link
+            to={climbQueryForListTermId(group.listTermId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              playClick();
+            }}
+            className="relative z-10 shrink-0 rounded-xl border border-slate-600/85 bg-black/55 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:border-intuition-primary/45 hover:text-intuition-primary"
+          >
+            Open
+          </Link>
         </div>
-        <Link
-          to={climbQueryForListTermId(group.listTermId)}
-          onClick={(e) => {
-            e.stopPropagation();
-            playClick();
-          }}
-          className="relative z-10 shrink-0 rounded-xl border border-slate-600/85 bg-black/55 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:border-intuition-primary/45 hover:text-intuition-primary"
-        >
-          Open
-        </Link>
       </button>
 
       {expanded ? (

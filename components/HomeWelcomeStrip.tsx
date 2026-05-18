@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, Trophy } from 'lucide-react';
+import { ArrowRight, Plus, Sparkles } from 'lucide-react';
 import { playClick, playHover } from '../services/audio';
 
 type HomeWelcomeStripProps = {
@@ -10,191 +9,141 @@ type HomeWelcomeStripProps = {
 
 const H_PAD = { paddingLeft: 'clamp(1.5rem, 6vw, 4rem)', paddingRight: 'clamp(1.5rem, 6vw, 4rem)' } as const;
 
-const QUICK: Array<{ to: string; label: string }> = [
-  { to: '/markets/atoms', label: 'Atoms' },
-  { to: '/create', label: 'Claims' },
-  { to: '/markets/lists', label: 'Lists' },
-  { to: '/documentation', label: 'Docs' },
-];
-
-const EASE = [0.22, 1, 0.36, 1] as const;
+const GLASS_PANEL =
+  'relative overflow-hidden rounded-[1.75rem] border border-white/[0.1] bg-[#05070c]/[0.88] shadow-[0_20px_50px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-inset ring-white/[0.04]';
 
 /**
- * Landing hero (always on Home): staggered cascade. Wallet connection does not hide this block.
+ * Landing hero — same glass + cyan/magenta accents as PublicProfile (no rainbow deck).
  */
 export const HomeWelcomeStrip: React.FC<HomeWelcomeStripProps> = ({ variant = 'desktop' }) => {
   const mobile = variant === 'mobile';
-  const reduceMotion = useReducedMotion();
-
-  const container = reduceMotion
-    ? { hidden: { opacity: 1 }, show: { opacity: 1 } }
-    : {
-        hidden: { opacity: 0 },
-        show: {
-          opacity: 1,
-          transition: { staggerChildren: 0.11, delayChildren: 0.16 },
-        },
-      };
-
-  const item = reduceMotion
-    ? { hidden: { opacity: 1, y: 0 }, show: { opacity: 1, y: 0 } }
-    : {
-        hidden: { opacity: 0, y: 36 },
-        show: {
-          opacity: 1,
-          y: 0,
-          transition: { duration: 0.62, ease: EASE },
-        },
-      };
 
   const heroMinClass = mobile
-    ? 'min-h-[72vh] sm:min-h-[68vh]'
-    : 'min-h-[min(92vh,56rem)] lg:min-h-[min(94vh,58rem)] xl:min-h-[min(96vh,62rem)]';
+    ? 'min-h-0 py-10 sm:py-12'
+    : 'min-h-[min(78vh,44rem)] lg:min-h-[min(82vh,48rem)]';
 
   return (
     <section
-      aria-label="Welcome"
+      aria-label="IntuRank hero"
       className={
         mobile
-          ? `relative flex flex-col overflow-hidden rounded-[1.75rem] border border-white/[0.06] ${heroMinClass}`
+          ? `relative flex flex-col overflow-hidden rounded-[1.75rem] border border-white/[0.08] ${heroMinClass}`
           : `relative flex flex-col overflow-x-clip scroll-mt-6 ${heroMinClass}`
       }
       style={mobile ? undefined : H_PAD}
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-[#050014] via-[#030508] to-[#030508]" />
-
+      <div className="absolute inset-0 bg-[#020308]" />
       <div
         aria-hidden
-        className="absolute inset-0 opacity-[0.42]"
+        className="pointer-events-none absolute inset-0 opacity-90"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 55% at 0% 0%, rgba(0,243,255,0.12), transparent 52%), radial-gradient(ellipse 60% 45% at 100% 100%, rgba(255,30,109,0.08), transparent 48%)',
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.28]"
         style={{
           backgroundImage:
-            'linear-gradient(rgba(0,243,255,0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(0,243,255,0.028) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
+            'linear-gradient(rgba(0,243,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,243,255,0.04) 1px, transparent 1px)',
+          backgroundSize: '40px 40px',
         }}
       />
 
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-[8%] z-0 h-[min(95vw,640px)] w-[min(140vw,1100px)] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.2)_0%,rgba(99,102,241,0.14)_35%,rgba(168,85,247,0.08)_55%,transparent_72%)] blur-[3px]"
-        initial={reduceMotion ? false : { opacity: 0.35, scale: 0.92 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 1.15, ease: EASE }}
-      />
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-[12%] z-0 h-[480px] w-[min(90vw,720px)] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgba(0,243,255,0.18),transparent_100%)] opacity-90 mix-blend-screen"
-        initial={reduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 0.9 }}
-        transition={{ duration: 1.0, delay: 0.2, ease: EASE }}
-      />
-      <div className="pointer-events-none absolute left-1/2 top-[20%] z-0 h-[min(100vmin,560px)] w-full max-w-5xl -translate-x-1/2 bg-[conic-gradient(from_200deg_at_50%_45%,transparent,rgba(34,211,238,0.09)_25%,transparent_50%,rgba(192,132,252,0.07)_75%,transparent)] opacity-70" />
-
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#030508_0%,transparent_45%,#030508_100%)] opacity-[0.88]" />
-
-      <motion.div
-        aria-hidden
-        initial={reduceMotion ? false : { opacity: 0, scale: 0.86, y: 24 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 1.05, delay: 0.08, ease: EASE }}
-        className={`pointer-events-none absolute left-1/2 z-0 -translate-x-1/2 ${mobile ? 'top-[8%] h-64 w-[92%]' : 'top-[4%] h-[min(44vh,36rem)] w-full max-w-2xl lg:max-w-3xl'}`}
-      >
-        <div className="absolute inset-[8%] rounded-[2rem] border border-white/[0.14] bg-gradient-to-b from-white/[0.12] via-cyan-400/[0.04] to-violet-600/[0.06] shadow-[0_0_80px_rgba(34,211,238,0.15),0_0_120px_rgba(139,92,246,0.12),inset_0_1px_0_rgba(255,255,255,0.15)] backdrop-blur-2xl sm:rounded-[2.25rem]" />
-        <div className="absolute inset-[14%] rotate-[2deg] rounded-[1.75rem] border border-white/[0.06] bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent opacity-80" />
-      </motion.div>
-
-      {/* “Opens” toward content below */}
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 left-[6%] right-[6%] z-[5] h-[2px] rounded-full bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent origin-center lg:left-[12%] lg:right-[12%]"
-        initial={reduceMotion ? false : { scaleX: 0, opacity: 0 }}
-        animate={{ scaleX: 1, opacity: 1 }}
-        transition={{ duration: 0.85, delay: 0.75, ease: EASE }}
-      />
-
-      <motion.div
+      <div
         className={
           mobile
-            ? 'relative z-10 flex flex-1 flex-col justify-center px-5 py-14 sm:px-6 sm:py-16'
-            : 'relative z-10 mx-auto flex flex-1 flex-col justify-center px-2 py-20 sm:py-24 lg:py-28 xl:py-32'
+            ? 'relative z-10 flex flex-1 flex-col px-5 py-8 sm:px-6'
+            : 'relative z-10 mx-auto flex flex-1 w-full flex-col justify-center py-16 sm:py-20 lg:py-24'
         }
-        style={mobile ? undefined : { maxWidth: 1280 }}
-        variants={container}
-        initial="hidden"
-        animate="show"
+        style={mobile ? undefined : { maxWidth: 1200 }}
       >
-        <div className="relative mx-auto max-w-[58rem] text-center">
-          <motion.p
-            variants={item}
-            className="mb-6 font-mono text-[10px] font-black uppercase tracking-[0.38em] text-slate-500 sm:mb-8 sm:text-[11px]"
-          >
-            INTURANK <span className="text-slate-600">•</span> WEB3 REPUTATION
-          </motion.p>
+        <div className="mx-auto mb-6 max-w-3xl rounded-xl border border-white/[0.1] bg-[#05070c]/80 px-4 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_32px_rgba(0,243,255,0.06)] sm:mb-8 sm:px-5">
+          <p className="text-[11px] font-semibold leading-snug text-slate-300 sm:text-sm">
+            IntuRank — a gamified way to <span className="font-bold text-white">rank items inside lists</span> and share
+            that with friends, on Intuition.
+          </p>
+        </div>
 
-          <motion.h1
-            variants={item}
-            className={`font-display font-black uppercase not-italic leading-[1.05] tracking-[-0.02em] ${mobile ? 'text-[1.75rem] sm:text-[2.35rem]' : 'text-[2.1rem] sm:text-4xl md:text-5xl lg:text-6xl xl:text-[4.25rem]'}`}
-          >
-            <span className="block text-white drop-shadow-[0_0_40px_rgba(255,255,255,0.06)]">A trust-native layer</span>
-            <span className="mt-2 block bg-gradient-to-r from-[#22d3ee] via-[#a5b4fc] to-[#e9d5ff] bg-clip-text text-transparent sm:mt-2.5 lg:mt-3 [text-shadow:none]">
-              for intuition markets
-            </span>
-          </motion.h1>
+        <div
+          className={`mx-auto flex w-full max-w-5xl flex-col gap-8 ${mobile ? '' : 'lg:flex-row lg:items-stretch lg:gap-10'}`}
+        >
+          <div className={`${GLASS_PANEL} min-w-0 flex-1 p-6 sm:p-8 lg:p-10`}>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 opacity-80"
+              style={{
+                boxShadow: 'inset 0 0 80px rgba(0,243,255,0.04)',
+              }}
+            />
+            <div className="relative text-center lg:text-left">
+              <p className="font-mono text-[10px] font-black uppercase tracking-[0.38em] text-intuition-primary/85 sm:text-[11px]">
+                IntuRank
+              </p>
+              <h1 className="mt-3 font-display text-[1.65rem] font-black leading-[1.08] tracking-tight text-white sm:text-3xl md:text-4xl lg:text-[2.75rem]">
+                Anyone can create a game
+                <span className="mt-3 block text-lg font-bold text-slate-200 sm:text-xl md:text-2xl">
+                  Where the collective output is{' '}
+                  <span className="bg-gradient-to-r from-white via-slate-100 to-intuition-primary bg-clip-text font-black text-transparent">
+                    rank anything
+                  </span>
+                </span>
+              </h1>
+              <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-slate-400 sm:text-base lg:mx-0">
+                <span className="font-semibold text-intuition-primary/90">A game for your knowledge</span>
+                {' — '}
+                stack cards, fight for what belongs on top, then show your deck to the crowd.
+              </p>
 
-          <motion.p
-            variants={item}
-            className="mx-auto mt-7 max-w-xl font-sans text-sm font-normal leading-relaxed text-slate-400 sm:mt-9 sm:max-w-2xl sm:text-base"
-          >
-            Surface atoms, claims, and lists priced in TRUST. Rank and read free; connect a wallet when you are ready
-            to trade, duel, and earn XP.
-          </motion.p>
-
-          <motion.div
-            variants={item}
-            className="mt-9 flex flex-col items-stretch gap-4 sm:mt-11 sm:flex-row sm:items-center sm:justify-center sm:gap-5"
-          >
-            <div className="mx-auto w-full max-w-[20rem] rounded-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-fuchsia-500 p-[2px] shadow-[0_0_42px_rgba(99,102,241,0.45),0_0_28px_rgba(34,211,238,0.25)] sm:mx-0 sm:w-auto sm:max-w-none">
-              <Link
-                to="/markets/atoms"
-                onClick={() => playClick()}
-                onMouseEnter={() => playHover()}
-                className="flex items-center justify-center gap-2.5 rounded-full bg-[#030508] px-8 py-3.5 text-[11px] font-bold uppercase tracking-[0.24em] text-white transition-colors hover:bg-[#050814] sm:px-10 sm:py-4 sm:text-xs"
-              >
-                Explore markets
-                <ArrowRight className="h-4 w-4 shrink-0 text-cyan-300" strokeWidth={2.5} aria-hidden />
-              </Link>
-            </div>
-            <Link
-              to="/climb"
-              onClick={() => playClick()}
-              onMouseEnter={() => playHover()}
-              className="mx-auto flex w-full max-w-[20rem] items-center justify-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/[0.06] px-8 py-3.5 text-center text-[11px] font-bold uppercase tracking-[0.2em] text-slate-100 shadow-[0_0_24px_rgba(167,139,250,0.12)] backdrop-blur-md transition-all hover:border-violet-400/50 hover:bg-violet-500/[0.1] hover:text-white sm:mx-0 sm:w-auto sm:max-w-none sm:px-9 sm:text-xs"
-            >
-              <Trophy className="h-4 w-4 shrink-0 text-violet-300" strokeWidth={2.25} aria-hidden />
-              Climb the leaderboard
-            </Link>
-          </motion.div>
-
-          <motion.nav
-            variants={item}
-            aria-label="Quick links"
-            className="mt-9 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.28em] text-slate-600 sm:mt-11 sm:text-[11px]"
-          >
-            {QUICK.map((q, i) => (
-              <React.Fragment key={q.label}>
-                {i > 0 ? <span className="text-slate-700">•</span> : null}
+              <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center lg:justify-start">
                 <Link
-                  to={q.to}
+                  to="/climb"
                   onClick={() => playClick()}
                   onMouseEnter={() => playHover()}
-                  className="text-slate-500 transition-colors hover:text-cyan-400/90"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-intuition-primary/45 bg-black/55 px-7 py-3.5 text-[11px] font-bold uppercase tracking-[0.22em] text-white shadow-[0_0_28px_rgba(0,243,255,0.18),inset_0_1px_0_rgba(255,255,255,0.06)] transition-[transform,filter,box-shadow] hover:shadow-[0_0_36px_rgba(0,243,255,0.26)] active:scale-[0.99] sm:text-xs"
                 >
-                  {q.label}
+                  <Sparkles className="h-4 w-4 shrink-0 text-intuition-primary" strokeWidth={2.5} aria-hidden />
+                  Enter the Arena
+                  <ArrowRight className="h-4 w-4 shrink-0 text-intuition-primary" strokeWidth={2.5} aria-hidden />
                 </Link>
-              </React.Fragment>
-            ))}
-          </motion.nav>
+                <Link
+                  to="/markets/atoms"
+                  onClick={() => playClick()}
+                  onMouseEnter={() => playHover()}
+                  className="inline-flex items-center justify-center rounded-xl border border-white/[0.12] bg-white/[0.04] px-6 py-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-300 backdrop-blur-sm transition-colors hover:border-intuition-primary/35 hover:text-white sm:text-xs"
+                >
+                  Browse the graph
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className={`flex shrink-0 flex-col items-center justify-center gap-2 ${
+              mobile ? 'w-full' : 'lg:w-48 xl:w-52'
+            }`}
+          >
+            <Link
+              to="/"
+              state={{ scrollArenaContests: true, showArenaCreateGameToast: true }}
+              onClick={() => playClick()}
+              onMouseEnter={() => playHover()}
+              className="group flex w-full max-w-[16rem] flex-col items-center justify-center gap-2 rounded-[1.75rem] border border-white/[0.1] bg-gradient-to-br from-intuition-secondary via-rose-600 to-orange-600 py-8 shadow-[0_16px_40px_rgba(255,30,109,0.25),inset_0_1px_0_rgba(255,255,255,0.12)] transition-[transform,filter] hover:brightness-110 lg:max-w-none lg:flex-1 lg:py-10"
+            >
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-black/20 text-white shadow-[0_0_24px_rgba(0,0,0,0.35)] transition-transform duration-200 group-hover:scale-105">
+                <Plus className="h-7 w-7" strokeWidth={2.5} aria-hidden />
+              </span>
+              <span className="px-2 text-center text-[11px] font-black uppercase tracking-[0.18em] text-white">
+                Create your game
+              </span>
+            </Link>
+            <p className="max-w-[14rem] text-center text-[10px] leading-snug text-slate-500">
+              Contest picker lives below. Graph Create is under nav for atoms / claims.
+            </p>
+          </div>
         </div>
-      </motion.div>
+      </div>
     </section>
   );
 };

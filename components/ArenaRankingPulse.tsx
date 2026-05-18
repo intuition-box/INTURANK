@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Loader2, Radio, RefreshCw, Users } from 'lucide-react';
+import { ExternalLink, Loader2, Radio, RefreshCw, Users, Layers } from 'lucide-react';
 import { getAddress, isAddress } from 'viem';
 import { playClick, playHover } from '../services/audio';
 import { fetchRecentArenaPortalRankingFeed, type ArenaPortalRankingFeedItem } from '../services/graphql';
@@ -271,6 +271,18 @@ const ArenaRankingPulse: React.FC<Props> = ({ className, variant = 'compact', vi
               <Users className="w-3.5 h-3.5 opacity-90" aria-hidden />
               {showAllRankers ? 'All rankers' : 'My rankings'}
             </button>
+          ) : null}
+          {variant === 'explorer' && viewerAddress?.trim() ? (
+            <Link
+              to="/portfolio#arena-rankings"
+              onClick={() => playClick()}
+              onMouseEnter={playHover}
+              title="Signed rankings grouped by list"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-700/90 bg-black/50 px-2 py-1.5 text-[9px] font-black uppercase tracking-[0.12em] text-slate-400 hover:text-emerald-200 hover:border-emerald-500/35 transition-colors"
+            >
+              <Layers className="w-3.5 h-3.5 opacity-90" aria-hidden />
+              My lists
+            </Link>
           ) : null}
           <button
             type="button"
